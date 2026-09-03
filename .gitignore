@@ -1,0 +1,15 @@
+# Build output
+dist/
+build/
+out/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
