@@ -30,6 +30,11 @@
   2026-09-27: AI Use Summary extended for the user-service soft delete
   and day-31 purge (issue #93) by Claude Code (Fable 5), on PR #136
   Copilot review.
+  2026-10-10: AI Use Summary extended for the order-service Spring Boot
+  scaffold and its compose.yaml/AGENTS.md/.env.example wiring by
+  Claude Code (Opus 5.5).
+  2026-10-11: AI Use Summary extended for the order-service Requests
+  entity/repository skeleton by Claude Code (Opus 5.5).
   Reviewed by: Leong Wei Zhi (via pull request).
 -->
 
@@ -173,7 +178,18 @@ retention purge), and the unit, integration, and reuse-block tests,
 with the endpoint-confirmation, shared-path, and FK-cleanup choices
 made by the author via neutral-options Q&A and recorded in
 `ai/usage-log.md` (the 30-day reuse block itself needed no new code
-and was pinned with tests).
+and was pinned with tests); and the order-service Spring Boot
+scaffold — pom, application config, Dockerfile, and application/test
+classes mirroring the supplier-service and notification-service
+pattern (including the broker connection settings and the
+`foc-contracts` dependency, with no publisher code), plus the
+compose.yaml order-db/order-service wiring, `.env.example` section,
+and `AGENTS.md` port-table entry that went with it, with the database
+engine and image version, host ports, and broker-wiring scope chosen
+by the author via neutral-options Q&A and recorded in
+`ai/usage-log.md`; and the order-service `Requests` entity and
+repository (table name and columns given by the author as an ER
+diagram, which the tool transcribed into the entity unchanged).
 
 **Verification:** all AI-assisted output is reviewed by the team through
 pull requests before merging.

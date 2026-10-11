@@ -135,7 +135,7 @@ alone is only a gate inside the server.
 | `notification-db` | `${NOTIFICATION_DB_HOST_PORT:-5433}` (loopback only) | available |
 | `user-db` | `${USER_DB_HOST_PORT:-5435}` (loopback only) | available |
 | `supplier-db` | `${SUPPLIER_DB_HOST_PORT:-5434}` (loopback only) | available |
-| `order-db` | — | not created yet |
+| `order-db` | `${ORDER_DB_HOST_PORT:-5436}` (loopback only) | available |
 | `credit-db` | — | not created yet |
 | `web` | — | no database (frontend itself published on `${WEB_PORT:-5173}`) |
 
