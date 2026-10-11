@@ -1,4 +1,5 @@
 import { prisma } from "../db.ts";
+import type { AuthenticatedUser } from "../auth.ts";
 
 export async function handleGetOrders(req: Request) {
   try {
@@ -15,10 +16,19 @@ export async function handleGetOrders(req: Request) {
   }
 }
 
-export async function handleCreateOrder(req: Request) {
+export async function handleCreateOrder(req: Request, user: AuthenticatedUser) {
   try {
     const body = await req.json();
     const idempotencyKey = req.headers.get("Idempotency-Key");
+
+    // supplier ids are integers in the supplier service; leave it out (or null) when not from a supplier
+    const supplierId = body.supplierId ?? null;
+    if (supplierId !== null && (!Number.isInteger(supplierId) || supplierId <= 0)) {
+      return new Response(JSON.stringify({ error: "supplierId must be a positive integer or null" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     
     // 1. IDEMPOTENCY CHECK
     if (idempotencyKey) {
@@ -41,7 +51,7 @@ export async function handleCreateOrder(req: Request) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: body.requesterId,
+          userId: user.id,
           amount: body.creditBounty,
           referenceId: idempotencyKey 
         })
@@ -58,12 +68,13 @@ export async function handleCreateOrder(req: Request) {
     const newOrder = await prisma.order.create({
       data: {
         idempotencyKey: idempotencyKey,
-        requesterId: body.requesterId,
+        // the requester is whoever is signed in, never taken from the body
+        requesterId: user.id,
         pickupLocation: body.pickupLocation,
         dropoffLocation: body.dropoffLocation,
         itemDescription: body.itemDescription,
         creditBounty: body.creditBounty,
-        supplierId: body.supplierId || null,
+        supplierId: supplierId,
         status: "CREATED",
         expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
       },
@@ -80,13 +91,16 @@ export async function handleCreateOrder(req: Request) {
 
 }
 
-export async function handleUpdateOrderStatus(req: Request, orderId: string) {
+export async function handleUpdateOrderStatus(req: Request, orderId: string, user: AuthenticatedUser) {
   try {
     const body = await req.json();
-    const { targetStatus, callerId, userRole } = body;
+    const { targetStatus } = body;
+    // the caller and their roles come from the access token, never from the body
+    const callerId = user.id;
+    const isAdmin = user.roles.includes("admin");
 
-    if (!targetStatus || !callerId) {
-      return new Response(JSON.stringify({ error: "Missing targetStatus or callerId" }), { status: 400 });
+    if (!targetStatus) {
+      return new Response(JSON.stringify({ error: "Missing targetStatus" }), { status: 400 });
     }
 
     // 1. Fetch current order
@@ -183,7 +197,7 @@ export async function handleUpdateOrderStatus(req: Request, orderId: string) {
       }
 
       case "CANCELLED": {
-        const canCancel = callerId === order.requesterId || userRole === "ADMIN";
+        const canCancel = callerId === order.requesterId || isAdmin;
         if (!canCancel) {
           return new Response(JSON.stringify({ error: "Unauthorized to cancel this errand" }), { status: 403 });
         }

@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "db:push": "deno run -A --env npm:prisma@5 db push",
+    "db:push": "deno run -A --env npm:prisma@5.22.0 db push --schema src/prisma/schema.prisma",
     "db:seed": "deno run -A --env src/prisma/seed.ts",
     "dev": "deno run -A --env --watch src/server.ts"
   }

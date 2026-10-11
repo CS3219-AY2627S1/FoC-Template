@@ -19,9 +19,9 @@ enum OrderStatus {
 model Order {
   id              String      @id @default(uuid())
   idempotencyKey  String?     @unique // Prevents duplicate orders if the client retries a dropped connection
-  requesterId     String      // Links to User Service
-  courierId       String?     // Nullable until a courier accepts
-  supplierId      String?     // Links to Supplier Service
+  requesterId     Int         // Links to User Service (user ids are Int)
+  courierId       Int?        // Nullable until a courier accepts
+  supplierId      Int?        // Links to Supplier Service (supplier ids are Int)
   
   pickupLocation  String      // e.g., "The Terrace@COM3"
   dropoffLocation String      // e.g., "Foyer@PGP"

@@ -19,6 +19,7 @@ services:
     depends_on:
       - user_${PROFILE}
       - supplier_${PROFILE}
+      - order_${PROFILE}
       - rabbitmq
 
   edge_dev:
@@ -170,20 +171,67 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
 
   # order service
-  order-db:
-    image: postgres:15-alpine
-    restart: always
+  order_db:
+    image: postgres:18-alpine
+    container_name: order_postgres_db
+    networks: [private_net]
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: order_db
+      POSTGRES_PASSWORD: ${ORDER_DB_PW}
+      POSTGRES_DB: orders
     ports:
-      - "5434:5432" # Using 5434 locally so it doesn't clash with your User/Supplier DBs
+      - "127.0.0.1:5434:5432"
     volumes:
-      - order-db-data:/var/lib/postgresql/data
+      - order_pgdata:/var/lib/postgresql
+    # lets order_dev wait until postgres accepts connections before syncing the schema
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d orders"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+  order_dev:
+    build:
+      context: ./order-service
+      target: development
+      network: host
+    profiles: ["dev"]
+    ports:
+      - "8003:8000"
+    volumes:
+      - ./order-service:/app
+      - /app/node_modules
+    networks:
+      private_net:
+        aliases:
+          - order_api
+    depends_on:
+      order_db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: ${ORDER_DB_URL}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+    # sync the schema, then start with denon (workaround for docker in wsl)
+    command: sh -c "deno task db:push && deno run -A https://deno.land/x/denon/denon.ts dev"
+  order_prod:
+    build:
+      context: ./order-service
+      target: production
+      network: host
+    profiles: ["prod"]
+    networks:
+      private_net:
+        aliases:
+          - order_api
+    depends_on:
+      order_db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${ORDER_DB_URL}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
 
 volumes:
   user_pgdata:
   supplier_pgdata:
-  order-db-data:
+  order_pgdata:
   rabbitmq_data:

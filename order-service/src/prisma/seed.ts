@@ -6,7 +6,7 @@ const prisma = new PrismaClient()
 async function main() {
   await prisma.order.create({
     data: {
-      requesterId: 'user-222',
+      requesterId: 2,
       pickupLocation: 'The Terrace@COM3',
       dropoffLocation: 'Foyer@PGP',
       itemDescription: 'Black gaming laptop',
@@ -18,8 +18,8 @@ async function main() {
 
   await prisma.order.create({
     data: {
-      requesterId: 'user-333',
-      courierId: 'user-111', 
+      requesterId: 3,
+      courierId: 1, 
       pickupLocation: 'PGP',
       dropoffLocation: 'COM2',
       itemDescription: 'Library books',
@@ -31,7 +31,7 @@ async function main() {
 
   await prisma.order.create({
     data: {
-      requesterId: 'user-444',
+      requesterId: 4,
       pickupLocation: 'UTown Starbucks',
       dropoffLocation: 'Tembusu College',
       itemDescription: 'Iced Americano & Croissant',
@@ -43,7 +43,7 @@ async function main() {
 
   await prisma.order.create({
     data: {
-      requesterId: 'user-555',
+      requesterId: 5,
       pickupLocation: 'PC Commons',
       dropoffLocation: 'COM1 Level 2',
       itemDescription: 'Printed CS3230 Assignment',
@@ -55,8 +55,8 @@ async function main() {
 
   await prisma.order.create({
     data: {
-      requesterId: 'user-666',
-      courierId: 'user-222',
+      requesterId: 6,
+      courierId: 2,
       pickupLocation: 'Fine Food@Cinnamon',
       dropoffLocation: 'Eusoff Hall',
       itemDescription: 'Chicken Rice (Chilli on the side)',
@@ -68,7 +68,7 @@ async function main() {
 
   await prisma.order.create({
     data: {
-      requesterId: 'user-777',
+      requesterId: 7,
       pickupLocation: 'Central Library Level 4',
       dropoffLocation: 'YIH Study Room',
       itemDescription: 'MacBook USB-C Charger',
@@ -80,8 +80,8 @@ async function main() {
 
   await prisma.order.create({
     data: {
-      requesterId: 'user-888',
-      courierId: 'user-333',
+      requesterId: 8,
+      courierId: 3,
       pickupLocation: 'Kent Ridge MRT Station',
       dropoffLocation: 'UHC',
       itemDescription: 'Left behind blue umbrella',
@@ -93,7 +93,7 @@ async function main() {
 
   await prisma.order.create({
     data: {
-      requesterId: 'user-999',
+      requesterId: 9,
       pickupLocation: 'FASS Deck',
       dropoffLocation: 'COM2 SR3',
       itemDescription: 'Group project poster boards',
@@ -105,7 +105,7 @@ async function main() {
 
   await prisma.order.create({
     data: {
-      requesterId: 'user-123',
+      requesterId: 10,
       pickupLocation: 'USC',
       dropoffLocation: 'Raffles Hall',
       itemDescription: 'Gym towel and water bottle',
@@ -117,8 +117,8 @@ async function main() {
 
   await prisma.order.create({
     data: {
-      requesterId: 'user-456',
-      courierId: 'user-777',
+      requesterId: 11,
+      courierId: 7,
       pickupLocation: 'Watsons@UTown',
       dropoffLocation: 'PGP House',
       itemDescription: 'Panadol and Cough Syrup',
@@ -130,7 +130,7 @@ async function main() {
 
   await prisma.order.create({
     data: {
-      requesterId: 'user-789',
+      requesterId: 12,
       pickupLocation: 'Gong Cha@UTown',
       dropoffLocation: 'Sheares Hall',
       itemDescription: 'Pearl Milk Tea (0% Sugar)',
@@ -142,7 +142,7 @@ async function main() {
 
   await prisma.order.create({
     data: {
-      requesterId: 'user-321',
+      requesterId: 13,
       pickupLocation: 'Frontier Canteen',
       dropoffLocation: 'King Edward VII Hall',
       itemDescription: 'Leftover jacket',
