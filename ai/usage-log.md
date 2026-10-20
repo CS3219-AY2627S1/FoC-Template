@@ -1,0 +1,516 @@
+# AI Usage Log
+
+Per the CS3219 AI Usage Policy (Project Document, Appendix 2). Record every
+AI-assisted contribution here with timestamp, tool + model, scope, prompt(s),
+and author review. Requirements elicitation and architecture/design decisions
+must NOT be outsourced to AI.
+
+Format for each entry:
+
+```
+## <date> — <author>
+- Tool: <tool> (model: <model>)
+- Scope: <what was generated/refactored/debugged/explained>
+- Prompt(s): <exact prompt(s) + key responses, or a link>
+- Author review: <how you validated/edited/tested the output>
+```
+
+---
+
+## 18/09/2026 — John Gao Jiahao
+
+- Tool: Claude Code (model: Opus)
+- Scope: Initial repository skeleton scaffolding only (boilerplate — no business
+  logic). Generated: per-service FastAPI app structure (config, db, api/routes,
+  models/schemas/services/repositories, `/health`, smoke tests) for
+  api-gateway, user-, supplier-, order-, credit-, and notification-service; the
+  `shared/` contracts library (event schemas, auth-header contract, error
+  envelope); Dockerfiles; `compose.yaml` (5 services + gateway + frontend + 5
+  Postgres + RabbitMQ); `.env.example`, `.gitignore`; root/per-service
+  `README.md` and `AGENTS.md`; `Makefile` + `scripts/`; React+Vite frontend
+  shell (routing + placeholder pages); `docs/` templates; CI workflow.
+  All product requirements and architecture/design decisions (microservices,
+  DB-per-service, RabbitMQ, custom gateway, tech stack) were made by the team;
+  the tool only implemented the chosen structure.
+- Prompt(s):
+  1. "With reference to [the D1 backlog PDF] and the lecture slides in the
+     CS3219 folder, come up with a plan to create the skeleton repo from this
+     repo that will allow the team to work on the project."
+  2. Answered clarifying questions selecting the stack: Python + FastAPI
+     backend, custom FastAPI API gateway, React + TypeScript + Vite frontend,
+     PostgreSQL per service, RabbitMQ, runnable hello-world + full wiring,
+     `requirements.txt` + venv, one Postgres container per service, generic
+     ownership placeholders, standalone `ruff.toml` + `pytest.ini`, plus a
+     `Makefile`/scripts for developer experience. "Do keep in mind our N2Hs."
+  3. "Lets execute but remember to make a new branch."
+- Author review: Reviewed all generated files. Verified `docker compose config`
+  validates, `ruff check` passes across all Python packages, and `pytest`
+  passes for every service (including the gateway's unknown-route → 404 test).
+  Endpoints are intentionally stubbed (`501 Not Implemented`); business logic,
+  auth/RBAC enforcement, and event wiring remain to be implemented and reviewed
+  by the team.
+
+## 25/09/2026 — Javier Enrique Wong
+
+- Tool: Claude (claude.ai, model: Claude Sonnet 5)
+- Scope: Documentation generation only, scoped to `user-service/docs/`
+  (`architecture.md` and `flowchart.md`). The tool wrote the prose (component
+  tables, explained-elements bullets) and Mermaid diagrams describing
+  user-service's existing internal layering (`api/routes` → `services` →
+  `repositories` → `models`), its two external boundaries (`user-db`,
+  RabbitMQ), and its auth/OTP request flows. No architecture or design
+  decisions were made by the tool — the layering convention, component
+  boundaries, and models (`EmailOtp`, later renamed `OtpCode`, and `User`)
+  were already implemented in the code by the team beforehand. The docs were
+  regenerated a second time after the source code changed, purely to bring
+  the documentation back in sync — the tool re-read the existing `app/`
+  source and updated the write-up and diagrams to match, again without
+  introducing any new design decisions.
+- Prompt(s):
+  1. "Draw out architecture.md and flowchart.md" — with the `api/` and
+     `services` layers, and the `EmailOtp` and `User` models, described
+     to the tool in a table.
+  2. "Update architecture.md and flowchart.md based on the source code."
+  3. "Update this usage-log.md."
+  4. "make commit msg for all my changes"
+- Author review: Regenerated `architecture.md` and `flowchart.md` against the
+  current source code and reviewed both against `app/` for accuracy.
+
+- Tool: Claude (claude.ai, model: Claude Sonnet 5)
+- Scope: Test generation only, scoped to `user-service/tests/`: `conftest.py`
+  (per-test isolated sqlite fixture instead of the real Postgres, and a
+  mocked RabbitMQ publish so tests don't need a live broker), `test_auth.py`
+  (unit coverage for the token-verification and trusted-header-building
+  helpers), and `test_user_flow.py` (register → verify/resend-otp → login →
+  profile, covering the happy path plus validation, conflict, and
+  auth-failure branches). No new behavior, validation rules, or design
+  decisions were introduced by the tool — every assertion targets logic
+  already implemented in `app/services/user.py` and
+  `app/api/routes/users.py`; the tool only wrote pytest coverage for it.
+- Prompt(s):
+  1. "Write pytest for user Service: register, login, OTP
+     verify, resend, and profile, including reregister while unverified
+     and already verified, plus a fixture so the suite runs
+     against isolated DB and mocked rabbitMQ publish instead of
+     the real psql."
+- Author review: Ran the generated suite against the current implementation
+  and confirmed every test passes; checked that no test asserts on behavior
+  the code doesn't actually implement.
+
+---
+
+## 25/09/2026 — John Gao Jiahao
+
+- Tool: Claude Code (model: Claude Sonnet)
+- Scope: supplier-service API documentation. The team designed and agreed on
+  the endpoint set, field names, enums, and error codes for supplier-service. The tool was used only to write up that agreed design as a
+  Markdown reference and an OpenAPI 3.1 YAML file, and to cross-check the two
+  against each other and against the existing code and contracts for
+  consistency. No endpoint, schema, or interface decisions were made by the
+  tool.
+- Prompt(s):
+  1. "Here is our agreed endpoint spec for supplier-service:[Txt File]. Write this up as (a) a Markdown API reference
+     and (b) an OpenAPI 3.1 YAML file, matching our existing docs style." → clarified to supplier-service only.
+  2. "Cross-check the Markdown and YAML against each other and against the
+     current supplier-service code/contracts for mismatches"
+  3. "Implement the formatting fixes" (with a follow-up to hold off on committing pending
+     review).
+- Author review: Confirmed the Markdown and YAML match the team's agreed
+  design exactly (no unrequested endpoints/fields). Verified the OpenAPI file
+  parses as valid YAML/OpenAPI 3.1 and all $refs resolve. Not yet
+  merged, pending final team review.
+
+## 25/09/2026 — John Gao Jiahao
+
+- Tool: OpenCode (model: Claude Sonnet)
+- Scope: supplier-service implementation (backlog Supplier F1–F5). Implemented,
+  under team-owned design decisions and the pre-agreed API contract: the
+  Supplier ORM model + init_db; Pydantic DTOs (camelCase) with the locked
+  Category enum; repository (CRUD, case-insensitive keyword search over
+  name/building/location, category+zone filters, pagination); service layer
+  (404/409/validation rules); RBAC dependency reading the gateway-injected
+  X-User-Id/X-User-Role headers (admin-only create/update/deactivate);
+  error-envelope exception handlers; /api/suppliers CRUD routes + app wiring
+  (lifespan init_db); and the idempotent CSV seeder (backlog F4). Also added
+  aiosqlite as a test dependency and a flake8-bugbear ruff setting for
+  FastAPI DI defaults.
+
+  Separately, while implementing against the existing docs/OpenAPI, the tool
+  flagged four inconsistencies between those docs and the actual seed data /
+  gateway routing: no `campusLocation` column in the CSV, a mismatched base
+  path, an unlocked category enum, and PATCH/deactivate listed as planned
+  rather than implemented. The team reviewed each and decided the resolution
+  (see Prompt 2); the tool then applied only those team-decided resolutions
+  to the docs and code. The tool did not choose the field name, base path,
+  enum values, or which endpoints to implement — it surfaced the mismatch and
+  the team resolved it.
+
+  All product requirements and the endpoint/schema/error-code contract were
+  decided by the team beforehand; the tool implemented that agreed design and
+  did not make requirements or architecture decisions.
+
+- Prompt(s):
+  1. "Help me implement the supplier service based on the API spec and the
+     documentation/architecture in the docs folder … this is for the D2
+     milestone." (+ pointed the tool at the CS3219 docs and data.zip seed data.)
+  2. Tool surfaced the four inconsistencies above; team discussed and decided:
+     rename campusLocation→building (no such CSV column), keep the 4
+     categories as-is, load the CSV bytes as-is, implement full CRUD incl.
+     PATCH+deactivate, and mount routes at /api/suppliers to match the
+     gateway (updating docs to match). These decisions were then given back
+     to the tool to apply.
+  3. "Use TDD, feel free to use subagent-driven development, commit at each
+     step, keep commit messages succinct."
+- Author review:
+  I have reviewed all generated files against the team's agreed contract. Ran
+  `make test-supplier-service` (46 passing) and `ruff check`/`format`
+  (clean). Spot-checked the running service: RBAC 403 (non-admin) / 201
+  (admin create), 422 on bad category, deactivate 200 then 409 on repeat,
+  404 on missing supplier. Confirmed the idempotent seeder re-run produces
+  0 new rows on a second pass (21 → 0). Confirmed docs/OpenAPI match the
+  team-decided contract from Prompt 2.
+
+---
+
+## 26/09/2026 — Javier Enrique Wong
+
+- Tool: Claude (claude.ai, model: Claude Sonnet 5)
+- Scope: Helped understanding the transactional outbox pattern
+  for reliable RabbitMQ event delivery; implementing secure, idempotent
+  first-admin bootstrap on application startup; OTP rate limiting,
+  failed-attempt tracking, and temporary lockout behavior;
+  updating `user-service/docs/api-contract.md` with endpoint paths,
+  request bodies, headers, response payloads, validation rules,
+  and status codes; and updating user-service and API gateway tests
+  to match the `/users` internal prefix
+- Prompt(s):
+  1. "Explain the outbox pattern and how to implement"
+  2. "How should OTP rate limiting and failed-attempt handling be
+     implemented?"
+  3. "Update `api-contract.md` to document current API request and
+     response contracts based on the source code"
+  4. "Help update pytest after the code changes"
+- Author review: Reviewed the generated explanations and code changes,
+  checked and verified that the updated Python files compile successfully.
+  Reviewed api-contracts as well.
+- Scope: Documentation and test generation only, scoped to `api-gateway`.
+  Updated `docs/architecture.md` and `docs/flowchart.md` (the internal
+  layering diagram and the resolve → authorize → forward request pipeline)
+  to match the current source code. Generated `tests/test_routing.py`
+  (`resolve_upstream`'s known-prefix, unknown-prefix, and partial-segment
+  boundary cases) and `tests/test_gateway.py` (`GatewayService`'s
+  resolve/authorize/forward behavior, including the public-route,
+  missing-token, invalid-token, and valid-token outcomes, and that
+  `forward()` actually strips client-supplied `Authorization`/`X-User-*`
+  headers before proxying). Also fixed a stale import path in
+  `tests/test_auth.py` (`app.auth` → `app.services.auth`). No architecture
+  or design decisions were made by the tool — the docs describe layering
+  and behavior that already existed in the code.
+- Prompt(s):
+  1. "Given this architecuture.md and flowchart.md update based on the
+     source code."
+  2. "Also generate pytest: `test_routing.py` covering `resolve_upstream`,
+     unknown-prefix, and partial-segment cases and `test_gateway.py`
+     covering `GatewayService` resolve, authorize, forward behavior, and
+     fix `test_auth.py` below."
+- Author review: Reviewed `docs/architecture.md`/`flowchart.md` against the
+  actual resulting file layout for accuracy. Ran the generated suite and
+  confirmed every test passes; checked that no test asserts on behavior the
+  code doesn't actually implement.
+- Tool: Claude (claude.ai, model: Claude Sonnet 5)
+- Scope: Generated `api-gateway/docs/api-contract.md` from the existing gateway
+  routes, routing table, authentication behavior, path rewriting, CORS settings,
+  and error responses
+- Prompt(s): "generate api-contract.md for api-gateway based on below"
+- Author review: Compared the contract against `proxy.py`, `routing.py`, `auth.py`,
+  `gateway.py`, and gateway configuration, then corrected the documentation to
+  distinguish gateway `/api/...` routes from backend routes.
+
+---
+
+## 27/09/2026 — John Gao Jiahao
+
+- Tool: OpenCode (model: Claude Opus)
+- Scope: D2 frontend implementation, plus one small backend dev-mode toggle.
+  Implemented the React + TypeScript + Vite SPA against the team's existing,
+  already-agreed user-service and supplier-service API contracts and the
+  team's Penpot wireframe (which defined the visual design, layout, and
+  screens). Added the Mantine UI library. Frontend files created/rewritten:
+  `lib/api.ts` (typed gateway client with JWT bearer + error parsing),
+  `lib/types.ts`, `lib/auth.tsx` (JWT auth context), `lib/theme.ts`;
+  `components/` (AppLayout responsive shell, RouteGuards, StatusPill,
+  SupplierCard); auth pages (Login, Register, VerifyOtp, AuthLayout);
+  supplier pages (SupplierList with live search/category+zone filter/
+  client-side sort/pagination, SupplierDetail); admin pages (AdminSuppliers
+  table + SupplierForm create/edit/deactivate, AdminClients with
+  suspend/reinstate + create-admin); Profile; `App.tsx` routing; `main.tsx`;
+  `index.css`; `package.json`. Removed dormant errand placeholder pages.
+  Backend: added an `OTP_DEV_MODE` config flag to user-service so that, when
+  SMTP is unset, the verification code is logged instead of emailed, enabling
+  the register → verify → login flow to be demoed without a mail provider
+  (`config.py`, `services/notification.py`, `.env.example`). No product
+  requirements or architecture/design decisions were made by the tool — the
+  API contract, RBAC model, and UI design were decided by the team; the tool
+  implemented the frontend against them.
+- Prompt(s):
+  1. "Currently i need to link up the frontend to the user service and supplier service …
+     I am pretty sure we need an admin portal and also the main page itself" Here is the penpot design that the team has already created.
+  2. Selected full scope (suppliers + auth + admin portal), Mantine UI, full
+     register/OTP UI with a dev-mode verification path, and to implement on a
+     new branch off main.
+- Author review: Verified `npm run build` (tsc) passes cleanly;
+  brought the stack up with `docker compose up` and tested end-to-end via the
+  gateway: admin login, supplier list/create (201) as admin vs create denied
+  (403) as client, client list allowed (200), register → OTP (dev-mode log) →
+  verify → login, and profile `/me`. Manually exercised the running UI at
+  desktop and mobile viewports (browse grid, admin suppliers table + edit
+  form, client accounts table, mobile burger nav). No console errors (only
+  React Router v7 future-flag warnings).
+
+## 26/09/2026 — Frank Yu / Zhou Shiyao
+
+- Tool: GitHub Copilot (model: DeepSeek V4 Pro)
+- Scope: credit-service implementation per the team's D1 backlog (Credit
+  Service F1–F5, N1–N2) and the shared event contracts. Generated: ORM models
+  (account, reservation with unique order_id, transaction history), schemas,
+  repositories with SELECT ... FOR UPDATE, `CreditService` business logic
+  (provisioning with 100-credit initial allocation, reserve/amend/transfer/
+  release, idempotent event handling, CourierWithdrawn no-op), error hierarchy
+  - handlers, HTTP routes (`/credits` prefix), RabbitMQ consumer
+    (`foc.user.events` fanout + `foc.order.events` topic) and best-effort
+    reservation-event publisher (`foc.credit.events`), lifespan wiring, tests,
+    README, `.env.example`.
+    All requirements and design decisions come from the D1 document and the
+    team's existing PR patterns (supplier-service layering/error envelope,
+    user-service event publishing); the tool only implemented the chosen design.
+- Prompt(s):
+  1. "Read the Credit Service FR and NFR sections of this document; based on the D1 requirements document and the parts of the existing PRs worth following, produce the credit service implementation. Implement strictly per D1; do not add features on your own."
+  2. "Review your implementation: reuse shared project components as much as possible, minimise coupling with other services, and keep the layers clean."
+  3. "Audit all security checks and defensive code; remove defensive code that guards impossible situations, and make the code as simple as possible."
+  4. "Fix: dead-letter invalid events, idempotent reserve retries, fixed account lock ordering, no double-counting in transaction history, and releasing the row lock before publishing events."
+- Author review: Both authors reviewed the generated code against the D1 backlog
+  (Credit F1–F5, N1–N2) and the shared event contracts. Verified with
+  `pytest` (55 tests passing) and `ruff check`/`ruff format` (clean).
+  Incorporated PR #7 review feedback (dead-lettering invalid events,
+  idempotent reserve retries, fixed lock ordering, history amounts summing
+  to balances, releasing the row lock before publishing).
+
+---
+
+## 27/09/2026 — John Gao Jiahao
+
+- Tool: OpenCode (model: Claude Opus)
+- Scope: D2 demo tooling only — no product/business logic and no service-code
+  changes. Generated a Postman v2.1 collection
+  (`postman/FoC-D2.postman_collection.json`) and matching local environment
+  (`postman/FoC-local.postman_environment.json`) that exercise the User Service
+  and Supplier Service end-to-end through the API Gateway (health, registration
+  - OTP verify/resend, authentication, RBAC evidence incl. gateway header-strip,
+    supplier discovery/CRUD, profile self-update, and user administration incl.
+    suspend/role-change), each request asserting the status code and key body
+    fields and chaining tokens/ids via environment variables; a curl + jq twin
+    (`scripts/demo.sh`, numbered 01–07 to match the folders, non-aborting, with
+    per-step pauses and dev-mode OTP auto-extraction); and `postman/README.md`
+    (import, prerequisites, and two newman run modes). Every endpoint, field name
+    (snake_case for user, camelCase for supplier), and expected status code was
+    derived from the service code, not invented. The tool surfaced one docs-vs-code
+    mismatch (see review) and left the test asserting the code's actual behavior.
+- Prompt(s):
+  1. "Create a Postman collection and a matching shell script to demo Milestone
+     D2 (User Service + Supplier Service) through the API gateway, without the
+     UI." (+ detailed folder/step spec and 'derive every request from the code'.)
+  2. Answered clarifying questions: match the current `.env` bootstrap admin
+     exactly in the environment file, and follow the code (assert lowercase
+     `role`) over the user-service `api-contract.md` which shows uppercase.
+- Author review: Validated both JSON files parse (`python -m json.tool`).
+  Brought the full stack up with `docker compose up --build -d` (OTP*DEV_MODE
+  and BOOTSTRAP_ADMIN*\* set), waited for gateway `/health`, ran `scripts/demo.sh`
+  (all steps returned the expected codes), and ran `newman` in the CI-ish mode
+  against a freshly verified client: **62/62 assertions passed, 0 failures**.
+  Docs-vs-code mismatch found and reported (not fixed here): user-service
+  `docs/api-contract.md` documents `role` as uppercase `CLIENT`/`ADMIN`, but the
+  service serializes the enum value lowercase (`client`/`admin`); the collection
+  asserts the code's actual lowercase output. No service code was modified.
+
+---
+
+## 27/09/2026 — John Gao Jiahao
+
+- Tool: OpenCode (model: Claude Opus)
+- Scope: D2 architecture/design documentation only — Mermaid-in-Markdown
+  diagrams and small factual doc corrections; **no code changes**. Every box,
+  column, arrow, and status code was derived from the source (compose.yaml,
+  .env.example, gateway/user/supplier/credit service code, the shared auth/event
+  contracts, and the unmerged order-service PR #5 clients), matching the
+  existing docs' `Title / Legend / Explained elements` house style. Added: a C4
+  Level-2 system container diagram in `docs/architecture.md` (above the existing
+  supplier component diagram); a user-db ER diagram (`users`, `email_otps`,
+  `event_outbox`) in `user-service/docs/architecture.md`; a supplier-db ER
+  diagram in the new `supplier-service/docs/data-model.md`; a role→capability
+  matrix plus an authenticated-supplier-write sequence diagram in the new
+  `docs/rbac.md`; and three additions to `user-service/docs/flowchart.md`
+  (registration→initial-credits sequence, first-admin bootstrap flowchart, and a
+  role-change guard flowchart). Doc fixes: replaced the README ASCII sketch with
+  a one-paragraph summary linking `docs/architecture.md` and corrected "edge auth
+  - RBAC" wording (the gateway authenticates only; RBAC is enforced in services);
+    removed the reference to the non-existent `supplier-service-architecture.excalidraw.json`;
+    corrected `docs/supplier-service-api.md` §3 (gateway does not enforce RBAC); and
+    added the `UserRegistered` event on `foc.user.events` to `docs/event-catalog.md`.
+    The team-authored "Key decisions" / ADR sections were left untouched.
+- Prompt(s):
+  1. "Add the architecture/design diagrams missing for the repo's current state, as Mermaid
+     inside Markdown … match the existing diagram docs' style … derive every box,
+     field, arrow and status code from the code." (+ detailed list of the eight
+     diagrams and the small factual doc fixes.)
+  2. "Use the diagrams mcp to draw the diagrams." (Used to draft; final diagrams
+     were hand-authored to the repo's exact Title/Legend/Explained-elements
+     house style and validated with mermaid-cli.)
+- Author review: Rendered **all 11** Mermaid blocks with
+  `npx @mermaid-js/mermaid-cli` (v12.0.0) — all pass (one initial hexagon-shape
+  syntax issue for the RabbitMQ node was fixed by switching to a stadium shape).
+  Cross-checked every column/enum/route/status against the source files.
+  Code-vs-doc mismatches found and reported (docs corrected where factual; code
+  left unchanged): (a) the `UserRegistered` outbox relay is **implemented**
+  (`outbox_worker`), not planned, so its publish path is drawn solid — this
+  corrects the task's "draw dashed if absent" assumption; (b) README + old
+  `docs/architecture.md` claimed the gateway does "edge auth + RBAC" whereas the
+  gateway authenticates only and services enforce RBAC; (c) `docs/architecture.md`
+  referenced a `.excalidraw.json` that does not exist; (d) `docs/supplier-service-api.md`
+  claimed the gateway also enforces RBAC; (e) the user-service `docs/api-contract.md`
+  documents `role` as uppercase while the code serializes lowercase (noted, not
+  changed here). order-service and its event/HTTP flows are drawn dashed and
+  labelled "PR #5" because they exist only on the unmerged branch.
+
+## 04/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-5)
+- Scope: Updated the human-readable Order Service API reference and service
+  README to match the Supplier Service documentation style and the implemented
+  Sprint 1 behavior. No endpoint or architecture decisions were introduced.
+- Prompt(s): "Check that the endpoints in the order service are documented
+  properly. Make sure it follows the style of the docs/supplier service's
+  endpoint documentation in the repo root. Then, stage the change for the
+  documentation and show me what the file looks like. Don't commit yet."
+- Author review: Pending contributor review. Codex cross-checked the staged
+  documentation against the FastAPI routes, Pydantic schemas, service and
+  repository workflows, dependency clients, centralized error mappings, and
+  API Gateway route table. No commit was created.
+
+## 04/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-5)
+- Scope: Reset the Order Service's Alembic revision history while preserving
+  the Alembic configuration, migration environment, template, and dependency.
+  The migration strategy decision and requested clean revision state were
+  supplied by the contributor.
+- Prompt(s): "keep alembic but remove migrations and currently stored
+  versioning. I want it to be clean."
+- Author review: Pending contributor review. Codex restored the Alembic
+  scaffold and dependency, removed only the two tracked revision files, kept
+  the versions directory, and did not modify a live database.
+
+---
+
+## 17/10/2026 — Frank Yu / Zhou Shiyao
+
+- Tool: GitHub Copilot (model: DeepSeek V4.1 Flash)
+- Scope: credit-service side of the Order Service delete/cancel/update task
+  contract (follow-up to PR #7). Generated: local copies of the interop
+  schemas (`app/schemas/interop.py`), `CreditTaskResult` model + repository
+  for `task_id` idempotency, `handle_release_requested` /
+  `handle_update_requested` service logic with definitive outcome publishing,
+  a raising `publish_credit_event`, consumer routing by routing key with an
+  `x-retry-count` retry budget and failure replies, plus tests, README,
+  `docs/event-catalog.md` and `.env.example` updates.
+  The event contract itself (event names, payload fields, reply semantics,
+  retry behaviour, and the decision to duplicate the schemas locally until
+  they move to `shared/`) was defined by the Order Service owner and
+  confirmed with the author; the tool only implemented it.
+- Prompt(s):
+  1. "第三点，你先复制一份，然后实现掉，后面他啥时候推了shared的版本我们再改。"
+     ("Copy [the schemas] first and implement it; when he pushes the shared
+     version later we will switch to it.")
+  2. (Same thread, on the confirmed contract) "OrderExpiryRequested 是死代码，
+     可以删掉；明确的业务错误和超过重试上限的临时错误都要回复
+     CreditReleaseFailed / CreditAmendRejected。"
+- Author review: Verified the local schemas field-by-field against
+  `order-service/app/schemas/{order_action_events,order_update_events,credit_events}.py`
+  on `implementation/order-service`, and checked the confirmed answers on
+  `OrderExpiryRequested`, definitive replies and schema ownership. Verified
+  with `pytest` (73 tests passing) and `ruff check`/`ruff format` (clean).
+  PR #11.
+
+
+## 18/10/2026 - credit-service owner (fill in name)
+
+- Tool: DeepSeek Harness (model: deepseek-flash)
+- Scope: credit-service observability N2H. Generated: `app/observability/`
+  (`context.py`, `metrics.py`, `middleware.py`, `logging.py`, `health.py`,
+  `summary.py`), the `/metrics` and `/health/ready` routes, the admin
+  `GET /credits/observability/summary` JSON view, Prometheus counters inside
+  `credit_service.py` / `publisher.py` / `consumer.py` / `errors.py`, DB pool
+  gauges in `db.py`, the `observability` compose profile (Prometheus + Grafana
+  with a provisioned dashboard and alert rules), `scripts/load-credit.sh`,
+  `scripts/observability-demo.py` (self-test that drives every metric family and
+  prints the coverage table), the summary `coverage` block, `Makefile` targets,
+  tests, `docs/observability.md`, and README/RBAC/env docs.
+  The metric set, the "metrics first, tracing later" ordering and the
+  route-template labelling decision were agreed in the team thread
+  (F. Yu / J. Gao); the tool implemented them.
+- Prompt(s):
+  1. (Team thread, F. Yu) "i need to do analytics for observability in order to
+     improve system availability" - request count / success rate / status-code
+     distribution, per-route latency and QPS, and business error-code frequency
+     including saga rejections that never reach HTTP.
+  2. (J. Gao) "we can set rabbitmq to track the traces and send to otel
+     collector ... u can do some research on the architecture" - reviewed that
+     suggestion: RabbitMQ emits broker metrics (`rabbitmq_prometheus`), traces
+     come from client-side context propagation, so tracing stays out of scope
+     for a credit-only rollout.
+  3. "你就做这些吧，然后按你的理解来，最后 Credit 暴露一个 api 做一下数据
+     展示。返回一个 json 块" - implement P0-P3 and add the JSON summary API.
+  4. "请你帮我做个测试：你新加的接口是什么？打一些请求，分别覆盖不同的 error
+     code，然后把每个功能的统计都展示一下。这个接口应该覆盖了所有 metric" -
+     added `scripts/observability-demo.py` and the `coverage` block.
+- Author review: `pytest` (96 tests passing) and `ruff check` / `ruff format`
+  clean; `compose.yaml`, the Prometheus configs and the Grafana provisioning
+  files parsed and validated as YAML, the dashboard JSON reloaded and checked
+  for unique panel ids; the sample summary block in `docs/observability.md` was
+  produced by calling the endpoint itself; the demo script exits 0 with all six
+  error codes exercised and 22/22 metric families covered. Not validated in this
+  environment: `docker compose --profile observability up` (no Docker
+  available), so the first real stack run still needs checking.
+
+## 19/10/2026 - credit-service owner (fill in name)
+
+- Tool: DeepSeek Harness (model: deepseek-flash)
+- Scope: credit-service participant side of the Order approval transfer task.
+  Generated: `OrderApprovalRequestedEvent` and `CreditTransferResult` in
+  `app/schemas/interop.py` (mirroring `order-service/app/schemas/
+  order_approval_events.py` and `credit_events.py`), `TaskResultKind.TRANSFER`
+  with `transferred` / `transfer_failed` outcomes, `_transfer_reservation(
+  commit=False)` so the settlement and its task result commit once,
+  `CreditService.handle_approval_requested` /
+  `report_transfer_retries_exhausted` / `_record_transfer_outcome` /
+  `_publish_transfer_outcome`, the consumer binding for
+  `OrderApprovalRequested`, `tests/test_approval_requests.py` (15 cases), the
+  event-catalog/README rows, and a hermetic-test change (the HTTP suites now
+  stub reservation publishing instead of waiting on a RabbitMQ connect).
+  The contract (event names, payload fields, reply fields, routing key) was
+  specified by the Order Service owner (Alexander) in the team thread; the tool
+  implemented it against the order-side schemas.
+- Prompt(s):
+  1. (Team thread, Alexander) "Event: OrderApprovalRequested ... Credit Service
+     actions: Find the reservation by reservation_id and verify it matches
+     order_id and requester_id. Transfer the reserved credits to the account
+     identified by courier_id. Process duplicate events idempotently; retry
+     transient errors, then report a definitive failure ... Credit Service
+     publishes CreditTransferSucceeded / CreditTransferFailed ... Set the
+     routing key to event_type."
+  2. "现在就实现（推荐）" - implement the contract.
+- Author review: `pytest` (111 tests passing, 15 new) and `ruff check` /
+  `ruff format` clean; the reply model round-trips through the strict
+  `CreditTransferResult` (extra=forbid, six fields) on both the success and
+  failure paths, and the order-side `approval_consumer` / `approval_worker` were
+  read to confirm the routing keys and field expectations. Not validated in
+  this environment: an end-to-end run against a live RabbitMQ/Order Service.

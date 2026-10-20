@@ -1,0 +1,20 @@
+/* AI-assisted (OpenCode + Claude): base document styles. Component layout and
+   responsiveness are handled by Mantine. Reviewed by authors. */
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--mantine-color-gray-1, #f0f1f3);
+}
