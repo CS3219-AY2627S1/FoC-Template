@@ -1,0 +1,21 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "..",
+    "types": ["node"],
+    "paths": {
+      "@/*": ["../src/*"],
+      "@database/*": ["../src/database/*"],
+      "@data/*": ["../src/data/*"],
+      "@api/*": ["../src/api/*"],
+      "@middleware/*": ["../src/middleware/*"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "../src/database/**/*.ts",
+    "../src/data/**/*.ts",
+    "../src/middleware/errors.ts"
+  ]
+}

@@ -1,0 +1,21 @@
+# Full FoC stack: run from the repository root.
+#   docker compose up --build
+# then open http://localhost:8080
+#
+# Each service keeps its own compose file and .env (copy each folder's
+# .env.example first). Included files read their own folder's .env.
+# compose.override.yaml (standalone ports) is not loaded here. 
+# Only the UI's port 8080 is published. Everything else talks over the
+# shared internal network.
+# compose.stack.yaml (full-stack-only settings, e.g. waiting for RabbitMQ)
+# is merged on top of a service's compose.yaml here.
+
+name: foc
+
+include:
+  - shared/messaging/compose.yaml
+  - user-service/compose.yaml
+  - supplier-service/compose.yaml
+  - path: [credit-service/compose.yaml, credit-service/compose.stack.yaml]
+  - order-service/compose.yaml
+  - ui/compose.yaml

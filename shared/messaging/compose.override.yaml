@@ -1,0 +1,7 @@
+# Dev-only: publish the broker's ports when running it standalone, so services
+# run from their own folders can reach it via host.docker.internal.
+services:
+  rabbitmq:
+    ports:
+      - '5672:5672' # AMQP
+      - '15672:15672' # management UI (http://localhost:15672)

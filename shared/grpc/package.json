@@ -1,0 +1,27 @@
+{
+  "name": "@foc/grpc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "proto"
+  ],
+  "scripts": {
+    "generate": "proto-loader-gen-types --grpcLib=@grpc/grpc-js --outDir=src/generated --longs=String --enums=String --defaults --oneofs ../../user-service/proto/user.proto proto/order.proto proto/credit.proto proto/supplier.proto",
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.cjs"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.5",
+    "@grpc/proto-loader": "^0.8.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.20.0",
+    "typescript": "^6.0.0"
+  }
+}

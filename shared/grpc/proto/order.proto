@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package order;
+
+import "google/protobuf/timestamp.proto";
+
+// Internal lookup; order creation/lifecycle will be owned by Order Service.
+service OrderService {
+  rpc GetOrder(GetOrderRequest) returns (Order);
+}
+
+message GetOrderRequest {
+  string order_id = 1;
+}
+
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  OPEN = 1;
+  ACCEPTED = 2;
+  PICKED_UP = 3;
+  DELIVERED = 4;
+  COMPLETED = 5;
+  CANCELLED = 6;
+  EXPIRED = 7;
+}
+
+message Order {
+  string order_id = 1;
+  string requester_id = 2;
+  // Empty until a courier accepts the order.
+  string courier_id = 3;
+  uint64 supplier_id = 4;
+  string delivery_location = 5;
+  string instructions = 6;
+  int32 credits = 7;
+  OrderStatus status = 8;
+  google.protobuf.Timestamp deadline = 9;
+}

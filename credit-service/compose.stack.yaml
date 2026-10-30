@@ -1,0 +1,9 @@
+# Full stack only: merged by the root compose.yaml, not loaded standalone
+# (RabbitMQ isn't part of this folder's project).
+# Start credit-service only once the broker is healthy, so the user-event
+# consumer's first connection succeeds.
+services:
+  credit-service:
+    depends_on:
+      rabbitmq:
+        condition: service_healthy

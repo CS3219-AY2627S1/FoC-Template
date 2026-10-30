@@ -1,0 +1,13 @@
+# Dev-only: loaded automatically when running the UI standalone from this folder
+# (the root compose does not load it). Backends publish their ports on your
+# machine, so the proxy reaches them through the host.
+services:
+  ui:
+    environment:
+      USER_SERVICE_URL: ${USER_SERVICE_URL:-http://host.docker.internal:3001}
+      SUPPLIER_SERVICE_URL: ${SUPPLIER_SERVICE_URL:-http://host.docker.internal:3002}
+      ORDER_SERVICE_URL: ${ORDER_SERVICE_URL:-http://host.docker.internal:3003}
+      CREDIT_SERVICE_URL: ${CREDIT_SERVICE_URL:-http://host.docker.internal:3004}
+    extra_hosts:
+      # makes host.docker.internal work on Linux too (Docker Desktop has it already)
+      - 'host.docker.internal:host-gateway'

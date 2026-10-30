@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Prisma generated client (regenerated via `prisma generate`)
+src/generated/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# JWT signing keys (RS256) — never commit; regenerate locally
+keys/
+
+# Logs
+*.log

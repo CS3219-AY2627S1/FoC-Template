@@ -1,0 +1,21 @@
+// AI Assistance Disclosure:
+// Tool: OpenAI Codex (model: GPT-6), date: 2026-10-21 (Asia/Singapore).
+// Scope: Relocated existing TypeScript configuration to the human-specified service root; compiler settings unchanged.
+// Author review: Pending human review.
+// Prompts and key responses: ai/usage-log.md, entry 024.
+// AI-assisted relocation; human review pending. TypeScript permits JSONC comments.
+
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "node16",
+    "moduleResolution": "node16",
+    "lib": ["ES2022"],
+    "outDir": "dist",
+    "rootDir": "src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.ts"]
+}

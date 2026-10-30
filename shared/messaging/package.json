@@ -1,0 +1,34 @@
+{
+    "name": "@foc/messaging",
+    "version": "0.1.0",
+    "private": true,
+    "type": "commonjs",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "tsc -p tsconfig.json"
+    },
+    "dependencies": {
+        "amqplib": "^2.2.0",
+        "zod": "^4.6.7"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.0",
+        "tsx": "^4.20.0",
+        "typescript": "^6.0.0"
+    },
+    "paths": {
+        "@/*": [
+            ".messaging/*"
+        ],
+        "@contracts/*": [
+            ".messaging/src/contracts/*"
+        ],
+        "@toplogy/": [
+            ".messaging/toplogy.ts"
+        ]
+    }
+}

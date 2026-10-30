@@ -1,0 +1,95 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex), date: 2026-10-21
+# Scope: Generated PostgreSQL Docker configuration following User Service conventions.
+# Author review: Team review and validation pending; see usage-log.md.
+
+# Run from inside order-service/:  docker compose up --build
+# Values come from order-service/.env (copy .env.example to .env first).
+# That file is only for compose; order-service/grpc/.env is for running the app
+# on your machine (npm run dev).
+#
+# Ports are not published here because this file is included by the root Compose,
+# where services communicate over the internal Docker network.
+# compose.override.yaml publishes ports and points peers at the host for
+# standalone development.
+
+services:
+  order-db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    volumes:
+      - order_service_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  # One-off job: applies committed Prisma migrations, then exits.
+  order-migrate:
+    build:
+      context: ..
+      dockerfile: order-service/Dockerfile
+      target: migrate
+    depends_on:
+      order-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: 'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@order-db:5432/${POSTGRES_DB}'
+    networks: [internal]
+
+  order-service:
+    # Context is the repo root so Docker can COPY shared/.
+    build:
+      context: ..
+      dockerfile: order-service/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      order-migrate:
+        condition: service_completed_successfully
+    # /health pings the DB
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3003/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    environment:
+      DATABASE_URL: 'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@order-db:5432/${POSTGRES_DB}'
+      PORT: '3003'
+      GRPC_PORT: '50053'
+      # Other services by service name (the code defaults to localhost).
+      USER_GRPC_ADDR: user-service:50051
+      CREDIT_GRPC_ADDR: credit-service:50054
+      SUPPLIER_GRPC_ADDR: supplier-service:50052
+      CREDIT_ORDER_SERVICE_TOKEN: ${CREDIT_ORDER_SERVICE_TOKEN:?set CREDIT_ORDER_SERVICE_TOKEN in .env}
+      USER_SERVICE_PUBLIC_KEY_PATH: /run/keys/user-public.pem
+    volumes:
+      # Fails at start if user-service's public key is missing
+      # (run `npm run keys:generate` in user-service first).
+      - type: bind
+        source: ${USER_PUBLIC_KEY_PATH:-../user-service/keys/public.pem}
+        target: /run/keys/user-public.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [internal]
+
+# Private network for service-to-service traffic. Every service's compose file
+# declares the same `internal`, the root compose merges them into one network.
+networks:
+  internal:
+
+volumes:
+  order_service_pgdata:

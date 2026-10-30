@@ -1,0 +1,145 @@
+// AI Assistance Disclosure:
+// Tool: ChatGPT (Codex), date: 2026-10-22.
+// Scope: Transcribed author-provided models/enums and added Prisma configuration.
+// Author review: Pending. See ../usage-log.md.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../grpc/src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  UNASSIGNED
+  ASSIGNED
+  PICKED_UP
+  DELIVERED
+  CANCELLED
+}
+
+model Order {
+  id                 String              @id @db.Uuid
+  creation           OrderCreation       @relation(fields: [id], references: [orderId], onDelete: Restrict)
+  requesterId        String
+  courierId          String?
+  supplierId         BigInt
+  pickupStore        String
+  pickupLocation     String
+  requesterName      String
+  courierName        String?
+  destination        String
+  requestDetails     String
+  credits            Int
+  expiryTime         DateTime            @db.Timestamptz(3)
+  status             OrderStatus         @default(UNASSIGNED)
+  cancellationReason CancellationReason?
+  creditState        CreditState         @default(RESERVED)
+  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(3)
+  acceptedAt         DateTime?           @db.Timestamptz(3)
+  pickedUpAt         DateTime?           @db.Timestamptz(3)
+  deliveredAt        DateTime?           @db.Timestamptz(3)
+  cancelledAt        DateTime?           @db.Timestamptz(3)
+
+  editOperations OrderEditOperation[]
+
+  @@index([status, expiryTime])
+  @@index([requesterId, createdAt])
+  @@index([courierId, createdAt])
+}
+
+enum CancellationReason {
+  REQUESTER
+  EXPIRY
+}
+
+enum CreditState {
+  RESERVED
+  SETTLEMENT_PENDING
+  SETTLED
+  REFUND_PENDING
+  REFUNDED
+}
+enum CreationState {
+  PENDING
+  SUCCEEDED
+  COMPENSATING
+  FAILED
+}
+
+enum CreditOperationType {
+  RESERVE
+  SETTLE
+  REFUND
+}
+
+enum OperationState {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  PERMANENTLY_FAILED
+}
+
+model OrderCreation {
+  orderId            String            @id @default(uuid()) @db.Uuid
+  requesterId        String
+  idempotencyKey     String
+  requestFingerprint String
+  payload            Json
+  state              CreationState     @default(PENDING)
+  createdAt          DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime          @updatedAt @db.Timestamptz(3)
+  order              Order?
+  creditOperations   CreditOperation[]
+
+  @@unique([requesterId, idempotencyKey])
+}
+
+// Durable intents only in Phase 1; execution/recovery arrives in Phases 3–4.
+model CreditOperation {
+  id             String              @id @default(uuid()) @db.Uuid
+  orderId        String              @db.Uuid
+  creation       OrderCreation       @relation(fields: [orderId], references: [orderId], onDelete: Restrict)
+  type           CreditOperationType
+  payload        Json
+  state          OperationState      @default(PENDING)
+  attempts       Int                 @default(0)
+  nextRetryAt    DateTime            @default(now()) @db.Timestamptz(3)
+  leaseExpiresAt DateTime?           @db.Timestamptz(3)
+  lastError      String?
+  createdAt      DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime            @updatedAt @db.Timestamptz(3)
+
+  @@unique([orderId, type])
+  @@index([state, nextRetryAt])
+}
+
+// Author-provided durable edit-operation representation (2026-10-22).
+enum EditOperationState {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  RECONCILIATION_REQUIRED
+}
+
+model OrderEditOperation {
+  id              String @id @default(uuid()) @db.Uuid
+  orderId         String @db.Uuid
+  order           Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  requesterId     String
+  state           EditOperationState @default(PENDING)
+  expectedVersion Int
+  targetCredits   Int
+  proposedChanges Json
+  attempts        Int @default(0)
+  nextRetryAt     DateTime @default(now()) @db.Timestamptz(3)
+  leaseExpiresAt  DateTime? @db.Timestamptz(3)
+  lastError       String?
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+}

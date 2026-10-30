@@ -1,0 +1,110 @@
+# AI Assistance Disclosure:
+# Tool: OpenAI Codex (model: GPT-6), dates: 2026-10-20–2026-10-21 (Asia/Singapore).
+# Scope: Configured PostgreSQL 17, authenticated credit gRPC/REST, public-key mount, and pg migration variables.
+# Author review: Refactored by OpenAI Codex (GPT-6) to match the shared container pattern;
+# code reviewed by the human and manually tested.
+# Prompts and key responses: ai/usage-log.md, entries 003, 005 and 021–022.
+# AI-generated; human review pending.
+# Entry 035: OpenAI Codex (GPT-6), 2026-10-22 (Asia/Singapore).
+# Scope: Implemented/documented the human-decided plaintext-only Credit gRPC transport; service-token and REST JWT authentication retained.
+# Changes await human review; prompts/key responses: credit-service/ai/usage-log.md, entry 035 (repository-relative).
+# Entry 036: OpenAI Codex (GPT-6), 2026-10-22 (Asia/Singapore).
+# Scope: Added RabbitMQ URL configuration for the requested user-event startup wiring.
+# Changes await human review; prompts/key responses: credit-service/ai/usage-log.md, entry 036 (repository-relative).
+
+# Run from inside credit-service/:  docker compose up --build
+# Values come from credit-service/.env (copy .env.example to .env first).
+#
+# Ports are not published here because this file is included by the root Compose,
+# where services communicate over the internal Docker network.
+# compose.override.yaml publishes ports only for standalone development.
+#
+# credit-migrate applies new migrations/*.sql on every `up` (already-applied
+# ones are skipped). `docker compose down -v` resets the data.
+
+services:
+  credit-db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PGDATABASE:?set PGDATABASE in .env}
+      POSTGRES_USER: ${PGUSER:?set PGUSER in .env}
+      POSTGRES_PASSWORD: ${PGPASSWORD:?set PGPASSWORD in .env}
+    volumes:
+      - credit_service_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  # One-off job: applies new migrations, then exits.
+  credit-migrate:
+    build:
+      context: ..
+      dockerfile: credit-service/Dockerfile
+    command: ['node', 'migrations/run-migrations.cjs']
+    depends_on:
+      credit-db:
+        condition: service_healthy
+    environment:
+      PGHOST: credit-db
+      PGPORT: '5432'
+      PGDATABASE: ${PGDATABASE}
+      PGUSER: ${PGUSER}
+      PGPASSWORD: ${PGPASSWORD}
+    networks: [internal]
+
+  credit-service:
+    # Context is the repo root so Docker can COPY shared/.
+    build:
+      context: ..
+      dockerfile: credit-service/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      credit-migrate:
+        condition: service_completed_successfully
+    # /health pings the DB
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3004/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    environment:
+      PGHOST: credit-db
+      PGPORT: '5432'
+      PGDATABASE: ${PGDATABASE}
+      PGUSER: ${PGUSER}
+      PGPASSWORD: ${PGPASSWORD}
+      GRPC_PORT: '50054'
+      HTTP_PORT: '3004'
+      CREDIT_ORDER_SERVICE_TOKEN: ${CREDIT_ORDER_SERVICE_TOKEN:?set CREDIT_ORDER_SERVICE_TOKEN in .env}
+      # Broker by service name on the internal network (full stack).
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      CREDIT_JWT_PUBLIC_KEY_PATH: /run/credit/user-service-public.pem
+    volumes:
+      # Fails at start if user-service's public key is missing
+      # (run `npm run keys:generate` in user-service first).
+      - type: bind
+        source: ${CREDIT_JWT_PUBLIC_KEY_PATH:-../user-service/keys/public.pem}
+        target: /run/credit/user-service-public.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [internal]
+
+# Private network for service-to-service traffic. Every service's compose file
+# declares the same `internal`, the root compose merges them into one network.
+networks:
+  internal:
+
+volumes:
+  credit_service_pgdata:

@@ -1,0 +1,18 @@
+# AI Assistance Disclosure: ChatGPT (Codex), 2026-10-22.
+# Scope: Generated opt-in local lifecycle runtime settings; review pending; see usage-log.md.
+# Use with compose.yaml. Peer services must be running on the host.
+services:
+  order-service:
+    environment:
+      USER_SERVICE_PUBLIC_KEY_PATH: /run/keys/user-public.pem
+      CREDIT_ORDER_SERVICE_TOKEN: ${CREDIT_ORDER_SERVICE_TOKEN:?Set the Order credential configured by Credit Service}
+      CREDIT_GRPC_ADDR: ${CREDIT_GRPC_ADDR:-host.docker.internal:50054}
+      USER_GRPC_ADDR: ${USER_GRPC_ADDR:-host.docker.internal:50051}
+      SUPPLIER_GRPC_ADDR: ${SUPPLIER_GRPC_ADDR:-host.docker.internal:50052}
+    volumes:
+      - type: bind
+        source: ${USER_PUBLIC_KEY_PATH:-../user-service/keys/public.pem}
+        target: /run/keys/user-public.pem
+        read_only: true
+        bind:
+          create_host_path: false

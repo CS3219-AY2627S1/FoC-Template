@@ -1,0 +1,15 @@
+# Dev-only: publish ports to localhost when running credit-service standalone.
+# In the full stack, ports remain unpublished and services communicate via
+# the internal Docker network.
+services:
+  credit-db:
+    ports:
+      - '${PGPORT:-5433}:5432'
+
+  credit-service:
+    ports:
+      - '50054:50054'
+      - '3004:3004'
+    environment:
+      # Standalone: the broker runs separately and publishes 5672 on the host.
+      RABBITMQ_URL: ${DOCKER_RABBITMQ_URL:?set DOCKER_RABBITMQ_URL in .env}

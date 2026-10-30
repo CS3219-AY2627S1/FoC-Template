@@ -1,0 +1,26 @@
+# Shared RabbitMQ broker for all services.
+# Standalone, from inside shared/messaging/:  docker compose up -d
+# compose.override.yaml publishes its ports for standalone use; the root compose
+# does not load it, so in the full stack the broker is internal-only.
+#
+# guest/guest is RabbitMQ's built-in local default, not a project secret.
+# Set real credentials for any deployment.
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+
+# Private network for service-to-service traffic. Every service's compose file
+# declares the same `internal`, the root compose merges them into one network.
+networks:
+  internal:

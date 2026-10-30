@@ -1,0 +1,17 @@
+# Dev-only: loaded automatically when running order-service standalone from this
+# folder (the root compose does not load it).
+# - Publishes ports to localhost.
+# - Points peers at services running on your machine instead of by service name.
+services:
+  order-db:
+    ports:
+      - '5434:5432' # 5433 is credit-db's standalone port
+
+  order-service:
+    ports:
+      - '3003:3003'
+      - '50053:50053'
+    environment:
+      USER_GRPC_ADDR: host.docker.internal:50051
+      CREDIT_GRPC_ADDR: host.docker.internal:50054
+      SUPPLIER_GRPC_ADDR: host.docker.internal:50052

@@ -1,0 +1,100 @@
+// AI Assistance Disclosure:
+// Tool: OpenAI Codex (model: GPT-6), dates: 2026-10-20–2026-10-21 (Asia/Singapore).
+// Scope: Implemented the human-finalized six order-only credit RPCs; removed event-based initialization and REST-only history RPC/messages.
+// Author review: I reviewed and edited the file for style by reordering the comments as I thought better appropriate.
+// Prompts and key responses: ../../../credit-service/ai/usage-log.md, entries 007, 009–012, 014, 016, 021 and 025 and 026.
+
+syntax = "proto3";
+
+package credit;
+
+service CreditService {
+  // Only Order Service may call these RPCs, authenticated with x-credit-service-token.
+  // Frontend own-balance/history reads use Credit's authenticated REST API.
+
+  // Credit Service computes lookup keys internally; callers do not supply keys.
+  // Keys: [order_id, expected_version] JSON for Update; order_id for other mutations.
+  // Separately, the request hash uses SHA-256 over the specified validated-field JSON array.
+  // Under the specified replay rule, a matching saved request returns its original response.
+  // Mutation replies describe the state immediately after that operation, not necessarily now.
+  // Matching retries replay the saved snapshot even after an update, release, or settlement.
+  // Call GetReservation for the full current reservation.
+  // Mutations commit balance, reservation, history, and successful retry results atomically.
+  // SettleCredits uses the existing "transfer" operation type in the database.
+
+  rpc GetBalance(GetBalanceRequest) returns (Balance);
+  rpc ReserveCredits(ReserveCreditsRequest) returns (Reservation);
+  rpc UpdateReservation(UpdateReservationRequest) returns (Reservation);
+  // Releases an active hold without increasing total credits.
+  rpc ReleaseCredits(ReleaseCreditsRequest) returns (Reservation);
+  // Transfers the held amount from requester to courier.
+  rpc SettleCredits(SettleCreditsRequest) returns (Reservation);
+  // Read-only full current reservation, using the same shape as mutation replies.
+  rpc GetReservation(GetReservationRequest) returns (Reservation);
+}
+
+message GetBalanceRequest {
+  string user_id = 1;
+}
+
+message UpdateReservationRequest {
+  string order_id = 1;
+  int32 amount = 2;
+  int32 expected_version = 3;
+}
+
+message GetReservationRequest {
+  string order_id = 1;
+}
+
+message Balance {
+  string user_id = 1;
+  reserved 5, 6;
+  reserved "created_at", "updated_at";
+  // Computed as total_credits - reserved_credits; not stored in the database.
+  int32 available_credits = 2;
+  int32 reserved_credits = 3;
+  int32 total_credits = 4;
+}
+
+message ReserveCreditsRequest {
+  string order_id = 1;
+  string requester_id = 2;
+  // Positive whole credits. Insufficient available balance: FAILED_PRECONDITION.
+  int32 amount = 3;
+  reserved 4;
+  reserved "idempotency_key";
+}
+
+message ReleaseCreditsRequest {
+  string order_id = 1;
+  reserved 2;
+  reserved "idempotency_key";
+}
+
+message SettleCreditsRequest {
+  string order_id = 1;
+  string courier_id = 2;
+  reserved 3;
+  reserved "idempotency_key";
+}
+
+enum ReservationStatus {
+  RESERVATION_STATUS_UNSPECIFIED = 0;
+  RESERVED = 1;
+  RELEASED = 2;
+  SETTLED = 3;
+}
+
+message Reservation {
+  string order_id = 1;
+  string requester_id = 2;
+  int32 amount = 3;
+  ReservationStatus status = 4;
+  // Absent until settlement, corresponding to nullable courier_id in SQL.
+  optional string courier_id = 5;
+  string reservation_id = 6;
+  int32 version = 7;
+  reserved 8, 9;
+  reserved "created_at", "updated_at";
+}
