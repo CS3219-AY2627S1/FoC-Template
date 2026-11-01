@@ -21,6 +21,7 @@ import { Field } from '../components/ui/Field';
 import { TextField } from '../components/ui/TextField';
 import { TextAreaField } from '../components/ui/Inputs';
 import { errorMessage } from '../lib/api';
+import { isOnCampus } from '../lib/campus';
 import { createSupplier, fetchSuppliers } from '../lib/suppliers';
 import styles from './NewSupplierPage.module.css';
 
@@ -78,6 +79,11 @@ export function NewSupplierPage() {
         : Number.isNaN(lng) || lng < -180 || lng > 180
           ? 'Must be between -180 and 180'
           : null,
+    // Checked once both halves are well formed, so it never doubles up.
+    coordinates:
+      Number.isNaN(lat) || Number.isNaN(lng) || isOnCampus({ latitude: lat, longitude: lng })
+        ? null
+        : 'Not on the NUS Kent Ridge campus. Check both coordinates.',
     // Supplier F1.1.2: opening strictly before closing.
     closes: opens !== '' && closes !== '' && closes <= opens ? 'Must be after the opening time' : null,
     categories: categories.length === 0 ? 'Pick at least one category' : null,
@@ -284,6 +290,7 @@ export function NewSupplierPage() {
         <Field
           label="Coordinates"
           hint="Used to rank errands by how close the pickup point is to a courier."
+          error={errors.coordinates}
         >
           <div className={styles.coords}>
             <TextField

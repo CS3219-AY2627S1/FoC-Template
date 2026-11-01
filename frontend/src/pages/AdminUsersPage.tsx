@@ -12,10 +12,14 @@
  * Reads and acts through the Admin Service (GET /api/v1/admin/users and the
  * promote, suspend and reinstate endpoints). Adjusting credits is still inert:
  * no contract has an endpoint for it.
+ *
+ * The open reports and appeals queues sit above the table
+ * (components/admin/ModerationQueues).
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
+import { ModerationQueues } from '../components/admin/ModerationQueues';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog, Dialog } from '../components/ui/Dialog';
@@ -159,6 +163,11 @@ export function AdminUsersPage() {
         </p>
       </header>
 
+      {/* Shares reloadKey with the table: an action in either changes both. */}
+      <ModerationQueues myUserId={me?.userId ?? null} reloadKey={reloadKey} onChanged={reload} />
+
+      <h2 className={styles.sectionTitle}>All users</h2>
+
       {loadError ? <Alert variant="danger">{loadError}</Alert> : null}
       {actionError ? <Alert variant="danger">{actionError}</Alert> : null}
 
@@ -274,10 +283,14 @@ export function AdminUsersPage() {
           pending === null ? null : pending.kind === 'suspend' ? (
             <>
               {pending.user.name} is blocked from logging in and from every action, within a
-              minute (Admin F1.2.1). Orders already in progress are not cancelled.
+              minute (Admin F1.2.1). Orders already in progress are not cancelled. Every open
+              report about them is closed.
             </>
           ) : pending.kind === 'reinstate' ? (
-            <>{pending.user.name} can log in and act again, within a minute.</>
+            <>
+              {pending.user.name} can log in and act again, within a minute. Their open appeal,
+              if any, is closed.
+            </>
           ) : (
             <>
               {pending.user.name} gains the whole admin area, including suspending other people

@@ -13,6 +13,7 @@
 
 import { useCallback, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { ReportUser } from '../components/moderation/ReportUser';
 import { StatusStepper } from '../components/order/StatusStepper';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
@@ -204,6 +205,9 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
             </div>
           </section>
           */}
+
+          {/* In the main column, not the status panel, which mobile hides. */}
+          {order.courierId !== null ? <ReportUser userId={order.courierId} role="courier" /> : null}
         </div>
 
         <aside className={styles.statusPanel}>
