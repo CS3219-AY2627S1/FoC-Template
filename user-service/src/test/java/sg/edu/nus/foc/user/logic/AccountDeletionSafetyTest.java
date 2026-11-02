@@ -126,19 +126,15 @@ class AccountDeletionSafetyTest {
         assertEquals(AccountStatus.DEACTIVATED, safe.getStatus());
     }
 
-    // Some interaction with lifecycle expected due to refreshSuspensionStatus
+    // No interaction with lifecycle as refreshSuspensionStatus now terminates early
+    // with inactive accounts
     @Test
     void completedAndAlreadyPendingRequestsDoNotStartAnotherOperation() {
         user.setStatus(AccountStatus.DEACTIVATED);
         service.deactivateUser("token", "student");
         user.setStatus(AccountStatus.DEACTIVATION_PENDING);
         assertThrows(ResponseStatusException.class, () -> service.deactivateUser("token", "student"));
-        verifyNoInteractions(orders, firebase);
-        verify(lifecycle, times(2)).saveActive(user);
-        verify(lifecycle, never()).begin(anyString());
-        verify(lifecycle, never()).seal(any());
-        verify(lifecycle, never()).restoreAfterDenial(any());
-        verify(lifecycle, never()).complete(any());
+        verifyNoInteractions(orders, firebase, lifecycle);
     }
 
     private void pending(User target, String operation) {
