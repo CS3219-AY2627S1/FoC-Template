@@ -29,9 +29,11 @@ One row per errand.
 | pickup_location_id | VARCHAR(64) | Supplier id, stored as text |
 | pickup_name | VARCHAR(200) | Name returned by Supplier Service |
 | pickup_lat, pickup_lng | DOUBLE PRECISION | Used for proximity ranking |
-| dropoff_location_id | VARCHAR(64) | Supplier id |
-| dropoff_name | VARCHAR(200) | |
-| dropoff_lat, dropoff_lng | DOUBLE PRECISION | |
+| dropoff_location_id | VARCHAR(64) | Order `delivery_point.id` as text |
+| dropoff_name | VARCHAR(200) | Snapshot |
+| dropoff_building | VARCHAR(200) | Snapshot |
+| dropoff_description | VARCHAR(500) | Snapshot |
+| dropoff_lat, dropoff_lng | DOUBLE PRECISION | Snapshot |
 | collection_photo_ref | VARCHAR(500) | Storage key, not a public URL |
 | delivery_photo_ref | VARCHAR(500) | Storage key |
 | dispute_photo_ref | VARCHAR(500) | Optional escalation photo |
@@ -46,6 +48,8 @@ Indexes:
 - `orders_requester_id_request_time_idx` on `(requester_id, request_time DESC)`
 
 `V4` renamed `requester_email` and `courier_email` to `requester_id` and `courier_id`. The column type stayed `VARCHAR`.
+
+`V6` adds `delivery_point`, `user_delivery_point`, and order dropoff `building` / `description` snapshot columns. See [delivery-points.md](delivery-points.md).
 
 ## order_log
 

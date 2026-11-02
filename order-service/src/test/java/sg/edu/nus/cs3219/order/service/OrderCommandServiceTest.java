@@ -20,6 +20,8 @@ import sg.edu.nus.cs3219.order.client.UserClient;
 import sg.edu.nus.cs3219.order.config.OrderProperties;
 import sg.edu.nus.cs3219.order.domain.OrderAction;
 import sg.edu.nus.cs3219.order.domain.OrderStatus;
+import sg.edu.nus.cs3219.order.domain.PreparedDropoff;
+import sg.edu.nus.cs3219.order.domain.ResolvedDropoff;
 import sg.edu.nus.cs3219.order.messaging.OrderMessageFactory;
 import sg.edu.nus.cs3219.order.messaging.OutboxWriter;
 import sg.edu.nus.cs3219.order.persistence.AlertEntity;
@@ -75,6 +77,7 @@ class OrderCommandServiceTest {
     @Mock private UserClient users;
     @Mock private RatingClient ratings;
     @Mock private AdminClient admins;
+    @Mock private DeliveryPointService deliveryPoints;
     @Mock private OutboxRepository outboxRepository;
     @Mock private OrderLogRepository orderLog;
     @Mock private PhotoStore photos;
@@ -84,6 +87,10 @@ class OrderCommandServiceTest {
     @BeforeEach
     void setUp() {
         lenient().when(users.telegramHandle(any())).thenReturn("from-user-service");
+        PreparedDropoff prepared = new PreparedDropoff(4L, "Cool Spot", "Building", "Lobby", 1.30, 103.78);
+        lenient().when(deliveryPoints.prepareForCreate(any(), any())).thenReturn(prepared);
+        lenient().when(deliveryPoints.persistPrepared(any())).thenReturn(
+                new ResolvedDropoff(4L, "Cool Spot", "Building", "Lobby", 1.30, 103.78));
         service = new OrderCommandService(
                 orders,
                 alerts,
@@ -93,6 +100,7 @@ class OrderCommandServiceTest {
                 users,
                 ratings,
                 admins,
+                deliveryPoints,
                 new OrderMessageFactory(new ObjectMapper()),
                 new OutboxWriter(outboxRepository),
                 new OrderLogWriter(orderLog),
@@ -105,7 +113,6 @@ class OrderCommandServiceTest {
     @Test
     void createReservesCreditsAndStoresTheOrder() {
         when(suppliers.requirePlace(eq("nus-coop"), any())).thenReturn(new Place("nus-coop", "NUS Co-op", 1.29, 103.77));
-        when(suppliers.requirePlace(eq("cool-spot"), any())).thenReturn(new Place("cool-spot", "Cool Spot", 1.30, 103.78));
         when(ratings.ratingFor(eq("11111111-1111-1111-1111-111111111111"), any())).thenReturn(4.5);
         when(orders.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -115,7 +122,12 @@ class OrderCommandServiceTest {
                 now.plusSeconds(3600),
                 now.plusSeconds(7200),
                 "nus-coop",
-                "cool-spot"
+                4L,
+                null,
+                null,
+                null,
+                null,
+                null
         ));
 
         assertEquals(OrderStatus.CREATED, created.getStatus());
@@ -126,7 +138,10 @@ class OrderCommandServiceTest {
         OrderResponse response = OrderResponse.from(created);
         assertEquals("NUS Co-op", response.pickupName());
         assertEquals("Cool Spot", response.dropoffName());
+        assertEquals("Building", response.dropoffBuilding());
+        assertEquals("Lobby", response.dropoffDescription());
         verify(credits).reserve(created.getId(), "11111111-1111-1111-1111-111111111111", 8, requester);
+        verify(deliveryPoints).recordSuccessfulUse(requester.userId(), 4L);
         verify(alerts).save(any(AlertEntity.class));
         verify(outboxRepository).save(any(OutboxEntity.class));
         ArgumentCaptor<OrderLogEntity> logged = ArgumentCaptor.forClass(OrderLogEntity.class);
@@ -497,7 +512,7 @@ class OrderCommandServiceTest {
     }
 
     private CreateOrderRequest request(Instant expiry, Instant delivery) {
-        return new CreateOrderRequest("Print notes", 8, expiry, delivery, "nus-coop", "cool-spot");
+        return new CreateOrderRequest("Print notes", 8, expiry, delivery, "nus-coop", 4L, null, null, null, null, null);
     }
 
     private OrderEntity openOrder() {
@@ -516,8 +531,10 @@ class OrderCommandServiceTest {
         order.setPickupName("NUS Co-op");
         order.setPickupLat(1.29);
         order.setPickupLng(103.77);
-        order.setDropoffLocationId("cool-spot");
+        order.setDropoffLocationId("4");
         order.setDropoffName("Cool Spot");
+        order.setDropoffBuilding("Building");
+        order.setDropoffDescription("Lobby");
         order.setDropoffLat(1.30);
         order.setDropoffLng(103.78);
         order.setCreatedAt(now);

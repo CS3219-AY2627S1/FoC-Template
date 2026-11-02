@@ -1,6 +1,6 @@
 # Sequence diagrams
 
-Each diagram is the interaction as the service implements it. The state diagram is [order-state.png](order-state.png). Table shapes are in [schema.md](schema.md). Routes, headers, and event fields are in [interfaces.md](interfaces.md).
+Each diagram is the interaction as the service implements it. The state diagram is [order-state.png](order-state.png). Table shapes are in [schema.md](schema.md). Routes, headers, and event fields are in [interfaces.md](interfaces.md). Planned dropoff catalogue (Order-owned delivery points) is in [delivery-points.md](delivery-points.md).
 
 Status changes commit the order row, `order_log`, the requester alert, and the Kafka outbox together. The broker publish happens afterward, on the sweeper. Credit reserve, credit release on requester cancel, supplier lookup, and requester escalation are synchronous and finish before that commit.
 

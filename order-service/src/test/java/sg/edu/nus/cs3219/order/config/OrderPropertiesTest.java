@@ -19,28 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class OrderPropertiesTest {
 
     @Test
-    void configurationExposesTheDefaultsAndOverrides() throws Exception {
-        OrderProperties properties = new OrderProperties();
-        properties.getPhotos().setMode("s3");
-        properties.getPhotos().setBucket("order-photos");
-        properties.getPhotos().setEndpoint("http://minio:9000");
-        properties.getPhotos().setRegion("ap-southeast-1");
-        properties.getPhotos().setAccessKey("order");
-        properties.getPhotos().setSecretKey("orderorder");
-        properties.getPhotos().setPathStyle(false);
-        properties.getRanking().setRadiusKm(2);
-        properties.getDeadlines().setSweepInterval(Duration.ofSeconds(5));
-        properties.getDeadlines().setCollectionWindow(Duration.ofMinutes(5));
-        properties.getDeadlines().setAcknowledgementWindow(Duration.ofDays(1));
-        properties.getDeadlines().setCompletionWindow(Duration.ofDays(7));
-        properties.getClients().setTimeout(Duration.ofSeconds(2));
-        properties.getClients().setUserBaseUrl("http://user-service:8080");
-        properties.getClients().setCreditBaseUrl("http://credit-service:8080");
-        properties.getClients().setSupplierBaseUrl("http://supplier-service:8080");
-        properties.getClients().setRatingBaseUrl("http://rating-service:8085");
-        properties.getClients().setAdminBaseUrl("http://admin-service:8080");
-        properties.getKafka().setReplicas(1);
-        properties.getApi().setBasePath("/configured");
+    void configurationExposesServiceAndDeadlineOverrides() {
+        OrderProperties properties = configured();
 
         assertEquals("/configured", properties.getApi().getBasePath());
         assertEquals("s3", properties.getPhotos().getMode());
@@ -62,8 +42,19 @@ class OrderPropertiesTest {
         assertTrue(properties.getClients().getRatingBaseUrl().contains("8085"));
         assertTrue(properties.getClients().getAdminBaseUrl().contains("8080"));
         assertEquals(1, properties.getKafka().getReplicas());
+        assertEquals(3, properties.getKafka().getPartitions());
         assertNotNull(new ClockConfig().clock());
         assertEquals("Order Service", new OpenApiConfig().orderServiceOpenAPI().getInfo().getTitle());
+    }
+
+    @Test
+    void configurationExposesDeliveryBoundsAndUtilityTypes() throws Exception {
+        OrderProperties properties = configured();
+
+        assertEquals(1.288, properties.getDeliveryPoints().getMinLat());
+        assertEquals(1.309, properties.getDeliveryPoints().getMaxLat());
+        assertEquals(103.766, properties.getDeliveryPoints().getMinLng());
+        assertEquals(103.788, properties.getDeliveryPoints().getMaxLng());
         construct(OrderStateMachine.class);
         construct(ProximityRanker.class);
         construct(KafkaTopics.class);
@@ -74,6 +65,36 @@ class OrderPropertiesTest {
         Field prefixes = PathMatchConfigurer.class.getDeclaredField("pathPrefixes");
         prefixes.setAccessible(true);
         assertTrue(((Map<?, ?>) prefixes.get(configurer)).containsKey("/configured"));
+    }
+
+    private static OrderProperties configured() {
+        OrderProperties properties = new OrderProperties();
+        properties.getPhotos().setMode("s3");
+        properties.getPhotos().setBucket("order-photos");
+        properties.getPhotos().setEndpoint("http://minio:9000");
+        properties.getPhotos().setRegion("ap-southeast-1");
+        properties.getPhotos().setAccessKey("order");
+        properties.getPhotos().setSecretKey("orderorder");
+        properties.getPhotos().setPathStyle(false);
+        properties.getRanking().setRadiusKm(2);
+        properties.getDeadlines().setSweepInterval(Duration.ofSeconds(5));
+        properties.getDeadlines().setCollectionWindow(Duration.ofMinutes(5));
+        properties.getDeadlines().setAcknowledgementWindow(Duration.ofDays(1));
+        properties.getDeadlines().setCompletionWindow(Duration.ofDays(7));
+        properties.getClients().setTimeout(Duration.ofSeconds(2));
+        properties.getClients().setUserBaseUrl("http://user-service:8080");
+        properties.getClients().setCreditBaseUrl("http://credit-service:8080");
+        properties.getClients().setSupplierBaseUrl("http://supplier-service:8080");
+        properties.getClients().setRatingBaseUrl("http://rating-service:8085");
+        properties.getClients().setAdminBaseUrl("http://admin-service:8080");
+        properties.getKafka().setReplicas(1);
+        properties.getKafka().setPartitions(3);
+        properties.getApi().setBasePath("/configured");
+        properties.getDeliveryPoints().setMinLat(1.288);
+        properties.getDeliveryPoints().setMaxLat(1.309);
+        properties.getDeliveryPoints().setMinLng(103.766);
+        properties.getDeliveryPoints().setMaxLng(103.788);
+        return properties;
     }
 
     private static void construct(Class<?> type) throws Exception {

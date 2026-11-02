@@ -17,7 +17,7 @@ const requesterVus = Math.round(total * share);
 const courierVus = total - requesterVus;
 const orderUrl = __ENV.ORDER_URL || "http://localhost:8083";
 const pickupId = __ENV.PICKUP_ID || "2";
-const dropoffId = __ENV.DROPOFF_ID || "4";
+const dropoffId = Number(__ENV.DROPOFF_ID || 1);
 const escalateEvery = intEnv("ESCALATE_EVERY", 20);
 const think = Number(__ENV.THINK_SECONDS || 1);
 
@@ -118,7 +118,7 @@ function createOrder(userId) {
       expiryTime: new Date(now + 2 * 60 * 60 * 1000).toISOString(),
       deliveryTime: new Date(now + 5 * 60 * 60 * 1000).toISOString(),
       fromLocation: pickupId,
-      toLocation: dropoffId,
+      deliveryPointId: dropoffId,
     }),
     params(userId, "create", [201]),
   );

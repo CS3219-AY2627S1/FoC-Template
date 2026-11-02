@@ -20,6 +20,7 @@ import sg.edu.nus.cs3219.order.config.OrderProperties;
 import sg.edu.nus.cs3219.order.domain.OrderStatus;
 import sg.edu.nus.cs3219.order.persistence.AlertEntity;
 import sg.edu.nus.cs3219.order.persistence.OrderEntity;
+import sg.edu.nus.cs3219.order.service.DeliveryPointService;
 import sg.edu.nus.cs3219.order.service.OrderCommandService;
 import sg.edu.nus.cs3219.order.service.OrderQueryService;
 
@@ -35,8 +36,10 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import org.springframework.test.web.servlet.request.AbstractMockHttpServletRequestBuilder;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -49,6 +52,7 @@ class OrderApiTest {
 
     @Mock private OrderCommandService commands;
     @Mock private OrderQueryService queries;
+    @Mock private DeliveryPointService deliveryPoints;
 
     private MockMvc mvc;
 
@@ -65,7 +69,10 @@ class OrderApiTest {
         mapping.setPathPrefixes(Map.of(
                 properties.getApi().getBasePath(),
                 HandlerTypePredicate.forBasePackage("sg.edu.nus.cs3219.order.rest")));
-        mvc = MockMvcBuilders.standaloneSetup(new OrderController(commands, queries), new AlertController(queries))
+        mvc = MockMvcBuilders.standaloneSetup(
+                        new OrderController(commands, queries),
+                        new AlertController(queries),
+                        new DeliveryPointController(deliveryPoints))
                 .setCustomHandlerMapping(() -> mapping)
                 .setCustomArgumentResolvers(new CallerArgumentResolver())
                 .setControllerAdvice(new ApiExceptionHandler())
@@ -84,6 +91,8 @@ class OrderApiTest {
         order.setRequestTime(Instant.parse("2026-10-02T04:00:00Z"));
         order.setAcceptanceExpiry(Instant.parse("2026-10-02T05:00:00Z"));
         order.setDeliveryDeadline(Instant.parse("2026-10-02T06:00:00Z"));
+        order.setDropoffBuilding("");
+        order.setDropoffDescription("");
         when(commands.create(eq(caller), any())).thenReturn(order);
         when(commands.accept(any(), eq(id))).thenReturn(order);
         when(commands.cancel(any(), eq(id))).thenReturn(order);
@@ -108,10 +117,15 @@ class OrderApiTest {
         alert.setCreatedAt(Instant.parse("2026-10-02T04:00:00Z"));
         when(queries.alerts(any(), anyInt(), anyInt())).thenReturn(PageResponse.of(List.of(alert), 0, 20, 1));
 
+        when(deliveryPoints.catalogue(0, 20)).thenReturn(PageResponse.empty(0, 20));
+        when(deliveryPoints.myLocations(any(), eq(0), eq(20))).thenReturn(PageResponse.empty(0, 20));
+        when(deliveryPoints.update(any(), eq(1L), any())).thenReturn(
+                new DeliveryPointResponse(1L, null, "COM1", "COM1", "Lobby", 1.29, 103.77, 2, Instant.parse("2026-10-02T04:00:00Z")));
+
         mvc.perform(signed(post("/api/v1/orders"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"itemDescription":"Print notes","credits":8,"expiryTime":"2026-10-02T05:00:00Z","deliveryTime":"2026-10-02T06:00:00Z","fromLocation":"nus-coop","toLocation":"cool-spot"}
+                                {"itemDescription":"Print notes","credits":8,"expiryTime":"2026-10-02T05:00:00Z","deliveryTime":"2026-10-02T06:00:00Z","fromLocation":"nus-coop","deliveryPointId":1}
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("CREATED"));
@@ -136,6 +150,14 @@ class OrderApiTest {
         mvc.perform(signed(get("/api/v1/orders/requests/active"))).andExpect(status().isOk());
         mvc.perform(signed(get("/api/v1/orders/requests/past"))).andExpect(status().isOk());
         mvc.perform(signed(get("/api/v1/orders/search").param("pickupLocationId", "nus-coop"))).andExpect(status().isOk());
+        mvc.perform(signed(get("/api/v1/orders/delivery-points"))).andExpect(status().isOk());
+        mvc.perform(signed(get("/api/v1/orders/delivery-points/my-locations"))).andExpect(status().isOk());
+        mvc.perform(signed(patch("/api/v1/orders/delivery-points/1"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"COM1 lobby\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("COM1"));
+        mvc.perform(signed(delete("/api/v1/orders/delivery-points/1"))).andExpect(status().isNoContent());
         mvc.perform(signed(get("/api/v1/orders/alerts"))).andExpect(jsonPath("$.content[0].toStatus").value("CREATED"));
     }
 

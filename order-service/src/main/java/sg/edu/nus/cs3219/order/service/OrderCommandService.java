@@ -14,6 +14,8 @@ import sg.edu.nus.cs3219.order.config.OrderProperties;
 import sg.edu.nus.cs3219.order.domain.OrderAction;
 import sg.edu.nus.cs3219.order.domain.OrderStateMachine;
 import sg.edu.nus.cs3219.order.domain.OrderStatus;
+import sg.edu.nus.cs3219.order.domain.PreparedDropoff;
+import sg.edu.nus.cs3219.order.domain.ResolvedDropoff;
 import sg.edu.nus.cs3219.order.messaging.KafkaTopics;
 import sg.edu.nus.cs3219.order.messaging.OrderMessageFactory;
 import sg.edu.nus.cs3219.order.messaging.OutboxWriter;
@@ -47,6 +49,7 @@ public class OrderCommandService {
     private final UserClient users;
     private final RatingClient ratings;
     private final AdminClient admins;
+    private final DeliveryPointService deliveryPoints;
     private final OrderMessageFactory messages;
     private final OutboxWriter outbox;
     private final OrderLogWriter orderLog;
@@ -63,6 +66,7 @@ public class OrderCommandService {
             UserClient users,
             RatingClient ratings,
             AdminClient admins,
+            DeliveryPointService deliveryPoints,
             OrderMessageFactory messages,
             OutboxWriter outbox,
             OrderLogWriter orderLog,
@@ -78,6 +82,7 @@ public class OrderCommandService {
         this.users = users;
         this.ratings = ratings;
         this.admins = admins;
+        this.deliveryPoints = deliveryPoints;
         this.messages = messages;
         this.outbox = outbox;
         this.orderLog = orderLog;
@@ -97,12 +102,13 @@ public class OrderCommandService {
         }
         String requesterTelegram = users.telegramHandle(requester.userId());
         Place pickup = suppliers.requirePlace(request.fromLocation(), requester);
-        Place dropoff = suppliers.requirePlace(request.toLocation(), requester);
+        PreparedDropoff preparedDropoff = deliveryPoints.prepareForCreate(requester, request);
         Double requesterRating = ratings.ratingFor(requester.userId(), requester);
 
         UUID id = UUID.randomUUID();
         credits.reserve(id, requester.userId(), request.credits(), requester);
         try {
+            ResolvedDropoff dropoff = deliveryPoints.persistPrepared(preparedDropoff);
             OrderEntity order = new OrderEntity();
             order.setId(id);
             order.setRequesterId(requester.userId());
@@ -118,13 +124,16 @@ public class OrderCommandService {
             order.setPickupName(pickup.name());
             order.setPickupLat(pickup.latitude());
             order.setPickupLng(pickup.longitude());
-            order.setDropoffLocationId(dropoff.id());
+            order.setDropoffLocationId(Long.toString(dropoff.id()));
             order.setDropoffName(dropoff.name());
+            order.setDropoffBuilding(dropoff.building());
+            order.setDropoffDescription(dropoff.description());
             order.setDropoffLat(dropoff.latitude());
             order.setDropoffLng(dropoff.longitude());
             order.setCreatedAt(now);
             order.setUpdatedAt(now);
             orders.save(order);
+            deliveryPoints.recordSuccessfulUse(requester.userId(), dropoff.id());
             publishStatus(order, null, OrderStatus.CREATED, true, now, OrderAction.CREATED, requester.userId());
             return order;
         } catch (RuntimeException exception) {

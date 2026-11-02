@@ -160,9 +160,7 @@ public class OrderQueryService {
         if (pickupLocationId != null && !pickupLocationId.isBlank()) {
             suppliers.requirePlace(pickupLocationId, actor);
         }
-        if (dropoffLocationId != null && !dropoffLocationId.isBlank()) {
-            suppliers.requirePlace(dropoffLocationId, actor);
-        }
+        // dropoffLocationId matches the order snapshot id; do not validate against Supplier.
         if (size == 0) {
             return PageResponse.empty(page, size);
         }

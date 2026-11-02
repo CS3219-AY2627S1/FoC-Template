@@ -1,0 +1,45 @@
+package sg.edu.nus.cs3219.order.rest;
+
+import sg.edu.nus.cs3219.order.persistence.DeliveryPointEntity;
+
+import java.time.Instant;
+
+public record DeliveryPointResponse(
+        long id,
+        String code,
+        String name,
+        String building,
+        String description,
+        double latitude,
+        double longitude,
+        Integer useCount,
+        Instant lastUsedAt
+) {
+    public static DeliveryPointResponse from(DeliveryPointEntity point) {
+        return new DeliveryPointResponse(
+                point.getId(),
+                point.getCode(),
+                point.getName(),
+                point.getBuilding(),
+                point.getDescription(),
+                point.getLatitude(),
+                point.getLongitude(),
+                null,
+                null
+        );
+    }
+
+    public static DeliveryPointResponse from(DeliveryPointEntity point, int useCount, Instant lastUsedAt) {
+        return new DeliveryPointResponse(
+                point.getId(),
+                point.getCode(),
+                point.getName(),
+                point.getBuilding(),
+                point.getDescription(),
+                point.getLatitude(),
+                point.getLongitude(),
+                useCount,
+                lastUsedAt
+        );
+    }
+}

@@ -19,7 +19,11 @@ Errors use `{ "error": "...", "code": "<HTTP status name>" }`.
 
 | Method | Path | Who | Effect |
 | --- | --- | --- | --- |
-| POST | `/` | requester | Create. Body: `itemDescription` (1–500), `credits` (integer ≥ 1), `expiryTime`, `deliveryTime`, `fromLocation`, `toLocation` |
+| POST | `/` | requester | Create. Body: `itemDescription` (1–500), `credits` (integer ≥ 1), `expiryTime`, `deliveryTime`, `fromLocation` (Supplier id), optional `deliveryPointId`, or inline `dropoffName` / `dropoffBuilding` / `dropoffDescription` / `dropoffLat` / `dropoffLng` |
+| GET | `/delivery-points` | any permitted user | Active seed catalogue. `page`/`size` max **100** |
+| GET | `/delivery-points/my-locations` | requester | This user's used dropoffs, `use_count` then `last_used_at`. `page`/`size` max **100** |
+| PATCH | `/delivery-points/{id}` | associated user | Edit + COW; returns effective id |
+| DELETE | `/delivery-points/{id}` | associated user | Unassociate; soft-inactive last fork |
 | GET | `/{orderId}` | requester or assigned courier | One order. Anyone else gets 404 |
 | POST | `/{orderId}/accept` | courier, not the requester | CREATED → ACCEPTED. The requester gets 409 |
 | POST | `/{orderId}/cancel` | requester or assigned courier | Requester cancels CREATED. Courier releases ACCEPTED inside the collection window |
@@ -44,7 +48,7 @@ List responses are `{ "content", "page", "size", "totalElements" }`. An order bo
 
 - Pool with coordinates: CREATED orders whose pickup is inside a bounding box of `order.ranking.radius-km` (default 5), excluding the caller, sorted by pickup distance and then reward.
 - Pool without coordinates: same open set, sorted by reward and then newest request.
-- Search: at least one location id is required. Each given id must be an approved supplier. Results are CREATED orders, excluding the caller, sorted by reward.
+- Search: at least one location id is required. `pickupLocationId` must be an approved supplier. `dropoffLocationId` matches the snapshotted order dropoff id (Order delivery point), with no Supplier check. Results are CREATED orders, excluding the caller, sorted by reward.
 - Single-order GET and `/mine` are not ranked by proximity.
 
 ### Photos
@@ -57,7 +61,7 @@ These HTTP calls finish before the order row changes. A failure leaves the previ
 
 | When | Call |
 | --- | --- |
-| Create | `GET /api/v1/user/internal/users/{userId}/telegram`, then `GET /api/v1/supplier/{id}` for pickup and dropoff. Only an approved supplier with an id and a name is accepted. Then `GET /api/v1/rating/{userId}` for the requester snapshot (`average` may be null). Then `POST /api/v1/credit/internal/reserve` with `{ orderId, requesterId, amount }` |
+| Create | `GET /api/v1/user/internal/users/{userId}/telegram`, then `GET /api/v1/supplier/{id}` for **pickup only**. Dropoff is resolved from Order `delivery_point` (seed∪mine id or inline in NUS bounds). Then `GET /api/v1/rating/{userId}` for the requester snapshot (`average` may be null). Then `POST /api/v1/credit/internal/reserve` with `{ orderId, requesterId, amount }`. On success: insert order + usage upsert in one DB transaction |
 | Accept | `GET /api/v1/rating/{userId}` for the courier snapshot, then `GET /api/v1/user/internal/users/{userId}/telegram` before the order is claimed |
 | Create, if the insert fails | `POST /api/v1/credit/internal/release` with `{ orderId }` |
 | Requester cancels CREATED | `POST /api/v1/credit/internal/release` before the status becomes CANCELLED |

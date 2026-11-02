@@ -18,6 +18,7 @@ public class OrderProperties {
     private final Deadlines deadlines = new Deadlines();
     private final Clients clients = new Clients();
     private final Kafka kafka = new Kafka();
+    private final DeliveryPoints deliveryPoints = new DeliveryPoints();
 
     public Api getApi() {
         return api;
@@ -41,6 +42,10 @@ public class OrderProperties {
 
     public Kafka getKafka() {
         return kafka;
+    }
+
+    public DeliveryPoints getDeliveryPoints() {
+        return deliveryPoints;
     }
 
     public static class Api {
@@ -257,6 +262,45 @@ public class OrderProperties {
 
         public void setPartitions(int partitions) {
             this.partitions = partitions;
+        }
+    }
+
+    public static class DeliveryPoints {
+        private double minLat = 1.288;
+        private double maxLat = 1.309;
+        private double minLng = 103.766;
+        private double maxLng = 103.788;
+
+        public double getMinLat() {
+            return minLat;
+        }
+
+        public void setMinLat(double minLat) {
+            this.minLat = minLat;
+        }
+
+        public double getMaxLat() {
+            return maxLat;
+        }
+
+        public void setMaxLat(double maxLat) {
+            this.maxLat = maxLat;
+        }
+
+        public double getMinLng() {
+            return minLng;
+        }
+
+        public void setMinLng(double minLng) {
+            this.minLng = minLng;
+        }
+
+        public double getMaxLng() {
+            return maxLng;
+        }
+
+        public void setMaxLng(double maxLng) {
+            this.maxLng = maxLng;
         }
     }
 }
