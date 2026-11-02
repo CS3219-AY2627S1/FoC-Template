@@ -16,8 +16,10 @@
  */
 
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { useAuth } from '../auth/AuthProvider';
 import { ReportUser } from '../components/moderation/ReportUser';
+import { PickupDetail } from '../components/order/PickupDetail';
 import { StatusStepper } from '../components/order/StatusStepper';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
@@ -115,6 +117,7 @@ export function CourierTaskPage() {
   // Re-read every few seconds: the requester may acknowledge straight from
   // Collected (Order F2.6.1), and this page must not keep offering delivery.
   const { order: task, loadError, setOrder: setTask } = useLiveOrder(orderId);
+  const { user } = useAuth();
 
   if (loadError) {
     return (
@@ -131,6 +134,11 @@ export function CourierTaskPage() {
         <p className={styles.actionNote}>Loading the task…</p>
       </div>
     );
+  }
+
+  // A requester opening their own order here gets the requester's page.
+  if (user !== null && task.requesterId.toLowerCase() === user.userId.toLowerCase()) {
+    return <Navigate to={`/orders/${task.id}`} replace />;
   }
 
   return <CourierTask task={task} onChange={setTask} />;
@@ -283,9 +291,7 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
               <div className={styles.detailBlock}>
                 <h2 className={styles.detailLabel}>Pickup</h2>
                 <p className={styles.detailValue}>{task.pickup.name}</p>
-                {/* TODO(order-service): the supplier's location description and
-                    a walking time are not on the order.
-                <p className={styles.detailNote}>{task.pickupDetail} · {task.pickupWalkMinutes} min walk</p> */}
+                <PickupDetail supplierId={task.pickup.id} className={styles.detailNote} />
               </div>
 
               {task.requesterTelegramHandle !== null ? (
@@ -375,9 +381,8 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
             {releaseButton}
             {delivered ? (
               <>
-                {/* TODO(rating): the courier may rate the requester from
-                    Delivered, but the Rating Service does not exist yet.
-                <Button fullWidth>Rate {requesterName}</Button> */}
+                {/* Rating the requester needs no button: the rating prompt
+                    opens by itself once Order grants it after delivery. */}
                 <ContactButton task={task} variant="secondary" />
               </>
             ) : null}

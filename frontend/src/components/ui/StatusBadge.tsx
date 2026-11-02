@@ -27,14 +27,15 @@ export type OrderStatus =
 
 /**
  * Colour carries meaning here, so it is never the only signal: the word is
- * always present (UI NFR8).
+ * always present (UI NFR8). The happy path matches the progress stepper's
+ * colours from the order mockups, Acknowledged sharing Accepted's.
  */
 const TONES: Record<OrderStatus, string> = {
   Created: 'accent',
-  Accepted: 'accent',
-  Collected: 'accent',
+  Accepted: 'warning',
+  Collected: 'info',
   Delivered: 'success',
-  Acknowledged: 'success',
+  Acknowledged: 'warning',
   Completed: 'success',
   Unacknowledged: 'warning',
   Escalated: 'danger',

@@ -14,12 +14,18 @@ import styles from './StatusStepper.module.css';
  * Cancelled and Expired, which are not points on this line - the mockup calls
  * them branch states and shows them separately.
  */
-const STEPS: { status: OrderStatus; long: string; short: string }[] = [
-  { status: 'Created', long: 'Created', short: 'Created' },
-  { status: 'Accepted', long: 'Accepted', short: 'Accepted' },
-  { status: 'Collected', long: 'Collected', short: 'Collected' },
-  { status: 'Delivered', long: 'Delivered', short: 'Delivered' },
-  { status: 'Acknowledged', long: 'Acknowledged', short: "Ack'd" },
+/*
+ * Each step has its own colour while it is the current one, from the order
+ * mockups: Created accent, Accepted amber, Collected blue, Delivered green,
+ * and Acknowledged amber like Accepted. The label always names the step, so
+ * colour is never the only signal (UI NFR8).
+ */
+const STEPS: { status: OrderStatus; long: string; short: string; tone: string }[] = [
+  { status: 'Created', long: 'Created', short: 'Created', tone: 'toneCreated' },
+  { status: 'Accepted', long: 'Accepted', short: 'Accepted', tone: 'toneAccepted' },
+  { status: 'Collected', long: 'Collected', short: 'Collected', tone: 'toneCollected' },
+  { status: 'Delivered', long: 'Delivered', short: 'Delivered', tone: 'toneDelivered' },
+  { status: 'Acknowledged', long: 'Acknowledged', short: "Ack'd", tone: 'toneAccepted' },
 ];
 
 const BRANCH_STATES: OrderStatus[] = [
@@ -51,7 +57,12 @@ export function StatusStepper({ status, currentDetail }: StatusStepperProps) {
         return (
           <li
             key={step.status}
-            className={[styles.step, reached ? styles.reached : '', current ? styles.current : '']
+            className={[
+              styles.step,
+              styles[step.tone],
+              reached ? styles.reached : '',
+              current ? styles.current : '',
+            ]
               .filter(Boolean)
               .join(' ')}
             aria-current={current ? 'step' : undefined}

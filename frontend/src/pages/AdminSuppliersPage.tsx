@@ -22,6 +22,7 @@ import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
 import { EditSupplierDialog } from '../components/supplier/EditSupplierDialog';
 import { ConfirmDialog } from '../components/ui/Dialog';
+import { adminCountsChanged } from '../lib/adminCounts';
 import { errorMessage } from '../lib/api';
 import {
   deleteSupplier,
@@ -85,6 +86,7 @@ export function AdminSuppliersPage() {
     setNotice(null);
     try {
       await setSupplierStatus(supplier.id, status);
+      adminCountsChanged();
       // Re-read rather than patching locally, so the list reflects what the
       // service actually stored.
       await load();
@@ -109,6 +111,7 @@ export function AdminSuppliersPage() {
     setNotice(null);
     try {
       await deleteSupplier(supplier.id);
+      adminCountsChanged();
       await load();
       setDeleting(null);
       setNotice(`${supplier.name} was deleted.`);
@@ -212,11 +215,16 @@ export function AdminSuppliersPage() {
                           Reject
                         </Button>
                       ) : null}
-                      <Button variant="secondary" onClick={() => setEditing(supplier)}>
+                      <Button
+                        variant="secondary"
+                        className={styles.editAction}
+                        onClick={() => setEditing(supplier)}
+                      >
                         Edit
                       </Button>
                       <Button
                         variant="danger"
+                        className={styles.deleteAction}
                         aria-label={`Delete ${supplier.name}`}
                         onClick={() => setDeleting(supplier)}
                       >
@@ -240,8 +248,7 @@ export function AdminSuppliersPage() {
           pendingDecision === null ? null : pendingDecision.status === 'rejected' ? (
             <>
               {pendingDecision.supplier.name} stays out of the catalogue and cannot be chosen as a
-              pickup or delivery point. The person who submitted it is not told, and no reason is
-              recorded, because the service has no field for either.
+              pickup or delivery point.
             </>
           ) : (
             <>
@@ -295,10 +302,6 @@ export function AdminSuppliersPage() {
         a reason when rejected. Neither the service nor this screen does that,
         and there is no field to type a reason into.
       */}
-      <p className={styles.gap}>
-        Rejecting does not notify the submitter or record a reason, which Supplier NFR2.2.1
-        requires. The service has no field for either.
-      </p>
     </div>
   );
 }

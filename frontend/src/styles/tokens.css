@@ -43,6 +43,9 @@
   --color-danger-border: #7a3129;
   --color-warning: #d9a83a;
   --color-warning-bg: #322713;
+  /* Order progress: the Collected step (the mockup's blue) */
+  --color-info: #6aa9e0;
+  --color-info-bg: #132434;
 
   /* Disabled controls */
   --color-disabled-bg: #2a2725;

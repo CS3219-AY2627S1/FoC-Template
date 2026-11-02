@@ -27,18 +27,9 @@ import { errorMessage } from '../lib/api';
 import { changePassword, deleteAccount } from '../lib/user';
 import { checkPasswordRules, isValidPassword } from '../lib/validation';
 import { useCreditBalance } from '../lib/credit';
-import { formatRating } from '../lib/format';
+import { formatRating, initials } from '../lib/format';
 import { fetchUserRating, type UserRating } from '../lib/rating';
 import styles from './ProfilePage.module.css';
-
-function initials(name: string): string {
-  return name
-    .split(' ')
-    .map((part) => part[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-}
 
 export function ProfilePage() {
   const { user, signOut } = useAuth();

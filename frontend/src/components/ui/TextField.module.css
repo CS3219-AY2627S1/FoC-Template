@@ -59,6 +59,24 @@
   color: var(--color-text);
 }
 
+.reveal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  margin-right: calc(-1 * var(--space-3));
+  border: none;
+  background: transparent;
+  color: var(--color-text-subtle);
+  cursor: pointer;
+}
+
+.reveal:hover,
+.reveal:focus-visible {
+  color: var(--color-text);
+}
+
 .input::placeholder {
   color: var(--color-placeholder);
 }

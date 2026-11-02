@@ -30,6 +30,9 @@ export function NewSupplierPage() {
 
   const [name, setName] = useState('');
   const [building, setBuilding] = useState('');
+  // The building error waits until the field has been left once, so an
+  // untouched form is not already red.
+  const [buildingTouched, setBuildingTouched] = useState(false);
   const [floor, setFloor] = useState('');
   const [description, setDescription] = useState('');
   const [latitude, setLatitude] = useState('');
@@ -47,7 +50,7 @@ export function NewSupplierPage() {
   const [submitted, setSubmitted] = useState(false);
 
   // Offer the categories already in use, so the free-text field is a last
-  // resort rather than the only option (see the typo risk in open-items).
+  // resort rather than the only option, and a typo does not start a new one.
   useEffect(() => {
     let cancelled = false;
     fetchSuppliers({ pageSize: 100 })
@@ -66,6 +69,7 @@ export function NewSupplierPage() {
 
   const errors = {
     name: name.trim() === '' ? 'Give the supplier a name' : null,
+    building: building.trim() === '' ? 'Say which building it is in' : null,
     // Supplier F1.1.1: well-formed coordinates before the listing is stored.
     latitude:
       latitude.trim() === ''
@@ -173,6 +177,7 @@ export function NewSupplierPage() {
                 setSubmitted(false);
                 setName('');
                 setBuilding('');
+                setBuildingTouched(false);
                 setFloor('');
                 setDescription('');
                 setCategories([]);
@@ -213,6 +218,9 @@ export function NewSupplierPage() {
             placeholder="COM2"
             value={building}
             onChange={(event) => setBuilding(event.target.value)}
+            onBlur={() => setBuildingTouched(true)}
+            error={buildingTouched ? errors.building : null}
+            required
           />
           <TextField
             label="Floor"
@@ -316,7 +324,7 @@ export function NewSupplierPage() {
 
         {/*
           Nobody is going to type coordinates. This is the pragmatic answer
-          until a map picker exists; see the note in docs/open-items.md.
+          until a map picker exists.
         */}
         <Button type="button" variant="secondary" onClick={useMyLocation} loading={locating}>
           Use my current location

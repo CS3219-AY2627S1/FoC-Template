@@ -14,6 +14,8 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthProvider';
 import { Icon } from '../ui/Icon';
+import { useAdminCountsVersion } from '../../lib/adminCounts';
+import { fetchConflicts, isOpen } from '../../lib/conflicts';
 import { fetchSuppliersForAdmin } from '../../lib/suppliers';
 import styles from './AdminLayout.module.css';
 
@@ -29,13 +31,19 @@ export function AdminLayout() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const [pendingSuppliers, setPendingSuppliers] = useState<number | null>(null);
+  const [openEscalations, setOpenEscalations] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
 
   // Close the mobile menu whenever the route changes.
   useEffect(() => setMenuOpen(false), [location.pathname]);
 
-  // The one count that has a service behind it.
+  const countsVersion = useAdminCountsVersion();
+
+  // A count is left off when its service fails, rather than shown as zero,
+  // which would read as "nothing waiting". Read again after an action that
+  // changes one, and on every move between admin pages, which also catches a
+  // case that resolved itself at its deadline.
   useEffect(() => {
     let cancelled = false;
     fetchSuppliersForAdmin('pending')
@@ -45,10 +53,17 @@ export function AdminLayout() {
       .catch(() => {
         if (!cancelled) setPendingSuppliers(null);
       });
+    fetchConflicts()
+      .then((rows) => {
+        if (!cancelled) setOpenEscalations(rows.filter((row) => isOpen(row.status)).length);
+      })
+      .catch(() => {
+        if (!cancelled) setOpenEscalations(null);
+      });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [countsVersion, location.pathname]);
 
   async function handleSignOut() {
     await signOut();
@@ -89,14 +104,11 @@ export function AdminLayout() {
                   }
                 >
                   {section.label}
-                  {/*
-                    TODO(admin): only the supplier count has a source. The
-                    escalation count needs the Admin Service, which does not
-                    exist; a badge is left off rather than shown as zero, which
-                    would read as "nothing waiting".
-                  */}
                   {section.to === '/admin/suppliers' && pendingSuppliers !== null ? (
                     <span className={styles.count}>{pendingSuppliers}</span>
+                  ) : null}
+                  {section.to === '/admin/escalations' && openEscalations !== null ? (
+                    <span className={styles.count}>{openEscalations}</span>
                   ) : null}
                 </NavLink>
               </li>

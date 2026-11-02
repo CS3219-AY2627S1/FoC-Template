@@ -44,11 +44,27 @@ interface UserSummary {
   status: AdminUser['status'];
 }
 
+/*
+ * Recent searches, so retyping or backspacing to one is instant. Short-lived,
+ * and emptied by every role or status change below, so a row never shows a
+ * status this admin has just changed.
+ */
+const SEARCH_CACHE_MS = 30_000;
+const searchCache = new Map<string, { at: number; result: AdminUserPage }>();
+
+export function clearAdminUserCache(): void {
+  searchCache.clear();
+}
+
 /**
  * `GET /api/v1/admin/users?search=&page=` (Admin F1, NFR1.1). The search
  * matches name, email, or an exact user ID.
  */
 export async function fetchAdminUsers(search: string, page: number): Promise<AdminUserPage> {
+  const key = `${search.trim().toLowerCase()}|${page}`;
+  const cached = searchCache.get(key);
+  if (cached !== undefined && Date.now() - cached.at < SEARCH_CACHE_MS) return cached.result;
+
   const params = new URLSearchParams({ page: String(page) });
   if (search.trim() !== '') params.set('search', search.trim());
 
@@ -62,7 +78,9 @@ export async function fetchAdminUsers(search: string, page: number): Promise<Adm
     status: row.status,
     isAdmin: row.role === 'admin',
   }));
-  return { items, page, hasMore: page * ADMIN_USERS_PAGE_SIZE < result.total };
+  const found = { items, page, hasMore: page * ADMIN_USERS_PAGE_SIZE < result.total };
+  searchCache.set(key, { at: Date.now(), result: found });
+  return found;
 }
 
 /**
@@ -77,19 +95,20 @@ export async function fetchAdminUser(userId: string): Promise<AdminUser | null> 
 /** Admin F1.1. Admin calls the User Service to apply the role change. */
 export async function promoteUser(userId: string): Promise<void> {
   await api.post(`/admin/users/${encodeURIComponent(userId)}/promote`);
+  clearAdminUserCache();
 }
 
 /** Admin F1.2. Takes effect within 60 seconds (F1.2.1). */
 export async function suspendUser(userId: string): Promise<void> {
   await api.post(`/admin/users/${encodeURIComponent(userId)}/suspend`);
+  clearAdminUserCache();
 }
 
 /**
- * Admin F1.3. Logged (F1.3.2).
- *
- * TODO(admin): the contract does not say what status a reinstated account
- * returns to; the page reloads the list rather than guessing.
+ * Admin F1.3. Logged (F1.3.2). The account returns to Verified, or to Created
+ * if it never finished verifying; the page reloads the list to show which.
  */
 export async function reinstateUser(userId: string): Promise<void> {
   await api.post(`/admin/users/${encodeURIComponent(userId)}/reinstate`);
+  clearAdminUserCache();
 }

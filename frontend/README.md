@@ -105,11 +105,13 @@ Commented out in the pages, each with a TODO naming the missing piece:
 
 - Names of requesters and couriers: orders carry user ids only.
 - Order photos: they can be uploaded but no endpoint serves them.
-- My deliveries: no endpoint lists the orders a courier is delivering.
 - Credits reserved, the earned/spent breakdown and credit history: the
   balance endpoint returns the available figure only, and the ledger endpoint
   is not implemented.
-- Ratings from the courier side: the Rating Service does not exist yet.
+- Ratings on orders and request cards: Order Service still stores a fixed
+  stub rating rather than reading the Rating Service.
+- Admin credit adjustments and other users' balances: Credit has no admin
+  endpoint for either.
 
 ## AI assistance
 
