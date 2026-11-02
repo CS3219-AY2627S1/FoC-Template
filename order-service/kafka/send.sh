@@ -6,7 +6,8 @@ set -euo pipefail
 
 name="${1:-admin.review.started}"
 order_id="${2:-00000000-0000-0000-0000-000000000000}"
-file="/defaults/messages/${name}.json"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+file="${here}/messages/${name}.json"
 
 case "$name" in
   admin.review.started|admin.case.resolved) topic="foc.admin.events" ;;
@@ -17,7 +18,7 @@ case "$name" in
   *)
     echo "Unknown message: $name" >&2
     echo "Defaults:" >&2
-    ls /defaults/messages >&2
+    ls "${here}/messages" >&2
     exit 1
     ;;
 esac
