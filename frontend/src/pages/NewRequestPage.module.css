@@ -59,6 +59,43 @@
   align-items: start;
 }
 
+.locate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.locateNote {
+  flex: 1 1 240px;
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.locateUndo {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.locateUndo:hover {
+  text-decoration: underline;
+}
+
+/* A new place's details, set off from the rest of the form. */
+.newPlace {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
 .lower {
   display: grid;
   gap: var(--space-4) var(--space-5);

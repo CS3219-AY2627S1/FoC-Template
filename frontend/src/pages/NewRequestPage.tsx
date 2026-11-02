@@ -10,19 +10,46 @@
  * the delivery deadline (F1.4.1). The balance check mirrors Credit F3.2, which
  * rejects a reservation the requester cannot cover - checking it here only
  * saves the user a round trip; the service still decides.
+ *
+ * New drop-off places added with Claude Code (Claude Opus 5.5) on 2026-11-02:
+ * a place described inline, located with the browser, and snapped to a known
+ * point when the user is standing within 25 m of one. The campus map, added
+ * the same day, picks a known point or drops a pin under the same rules.
  */
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
 import { CreditStepper, DateTimeField, SelectField, TextAreaField } from '../components/ui/Inputs';
+import type { MapPoint } from '../components/map/DeliveryMap';
+import { PickerField, type PickerOption } from '../components/ui/PickerField';
+import { TextField } from '../components/ui/TextField';
 import { errorMessage } from '../lib/api';
 import { refreshCreditBalance, useCreditBalance } from '../lib/credit';
 import { formatUntil, formatWhen, parseLocalInput, toLocalInput } from '../lib/format';
-import { createOrder } from '../lib/orders';
+import {
+  deliveryPointDetail,
+  deliveryPointLabel,
+  fetchCampusDeliveryPoints,
+  fetchMyDeliveryPoints,
+  isAllowedDropoff,
+  nearbyDeliveryPoint,
+  type DeliveryPoint,
+} from '../lib/deliveryPoints';
+import { createOrder, type NewDropoff } from '../lib/orders';
+import type { Coordinates } from '../lib/useGeolocation';
 import { fetchSuppliers, type Supplier } from '../lib/suppliers';
 import styles from './NewRequestPage.module.css';
+
+/** The delivery picker's value for "somewhere not on the list yet". */
+const NEW_PLACE = 'new';
+
+/** A spot for a new place: from the browser (with its accuracy), or a pin on the map. */
+type Located = Coordinates & { accuracy: number | null };
+
+// Leaflet and its tiles load only when someone opens the map.
+const DeliveryMap = lazy(() => import('../components/map/DeliveryMap'));
 
 function minutesFromNow(minutes: number): string {
   return toLocalInput(new Date(Date.now() + minutes * 60_000));
@@ -35,9 +62,8 @@ export function NewRequestPage() {
   // check is then skipped and the service's reservation decides (Credit F3.2).
   const balance = useCreditBalance();
 
-  // UI FR10.1.3: the supplier catalogue is the data source for both pickers,
-  // and FR6.1.1 covers pickup and delivery. Values are supplier ids, because
-  // the order contract takes fromLocation and toLocation as ids.
+  // UI FR10.1.3: the supplier catalogue is the pickup picker's source; the
+  // order takes the pickup as a supplier id (fromLocation).
   const [locations, setLocations] = useState<Supplier[]>([]);
   const [locationsLive, setLocationsLive] = useState(true);
 
@@ -67,8 +93,77 @@ export function NewRequestPage() {
     [locations],
   );
 
+  // Drop-offs are Order's own: the places this user has used before, then the
+  // seeded campus points. The order takes one as deliveryPointId.
+  const [campusPoints, setCampusPoints] = useState<DeliveryPoint[]>([]);
+  const [myPoints, setMyPoints] = useState<DeliveryPoint[]>([]);
+  const [pointsLive, setPointsLive] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([fetchCampusDeliveryPoints(), fetchMyDeliveryPoints().catch(() => [])])
+      .then(([campus, mine]) => {
+        if (cancelled) return;
+        setCampusPoints(campus);
+        setMyPoints(mine);
+        setPointsLive(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCampusPoints([]);
+        setMyPoints([]);
+        setPointsLive(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Colour coded by kind: places the user made in the accent colour, shared
+  // spots around campus in blue, including the ones listed under their places.
+  const deliveryOptions = useMemo((): PickerOption[] => {
+    const mineIds = new Set(myPoints.map((point) => point.id));
+    return [
+      // Ungrouped, so it sits at the top above both lists.
+      { value: NEW_PLACE, label: 'A new place', detail: 'From your location or a pin on the map', tone: 'add' },
+      // Already in the user's own order (most used first).
+      ...myPoints.map(
+        (point): PickerOption => ({
+          value: String(point.id),
+          label: deliveryPointLabel(point),
+          detail: deliveryPointDetail(point),
+          tone: point.code === null ? 'accent' : 'info',
+          group: 'Your places',
+        }),
+      ),
+      // A campus point the user has used is listed once, above.
+      ...campusPoints
+        .filter((point) => !mineIds.has(point.id))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(
+          (point): PickerOption => ({
+            value: String(point.id),
+            label: deliveryPointLabel(point),
+            detail: deliveryPointDetail(point),
+            tone: 'info',
+            group: 'Around campus',
+          }),
+        ),
+    ];
+  }, [campusPoints, myPoints]);
+
   const [pickup, setPickup] = useState('');
   const [delivery, setDelivery] = useState('');
+  // A new place: what the courier is told, and where the browser put the user.
+  const [placeName, setPlaceName] = useState('');
+  const [placeBuilding, setPlaceBuilding] = useState('');
+  const [placeDescription, setPlaceDescription] = useState('');
+  const [placeAt, setPlaceAt] = useState<Located | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locationNote, setLocationNote] = useState<string | null>(null);
+  // Set when the location snapped to a known point, so the user can undo it.
+  const [snappedFrom, setSnappedFrom] = useState<Located | null>(null);
+  const [mapOpen, setMapOpen] = useState(false);
   const [item, setItem] = useState('');
   const [credits, setCredits] = useState(3);
   // Defaults match the mockups: collection window first, delivery an hour on.
@@ -82,9 +177,23 @@ export function NewRequestPage() {
     const deadline = parseLocalInput(deliverBy);
     const now = new Date();
 
+    const newPlace = delivery === NEW_PLACE;
+
     return {
       pickup: pickup === '' ? 'Choose a pickup location' : null,
-      delivery: delivery === '' ? 'Choose a delivery location' : null,
+      delivery:
+        delivery === ''
+          ? 'Choose a delivery location'
+          : newPlace && placeAt === null
+            ? 'Use your location, or drop a pin on the map'
+            : newPlace && placeAt !== null && !isAllowedDropoff(placeAt)
+              ? 'Not on the NUS Kent Ridge campus. Pick a point from the list instead.'
+              : null,
+      // Order requires all three for a new place.
+      placeName: newPlace && placeName.trim() === '' ? 'Name it, e.g. "Block E side gate"' : null,
+      placeBuilding: newPlace && placeBuilding.trim() === '' ? 'Say which building or block' : null,
+      placeDescription:
+        newPlace && placeDescription.trim() === '' ? 'Say how the courier finds it' : null,
       item: item.trim() === '' ? 'Say what the courier should get' : null,
       credits: Number.isNaN(credits)
         ? 'Enter a reward'
@@ -108,9 +217,108 @@ export function NewRequestPage() {
               ? 'Must be before the delivery deadline'
               : null,
     };
-  }, [pickup, delivery, item, credits, balance, expiresAt, deliverBy]);
+  }, [
+    pickup,
+    delivery,
+    placeAt,
+    placeName,
+    placeBuilding,
+    placeDescription,
+    item,
+    credits,
+    balance,
+    expiresAt,
+    deliverBy,
+  ]);
 
   const isValid = Object.values(errors).every((error) => error === null);
+
+  const selectedPoint = [...myPoints, ...campusPoints].find((point) => String(point.id) === delivery);
+  const selectedPointDetail = selectedPoint === undefined ? null : deliveryPointDetail(selectedPoint);
+  const newPlace = delivery === NEW_PLACE;
+
+  function chooseDelivery(value: string) {
+    setDelivery(value);
+    // A new place needs a spot; the map is the way to give one without GPS.
+    if (value === NEW_PLACE && placeAt === null) setMapOpen(true);
+    setSnappedFrom(null);
+    setLocationNote(null);
+  }
+
+  /*
+   * A spot, from the browser or a pin on the map, decides the drop-off: a
+   * known point if it is within 25 m of one (so the courier gets a name they
+   * recognise, and searches by point still find the order), otherwise a new
+   * place there.
+   */
+  function placeAtSpot(spot: Located) {
+    const fromGps = spot.accuracy !== null;
+    if (!isAllowedDropoff(spot)) {
+      setSnappedFrom(null);
+      setLocationNote(
+        fromGps
+          ? 'You appear to be off campus, so this cannot be a drop-off. Pick a point from the list.'
+          : 'That spot is off campus. Drop the pin inside the outline.',
+      );
+      return;
+    }
+    const nearby = nearbyDeliveryPoint(spot, [...myPoints, ...campusPoints]);
+    if (nearby !== null) {
+      setDelivery(String(nearby.point.id));
+      setSnappedFrom(spot);
+      setLocationNote(
+        `${fromGps ? 'You are' : 'That is'} ${Math.round(nearby.metres)} m from ${deliveryPointLabel(nearby.point)}, so it is selected.`,
+      );
+      return;
+    }
+    setDelivery(NEW_PLACE);
+    setPlaceAt(spot);
+    setSnappedFrom(null);
+    setLocationNote(null);
+  }
+
+  const mapPoints = useMemo((): MapPoint[] => {
+    const mineIds = new Set(myPoints.map((point) => point.id));
+    return [...myPoints, ...campusPoints.filter((point) => !mineIds.has(point.id))].map((point) => ({
+      id: String(point.id),
+      label: deliveryPointLabel(point),
+      latitude: point.latitude,
+      longitude: point.longitude,
+      tone: point.code === null ? 'accent' : 'info',
+    }));
+  }, [campusPoints, myPoints]);
+
+  function useMyLocation() {
+    if (!('geolocation' in navigator)) {
+      setLocationNote('This browser cannot report your location. Pick a point from the list.');
+      return;
+    }
+    setLocating(true);
+    setLocationNote(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocating(false);
+        placeAtSpot({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        });
+      },
+      () => {
+        setLocating(false);
+        setLocationNote('Could not read your location. Pick a point from the list.');
+      },
+      { timeout: 10_000, maximumAge: 60_000 },
+    );
+  }
+
+  function keepAsNewPlace() {
+    if (snappedFrom === null) return;
+    setDelivery(NEW_PLACE);
+    setPlaceAt(snappedFrom);
+    setSnappedFrom(null);
+    setLocationNote(null);
+  }
   const remaining = balance === null ? null : balance - (Number.isNaN(credits) ? 0 : credits);
 
   const expiryDate = parseLocalInput(expiresAt);
@@ -124,6 +332,17 @@ export function NewRequestPage() {
     const deadline = parseLocalInput(deliverBy);
     if (expiry === null || deadline === null) return;
 
+    const dropoff: NewDropoff =
+      delivery === NEW_PLACE && placeAt !== null
+        ? {
+            name: placeName.trim(),
+            building: placeBuilding.trim(),
+            description: placeDescription.trim(),
+            latitude: placeAt.latitude,
+            longitude: placeAt.longitude,
+          }
+        : { deliveryPointId: Number(delivery) };
+
     setSubmitting(true);
     setFailure(null);
     try {
@@ -135,7 +354,7 @@ export function NewRequestPage() {
         expiryTime: expiry,
         deliveryTime: deadline,
         fromLocation: pickup,
-        toLocation: delivery,
+        dropoff,
       });
       navigate(`/orders/${order.id}`);
     } catch (error) {
@@ -153,6 +372,12 @@ export function NewRequestPage() {
       {!locationsLive ? (
         <p className={styles.offline} role="status">
           Cannot reach the Supplier Service, so there are no locations to choose from. Start it
+          and reload.
+        </p>
+      ) : null}
+      {!pointsLive ? (
+        <p className={styles.offline} role="status">
+          Cannot reach the Order Service, so there are no drop-off points to choose from. Start it
           and reload.
         </p>
       ) : null}
@@ -192,21 +417,94 @@ export function NewRequestPage() {
             }
             onChange={(event) => setPickup(event.target.value)}
           />
-          {/*
-            Same catalogue for the drop-off, which is what FR10.1.3 and Order
-            F1.6.1 intend. It reads oddly today because the seeded rows are all
-            shops: a drop-off like LT19 foyer belongs in the catalogue as
-            Supplier F1.1's Type Facility, which the service does not
-            implement.
-          */}
-          <SelectField
+          <PickerField
             label="Delivery location"
-            options={locationOptions}
+            options={deliveryOptions}
             placeholder="Choose a drop-off point"
             value={delivery}
-            onChange={(event) => setDelivery(event.target.value)}
+            error={delivery === '' ? null : errors.delivery}
+            hint={
+              newPlace
+                ? null
+                : (selectedPointDetail ?? 'Places you have used, then spots around campus')
+            }
+            onChange={chooseDelivery}
           />
         </div>
+
+        <div className={styles.locate}>
+          <Button type="button" variant="secondary" onClick={useMyLocation} loading={locating}>
+            {newPlace && placeAt !== null ? 'Locate me again' : 'Use my location'}
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => setMapOpen((open) => !open)} aria-expanded={mapOpen}>
+            {mapOpen ? 'Hide map' : 'Pick on map'}
+          </Button>
+          {locationNote ? (
+            <p className={styles.locateNote} role="status">
+              {locationNote}
+              {snappedFrom !== null ? (
+                <>
+                  {' '}
+                  <button type="button" className={styles.locateUndo} onClick={keepAsNewPlace}>
+                    Make it a new place instead
+                  </button>
+                </>
+              ) : null}
+            </p>
+          ) : newPlace && placeAt !== null ? (
+            <p className={styles.locateNote}>
+              {placeAt.accuracy === null
+                ? 'Placed at the pin. Drag it, or tap the map, to move it.'
+                : `Placed where you are, to within about ${Math.max(5, Math.round(placeAt.accuracy))} m.`}{' '}
+              It is saved to your places once the request posts.
+            </p>
+          ) : null}
+        </div>
+
+        {mapOpen ? (
+          <Suspense fallback={<p className={styles.locateNote}>Loading the map…</p>}>
+            <DeliveryMap
+              points={mapPoints}
+              selectedId={newPlace || delivery === '' ? null : delivery}
+              pin={newPlace ? placeAt : null}
+              onPickPoint={chooseDelivery}
+              onDropPin={(at) => placeAtSpot({ ...at, accuracy: null })}
+            />
+          </Suspense>
+        ) : null}
+
+        {newPlace ? (
+          <div className={styles.newPlace}>
+            <div className={styles.row}>
+              <TextField
+                label="Place name"
+                name="placeName"
+                placeholder="Block E side gate"
+                maxLength={200}
+                value={placeName}
+                onChange={(event) => setPlaceName(event.target.value)}
+                error={placeName === '' ? null : errors.placeName}
+              />
+              <TextField
+                label="Building"
+                name="placeBuilding"
+                placeholder="Eusoff Hall"
+                maxLength={200}
+                value={placeBuilding}
+                onChange={(event) => setPlaceBuilding(event.target.value)}
+                error={placeBuilding === '' ? null : errors.placeBuilding}
+              />
+            </div>
+            <TextAreaField
+              label="Where exactly"
+              placeholder="Side gate facing the bus stop, by the bicycle racks"
+              maxLength={500}
+              value={placeDescription}
+              onChange={(event) => setPlaceDescription(event.target.value)}
+              hint="The courier sees this once they accept."
+            />
+          </div>
+        ) : null}
 
         <TextAreaField
           label="Item description"

@@ -26,6 +26,7 @@ import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/Dialog';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { errorMessage } from '../lib/api';
+import { deliveryPointDetail } from '../lib/deliveryPoints';
 import { refreshCreditBalance } from '../lib/credit';
 import { formatWhen } from '../lib/format';
 import { expectNewRating } from '../lib/rating';
@@ -70,6 +71,9 @@ function DeliveryWindow({ task }: { task: Order }) {
         <p className={styles.deadlineWhen}>
           {formatWhen(task.deliveryDeadline)} &middot; {task.dropoff.name}
         </p>
+        {deliveryPointDetail(task.dropoff) ? (
+          <p className={styles.deadlineWhen}>{deliveryPointDetail(task.dropoff)}</p>
+        ) : null}
       </div>
       <ContactButton task={task} variant="secondary" />
     </section>
@@ -292,6 +296,14 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
                 <h2 className={styles.detailLabel}>Pickup</h2>
                 <p className={styles.detailValue}>{task.pickup.name}</p>
                 <PickupDetail supplierId={task.pickup.id} className={styles.detailNote} />
+              </div>
+
+              <div className={styles.detailBlock}>
+                <h2 className={styles.detailLabel}>Delivery</h2>
+                <p className={styles.detailValue}>{task.dropoff.name}</p>
+                {deliveryPointDetail(task.dropoff) ? (
+                  <p className={styles.detailNote}>{deliveryPointDetail(task.dropoff)}</p>
+                ) : null}
               </div>
 
               {task.requesterTelegramHandle !== null ? (

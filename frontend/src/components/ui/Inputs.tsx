@@ -18,7 +18,42 @@ interface SharedProps {
   success?: ReactNode;
 }
 
-export type SelectOption = string | { value: string; label: string };
+/** `group` sorts options under headings, in the order the groups first appear. */
+export type SelectOption = string | { value: string; label: string; group?: string };
+
+function renderOption(option: SelectOption) {
+  const value = typeof option === 'string' ? option : option.value;
+  const label = typeof option === 'string' ? option : option.label;
+  return (
+    <option key={value} value={value}>
+      {label}
+    </option>
+  );
+}
+
+/** Ungrouped options first, then one optgroup per group. */
+function renderOptions(options: SelectOption[]) {
+  const loose: SelectOption[] = [];
+  const groups = new Map<string, SelectOption[]>();
+  for (const option of options) {
+    const group = typeof option === 'string' ? undefined : option.group;
+    if (group === undefined) {
+      loose.push(option);
+    } else {
+      groups.set(group, [...(groups.get(group) ?? []), option]);
+    }
+  }
+  return (
+    <>
+      {loose.map(renderOption)}
+      {[...groups].map(([group, members]) => (
+        <optgroup key={group} label={group}>
+          {members.map(renderOption)}
+        </optgroup>
+      ))}
+    </>
+  );
+}
 
 interface SelectFieldProps
   extends SharedProps,
@@ -44,15 +79,7 @@ export function SelectField({
       <div className={[styles.control, error ? styles.invalid : ''].filter(Boolean).join(' ')}>
         <select id={id} className={styles.select} aria-invalid={error ? true : undefined} {...rest}>
           {placeholder !== undefined ? <option value="">{placeholder}</option> : null}
-          {options.map((option) => {
-            const value = typeof option === 'string' ? option : option.value;
-            const label = typeof option === 'string' ? option : option.label;
-            return (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            );
-          })}
+          {renderOptions(options)}
         </select>
         <span className={styles.selectIcon} aria-hidden="true">
           <Icon name="chevronDown" size={18} />
