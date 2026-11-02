@@ -1,7 +1,7 @@
 // Domain events published by the user service. This mirrors the EmailSender
 // abstraction in src/email.ts: a small interface with a dev/no-op default and a
 // Kafka-backed implementation (src/kafka.ts), injected into the router the same
-// way EmailSender is. New events (UserSuspended, UserDeleted, ...) are added as
+// way EmailSender is. New events (UserSuspended, ...) are added as
 // methods here and implemented once in the Kafka publisher.
 
 export interface UserVerifiedEvent {
@@ -9,13 +9,22 @@ export interface UserVerifiedEvent {
   email: string;
 }
 
+export interface UserDeletedEvent {
+  userId: string;
+}
+
 export interface UserEventPublisher {
   publishUserVerified(event: UserVerifiedEvent, eventId?: string, occurredAt?: string): Promise<void>;
+  publishUserDeleted(event: UserDeletedEvent, eventId?: string, occurredAt?: string): Promise<void>;
 }
 
 // Default when Kafka is not configured (local dev without a broker, tests): it
 // logs and never throws, so verification still succeeds end to end.
 export class LoggingUserEventPublisher implements UserEventPublisher {
+  async publishUserDeleted(event: UserDeletedEvent): Promise<void> {
+    console.log(`[user event] UserDeleted userId=${event.userId} (Kafka disabled — not published)`);
+  }
+
   async publishUserVerified(event: UserVerifiedEvent): Promise<void> {
     console.log(
       `[user event] UserVerified userId=${event.userId} email=${event.email} (Kafka disabled — not published)`,

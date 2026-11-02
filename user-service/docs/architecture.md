@@ -15,8 +15,8 @@ flowchart TB
     user -->|OTP, reset and lockout emails| ses[AWS SES]
     ses --> inbox[User email inbox]
     user <-->|Bot API: outbound calls and long polling| telegram[Telegram]
-    user -->|Publish queued UserVerified events| kafka[Kafka]
-    kafka --> credit[Credit Service: one-time starting credits]
+    user -->|UserVerified and UserDeleted outboxes| kafka[Kafka]
+    kafka -->|Current UserVerified consumer only| credit[Credit Service: one-time starting credits]
     order[Order Service] -->|Internal Telegram-handle lookup| user
     admin[Admin Service] -->|Search, role and status APIs with admin bearer session| user
     user -->|Private report and appeal intake POSTs| admin
@@ -24,10 +24,10 @@ flowchart TB
 ```
 
 - **User Service** validates input, checks credentials and permissions, and changes account records. Prisma is its database-access library, not a separate service or database.
-- **PostgreSQL** stores accounts, sessions, verification records, friendship requests/history and the verification-event outbox. Other services should use User APIs or agreed events, not access these tables directly.
+- **PostgreSQL** stores accounts, sessions, verification records, friendship requests/history and event outboxes. The independent deletion outbox survives account removal; it is shown in the schema guide. Other services should use User APIs or agreed events, not access these tables directly.
 - **SES** delivers account emails. It does not own our user accounts, passwords or verification decisions.
 - **Telegram** delivers verification messages through our bot. The bot code is inside User Service, not a separate container in the local Compose setup. Direct contact links open Telegram; User Service does not host or store chat messages.
-- **Kafka** carries the verification event asynchronously. Credit Service owns balances and the starting-credit grant; User Service does not write Credit's database.
+- **Kafka** carries account events asynchronously on the configured `foc.user.status` topic, keyed by user UUID. The existing Credit consumer handles only `UserVerified` and ignores other types; planned `UserDeleted` handling requires a Credit owner handoff. Credit owns balances, starting-credit grants and history rules; User Service does not write Credit's database.
 - **Order and Admin** consume User APIs. User also submits validated reports and suspension appeals to Admin, which owns their records, queues and review decisions in its own database. These arrows describe integration interfaces, not proof that every client or deployed policy has passed end-to-end testing.
 
 ## Authentication and internal access
@@ -123,7 +123,7 @@ User's `POST /api/v1/user/reports` derives the reporter from a real session, val
 
 Login returns `403 ACCOUNT_SUSPENDED` after a correct password for a suspended account before its deletion deadline, even when `lockedAt` is set: suspension precedes lockout. No session is issued and the lock is not cleared. Unknown accounts, wrong passwords, active locked accounts and expired deletion retain generic `401`. Appeals still reject locked accounts with generic `401`; password reset must clear the lock first. This is the explicitly approved exception to the backlog's generic-error rule. Appeals issue no session and do not reinstate or cancel deletion. Existing suspension/reinstatement operations are unchanged. Generic `/me/escalate` and Created-account verification help still need an agreed API.
 
-User forwards camelCase `{ reporterUserId, reportedUserId, comment }` or `{ userId, message }` to Admin's respective `POST /api/v1/admin/reports` and `/api/v1/admin/appeals`. Passwords/tokens are never forwarded. A strictly validated, UUID-matched, allowlisted camelCase Admin record is returned with `201` and `Cache-Control: no-store`, with no legacy snake_case fallback; exact DTOs and errors are in the README. The required `closedAt` and `closedByAdminId` fields may be `null`. Request payloads are unchanged. Admin retains the original text when returning an existing open report for a reporter/target pair or an existing open appeal for a user. Deduplication applies while open, not for the user's lifetime. Submission itself performs no suspension/reinstatement. User's eight tables and schema diagram remain unchanged: report/appeal storage belongs to Admin, with no new User migration or outbox.
+User forwards camelCase `{ reporterUserId, reportedUserId, comment }` or `{ userId, message }` to Admin's respective `POST /api/v1/admin/reports` and `/api/v1/admin/appeals`. Passwords/tokens are never forwarded. A strictly validated, UUID-matched, allowlisted camelCase Admin record is returned with `201` and `Cache-Control: no-store`, with no legacy snake_case fallback; exact DTOs and errors are in the README. The required `closedAt` and `closedByAdminId` fields may be `null`. Request payloads are unchanged. Admin retains the original text when returning an existing open report for a reporter/target pair or an existing open appeal for a user. Deduplication applies while open, not for the user's lifetime. Submission itself performs no suspension/reinstatement. Report/appeal storage belongs to Admin and adds no User migration or outbox. The ninth User model described below is solely for final account deletion events.
 
 The Admin client defaults to a 5-second timeout (configurable up to 30 seconds), rejects redirects, bounds responses to 32 KiB and does not retry automatically. An empty `ADMIN_SERVICE_BASE_URL` leaves other account APIs usable but makes eligible intake return `503 ADMIN_NOT_CONFIGURED`. A configured value must be an HTTP(S) origin without credentials, path beyond `/`, query or fragment. Network errors, timeouts and upstream `429`/`5xx` become sanitized `503`; rejected/invalid responses become `502`, and upstream conflicts become `409 ADMIN_CONFLICT`. Raw errors and payloads are not logged or returned.
 
@@ -135,6 +135,20 @@ The global error handler adds `Cache-Control: no-store`, maps malformed/oversize
 
 Historical checks before the camelCase response fix, reported on 30 October 2026, passed: TypeScript build, Prisma generation/validation, 83/83 unit tests, all seven isolated integration suites (email, lifecycle, admin-bootstrap, admin-users, lockout, friendships and account-support), strict new-unit-test type checking and integration-script syntax checks. All temporary databases were cleaned up. Support integration used real User HTTP/PostgreSQL with an HTTP Admin stub, not the actual Admin application or database. The Node 20 production Docker build and network-isolated smoke test passed (Node 20.20.2, non-root, 256 MiB, no `.env`, health/OpenAPI checks; no database or real Admin exercised). The 183-package install audit and Docker `npm ci` reported zero vulnerabilities. No normal database was migrated, no real email/bot messages were sent and no cloud deployment occurred. Actual Admin, cloud/frontend, gateway/mesh, load and full cross-service acceptance remain unproven; infrastructure changes are handoff only.
 
+## Final account removal and UserDeleted
+
+The existing deletion request schedules a deadline and revokes credentials; correct-password login before the deadline can cancel it. Neither scheduling nor cancellation queues `UserDeleted`. The event signals final physical removal by cleanup, not the request or deadline alone. No HTTP route, body or response changes are proposed.
+
+The cleanup transaction queues `UserDeletedOutbox`, records the deletion audit and deletes `User`. All three commit or roll back together. Unlike `UserVerifiedOutbox`, whose User FK still cascades on deletion, `UserDeletedOutbox.userId` is a unique UUID with no FK. It remains publishable after the account and its FK-linked records are gone. The independent table is the ninth schema model, shown without a User relationship line in the [schema diagram](schema.md#table-relationships).
+
+The event envelope is `{ eventId, type: "UserDeleted", occurredAt, data: { userId } }`, on the same configured `foc.user.status` topic keyed by user UUID. `eventId` is the row's UUID `id`; `occurredAt` is its `createdAt`, set from cleanup's deletion-event `now` (including a test-injected value), not the request time, deadline or retry time. The event contains no profile PII such as email, name or Telegram details; UUIDs remain sensitive identifiers.
+
+When Kafka is configured, the dispatcher retries pending rows every five seconds, keeping their IDs and occurrence times. `publishedAt` is nullable and is saved only after Kafka acknowledgement. Disabled/unavailable Kafka leaves rows pending. A successful send followed by a crash or failed marker write can repeat an event. This provides at-least-once, eventual delivery when the dispatcher and Kafka recover; consumers must deduplicate by `eventId`. The database transaction does not include Kafka or any consumer, and an acknowledgement does not establish Credit processing.
+
+The shared UUID key does not guarantee ordering against verification already in flight across replicas. Deleting the verification outbox row cannot retract a send already in progress. Credit should persist a deletion tombstone keyed by user UUID and ignore late `UserVerified` events so deletion cannot be followed by account recreation or another starting grant. Credit's checked-in consumer currently ignores every type except `UserVerified`; its owner must implement deletion handling and agree balance and transaction-history retention rules. Credit integration and cloud delivery have not been verified. The [contract edit guide, section 15](../API_CONTRACT_UPDATES.txt) proposes the shared Doc entry; this documentation update does not edit that Doc or other services.
+
+Migration `20261102000000_user_deleted_outbox` is required before the updated service runs; normal local and cloud databases have not been migrated. On 2 November 2026, build, Prisma checks, 90 unit tests, focused event-test types/syntax and isolated lifecycle integration passed. That integration used real User HTTP/PostgreSQL with a fake Kafka publisher and removed its temporary database. The separate onboarding suite stopped at preflight because the full app container was not running. See the [README deletion section](../README.md#userdeleted-transactional-outbox) for coverage and limitations. Live Kafka/Credit and cloud acceptance remain unverified.
+
 ## Why these choices?
 
 | Choice | Reason and trade-off |
@@ -144,7 +158,7 @@ Historical checks before the camelCase response fix, reported on 30 October 2026
 | Salted scrypt password hashes | Passwords can be checked without storing recoverable plaintext. The encoded value includes its random salt and cost so future logins can verify it. |
 | Database-backed opaque sessions | Sessions can be revoked and current account data checked without relying on old claims embedded in a token. This requires database work during authentication. |
 | Separate short-lived OTP/reset/session records | Supports expiry, attempts, single use and revocation without putting every temporary credential on the account row. Only hashes are stored. |
-| Transactional verification outbox | Verification and the intention to publish commit together. Retries may deliver duplicates, so Credit must remain idempotent. This is not exactly-once delivery. |
+| Transactional account-event outboxes | Verification and its event intention commit together. Final deletion, audit and an independent deletion-event row also commit together. Retries may duplicate events; consumers need deduplication and Credit needs deletion tombstones against late verification. |
 | Row/advisory locks for sensitive mutations | Coordinate concurrent verification, failed logins, admin changes and last-admin checks. Locking details belong in the implementation and tests. |
 | Friendship history plus an active-pair partial unique index | Fresh request UUIDs preserve invitation identity after rejection/removal; the unordered-pair SQL constraint prevents duplicate active relations across both directions. |
 | Telegram long polling | The service fetches bot updates with outbound requests, so no public webhook is needed. Only one active poller may use a bot token; replicas/environments need coordinated configuration. |
@@ -179,6 +193,7 @@ Still outstanding or requiring separate acceptance:
 - Generic `/me/escalate` and Created-account verification help still need an agreed API. Reports and suspension appeals passed the recorded service checks using an HTTP Admin stub. Actual Admin integration, frontend and deployed acceptance remain unproven, as does live/frontend friendship acceptance.
 - Emails are not a durable job queue. A delivery failure or process crash can lose a lockout warning; the verification outbox covers Kafka events, not email sending.
 - Cross-service flows and live gateway/mesh enforcement need acceptance tests in the intended environment. Service-level tests do not prove deployed integration.
+- The `UserDeleted` producer passed the recorded local checks. Deployment needs its migration, the shared-contract update and Credit deletion/tombstone/balance/history handling. Normal local/cloud migration and end-to-end delivery are unverified.
 - Load acceptance is unproven: no User load suite/report was found for NFR3 (60,000 accounts, 95% of auth/lookups under 1 second) or NFR6 (100 concurrent users, 95% under 2 seconds). The verification override is test setup, not evidence that these targets pass.
 - Direct Telegram contact links are not a bot-mediated chat service. Any broader chat requirement needs a separately agreed scope.
 
@@ -190,7 +205,7 @@ Still outstanding or requiring separate acceptance:
 | Password/token helpers and sessions | [security.ts](../src/security.ts), [auth.ts](../src/auth.ts) |
 | Computed status and authorization headers | [status.ts](../src/status.ts), [authorization.ts](../src/authorization.ts) |
 | Email and Telegram | [email.ts](../src/email.ts), [telegram.ts](../src/telegram.ts) |
-| Verification outbox and Kafka | [verification-events.ts](../src/verification-events.ts), [kafka.ts](../src/kafka.ts) |
+| Event outboxes and Kafka | [verification-events.ts](../src/verification-events.ts), [deletion-events.ts](../src/deletion-events.ts), [kafka.ts](../src/kafka.ts) |
 | Login lockout and account deletion | [login-security.ts](../src/login-security.ts), [account-lifecycle.ts](../src/account-lifecycle.ts) |
 | Administrator operations | [admin-users.ts](../src/admin-users.ts), [admin-bootstrap.ts](../src/admin-bootstrap.ts) |
 | Friendship lifecycle and HTTP routes | [friendships.ts](../src/friendships.ts), [friendship routes](../src/routes/friendships.ts) |

@@ -5,16 +5,21 @@ import { KafkaUserEventPublisher } from "./kafka";
 import { TelegramBotClient, TelegramPoller } from "./telegram";
 import { VerificationEventDispatcher } from "./verification-events";
 import { deleteExpiredAccounts } from "./account-lifecycle";
+import { DeletionEventDispatcher } from "./deletion-events";
 
 console.log(`Email delivery provider: ${config.email.provider}`);
 if (config.email.provider === "disabled") console.warn("Email delivery is disabled; configure SES before enabling real signup/password recovery.");
 const publisher = config.kafka.enabled ? new KafkaUserEventPublisher() : undefined;
 const dispatcher = publisher ? new VerificationEventDispatcher(publisher) : undefined;
+const deletionDispatcher = publisher ? new DeletionEventDispatcher(publisher) : undefined;
 const telegram = config.telegram.botToken && process.env.TELEGRAM_POLLING_ENABLED !== "false"
   ? new TelegramPoller(new TelegramBotClient(config.telegram.botToken)) : undefined;
 telegram?.start();
 const verificationTimer = dispatcher ? setInterval(() => {
   void dispatcher.flush().catch(() => console.error("Verification event publication failed; queued for retry"));
+}, 5000) : undefined;
+const deletionEventTimer = deletionDispatcher ? setInterval(() => {
+  void deletionDispatcher.flush().catch(() => console.error("Deletion event publication failed; queued for retry"));
 }, 5000) : undefined;
 let deletionSweep: Promise<unknown> | undefined;
 const deletionTimer = setInterval(() => {
@@ -41,11 +46,13 @@ if (publisher) {
 
 async function shutdown(): Promise<void> {
   if (verificationTimer) clearInterval(verificationTimer);
+  if (deletionEventTimer) clearInterval(deletionEventTimer);
   clearInterval(deletionTimer);
   await telegram?.stop();
   server.close(async () => {
-    await dispatcher?.flush().catch(() => undefined);
     await deletionSweep;
+    await dispatcher?.flush().catch(() => undefined);
+    await deletionDispatcher?.flush().catch(() => undefined);
     if (publisher) {
       await publisher.disconnect().catch(() => undefined);
     }
