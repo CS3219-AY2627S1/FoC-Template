@@ -65,6 +65,17 @@
   margin-top: var(--space-1);
 }
 
+/* Appeal view: unlike .subtitle, shown at every width. */
+.note {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.back {
+  align-self: center;
+}
+
 /* Desktop: card title, longer link text, button inside the card. */
 @media (min-width: 768px) {
   .titleMobile {

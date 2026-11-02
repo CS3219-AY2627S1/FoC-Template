@@ -12,10 +12,14 @@
  * Reads and acts through the Admin Service (GET /api/v1/admin/users and the
  * promote, suspend and reinstate endpoints). Adjusting credits is still inert:
  * no contract has an endpoint for it.
+ *
+ * The open reports and appeals queues sit above the table
+ * (components/admin/ModerationQueues).
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
+import { ModerationQueues } from '../components/admin/ModerationQueues';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog, Dialog } from '../components/ui/Dialog';
@@ -141,6 +145,14 @@ export function AdminUsersPage() {
     <div className={styles.page}>
       <header className={styles.header}>
         <h1 className={styles.title}>Users</h1>
+      </header>
+
+      {/* Shares reloadKey with the table: an action in either changes both. */}
+      <ModerationQueues myUserId={me?.userId ?? null} reloadKey={reloadKey} onChanged={reload} />
+
+      {/* The search filters this table only, so it sits with it, below the queues. */}
+      <div className={`${styles.header} ${styles.sectionHeader}`}>
+        <h2 className={styles.sectionTitle}>All users</h2>
 
         <label className={styles.search}>
           <Icon name="search" size={16} />
@@ -157,7 +169,7 @@ export function AdminUsersPage() {
         <p className={styles.totals}>
           {users === null ? 'Loading' : `${users.length} on this page`}
         </p>
-      </header>
+      </div>
 
       {loadError ? <Alert variant="danger">{loadError}</Alert> : null}
       {actionError ? <Alert variant="danger">{actionError}</Alert> : null}
@@ -193,10 +205,12 @@ export function AdminUsersPage() {
                       </span>
                       <span className={styles.email}>{user.email}</span>
                     </td>
-                    <td>
+                    <td data-label="Status">
                       <span className={styles[user.status.toLowerCase()]}>{user.status}</span>
                     </td>
-                    <td className={styles.credits}>{user.credits ?? '—'}</td>
+                    <td className={styles.credits} data-label="Credits">
+                      {user.credits ?? '—'}
+                    </td>
                     <td>
                       <div className={styles.actions}>
                         <Button variant="secondary" onClick={() => setAdjusting(user)}>
@@ -255,11 +269,6 @@ export function AdminUsersPage() {
         </div>
       ) : null}
 
-      <p className={styles.note}>
-        Adjusting credits is inert: no contract has an endpoint for it. There is also no way to
-        demote an admin, because the contract has no demote endpoint.
-      </p>
-
       {/* NFR9.1.1: suspension and promotion both ask first. */}
       <ConfirmDialog
         open={pending !== null}
@@ -274,10 +283,14 @@ export function AdminUsersPage() {
           pending === null ? null : pending.kind === 'suspend' ? (
             <>
               {pending.user.name} is blocked from logging in and from every action, within a
-              minute (Admin F1.2.1). Orders already in progress are not cancelled.
+              minute (Admin F1.2.1). Orders already in progress are not cancelled. Every open
+              report about them is closed.
             </>
           ) : pending.kind === 'reinstate' ? (
-            <>{pending.user.name} can log in and act again, within a minute.</>
+            <>
+              {pending.user.name} can log in and act again, within a minute. Their open appeal,
+              if any, is closed.
+            </>
           ) : (
             <>
               {pending.user.name} gains the whole admin area, including suspending other people

@@ -19,6 +19,7 @@ import { Field } from '../ui/Field';
 import { TextAreaField } from '../ui/Inputs';
 import { TextField } from '../ui/TextField';
 import { errorMessage } from '../../lib/api';
+import { isOnCampus } from '../../lib/campus';
 import { updateSupplier, type NewSupplier, type Supplier } from '../../lib/suppliers';
 import styles from './EditSupplierDialog.module.css';
 
@@ -86,11 +87,19 @@ function EditSupplierForm({
   const lat = Number.parseFloat(latitude);
   const lng = Number.parseFloat(longitude);
   const timesChanged = opens !== original.opens || closes !== original.closes;
+  const coordinatesChanged =
+    latitude.trim() !== original.latitude || longitude.trim() !== original.longitude;
 
   const errors = {
     name: name.trim() === '' ? 'Give the supplier a name' : null,
-    // Supplier F1.1.1: well-formed coordinates.
-    latitude: Number.isNaN(lat) || lat < -90 || lat > 90 ? 'Must be between -90 and 90' : null,
+    // Supplier F1.1.1: well-formed coordinates. On campus is checked only when
+    // they are edited, like the hours below, so an older listing stays editable.
+    latitude:
+      Number.isNaN(lat) || lat < -90 || lat > 90
+        ? 'Must be between -90 and 90'
+        : coordinatesChanged && !Number.isNaN(lng) && !isOnCampus({ latitude: lat, longitude: lng })
+          ? 'Not on the NUS Kent Ridge campus. Check both coordinates.'
+          : null,
     longitude: Number.isNaN(lng) || lng < -180 || lng > 180 ? 'Must be between -180 and 180' : null,
     // Supplier F1.1.2: opening before closing. Checked only when the hours are
     // edited, so a listing that already crosses midnight (one seeded row does)

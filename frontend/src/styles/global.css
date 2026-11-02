@@ -23,6 +23,16 @@ body,
   height: 100%;
 }
 
+/*
+ * The app is dark only. Saying so makes the browser draw its own parts
+ * (scrollbars, date pickers, autofill) dark too, instead of light by default.
+ * scrollbar-color is inherited, so every scroll area gets the muted thumb.
+ */
+html {
+  color-scheme: dark;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
 body {
   margin: 0;
   background: var(--color-bg);

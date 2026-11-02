@@ -19,6 +19,7 @@ import { Button } from '../components/ui/Button';
 import { Icon } from '../components/ui/Icon';
 import { Sheet } from '../components/ui/Sheet';
 import { errorMessage } from '../lib/api';
+import { isOnCampus } from '../lib/campus';
 import { formatElapsed } from '../lib/format';
 import { useGeolocation } from '../lib/useGeolocation';
 import {
@@ -43,7 +44,11 @@ export function BrowsePage() {
   const [destinationQuery, setDestinationQuery] = useState('');
   // UI FR5.3.1: sent to the pool as latitude and longitude when known.
   const geolocation = useGeolocation();
-  const location = geolocation.status === 'granted' ? geolocation.coordinates : null;
+  const fix = geolocation.status === 'granted' ? geolocation.coordinates : null;
+  // Off campus counts as no location: every pickup is on campus, so ranking
+  // from somewhere else says nothing useful.
+  const offCampus = fix !== null && !isOnCampus(fix);
+  const location = offCampus ? null : fix;
   const located = location !== null;
 
   // Order F4.3.1: with no location the list is ordered by reward instead.
@@ -186,7 +191,9 @@ export function BrowsePage() {
           <span className={styles.locationLong}>
             {located
               ? 'Using your location'
-              : geolocation.status === 'locating'
+              : offCampus
+                ? 'You appear to be off campus — ordering by reward'
+                : geolocation.status === 'locating'
                 ? 'Finding your location…'
                 : geolocation.status === 'denied'
                   ? 'Location blocked — ordering by reward'
@@ -195,7 +202,7 @@ export function BrowsePage() {
                     : 'No location set — ordering by reward'}
           </span>
           <span className={styles.locationShort}>
-            {located ? 'Your location' : 'No location'}
+            {located ? 'Your location' : offCampus ? 'Off campus' : 'No location'}
           </span>
           {/*
             TODO(ui): FR5.3.2's manual override. Nothing turns typed text into
@@ -211,9 +218,9 @@ export function BrowsePage() {
             onClick={geolocation.request}
           >
             <span className={styles.locationLong}>
-              {located ? 'Update location' : 'Use my location'}
+              {fix !== null ? 'Update location' : 'Use my location'}
             </span>
-            <span className={styles.locationShort}>{located ? 'Update' : 'Use mine'}</span>
+            <span className={styles.locationShort}>{fix !== null ? 'Update' : 'Use mine'}</span>
           </button>
         </p>
 

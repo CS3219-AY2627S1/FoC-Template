@@ -1,0 +1,263 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5)
+ * Scope: Generated the open reports and open appeals queues on the users page.
+ * Reviewed by Ngooi Jun Sen.
+ *
+ * Each queue has a close action (dismiss a report, reject an appeal) and a
+ * shortcut to the decision it is about (suspend the reported user, reinstate
+ * the appellant). Suspending closes that user's open reports and reinstating
+ * closes their open appeal, both on the Admin Service, so after any action
+ * both queues and the users table are read again.
+ */
+
+import { useEffect, useState } from 'react';
+import { Alert } from '../ui/Alert';
+import { Button } from '../ui/Button';
+import { ConfirmDialog } from '../ui/Dialog';
+import { ApiError, errorMessage } from '../../lib/api';
+import { fetchAdminUser, reinstateUser, suspendUser, type AdminUser } from '../../lib/adminUsers';
+import { formatElapsed } from '../../lib/format';
+import {
+  dismissReport,
+  fetchOpenAppeals,
+  fetchOpenReports,
+  rejectAppeal,
+  type SuspensionAppeal,
+  type UserReport,
+} from '../../lib/moderation';
+import styles from './ModerationQueues.module.css';
+
+type Pending =
+  | { kind: 'dismiss'; report: UserReport }
+  | { kind: 'suspend'; report: UserReport }
+  | { kind: 'reject'; appeal: SuspensionAppeal }
+  | { kind: 'reinstate'; appeal: SuspensionAppeal }
+  | null;
+
+interface ModerationQueuesProps {
+  /** The signed-in admin, who is never offered a suspend of themselves. */
+  myUserId: string | null;
+  /** Bumped by the page when the users table changes, e.g. a suspension there. */
+  reloadKey: number;
+  /** Called after an action here, so the page re-reads the users table too. */
+  onChanged: () => void;
+}
+
+export function ModerationQueues({ myUserId, reloadKey, onChanged }: ModerationQueuesProps) {
+  const [reports, setReports] = useState<UserReport[] | null>(null);
+  const [appeals, setAppeals] = useState<SuspensionAppeal[] | null>(null);
+  // Reports and appeals carry only IDs. Null: no live account has that ID.
+  const [people, setPeople] = useState<Record<string, AdminUser | null>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [pending, setPending] = useState<Pending>(null);
+  const [working, setWorking] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadError(null);
+    Promise.all([fetchOpenReports(), fetchOpenAppeals()])
+      .then(async ([openReports, openAppeals]) => {
+        const ids = new Set<string>();
+        openReports.forEach((report) => ids.add(report.reporterUserId).add(report.reportedUserId));
+        openAppeals.forEach((appeal) => ids.add(appeal.userId));
+
+        // One lookup per person. Looked up again on every reload, since a
+        // status shown here (suspended or not) decides which button appears.
+        const found = await Promise.all(
+          [...ids].map(async (id) => [id, await fetchAdminUser(id).catch(() => null)] as const),
+        );
+        if (cancelled) return;
+        setPeople(Object.fromEntries(found));
+        setReports(openReports);
+        setAppeals(openAppeals);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setReports([]);
+        setAppeals([]);
+        setLoadError(errorMessage(error, 'Could not load reports and appeals from the Admin Service.'));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  function nameOf(userId: string): string {
+    return people[userId]?.name ?? 'Deleted account';
+  }
+
+  async function confirmPending() {
+    if (pending === null) return;
+
+    setWorking(true);
+    setActionError(null);
+    try {
+      if (pending.kind === 'dismiss') await dismissReport(pending.report.id);
+      if (pending.kind === 'suspend') await suspendUser(pending.report.reportedUserId);
+      if (pending.kind === 'reject') await rejectAppeal(pending.appeal.id);
+      if (pending.kind === 'reinstate') await reinstateUser(pending.appeal.userId);
+    } catch (error) {
+      // 409: another admin closed it first. The reload below shows the queue
+      // as it is now, so that is not an error worth more than a line.
+      setActionError(
+        error instanceof ApiError && error.status === 409
+          ? 'Someone else already closed that one. The queue has been refreshed.'
+          : errorMessage(error, 'Could not reach the Admin Service, so nothing changed.'),
+      );
+    } finally {
+      setWorking(false);
+      setPending(null);
+      onChanged();
+    }
+  }
+
+  const dialog = describe(pending, nameOf);
+
+  return (
+    <section className={styles.queues} aria-label="Reports and appeals">
+      {loadError ? <Alert variant="danger">{loadError}</Alert> : null}
+      {actionError ? <Alert variant="warning">{actionError}</Alert> : null}
+
+      <div className={styles.queue}>
+        <h2 className={styles.heading}>
+          Open reports
+          <span className={styles.count}>{reports === null ? '' : reports.length}</span>
+        </h2>
+
+        {reports !== null && reports.length === 0 && loadError === null ? (
+          <p className={styles.empty}>No open reports.</p>
+        ) : null}
+
+        {reports !== null && reports.length > 0 ? (
+          <ul className={styles.list}>
+            {reports.map((report) => {
+              const reported = people[report.reportedUserId];
+              const suspended = reported?.status === 'Suspended';
+              return (
+                <li key={report.id} className={styles.item}>
+                  <div className={styles.meta}>
+                    <span className={styles.who}>
+                      {nameOf(report.reportedUserId)}
+                      {suspended ? <span className={styles.suspended}>Suspended</span> : null}
+                    </span>
+                    <span className={styles.sub}>
+                      Reported by {nameOf(report.reporterUserId)} ·{' '}
+                      {formatElapsed(new Date(report.createdAt))}
+                    </span>
+                  </div>
+                  <p className={styles.text}>{report.comment}</p>
+                  <div className={styles.actions}>
+                    <Button
+                      variant="secondary"
+                      onClick={() => setPending({ kind: 'dismiss', report })}
+                    >
+                      Dismiss
+                    </Button>
+                    {/* Nothing to suspend if the account is gone or already
+                        suspended, and an admin never suspends themselves. */}
+                    {reported && !suspended && reported.userId !== myUserId ? (
+                      <Button
+                        variant="danger"
+                        onClick={() => setPending({ kind: 'suspend', report })}
+                      >
+                        Suspend {reported.name}
+                      </Button>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+      </div>
+
+      <div className={styles.queue}>
+        <h2 className={styles.heading}>
+          Open appeals
+          <span className={styles.count}>{appeals === null ? '' : appeals.length}</span>
+        </h2>
+
+        {appeals !== null && appeals.length === 0 && loadError === null ? (
+          <p className={styles.empty}>No open appeals.</p>
+        ) : null}
+
+        {appeals !== null && appeals.length > 0 ? (
+          <ul className={styles.list}>
+            {appeals.map((appeal) => {
+              const appellant = people[appeal.userId];
+              return (
+                <li key={appeal.id} className={styles.item}>
+                  <div className={styles.meta}>
+                    <span className={styles.who}>{nameOf(appeal.userId)}</span>
+                    <span className={styles.sub}>
+                      {appellant ? `${appellant.email} · ` : ''}
+                      {formatElapsed(new Date(appeal.createdAt))}
+                    </span>
+                  </div>
+                  <p className={styles.text}>{appeal.message}</p>
+                  <div className={styles.actions}>
+                    <Button
+                      variant="secondary"
+                      onClick={() => setPending({ kind: 'reject', appeal })}
+                    >
+                      Reject
+                    </Button>
+                    {appellant?.status === 'Suspended' ? (
+                      <Button onClick={() => setPending({ kind: 'reinstate', appeal })}>
+                        Reinstate {appellant.name}
+                      </Button>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+      </div>
+
+      {/* NFR9.1.1: every action here asks first. */}
+      <ConfirmDialog
+        open={pending !== null}
+        title={dialog.title}
+        consequence={dialog.consequence}
+        confirmLabel={dialog.confirmLabel}
+        destructive={pending?.kind === 'suspend'}
+        busy={working}
+        onConfirm={confirmPending}
+        onCancel={() => setPending(null)}
+      />
+    </section>
+  );
+}
+
+function describe(pending: Pending, nameOf: (userId: string) => string) {
+  if (pending === null) return { title: '', consequence: null, confirmLabel: '' };
+  switch (pending.kind) {
+    case 'dismiss':
+      return {
+        title: 'Dismiss this report?',
+        consequence: `The report is closed and ${nameOf(pending.report.reportedUserId)} is not suspended. The reporter is not told.`,
+        confirmLabel: 'Dismiss',
+      };
+    case 'suspend':
+      return {
+        title: 'Suspend this account?',
+        consequence: `${nameOf(pending.report.reportedUserId)} is blocked from logging in and from every action, within a minute. Every open report about them is closed. They can send an appeal from the login page.`,
+        confirmLabel: 'Suspend',
+      };
+    case 'reject':
+      return {
+        title: 'Reject this appeal?',
+        consequence: `${nameOf(pending.appeal.userId)} stays suspended. They can send another appeal later.`,
+        confirmLabel: 'Reject',
+      };
+    case 'reinstate':
+      return {
+        title: 'Reinstate this account?',
+        consequence: `${nameOf(pending.appeal.userId)} can log in and act again, within a minute. Their appeal is closed.`,
+        confirmLabel: 'Reinstate',
+      };
+  }
+}
