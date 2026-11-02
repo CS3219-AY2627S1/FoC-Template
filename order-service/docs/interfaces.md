@@ -78,11 +78,11 @@ Every published payload has `eventId`, `eventType`, `schemaVersion` (1), `occurr
 | Topic | eventType | When |
 | --- | --- | --- |
 | foc.order.status | order.status.changed | Every successful transition. Fields: `requesterId`, `courierId`, `fromStatus`, `toStatus`, `notifyRequester` |
-| foc.credit.commands | credit.reservation.return | Acceptance expiry. `reason` is `EXPIRED` |
-| foc.credit.commands | credit.reservation.release | Acknowledge or unacknowledge. `reason` is `ACKNOWLEDGED` or `UNACKNOWLEDGED`, and the payload includes `courierId` and `amount` |
-| foc.rating.commands | rating.permission.granted | Deliver: courier rates requester. Acknowledge or unacknowledge: requester rates courier. Fields: `raterId`, `raterRole`, `rateeId`, `rateeRole` |
-| foc.admin.events | OrderUnderReview | Consumed. ESCALATED → UNDER_REVIEW when `payload.caseId` is present |
-| foc.admin.events | ConflictResolved | Consumed. ESCALATED or UNDER_REVIEW → COMPLETED, and photos are deleted |
+| foc.credit.commands | credit.reservation.return | Acceptance expiry (`EXPIRED`) or case resolve when `faultParty` is `courier` (`CASE_RESOLVED`) |
+| foc.credit.commands | credit.reservation.release | Acknowledge / unacknowledge (`ACKNOWLEDGED` / `UNACKNOWLEDGED`), or case resolve when `faultParty` is `requester` or `no-fault` (`CASE_RESOLVED`). Includes `courierId` and `amount` |
+| foc.rating.commands | rating.permission.granted | Deliver: courier rates requester. Acknowledge / unacknowledge: requester rates courier. Case resolve: requester rates courier; when courier is paid (`requester` / `no-fault`) also courier rates requester. Fields: `raterId`, `raterRole`, `rateeId`, `rateeRole` |
+| foc.admin.events | OrderUnderReview / `admin.review.started` | Consumed. ESCALATED → UNDER_REVIEW when `caseId` is present |
+| foc.admin.events | ConflictResolved / `admin.case.resolved` | Consumed. Requires `faultParty` (`requester` \| `courier` \| `no-fault`). ESCALATED or UNDER_REVIEW → COMPLETED, photos deleted, then credit + rating fan-out by fault |
 | foc.user.status | UserDeleted | Consumed. Deletes that user’s `user_delivery_point` rows; soft-inactivates orphan forks. Envelope uses `type` + `data.userId` (not `eventType`) |
 
 `order.status.changed` has no consumer in this service. A duplicate `eventId`, a missing field, or a non-UUID order id is ignored and is not stored. A readable event for an unknown order is stored in `processed_events` and does not change a status. A known order stores the event, copies `caseId`, and changes status only when the current status allows that event. `UserDeleted` is also deduped by `eventId` in `processed_events`. A failure while applying a readable event is retried.

@@ -49,6 +49,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -468,47 +469,77 @@ class OrderCommandServiceTest {
 
     @Test
     void adminEventsMoveOnlyTheAllowedStatuses() {
-        service.applyAdminEvent(null, "admin.review.started", id, "case-1");
-        service.applyAdminEvent("event-1", "admin.review.started", id, " ");
+        service.applyAdminEvent(null, "admin.review.started", id, "case-1", null);
+        service.applyAdminEvent("event-1", "admin.review.started", id, " ", null);
         verify(processedEvents, never()).save(any());
 
         when(processedEvents.existsById("event-2")).thenReturn(true);
-        service.applyAdminEvent("event-2", "admin.review.started", id, "case-1");
+        service.applyAdminEvent("event-2", "admin.review.started", id, "case-1", null);
         verify(orders, never()).lockById(any());
 
         when(processedEvents.existsById("event-3")).thenReturn(false);
         when(orders.lockById(id)).thenReturn(Optional.empty());
-        service.applyAdminEvent("event-3", "admin.review.started", id, "case-1");
+        service.applyAdminEvent("event-3", "admin.review.started", id, "case-1", null);
 
         OrderEntity escalated = openOrder();
         escalated.setStatus(OrderStatus.ESCALATED);
         escalated.setCollectionPhotoRef("photo");
         when(processedEvents.existsById("event-4")).thenReturn(false);
         when(orders.lockById(id)).thenReturn(Optional.of(escalated));
-        service.applyAdminEvent("event-4", "admin.review.started", id, "case-1");
+        service.applyAdminEvent("event-4", "admin.review.started", id, "case-1", null);
         assertEquals(OrderStatus.UNDER_REVIEW, escalated.getStatus());
         assertEquals("case-1", escalated.getCaseId());
 
         OrderEntity created = openOrder();
         when(processedEvents.existsById("event-5")).thenReturn(false);
         when(orders.lockById(id)).thenReturn(Optional.of(created));
-        service.applyAdminEvent("event-5", "admin.review.started", id, "case-2");
+        service.applyAdminEvent("event-5", "admin.review.started", id, "case-2", null);
         assertEquals(OrderStatus.CREATED, created.getStatus());
         assertEquals("case-2", created.getCaseId());
 
         OrderEntity review = openOrder();
         review.setStatus(OrderStatus.UNDER_REVIEW);
+        review.setCourierId(courier.userId());
         review.setDeliveryPhotoRef("delivery");
         when(processedEvents.existsById("event-6")).thenReturn(false);
         when(orders.lockById(id)).thenReturn(Optional.of(review));
-        service.applyAdminEvent("event-6", "admin.case.resolved", id, "case-3");
+        service.applyAdminEvent("event-6", "admin.case.resolved", id, "case-3", "courier");
         assertEquals(OrderStatus.COMPLETED, review.getStatus());
+        assertEquals(now, review.getSettledAt());
         assertNull(review.getDeliveryPhotoRef());
 
         ArgumentCaptor<ProcessedEventEntity> processed = ArgumentCaptor.forClass(ProcessedEventEntity.class);
         verify(processedEvents, org.mockito.Mockito.atLeastOnce()).save(processed.capture());
         assertEquals("event-6", processed.getValue().getEventId());
         assertEquals(now, processed.getValue().getProcessedAt());
+
+        ArgumentCaptor<OutboxEntity> outbox = ArgumentCaptor.forClass(OutboxEntity.class);
+        verify(outboxRepository, org.mockito.Mockito.atLeastOnce()).save(outbox.capture());
+        assertTrue(outbox.getAllValues().stream().anyMatch(row ->
+                "foc.credit.commands".equals(row.getTopic()) && row.getPayload().contains("credit.reservation.return")));
+        assertTrue(outbox.getAllValues().stream().anyMatch(row ->
+                "foc.rating.commands".equals(row.getTopic()) && row.getPayload().contains("REQUESTER")));
+    }
+
+    @Test
+    void resolvedRequesterFaultReleasesCreditsAndGrantsRatings() {
+        OrderEntity review = openOrder();
+        review.setStatus(OrderStatus.UNDER_REVIEW);
+        review.setCourierId(courier.userId());
+        when(processedEvents.existsById("event-7")).thenReturn(false);
+        when(orders.lockById(id)).thenReturn(Optional.of(review));
+
+        service.applyAdminEvent("event-7", "admin.case.resolved", id, "case-4", "requester");
+
+        assertEquals(OrderStatus.COMPLETED, review.getStatus());
+        ArgumentCaptor<OutboxEntity> outbox = ArgumentCaptor.forClass(OutboxEntity.class);
+        verify(outboxRepository, org.mockito.Mockito.atLeastOnce()).save(outbox.capture());
+        assertTrue(outbox.getAllValues().stream().anyMatch(row ->
+                "foc.credit.commands".equals(row.getTopic()) && row.getPayload().contains("credit.reservation.release")));
+        assertTrue(outbox.getAllValues().stream().anyMatch(row ->
+                "foc.rating.commands".equals(row.getTopic()) && row.getPayload().contains("\"raterRole\":\"REQUESTER\"")));
+        assertTrue(outbox.getAllValues().stream().anyMatch(row ->
+                "foc.rating.commands".equals(row.getTopic()) && row.getPayload().contains("\"raterRole\":\"COURIER\"")));
     }
 
     private CreateOrderRequest request(Instant expiry, Instant delivery) {

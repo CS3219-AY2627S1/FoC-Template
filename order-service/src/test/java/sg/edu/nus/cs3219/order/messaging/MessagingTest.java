@@ -136,17 +136,19 @@ class MessagingTest {
         AdminEventListener listener = new AdminEventListener(mapper, commands);
         UUID orderId = UUID.randomUUID();
         listener.onMessage("{\"eventId\":\"e1\",\"eventType\":\"admin.review.started\",\"orderId\":\"" + orderId + "\",\"caseId\":\"case-1\"}");
-        verify(commands).applyAdminEvent("e1", "admin.review.started", orderId, "case-1");
+        verify(commands).applyAdminEvent("e1", "admin.review.started", orderId, "case-1", null);
         listener.onMessage("{\"eventId\":\"e4\",\"eventType\":\"OrderUnderReview\",\"version\":1,\"timestamp\":\"2026-10-21T00:00:00Z\",\"payload\":{\"orderId\":\"" + orderId + "\",\"caseId\":\"case-4\"}}");
-        verify(commands).applyAdminEvent("e4", "admin.review.started", orderId, "case-4");
+        verify(commands).applyAdminEvent("e4", "admin.review.started", orderId, "case-4", null);
         listener.onMessage("{\"eventId\":\"e5\",\"eventType\":\"ConflictResolved\",\"version\":1,\"payload\":{\"orderId\":\"" + orderId + "\",\"caseId\":\"case-5\",\"faultParty\":\"courier\"}}");
-        verify(commands).applyAdminEvent("e5", "admin.case.resolved", orderId, "case-5");
+        verify(commands).applyAdminEvent("e5", "admin.case.resolved", orderId, "case-5", "courier");
+        listener.onMessage("{\"eventId\":\"e6\",\"eventType\":\"admin.case.resolved\",\"orderId\":\"" + orderId + "\",\"caseId\":\"case-6\",\"faultParty\":\"no-fault\"}");
+        verify(commands).applyAdminEvent("e6", "admin.case.resolved", orderId, "case-6", "no-fault");
 
         listener.onMessage("{");
         listener.onMessage("{\"eventId\":\"e2\",\"eventType\":\"admin.review.started\",\"orderId\":\"not-a-uuid\",\"caseId\":\"case-1\"}");
         listener.onMessage("{\"eventId\":\" \",\"eventType\":\"admin.review.started\",\"orderId\":\"" + orderId + "\",\"caseId\":null}");
         doThrow(new IllegalStateException("retry")).when(commands)
-                .applyAdminEvent("e3", "admin.case.resolved", orderId, "case-2");
+                .applyAdminEvent("e3", "admin.case.resolved", orderId, "case-2", null);
         assertThrows(IllegalStateException.class, () -> listener.onMessage(
                 "{\"eventId\":\"e3\",\"eventType\":\"admin.case.resolved\",\"orderId\":\"" + orderId + "\",\"caseId\":\"case-2\"}"));
     }

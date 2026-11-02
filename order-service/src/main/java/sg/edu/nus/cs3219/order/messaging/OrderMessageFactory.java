@@ -43,10 +43,14 @@ public class OrderMessageFactory {
     }
 
     public String creditReturn(OrderEntity order, Instant occurredAt) {
+        return creditReturn(order, "EXPIRED", occurredAt);
+    }
+
+    public String creditReturn(OrderEntity order, String reason, Instant occurredAt) {
         ObjectNode node = envelope("credit.reservation.return", order.getId(), occurredAt);
         node.put(REQUESTER_ID, order.getRequesterId());
         node.put(AMOUNT, order.getAmount());
-        node.put(REASON, "EXPIRED");
+        node.put(REASON, reason);
         return write(node);
     }
 

@@ -307,7 +307,7 @@ public class OrderCommandService {
     }
 
     @Transactional
-    public void applyAdminEvent(String eventId, String eventType, UUID orderId, String caseId) {
+    public void applyAdminEvent(String eventId, String eventType, UUID orderId, String caseId, String faultParty) {
         if (eventId == null || eventType == null || orderId == null || caseId == null || caseId.isBlank()) {
             return;
         }
@@ -331,7 +331,9 @@ public class OrderCommandService {
         }
         if ("admin.case.resolved".equals(eventType) && OrderStateMachine.canResolve(order.snapshot())) {
             deletePhotos(order);
+            order.setSettledAt(now);
             transition(order, OrderStatus.COMPLETED, true, now, OrderAction.CASE_RESOLVED, null);
+            settleResolvedCase(order, faultParty, now);
         }
     }
 
@@ -349,12 +351,47 @@ public class OrderCommandService {
         }
     }
 
+    private void settleResolvedCase(OrderEntity order, String faultParty, Instant now) {
+        if ("courier".equals(faultParty)) {
+            outbox.append(order.getId(), KafkaTopics.CREDIT, messages.creditReturn(order, "CASE_RESOLVED", now), now);
+            allowRequesterRatesCourier(order, now);
+            return;
+        }
+        if ("requester".equals(faultParty) || "no-fault".equals(faultParty)) {
+            if (order.getCourierId() == null) {
+                outbox.append(order.getId(), KafkaTopics.CREDIT, messages.creditReturn(order, "CASE_RESOLVED", now), now);
+                return;
+            }
+            releaseAndAllowRequesterRating(order, "CASE_RESOLVED", now);
+            allowCourierRatesRequester(order, now);
+        }
+    }
+
     private void releaseAndAllowRequesterRating(OrderEntity order, String reason, Instant now) {
         outbox.append(order.getId(), KafkaTopics.CREDIT, messages.creditRelease(order, reason, now), now);
+        allowRequesterRatesCourier(order, now);
+    }
+
+    private void allowRequesterRatesCourier(OrderEntity order, Instant now) {
+        if (order.getCourierId() == null) {
+            return;
+        }
         outbox.append(
                 order.getId(),
                 KafkaTopics.RATING,
                 messages.ratingPermission(order, order.getRequesterId(), "REQUESTER", order.getCourierId(), "COURIER", now),
+                now
+        );
+    }
+
+    private void allowCourierRatesRequester(OrderEntity order, Instant now) {
+        if (order.getCourierId() == null) {
+            return;
+        }
+        outbox.append(
+                order.getId(),
+                KafkaTopics.RATING,
+                messages.ratingPermission(order, order.getCourierId(), "COURIER", order.getRequesterId(), "REQUESTER", now),
                 now
         );
     }
