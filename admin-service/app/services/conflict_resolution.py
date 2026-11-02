@@ -89,7 +89,9 @@ async def resolve(
     # F3.6 — Admin only messages Order Service; Order fans out to Credit/Rating (NFR3.1).
     # DB is already committed: log (don't 500) if Kafka is down. See outbox note.
     try:
-        await kafka_producer.publish_conflict_resolved(order_id=order_id, case_id=str(case_id))
+        await kafka_producer.publish_conflict_resolved(
+            order_id=order_id, case_id=str(case_id), fault_party=party.value,
+        )
     except Exception:
         logger.exception("Failed to publish ConflictResolved for case %s", case_id)
     return order_id, party

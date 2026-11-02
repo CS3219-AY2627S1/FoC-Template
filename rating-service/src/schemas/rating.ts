@@ -30,6 +30,18 @@ export const UserRatingResponse = Type.Object({
 });
 export type UserRatingResponse = Static<typeof UserRatingResponse>;
 
+// POST /internal/batch: Badges' daily poll sends one page of user IDs at a time.
+export const BATCH_MAX_USERS = 100;
+
+export const BatchRatingsBody = Type.Object(
+  { userIds: Type.Array(Uuid, { maxItems: BATCH_MAX_USERS }) },
+  { additionalProperties: false },
+);
+export type BatchRatingsBody = Static<typeof BatchRatingsBody>;
+
+export const BatchRatingsResponse = Type.Object({ ratings: Type.Array(UserRatingResponse) });
+export type BatchRatingsResponse = Static<typeof BatchRatingsResponse>;
+
 export const SubmitRatingBody = Type.Object(
   {
     score: Type.Integer({ minimum: 1, maximum: 5 }),

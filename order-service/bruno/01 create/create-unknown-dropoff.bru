@@ -23,14 +23,13 @@ body:json {
     "expiryTime": "{{acceptanceExpiry}}",
     "deliveryTime": "{{deliveryDeadline}}",
     "fromLocation": "2",
-    "toLocation": "nowhere"
+    "deliveryPointId": 999999
   }
 }
 
 tests {
   test("status is 400", function() {
     expect(res.getStatus()).to.equal(400);
-    expect(res.getBody().error).to.include("approved supplier");
+    expect(res.getBody().error).to.include("Unknown delivery point");
   });
 }
-

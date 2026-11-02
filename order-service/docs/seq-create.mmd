@@ -3,7 +3,7 @@ sequenceDiagram
     participant Orders as Order service
     participant Supplier as Supplier Service
     participant Users as User Service
-    participant Rating as Rating stub
+    participant Rating as Rating Service
     participant Credit as Credit Service
     participant DB as Postgres
 
@@ -13,12 +13,11 @@ sequenceDiagram
     Users-->>Orders: telegram handle
     Orders->>Supplier: GET /api/v1/supplier/{pickupId}
     Supplier-->>Orders: approved place
-    Orders->>Supplier: GET /api/v1/supplier/{dropoffId}
-    Supplier-->>Orders: approved place
-    Orders->>Rating: rating for requester
-    Rating-->>Orders: 5.0
+    Orders->>DB: validate delivery point id or inline geofence
+    Orders->>Rating: GET /api/v1/rating/{userId}
+    Rating-->>Orders: average (or null)
     Orders->>Credit: POST /api/v1/credit/internal/reserve
     Credit-->>Orders: reserved
-    Orders->>DB: insert CREATED order, log, alert, status outbox
+    Orders->>DB: insert/fork dropoff if needed, CREATED order, usage upsert, log, alert, status outbox
     Orders-->>Requester: 201 CREATED
     Note over Orders,Credit: If the insert fails, POST /api/v1/credit/internal/release returns the reservation

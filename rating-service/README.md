@@ -33,6 +33,11 @@ gateway sets after User Service's authorize call.
   - 403 `RATING_NOT_PERMITTED`: the caller has no grant for this order.
   - 409 `RATING_ALREADY_SUBMITTED`: the caller already rated this order.
   - 400 `VALIDATION_ERROR`: bad score, comment, ids, or missing header.
+- `POST /internal/batch`: body `{ userIds }`, at most 100 UUIDs. Returns
+  `{ ratings: [{ userId, average, count }] }`, one entry per distinct ID in
+  request order, shaped like `GET /{userId}`. For Badges' daily reconciliation
+  poll: the gateway blocks `/api/v1/rating/internal`, and the mesh policy lets
+  only badges call it (deploy/values/services/rating.yaml).
 - `GET /health`, `GET /health/db`.
 
 Errors use the team's shape: `{ error, code }`, where `error` is a readable

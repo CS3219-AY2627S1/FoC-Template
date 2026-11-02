@@ -343,7 +343,13 @@ def test_conflict_lifecycle_publishes_events(api):
     assert again_resolve.status_code == 409
     resolved_events = events_for("foc.admin.events", eventType="admin.case.resolved", orderId=order_id)
     assert len(resolved_events) == 1
-    assert_order_event(resolved_events[0], "admin.case.resolved", orderId=order_id, caseId=case_id)
+    assert_order_event(
+        resolved_events[0],
+        "admin.case.resolved",
+        orderId=order_id,
+        caseId=case_id,
+        faultParty="courier",
+    )
 
 
 def test_concurrent_create_publishes_one_event(api):
@@ -537,4 +543,5 @@ def test_resolve_publishes_the_fault_party_from_the_body(api, fault, decision):
         "admin.case.resolved",
         orderId=created["orderId"],
         caseId=case_id,
+        faultParty=fault,
     )

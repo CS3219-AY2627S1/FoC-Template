@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
+import { BATCH_MAX_USERS } from '../src/schemas/rating.js';
 import { averageOf } from '../src/services/rating.service.js';
 import { db, outbox, rating, seedGrant, userRating } from './helpers.js';
 
@@ -62,6 +63,54 @@ describe('GET /:userId', () => {
     const res = await app.inject({ method: 'GET', url: `${BASE}/not-a-uuid` });
     expect(res.statusCode).toBe(400);
     expect(res.json().code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('POST /internal/batch', () => {
+  function batch(payload: Record<string, unknown>) {
+    return app.inject({ method: 'POST', url: `${BASE}/internal/batch`, payload });
+  }
+
+  it('returns each requested user in order, unrated users with a null average', async () => {
+    const grant = await seedGrant();
+    await submit(grant.raterId, grant.orderId, { score: 3 });
+    const unrated = randomUUID();
+
+    const res = await batch({ userIds: [unrated, grant.rateeId] });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      ratings: [
+        { userId: unrated, average: null, count: 0 },
+        { userId: grant.rateeId, average: 3, count: 1 },
+      ],
+    });
+  });
+
+  it('returns a duplicated ID once', async () => {
+    const userId = randomUUID();
+    const res = await batch({ userIds: [userId, userId] });
+    expect(res.json().ratings).toEqual([{ userId, average: null, count: 0 }]);
+  });
+
+  it('returns an empty list for no IDs', async () => {
+    const res = await batch({ userIds: [] });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ratings: [] });
+  });
+
+  it('400 above the page size', async () => {
+    const userIds = Array.from({ length: BATCH_MAX_USERS + 1 }, () => randomUUID());
+    const res = await batch({ userIds });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe('VALIDATION_ERROR');
+  });
+
+  it('400 when an ID is not a UUID or userIds is missing', async () => {
+    for (const payload of [{ userIds: ['not-a-uuid'] }, {}]) {
+      const res = await batch(payload);
+      expect(res.statusCode).toBe(400);
+      expect(res.json().code).toBe('VALIDATION_ERROR');
+    }
   });
 });
 

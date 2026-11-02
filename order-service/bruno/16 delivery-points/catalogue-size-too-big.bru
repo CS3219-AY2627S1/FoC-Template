@@ -1,0 +1,22 @@
+meta {
+  name: Catalogue size too big
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/orders/delivery-points?page=0&size=101
+  body: none
+  auth: none
+}
+headers {
+  X-User-Id: 9a290e37-334d-3b8e-946d-2342f27b2f6e
+  X-Permitted-Action: true
+}
+
+tests {
+  test("status is 400", function() {
+    expect(res.getStatus()).to.equal(400);
+    expect(res.getBody().error).to.include("Page size");
+  });
+}

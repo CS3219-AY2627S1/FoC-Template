@@ -19,7 +19,11 @@ Errors use `{ "error": "...", "code": "<HTTP status name>" }`.
 
 | Method | Path | Who | Effect |
 | --- | --- | --- | --- |
-| POST | `/` | requester | Create. Body: `itemDescription` (1–500), `credits` (integer ≥ 1), `expiryTime`, `deliveryTime`, `fromLocation`, `toLocation` |
+| POST | `/` | requester | Create. Body: `itemDescription` (1–500), `credits` (integer ≥ 1), `expiryTime`, `deliveryTime`, `fromLocation` (Supplier id), optional `deliveryPointId`, or inline `dropoffName` / `dropoffBuilding` / `dropoffDescription` / `dropoffLat` / `dropoffLng` |
+| GET | `/delivery-points` | any permitted user | Active seed catalogue. `page`/`size` max **100** |
+| GET | `/delivery-points/my-locations` | requester | This user's used dropoffs (`nickname`, usage). Sort `use_count` then `last_used_at`. `page`/`size` max **100** |
+| PATCH | `/delivery-points/{id}` | associated user | Optional place fields (COW rules) and/or `nickname` (association only; `""` clears). Returns effective id |
+| DELETE | `/delivery-points/{id}` | associated user | Unassociate; soft-inactive last fork |
 | GET | `/{orderId}` | requester or assigned courier | One order. Anyone else gets 404 |
 | POST | `/{orderId}/accept` | courier, not the requester | CREATED → ACCEPTED. The requester gets 409 |
 | POST | `/{orderId}/cancel` | requester or assigned courier | Requester cancels CREATED. Courier releases ACCEPTED inside the collection window |
@@ -44,7 +48,7 @@ List responses are `{ "content", "page", "size", "totalElements" }`. An order bo
 
 - Pool with coordinates: CREATED orders whose pickup is inside a bounding box of `order.ranking.radius-km` (default 5), excluding the caller, sorted by pickup distance and then reward.
 - Pool without coordinates: same open set, sorted by reward and then newest request.
-- Search: at least one location id is required. Each given id must be an approved supplier. Results are CREATED orders, excluding the caller, sorted by reward.
+- Search: at least one location id is required. `pickupLocationId` must be an approved supplier. `dropoffLocationId` matches the snapshotted order dropoff id (Order delivery point), with no Supplier check. Results are CREATED orders, excluding the caller, sorted by reward.
 - Single-order GET and `/mine` are not ranked by proximity.
 
 ### Photos
@@ -57,11 +61,11 @@ These HTTP calls finish before the order row changes. A failure leaves the previ
 
 | When | Call |
 | --- | --- |
-| Create | `GET /api/v1/user/internal/users/{userId}/telegram`, then `GET /api/v1/supplier/{id}` for pickup and dropoff. Only an approved supplier with an id and a name is accepted. Then `POST /api/v1/credit/internal/reserve` with `{ orderId, requesterId, amount }` |
-| Accept | `GET /api/v1/user/internal/users/{userId}/telegram` before the order is claimed |
+| Create | `GET /api/v1/user/internal/users/{userId}/telegram`, then `GET /api/v1/supplier/{id}` for **pickup only**. Dropoff is resolved from Order `delivery_point` (seed∪mine id or inline in NUS bounds). Then `GET /api/v1/rating/{userId}` for the requester snapshot (`average` may be null). Then `POST /api/v1/credit/internal/reserve` with `{ orderId, requesterId, amount }`. On success: insert order + usage upsert in one DB transaction |
+| Accept | `GET /api/v1/rating/{userId}` for the courier snapshot, then `GET /api/v1/user/internal/users/{userId}/telegram` before the order is claimed |
 | Create, if the insert fails | `POST /api/v1/credit/internal/release` with `{ orderId }` |
 | Requester cancels CREATED | `POST /api/v1/credit/internal/release` before the status becomes CANCELLED |
-| Requester escalates, and a collected order that misses its delivery deadline | `POST /api/v1/admin/conflicts` with `{ orderId, reporterUserId, comment, photos }` before the status becomes ESCALATED. A repeat for the same order is accepted. Rating still returns 5.0 locally |
+| Requester escalates, and a collected order that misses its delivery deadline | `POST /api/v1/admin/conflicts` with `{ orderId, reporterUserId, comment, photos }` before the status becomes ESCALATED. A repeat for the same order is accepted |
 
 Courier release does not call Credit. The reservation stays with the order.
 
@@ -73,14 +77,15 @@ Every published payload has `eventId`, `eventType`, `schemaVersion` (1), `occurr
 
 | Topic | eventType | When |
 | --- | --- | --- |
-| foc.order.status | order.status.changed | Every successful transition. Fields: `requesterId`, `courierId`, `fromStatus`, `toStatus`, `notifyRequester` |
-| foc.credit.commands | credit.reservation.return | Acceptance expiry. `reason` is `EXPIRED` |
-| foc.credit.commands | credit.reservation.release | Acknowledge or unacknowledge. `reason` is `ACKNOWLEDGED` or `UNACKNOWLEDGED`, and the payload includes `courierId` and `amount` |
-| foc.rating.commands | rating.permission.granted | Deliver: courier rates requester. Acknowledge or unacknowledge: requester rates courier. Fields: `raterId`, `raterRole`, `rateeId`, `rateeRole` |
-| foc.admin.events | OrderUnderReview | Consumed. ESCALATED → UNDER_REVIEW when `payload.caseId` is present |
-| foc.admin.events | ConflictResolved | Consumed. ESCALATED or UNDER_REVIEW → COMPLETED, and photos are deleted |
+| foc.order.status | order.status.changed | Every successful transition. Fields: `requesterId`, `courierId`, `fromStatus`, `toStatus`, `notifyRequester`, `faultParty` (set only on case resolve → `COMPLETED`; otherwise null). Values: `requester` \| `courier` \| `no-fault` |
+| foc.credit.commands | credit.reservation.return | Acceptance expiry (`EXPIRED`) or case resolve when `faultParty` is `courier` (`CASE_RESOLVED`) |
+| foc.credit.commands | credit.reservation.release | Acknowledge / unacknowledge (`ACKNOWLEDGED` / `UNACKNOWLEDGED`), or case resolve when `faultParty` is `requester` or `no-fault` (`CASE_RESOLVED`). Includes `courierId` and `amount` |
+| foc.rating.commands | rating.permission.granted | Deliver: courier rates requester. Acknowledge / unacknowledge: requester rates courier. Case resolve: requester rates courier; when courier is paid (`requester` / `no-fault`) also courier rates requester. Fields: `raterId`, `raterRole`, `rateeId`, `rateeRole` |
+| foc.admin.events | OrderUnderReview / `admin.review.started` | Consumed. ESCALATED → UNDER_REVIEW when `caseId` is present |
+| foc.admin.events | ConflictResolved / `admin.case.resolved` | Consumed. Requires `faultParty` (`requester` \| `courier` \| `no-fault`); missing/unknown → retry, no status change. Then ESCALATED or UNDER_REVIEW → COMPLETED (status event includes `faultParty`), photos deleted, credit + rating fan-out. `no-fault` pays the courier like acknowledge |
+| foc.user.status | UserDeleted | Consumed. Deletes that user’s `user_delivery_point` rows; soft-inactivates orphan forks. Envelope uses `type` + `data.userId` (not `eventType`) |
 
-`order.status.changed` has no consumer in this service. A duplicate `eventId`, a missing field, or a non-UUID order id is ignored and is not stored. A readable event for an unknown order is stored in `processed_events` and does not change a status. A known order stores the event, copies `caseId`, and changes status only when the current status allows that event. A failure while applying a readable event is retried.
+`order.status.changed` has no consumer in this service. A duplicate `eventId`, a missing field, or a non-UUID order id is ignored and is not stored. A readable event for an unknown order is stored in `processed_events` and does not change a status. A known order stores the event, copies `caseId`, and changes status only when the current status allows that event. `UserDeleted` is also deduped by `eventId` in `processed_events`. A failure while applying a readable event is retried.
 
 The outbox row is committed with the order change. The deadline sweeper publishes at most 50 unpublished rows per pass, waits up to 5 seconds for each send, and sets `published_at` only after the broker accepts it. A Kafka failure is logged and retried on the next sweep.
 

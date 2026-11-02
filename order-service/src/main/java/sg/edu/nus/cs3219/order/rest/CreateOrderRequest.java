@@ -13,6 +13,11 @@ public record CreateOrderRequest(
         @NotNull Instant expiryTime,
         @NotNull Instant deliveryTime,
         @NotBlank String fromLocation,
-        @NotBlank String toLocation
+        Long deliveryPointId,
+        @Size(max = 200) String dropoffName,
+        @Size(max = 200) String dropoffBuilding,
+        @Size(max = 500) String dropoffDescription,
+        Double dropoffLat,
+        Double dropoffLng
 ) {
 }

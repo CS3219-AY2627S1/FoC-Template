@@ -14,6 +14,8 @@ import sg.edu.nus.cs3219.order.config.OrderProperties;
 import sg.edu.nus.cs3219.order.domain.OrderAction;
 import sg.edu.nus.cs3219.order.domain.OrderStateMachine;
 import sg.edu.nus.cs3219.order.domain.OrderStatus;
+import sg.edu.nus.cs3219.order.domain.PreparedDropoff;
+import sg.edu.nus.cs3219.order.domain.ResolvedDropoff;
 import sg.edu.nus.cs3219.order.messaging.KafkaTopics;
 import sg.edu.nus.cs3219.order.messaging.OrderMessageFactory;
 import sg.edu.nus.cs3219.order.messaging.OutboxWriter;
@@ -38,6 +40,19 @@ import java.util.UUID;
 public class OrderCommandService {
 
     private static final String ORDER_NOT_FOUND = "Order not found";
+    private static final String ROLE_COURIER = "COURIER";
+    private static final String ROLE_REQUESTER = "REQUESTER";
+    private static final String REASON_CASE_RESOLVED = "CASE_RESOLVED";
+
+    private record StatusExtras(boolean notifyRequester, String faultParty) {
+        static StatusExtras notifyOnly(boolean notifyRequester) {
+            return new StatusExtras(notifyRequester, null);
+        }
+
+        static StatusExtras withFault(String faultParty) {
+            return new StatusExtras(true, faultParty);
+        }
+    }
 
     private final OrderRepository orders;
     private final AlertRepository alerts;
@@ -47,6 +62,7 @@ public class OrderCommandService {
     private final UserClient users;
     private final RatingClient ratings;
     private final AdminClient admins;
+    private final DeliveryPointService deliveryPoints;
     private final OrderMessageFactory messages;
     private final OutboxWriter outbox;
     private final OrderLogWriter orderLog;
@@ -63,6 +79,7 @@ public class OrderCommandService {
             UserClient users,
             RatingClient ratings,
             AdminClient admins,
+            DeliveryPointService deliveryPoints,
             OrderMessageFactory messages,
             OutboxWriter outbox,
             OrderLogWriter orderLog,
@@ -78,6 +95,7 @@ public class OrderCommandService {
         this.users = users;
         this.ratings = ratings;
         this.admins = admins;
+        this.deliveryPoints = deliveryPoints;
         this.messages = messages;
         this.outbox = outbox;
         this.orderLog = orderLog;
@@ -97,12 +115,13 @@ public class OrderCommandService {
         }
         String requesterTelegram = users.telegramHandle(requester.userId());
         Place pickup = suppliers.requirePlace(request.fromLocation(), requester);
-        Place dropoff = suppliers.requirePlace(request.toLocation(), requester);
-        double requesterRating = ratings.ratingFor(requester.userId(), requester);
+        PreparedDropoff preparedDropoff = deliveryPoints.prepareForCreate(requester, request);
+        Double requesterRating = ratings.ratingFor(requester.userId(), requester);
 
         UUID id = UUID.randomUUID();
         credits.reserve(id, requester.userId(), request.credits(), requester);
         try {
+            ResolvedDropoff dropoff = deliveryPoints.persistPrepared(preparedDropoff);
             OrderEntity order = new OrderEntity();
             order.setId(id);
             order.setRequesterId(requester.userId());
@@ -118,13 +137,16 @@ public class OrderCommandService {
             order.setPickupName(pickup.name());
             order.setPickupLat(pickup.latitude());
             order.setPickupLng(pickup.longitude());
-            order.setDropoffLocationId(dropoff.id());
+            order.setDropoffLocationId(Long.toString(dropoff.id()));
             order.setDropoffName(dropoff.name());
+            order.setDropoffBuilding(dropoff.building());
+            order.setDropoffDescription(dropoff.description());
             order.setDropoffLat(dropoff.latitude());
             order.setDropoffLng(dropoff.longitude());
             order.setCreatedAt(now);
             order.setUpdatedAt(now);
             orders.save(order);
+            deliveryPoints.recordSuccessfulUse(requester.userId(), dropoff.id());
             publishStatus(order, null, OrderStatus.CREATED, true, now, OrderAction.CREATED, requester.userId());
             return order;
         } catch (RuntimeException exception) {
@@ -144,7 +166,7 @@ public class OrderCommandService {
                 throw ApiException.conflict("You cannot accept your own order");
             }
         });
-        double courierRating = ratings.ratingFor(courier.userId(), courier);
+        Double courierRating = ratings.ratingFor(courier.userId(), courier);
         String courierTelegram = users.telegramHandle(courier.userId());
         Instant now = clock.instant();
         Instant collectionDeadline = now.plus(properties.getDeadlines().getCollectionWindow());
@@ -211,7 +233,7 @@ public class OrderCommandService {
         outbox.append(
                 order.getId(),
                 KafkaTopics.RATING,
-                messages.ratingPermission(order, courier.userId(), "COURIER", order.getRequesterId(), "REQUESTER", now),
+                messages.ratingPermission(order, courier.userId(), ROLE_COURIER, order.getRequesterId(), ROLE_REQUESTER, now),
                 now
         );
         return order;
@@ -298,19 +320,28 @@ public class OrderCommandService {
     }
 
     @Transactional
-    public void applyAdminEvent(String eventId, String eventType, UUID orderId, String caseId) {
+    public void applyAdminEvent(String eventId, String eventType, UUID orderId, String caseId, String faultParty) {
         if (eventId == null || eventType == null || orderId == null || caseId == null || caseId.isBlank()) {
             return;
         }
         if (processedEvents.existsById(eventId)) {
             return;
         }
+
+        OrderEntity order = orders.lockById(orderId).orElse(null);
+        boolean resolving = "admin.case.resolved".equals(eventType)
+                && order != null
+                && OrderStateMachine.canResolve(order.snapshot());
+        if (resolving && !knownFaultParty(faultParty)) {
+            // Do not mark processed: Admin must republish a valid verdict; retrying a poison
+            // COMPLETED-without-settlement would stick the reservation.
+            throw new IllegalStateException("admin.case.resolved requires faultParty requester|courier|no-fault");
+        }
+
         ProcessedEventEntity processed = new ProcessedEventEntity();
         processed.setEventId(eventId);
         processed.setProcessedAt(clock.instant());
         processedEvents.save(processed);
-
-        OrderEntity order = orders.lockById(orderId).orElse(null);
         if (order == null) {
             return;
         }
@@ -320,10 +351,16 @@ public class OrderCommandService {
             transition(order, OrderStatus.UNDER_REVIEW, true, now, OrderAction.REVIEW_STARTED, null);
             return;
         }
-        if ("admin.case.resolved".equals(eventType) && OrderStateMachine.canResolve(order.snapshot())) {
+        if (resolving) {
             deletePhotos(order);
-            transition(order, OrderStatus.COMPLETED, true, now, OrderAction.CASE_RESOLVED, null);
+            order.setSettledAt(now);
+            transition(order, OrderStatus.COMPLETED, now, OrderAction.CASE_RESOLVED, null, StatusExtras.withFault(faultParty));
+            settleResolvedCase(order, faultParty, now);
         }
+    }
+
+    private static boolean knownFaultParty(String faultParty) {
+        return "courier".equals(faultParty) || "requester".equals(faultParty) || "no-fault".equals(faultParty);
     }
 
     private static List<String> evidence(OrderEntity order) {
@@ -340,12 +377,47 @@ public class OrderCommandService {
         }
     }
 
+    private void settleResolvedCase(OrderEntity order, String faultParty, Instant now) {
+        // no-fault = inconclusive / neither party clearly wrong → treat like a completed
+        // delivery: pay the courier (same release path as acknowledge).
+        if ("courier".equals(faultParty)) {
+            outbox.append(order.getId(), KafkaTopics.CREDIT, messages.creditReturn(order, REASON_CASE_RESOLVED, now), now);
+            allowRequesterRatesCourier(order, now);
+            return;
+        }
+        if (order.getCourierId() == null) {
+            outbox.append(order.getId(), KafkaTopics.CREDIT, messages.creditReturn(order, REASON_CASE_RESOLVED, now), now);
+            return;
+        }
+        releaseAndAllowRequesterRating(order, REASON_CASE_RESOLVED, now);
+        allowCourierRatesRequester(order, now);
+    }
+
     private void releaseAndAllowRequesterRating(OrderEntity order, String reason, Instant now) {
         outbox.append(order.getId(), KafkaTopics.CREDIT, messages.creditRelease(order, reason, now), now);
+        allowRequesterRatesCourier(order, now);
+    }
+
+    private void allowRequesterRatesCourier(OrderEntity order, Instant now) {
+        if (order.getCourierId() == null) {
+            return;
+        }
         outbox.append(
                 order.getId(),
                 KafkaTopics.RATING,
-                messages.ratingPermission(order, order.getRequesterId(), "REQUESTER", order.getCourierId(), "COURIER", now),
+                messages.ratingPermission(order, order.getRequesterId(), ROLE_REQUESTER, order.getCourierId(), ROLE_COURIER, now),
+                now
+        );
+    }
+
+    private void allowCourierRatesRequester(OrderEntity order, Instant now) {
+        if (order.getCourierId() == null) {
+            return;
+        }
+        outbox.append(
+                order.getId(),
+                KafkaTopics.RATING,
+                messages.ratingPermission(order, order.getCourierId(), ROLE_COURIER, order.getRequesterId(), ROLE_REQUESTER, now),
                 now
         );
     }
@@ -358,10 +430,21 @@ public class OrderCommandService {
             OrderAction action,
             String actorId
     ) {
+        transition(order, to, now, action, actorId, StatusExtras.notifyOnly(notifyRequester));
+    }
+
+    private void transition(
+            OrderEntity order,
+            OrderStatus to,
+            Instant now,
+            OrderAction action,
+            String actorId,
+            StatusExtras extras
+    ) {
         OrderStatus from = order.getStatus();
         order.setStatus(to);
         order.setUpdatedAt(now);
-        publishStatus(order, from, to, notifyRequester, now, action, actorId);
+        publishStatus(order, from, to, now, action, actorId, extras);
     }
 
     private void publishStatus(
@@ -373,6 +456,18 @@ public class OrderCommandService {
             OrderAction action,
             String actorId
     ) {
+        publishStatus(order, from, to, now, action, actorId, StatusExtras.notifyOnly(notifyRequester));
+    }
+
+    private void publishStatus(
+            OrderEntity order,
+            OrderStatus from,
+            OrderStatus to,
+            Instant now,
+            OrderAction action,
+            String actorId,
+            StatusExtras extras
+    ) {
         orderLog.append(order.getId(), action, from, to, actorId, now);
         AlertEntity alert = new AlertEntity();
         alert.setId(UUID.randomUUID());
@@ -380,13 +475,13 @@ public class OrderCommandService {
         alert.setRequesterId(order.getRequesterId());
         alert.setFromStatus(from == null ? null : from.name());
         alert.setToStatus(to.name());
-        alert.setNotifyRequester(notifyRequester);
+        alert.setNotifyRequester(extras.notifyRequester());
         alert.setCreatedAt(now);
         alerts.save(alert);
         outbox.append(
                 order.getId(),
                 KafkaTopics.ORDER_STATUS,
-                messages.statusChanged(order, from, to, notifyRequester, now),
+                messages.statusChanged(order, from, to, extras.notifyRequester(), extras.faultParty(), now),
                 now
         );
     }

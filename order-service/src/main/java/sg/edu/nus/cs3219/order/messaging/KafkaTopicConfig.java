@@ -34,6 +34,11 @@ public class KafkaTopicConfig {
         return topic(KafkaTopics.ADMIN_EVENTS, properties);
     }
 
+    @Bean
+    NewTopic userStatusTopic(OrderProperties properties) {
+        return topic(KafkaTopics.USER_STATUS, properties);
+    }
+
     private static NewTopic topic(String name, OrderProperties properties) {
         return TopicBuilder.name(name)
                 .partitions(properties.getKafka().getPartitions())

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { Kafka, logLevel } from "kafkajs";
 import type { Producer, SASLOptions } from "kafkajs";
 import { config } from "./config";
-import type { UserEventPublisher, UserVerifiedEvent } from "./events";
+import type { UserDeletedEvent, UserEventPublisher, UserVerifiedEvent } from "./events";
 
 // The canonical foc.user.status event envelope (see the plan / ADR-0004). The
 // `type` field discriminates events on the topic; `eventId` is persisted by the
@@ -63,6 +63,18 @@ function createKafkaProducer(): Producer {
   return kafka.producer();
 }
 
+export function buildUserDeletedEnvelope(
+  event: UserDeletedEvent,
+  deps: { eventId?: string; occurredAt?: string } = {},
+): EventEnvelope<UserDeletedEvent> {
+  return {
+    eventId: deps.eventId ?? randomUUID(),
+    type: "UserDeleted",
+    occurredAt: deps.occurredAt ?? new Date().toISOString(),
+    data: { userId: event.userId },
+  };
+}
+
 export class KafkaUserEventPublisher implements UserEventPublisher {
   private readonly producer: MessageProducer;
   private connected = false;
@@ -100,6 +112,15 @@ export class KafkaUserEventPublisher implements UserEventPublisher {
       topic: config.kafka.topic,
       // Key by userId: co-partitions a user's events so future status
       // transitions stay ordered (not load-bearing for UserVerified alone).
+      messages: [{ key: event.userId, value: JSON.stringify(envelope) }],
+    });
+  }
+
+  async publishUserDeleted(event: UserDeletedEvent, eventId?: string, occurredAt?: string): Promise<void> {
+    await this.connect();
+    const envelope = buildUserDeletedEnvelope(event, { eventId, occurredAt });
+    await this.producer.send({
+      topic: config.kafka.topic,
       messages: [{ key: event.userId, value: JSON.stringify(envelope) }],
     });
   }
