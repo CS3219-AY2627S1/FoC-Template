@@ -44,7 +44,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
-          context: ${{ matrix.service == 'order-service' && '.' || matrix.service }}
+          context: ${{ contains(fromJSON('["order-service","user-service"]'), matrix.service) && '.' || matrix.service }}
           file: ${{ format('{0}/Dockerfile', matrix.service) }}
           push: true
           tags: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/${{ matrix.service }}:${{ github.sha }}
