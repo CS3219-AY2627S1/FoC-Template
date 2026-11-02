@@ -1,5 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import {
+  BatchRatingsBody,
+  BatchRatingsResponse,
   MeHeaders,
   OrderParams,
   PendingRatingsResponse,
@@ -8,7 +10,12 @@ import {
   UserParams,
   UserRatingResponse,
 } from '../schemas/rating.js';
-import { getUserRating, listPendingRatings, submitRating } from '../services/rating.service.js';
+import {
+  getUserRating,
+  getUserRatings,
+  listPendingRatings,
+  submitRating,
+} from '../services/rating.service.js';
 
 // Registered under /api/v1/rating; request/response types inferred from schemas.
 // Identity comes from the gateway's x-user-id header (deploy/charts/foc-gateway).
@@ -18,6 +25,14 @@ export const ratingRoutes: FastifyPluginAsyncTypebox = async (app) => {
     '/me/pending',
     { schema: { headers: MeHeaders, response: { 200: PendingRatingsResponse } } },
     async (request) => listPendingRatings(request.headers['x-user-id']),
+  );
+
+  // Badges' daily reconciliation poll. Blocked at the gateway; only badges may
+  // call it over the mesh (deploy/values/services/rating.yaml).
+  app.post(
+    '/internal/batch',
+    { schema: { body: BatchRatingsBody, response: { 200: BatchRatingsResponse } } },
+    async (request) => getUserRatings(request.body.userIds),
   );
 
   // F3 / contract: a user's unified average and the count behind it.
