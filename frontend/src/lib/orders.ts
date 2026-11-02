@@ -66,6 +66,8 @@ interface OrderResponse {
   pickupLng: number;
   dropoffLocationId: string;
   dropoffName: string;
+  dropoffBuilding: string | null;
+  dropoffDescription: string | null;
   dropoffLat: number;
   dropoffLng: number;
   collectionPhotoRef: string | null;
@@ -83,11 +85,17 @@ interface PageResponse<T> {
 }
 
 export interface Place {
-  /** Supplier Service id; Order F1.5.1 and F1.6.1 validate both against it. */
+  /** A Supplier Service id for the pickup, an Order delivery point id for the drop-off. */
   id: string;
   name: string;
   latitude: number;
   longitude: number;
+}
+
+/** The order keeps its own copy of the drop-off, so later edits to the place do not reach it. */
+export interface Dropoff extends Place {
+  building: string | null;
+  description: string | null;
 }
 
 /** One order, as every order page sees it. */
@@ -113,7 +121,7 @@ export interface Order {
    */
 
   pickup: Place;
-  dropoff: Place;
+  dropoff: Dropoff;
 
   requestedAt: Date;
   /** Order F1.3: by when a courier must accept. */
@@ -161,6 +169,8 @@ function toOrder(response: OrderResponse): Order {
     dropoff: {
       id: response.dropoffLocationId,
       name: response.dropoffName,
+      building: response.dropoffBuilding,
+      description: response.dropoffDescription,
       latitude: response.dropoffLat,
       longitude: response.dropoffLng,
     },
@@ -186,7 +196,7 @@ function toPage(response: PageResponse<OrderResponse>): OrderPage {
 }
 
 /** Straight-line distance in metres, for the task cards (haversine). */
-export function distanceMetres(from: Coordinates, to: Place): number {
+export function distanceMetres(from: Coordinates, to: Coordinates): number {
   const radius = 6_371_000;
   const rad = (degrees: number) => (degrees * Math.PI) / 180;
   const dLat = rad(to.latitude - from.latitude);
@@ -244,10 +254,15 @@ export interface NewOrder {
   credits: number;
   expiryTime: Date;
   deliveryTime: Date;
-  /** Supplier ids. */
+  /** A Supplier Service id. */
   fromLocation: string;
-  toLocation: string;
+  dropoff: NewDropoff;
 }
+
+/** A known point by id (lib/deliveryPoints), or a new place described in full. */
+export type NewDropoff =
+  | { deliveryPointId: number }
+  | { name: string; building: string; description: string; latitude: number; longitude: number };
 
 /** Order F1. Credits are reserved with the Credit Service before the row exists. */
 export async function createOrder(order: NewOrder): Promise<Order> {
@@ -258,7 +273,15 @@ export async function createOrder(order: NewOrder): Promise<Order> {
       expiryTime: order.expiryTime.toISOString(),
       deliveryTime: order.deliveryTime.toISOString(),
       fromLocation: order.fromLocation,
-      toLocation: order.toLocation,
+      ...('deliveryPointId' in order.dropoff
+        ? { deliveryPointId: order.dropoff.deliveryPointId }
+        : {
+            dropoffName: order.dropoff.name,
+            dropoffBuilding: order.dropoff.building,
+            dropoffDescription: order.dropoff.description,
+            dropoffLat: order.dropoff.latitude,
+            dropoffLng: order.dropoff.longitude,
+          }),
     }),
   );
 }

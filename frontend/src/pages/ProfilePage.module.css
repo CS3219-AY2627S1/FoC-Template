@@ -161,6 +161,58 @@
 }
 
 /* Not built yet, and saying so rather than showing invented figures. */
+.places {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.place {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.place:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.placeSwatch {
+  flex: none;
+  /* Beside the name (the first line), not centred on name and detail together. */
+  align-self: flex-start;
+  width: 10px;
+  height: 10px;
+  margin-top: calc((1lh - 10px) / 2);
+  border-radius: var(--radius-pill);
+}
+
+.placeOwn {
+  background: var(--color-accent);
+}
+
+.placeShared {
+  background: var(--color-info);
+}
+
+.placeText {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.placeActions {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+}
+
 .soonHead {
   display: flex;
   align-items: center;

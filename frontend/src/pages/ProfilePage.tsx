@@ -12,6 +12,9 @@
  *
  * Rating card added with Claude Code (Claude Opus 5.5) on 2026-10-21: the
  * unified average from GET /api/v1/rating/{userId} (UI FR12.2.1).
+ *
+ * Your places card added with Claude Code (Claude Opus 5.5) on 2026-11-02:
+ * Order's my-locations, with a nickname, edit and remove on each.
  */
 
 import { useEffect, useState } from 'react';
@@ -23,7 +26,16 @@ import { ConfirmDialog, Dialog } from '../components/ui/Dialog';
 import { Icon } from '../components/ui/Icon';
 import { PasswordRules } from '../components/ui/PasswordRules';
 import { TextField } from '../components/ui/TextField';
+import { TextAreaField } from '../components/ui/Inputs';
 import { errorMessage } from '../lib/api';
+import {
+  deleteDeliveryPoint,
+  deliveryPointLabel,
+  fetchMyDeliveryPoints,
+  updateDeliveryPoint,
+  type DeliveryPoint,
+  type DeliveryPointChanges,
+} from '../lib/deliveryPoints';
 import { changePassword, deleteAccount } from '../lib/user';
 import { checkPasswordRules, isValidPassword } from '../lib/validation';
 import { useCreditBalance } from '../lib/credit';
@@ -158,6 +170,8 @@ export function ProfilePage() {
             <Button variant="secondary" fullWidth>View credit history</Button>
             */}
           </section>
+
+          <PlacesCard />
         </div>
 
         <div className={styles.column}>
@@ -340,6 +354,241 @@ function ChangePasswordDialog({
         value={confirmPassword}
         onChange={(event) => setConfirmPassword(event.target.value)}
         error={confirmPassword.length > 0 && !confirmOk ? 'Passwords do not match' : null}
+      />
+    </Dialog>
+  );
+}
+
+/**
+ * Order adds a place here only when an order to it succeeds; there is no way
+ * to save one in advance, so the empty state says how places get here.
+ */
+function PlacesCard() {
+  const [places, setPlaces] = useState<DeliveryPoint[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [editing, setEditing] = useState<DeliveryPoint | null>(null);
+  const [removing, setRemoving] = useState<DeliveryPoint | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchMyDeliveryPoints()
+      .then((result) => {
+        if (!cancelled) setPlaces(result);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleRemove() {
+    if (removing === null) return;
+    setBusy(true);
+    setFailure(null);
+    try {
+      await deleteDeliveryPoint(removing.id);
+      setPlaces((current) => current?.filter((place) => place.id !== removing.id) ?? null);
+      setRemoving(null);
+    } catch (error) {
+      setRemoving(null);
+      setFailure(errorMessage(error, 'Could not reach the Order Service, so nothing was removed.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className={styles.card}>
+      <h2 className={styles.cardTitle}>Your places</h2>
+
+      {failure ? <Alert variant="danger">{failure}</Alert> : null}
+
+      {failed ? (
+        <p className={styles.rowNote}>Your places could not be loaded. Try again later.</p>
+      ) : places === null ? (
+        <p className={styles.rowNote}>Loading…</p>
+      ) : places.length === 0 ? (
+        <p className={styles.rowNote}>
+          None yet. A drop-off point is saved here after a request to it posts, and you can then
+          give it a nickname.
+        </p>
+      ) : (
+        <ul className={styles.places}>
+          {places.map((place) => (
+            <li key={place.id} className={styles.place}>
+              {/* Same colour code as the delivery picker: blue for shared spots around campus. */}
+              <span
+                className={`${styles.placeSwatch} ${place.code === null ? styles.placeOwn : styles.placeShared}`}
+                title={place.code === null ? 'A place you made' : 'A spot around campus'}
+                aria-hidden="true"
+              />
+              <div className={styles.placeText}>
+                <p className={styles.rowLabel}>
+                  {deliveryPointLabel(place)}
+                  <span className="visually-hidden">
+                    {place.code === null ? ', a place you made' : ', a spot around campus'}
+                  </span>
+                </p>
+                <p className={styles.rowNote}>
+                  {[place.building, place.description].filter((part) => part && part.trim() !== '').join(' · ')}
+                  {place.useCount !== null
+                    ? ` · used ${place.useCount} ${place.useCount === 1 ? 'time' : 'times'}`
+                    : ''}
+                </p>
+              </div>
+              <div className={styles.placeActions}>
+                <Button variant="secondary" onClick={() => setEditing(place)}>
+                  Edit
+                </Button>
+                <Button variant="ghost" onClick={() => setRemoving(place)}>
+                  Remove
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {editing !== null ? (
+        <EditPlaceDialog
+          key={editing.id}
+          place={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(saved) => {
+            // A copy comes back with a new id; it replaces the row it came from.
+            const replacedId = editing.id;
+            setPlaces((current) => current?.map((place) => (place.id === replacedId ? saved : place)) ?? null);
+            setEditing(null);
+          }}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        open={removing !== null}
+        title={removing === null ? 'Remove place?' : `Remove ${deliveryPointLabel(removing)}?`}
+        consequence={
+          <>
+            It comes off your list and its nickname is lost. Past requests to it are not changed.
+            {removing !== null && removing.code !== null ? ' Everyone else can still pick it.' : ''}
+          </>
+        }
+        confirmLabel="Remove"
+        destructive
+        busy={busy}
+        onConfirm={() => void handleRemove()}
+        onCancel={() => setRemoving(null)}
+      />
+    </section>
+  );
+}
+
+function EditPlaceDialog({
+  place,
+  onClose,
+  onSaved,
+}: {
+  place: DeliveryPoint;
+  onClose: () => void;
+  onSaved: (place: DeliveryPoint) => void;
+}) {
+  const original = {
+    nickname: place.nickname ?? '',
+    name: place.name,
+    building: place.building ?? '',
+    description: place.description ?? '',
+  };
+  const [nickname, setNickname] = useState(original.nickname);
+  const [name, setName] = useState(original.name);
+  const [building, setBuilding] = useState(original.building);
+  const [description, setDescription] = useState(original.description);
+  const [saving, setSaving] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  // Only what changed is sent: a nickname alone never makes Order copy the place.
+  const changes: DeliveryPointChanges = {};
+  if (nickname.trim() !== original.nickname) changes.nickname = nickname.trim();
+  if (name.trim() !== original.name) changes.name = name.trim();
+  if (building.trim() !== original.building) changes.building = building.trim();
+  if (description.trim() !== original.description) changes.description = description.trim();
+
+  const errors = {
+    name: name.trim() === '' ? 'Give it a name' : null,
+    building: building.trim() === '' ? 'Say which building or block' : null,
+    description: description.trim() === '' ? 'Say how the courier finds it' : null,
+  };
+  const placeChanged = 'name' in changes || 'building' in changes || 'description' in changes;
+  const canSave = Object.keys(changes).length > 0 && Object.values(errors).every((error) => error === null);
+
+  async function save() {
+    if (!canSave || saving) return;
+    setSaving(true);
+    setFailure(null);
+    try {
+      onSaved(await updateDeliveryPoint(place.id, changes));
+    } catch (error) {
+      setFailure(errorMessage(error, 'Could not reach the Order Service, so nothing was changed.'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open
+      title={`Edit ${deliveryPointLabel(place)}`}
+      onClose={saving ? () => undefined : onClose}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button disabled={!canSave} loading={saving} onClick={() => void save()}>
+            Save changes
+          </Button>
+        </>
+      }
+    >
+      {failure ? <Alert variant="danger">{failure}</Alert> : null}
+      <TextField
+        label="Nickname"
+        name="nickname"
+        placeholder="Home"
+        maxLength={80}
+        value={nickname}
+        onChange={(event) => setNickname(event.target.value)}
+        hint="Only you see this. Couriers see the name and details below."
+      />
+      <TextField
+        label="Name"
+        name="name"
+        maxLength={200}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        error={errors.name}
+      />
+      <TextField
+        label="Building"
+        name="building"
+        maxLength={200}
+        value={building}
+        onChange={(event) => setBuilding(event.target.value)}
+        error={errors.building}
+      />
+      <TextAreaField
+        label="Where exactly"
+        maxLength={500}
+        value={description}
+        onChange={(event) => setDescription(event.target.value)}
+        error={errors.description}
+        hint={
+          place.code !== null && placeChanged
+            ? 'Everyone can pick this spot, so your changes are saved as your own copy and the original stays as it is.'
+            : 'Changes apply to new requests. Past requests keep what they were posted with.'
+        }
       />
     </Dialog>
   );

@@ -23,6 +23,7 @@ import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/Dialog';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { errorMessage } from '../lib/api';
+import { deliveryPointDetail } from '../lib/deliveryPoints';
 import { refreshCreditBalance } from '../lib/credit';
 import { formatWhen } from '../lib/format';
 import { acknowledgeOrder, cancelOrder, type Order } from '../lib/orders';
@@ -185,6 +186,9 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
             <div className={styles.detailBlock}>
               <h2 className={styles.detailLabel}>Delivery</h2>
               <p className={styles.detailValue}>{order.dropoff.name}</p>
+              {deliveryPointDetail(order.dropoff) ? (
+                <p className={styles.detailNote}>{deliveryPointDetail(order.dropoff)}</p>
+              ) : null}
             </div>
 
             <div className={styles.detailBlock}>
