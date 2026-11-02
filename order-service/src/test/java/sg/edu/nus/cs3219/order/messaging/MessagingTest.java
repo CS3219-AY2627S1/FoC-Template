@@ -10,6 +10,7 @@ import sg.edu.nus.cs3219.order.domain.OrderStatus;
 import sg.edu.nus.cs3219.order.persistence.OrderEntity;
 import sg.edu.nus.cs3219.order.persistence.OutboxEntity;
 import sg.edu.nus.cs3219.order.persistence.OutboxRepository;
+import sg.edu.nus.cs3219.order.service.DeliveryPointService;
 import sg.edu.nus.cs3219.order.service.OrderCommandService;
 
 import java.time.Clock;
@@ -42,11 +43,15 @@ class MessagingTest {
         JsonNode created = mapper.readTree(messages.statusChanged(order, null, OrderStatus.CREATED, true, now));
         assertTrue(created.get("courierId").isNull());
         assertTrue(created.get("fromStatus").isNull());
+        assertTrue(created.get("faultParty").isNull());
         assertEquals("CREATED", created.get("toStatus").asText());
 
         order.setCourierId("22222222-2222-2222-2222-222222222222");
         JsonNode accepted = mapper.readTree(messages.statusChanged(order, OrderStatus.CREATED, OrderStatus.ACCEPTED, true, now));
         assertEquals("22222222-2222-2222-2222-222222222222", accepted.get("courierId").asText());
+        JsonNode resolved = mapper.readTree(messages.statusChanged(
+                order, OrderStatus.UNDER_REVIEW, OrderStatus.COMPLETED, true, "no-fault", now));
+        assertEquals("no-fault", resolved.get("faultParty").asText());
 
         JsonNode returned = mapper.readTree(messages.creditReturn(order, now));
         assertEquals("EXPIRED", returned.get("reason").asText());
@@ -135,19 +140,48 @@ class MessagingTest {
         AdminEventListener listener = new AdminEventListener(mapper, commands);
         UUID orderId = UUID.randomUUID();
         listener.onMessage("{\"eventId\":\"e1\",\"eventType\":\"admin.review.started\",\"orderId\":\"" + orderId + "\",\"caseId\":\"case-1\"}");
-        verify(commands).applyAdminEvent("e1", "admin.review.started", orderId, "case-1");
+        verify(commands).applyAdminEvent("e1", "admin.review.started", orderId, "case-1", null);
         listener.onMessage("{\"eventId\":\"e4\",\"eventType\":\"OrderUnderReview\",\"version\":1,\"timestamp\":\"2026-10-21T00:00:00Z\",\"payload\":{\"orderId\":\"" + orderId + "\",\"caseId\":\"case-4\"}}");
-        verify(commands).applyAdminEvent("e4", "admin.review.started", orderId, "case-4");
+        verify(commands).applyAdminEvent("e4", "admin.review.started", orderId, "case-4", null);
         listener.onMessage("{\"eventId\":\"e5\",\"eventType\":\"ConflictResolved\",\"version\":1,\"payload\":{\"orderId\":\"" + orderId + "\",\"caseId\":\"case-5\",\"faultParty\":\"courier\"}}");
-        verify(commands).applyAdminEvent("e5", "admin.case.resolved", orderId, "case-5");
+        verify(commands).applyAdminEvent("e5", "admin.case.resolved", orderId, "case-5", "courier");
+        listener.onMessage("{\"eventId\":\"e6\",\"eventType\":\"admin.case.resolved\",\"orderId\":\"" + orderId + "\",\"caseId\":\"case-6\",\"faultParty\":\"no-fault\"}");
+        verify(commands).applyAdminEvent("e6", "admin.case.resolved", orderId, "case-6", "no-fault");
 
         listener.onMessage("{");
         listener.onMessage("{\"eventId\":\"e2\",\"eventType\":\"admin.review.started\",\"orderId\":\"not-a-uuid\",\"caseId\":\"case-1\"}");
         listener.onMessage("{\"eventId\":\" \",\"eventType\":\"admin.review.started\",\"orderId\":\"" + orderId + "\",\"caseId\":null}");
         doThrow(new IllegalStateException("retry")).when(commands)
-                .applyAdminEvent("e3", "admin.case.resolved", orderId, "case-2");
+                .applyAdminEvent("e3", "admin.case.resolved", orderId, "case-2", null);
         assertThrows(IllegalStateException.class, () -> listener.onMessage(
                 "{\"eventId\":\"e3\",\"eventType\":\"admin.case.resolved\",\"orderId\":\"" + orderId + "\",\"caseId\":\"case-2\"}"));
+    }
+
+    @Test
+    void userStatusListenerAppliesUserDeletedAndIgnoresOtherTypes() {
+        DeliveryPointService deliveryPoints = mock(DeliveryPointService.class);
+        UserStatusEventListener listener = new UserStatusEventListener(mapper, deliveryPoints);
+        String userId = "11111111-1111-1111-1111-111111111111";
+
+        listener.onMessage("""
+                {"eventId":"del-1","type":"UserDeleted","occurredAt":"2026-11-02T00:00:00Z","data":{"userId":"%s"}}
+                """.formatted(userId));
+        verify(deliveryPoints).applyUserDeleted("del-1", userId);
+
+        listener.onMessage("""
+                {"eventId":"v1","type":"UserVerified","occurredAt":"2026-11-02T00:00:00Z","data":{"userId":"%s"}}
+                """.formatted(userId));
+        listener.onMessage("{");
+        listener.onMessage("""
+                {"eventId":"del-2","type":"UserDeleted","occurredAt":"2026-11-02T00:00:00Z","data":{}}
+                """);
+        verify(deliveryPoints, times(1)).applyUserDeleted(any(), any());
+
+        doThrow(new IllegalStateException("retry")).when(deliveryPoints).applyUserDeleted("del-3", userId);
+        String retryPayload = """
+                {"eventId":"del-3","type":"UserDeleted","occurredAt":"2026-11-02T00:00:00Z","data":{"userId":"%s"}}
+                """.formatted(userId);
+        assertThrows(IllegalStateException.class, () -> listener.onMessage(retryPayload));
     }
 
     @Test
@@ -162,6 +196,7 @@ class MessagingTest {
         assertEquals(KafkaTopics.ORDER_STATUS, config.orderStatusTopic(properties).name());
         assertEquals(3, config.adminEventTopic(properties).numPartitions());
         assertEquals(KafkaTopics.ADMIN_EVENTS, config.adminEventTopic(properties).name());
+        assertEquals(KafkaTopics.USER_STATUS, config.userStatusTopic(properties).name());
     }
 
     private OrderEntity order() {

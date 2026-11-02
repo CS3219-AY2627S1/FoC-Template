@@ -72,3 +72,8 @@ order:
   kafka:
     replicas: 1
     partitions: 3
+  delivery-points:
+    min-lat: 1.288
+    max-lat: 1.309
+    min-lng: 103.766
+    max-lng: 103.788

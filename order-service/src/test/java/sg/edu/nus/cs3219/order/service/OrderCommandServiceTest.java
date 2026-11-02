@@ -20,6 +20,8 @@ import sg.edu.nus.cs3219.order.client.UserClient;
 import sg.edu.nus.cs3219.order.config.OrderProperties;
 import sg.edu.nus.cs3219.order.domain.OrderAction;
 import sg.edu.nus.cs3219.order.domain.OrderStatus;
+import sg.edu.nus.cs3219.order.domain.PreparedDropoff;
+import sg.edu.nus.cs3219.order.domain.ResolvedDropoff;
 import sg.edu.nus.cs3219.order.messaging.OrderMessageFactory;
 import sg.edu.nus.cs3219.order.messaging.OutboxWriter;
 import sg.edu.nus.cs3219.order.persistence.AlertEntity;
@@ -47,6 +49,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -75,6 +78,7 @@ class OrderCommandServiceTest {
     @Mock private UserClient users;
     @Mock private RatingClient ratings;
     @Mock private AdminClient admins;
+    @Mock private DeliveryPointService deliveryPoints;
     @Mock private OutboxRepository outboxRepository;
     @Mock private OrderLogRepository orderLog;
     @Mock private PhotoStore photos;
@@ -84,6 +88,10 @@ class OrderCommandServiceTest {
     @BeforeEach
     void setUp() {
         lenient().when(users.telegramHandle(any())).thenReturn("from-user-service");
+        PreparedDropoff prepared = new PreparedDropoff(4L, "Cool Spot", "Building", "Lobby", 1.30, 103.78);
+        lenient().when(deliveryPoints.prepareForCreate(any(), any())).thenReturn(prepared);
+        lenient().when(deliveryPoints.persistPrepared(any())).thenReturn(
+                new ResolvedDropoff(4L, "Cool Spot", "Building", "Lobby", 1.30, 103.78));
         service = new OrderCommandService(
                 orders,
                 alerts,
@@ -93,6 +101,7 @@ class OrderCommandServiceTest {
                 users,
                 ratings,
                 admins,
+                deliveryPoints,
                 new OrderMessageFactory(new ObjectMapper()),
                 new OutboxWriter(outboxRepository),
                 new OrderLogWriter(orderLog),
@@ -105,7 +114,6 @@ class OrderCommandServiceTest {
     @Test
     void createReservesCreditsAndStoresTheOrder() {
         when(suppliers.requirePlace(eq("nus-coop"), any())).thenReturn(new Place("nus-coop", "NUS Co-op", 1.29, 103.77));
-        when(suppliers.requirePlace(eq("cool-spot"), any())).thenReturn(new Place("cool-spot", "Cool Spot", 1.30, 103.78));
         when(ratings.ratingFor(eq("11111111-1111-1111-1111-111111111111"), any())).thenReturn(4.5);
         when(orders.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -115,7 +123,12 @@ class OrderCommandServiceTest {
                 now.plusSeconds(3600),
                 now.plusSeconds(7200),
                 "nus-coop",
-                "cool-spot"
+                4L,
+                null,
+                null,
+                null,
+                null,
+                null
         ));
 
         assertEquals(OrderStatus.CREATED, created.getStatus());
@@ -126,7 +139,10 @@ class OrderCommandServiceTest {
         OrderResponse response = OrderResponse.from(created);
         assertEquals("NUS Co-op", response.pickupName());
         assertEquals("Cool Spot", response.dropoffName());
+        assertEquals("Building", response.dropoffBuilding());
+        assertEquals("Lobby", response.dropoffDescription());
         verify(credits).reserve(created.getId(), "11111111-1111-1111-1111-111111111111", 8, requester);
+        verify(deliveryPoints).recordSuccessfulUse(requester.userId(), 4L);
         verify(alerts).save(any(AlertEntity.class));
         verify(outboxRepository).save(any(OutboxEntity.class));
         ArgumentCaptor<OrderLogEntity> logged = ArgumentCaptor.forClass(OrderLogEntity.class);
@@ -453,51 +469,98 @@ class OrderCommandServiceTest {
 
     @Test
     void adminEventsMoveOnlyTheAllowedStatuses() {
-        service.applyAdminEvent(null, "admin.review.started", id, "case-1");
-        service.applyAdminEvent("event-1", "admin.review.started", id, " ");
+        service.applyAdminEvent(null, "admin.review.started", id, "case-1", null);
+        service.applyAdminEvent("event-1", "admin.review.started", id, " ", null);
         verify(processedEvents, never()).save(any());
 
         when(processedEvents.existsById("event-2")).thenReturn(true);
-        service.applyAdminEvent("event-2", "admin.review.started", id, "case-1");
+        service.applyAdminEvent("event-2", "admin.review.started", id, "case-1", null);
         verify(orders, never()).lockById(any());
 
         when(processedEvents.existsById("event-3")).thenReturn(false);
         when(orders.lockById(id)).thenReturn(Optional.empty());
-        service.applyAdminEvent("event-3", "admin.review.started", id, "case-1");
+        service.applyAdminEvent("event-3", "admin.review.started", id, "case-1", null);
 
         OrderEntity escalated = openOrder();
         escalated.setStatus(OrderStatus.ESCALATED);
         escalated.setCollectionPhotoRef("photo");
         when(processedEvents.existsById("event-4")).thenReturn(false);
         when(orders.lockById(id)).thenReturn(Optional.of(escalated));
-        service.applyAdminEvent("event-4", "admin.review.started", id, "case-1");
+        service.applyAdminEvent("event-4", "admin.review.started", id, "case-1", null);
         assertEquals(OrderStatus.UNDER_REVIEW, escalated.getStatus());
         assertEquals("case-1", escalated.getCaseId());
 
         OrderEntity created = openOrder();
         when(processedEvents.existsById("event-5")).thenReturn(false);
         when(orders.lockById(id)).thenReturn(Optional.of(created));
-        service.applyAdminEvent("event-5", "admin.review.started", id, "case-2");
+        service.applyAdminEvent("event-5", "admin.review.started", id, "case-2", null);
         assertEquals(OrderStatus.CREATED, created.getStatus());
         assertEquals("case-2", created.getCaseId());
 
         OrderEntity review = openOrder();
         review.setStatus(OrderStatus.UNDER_REVIEW);
+        review.setCourierId(courier.userId());
         review.setDeliveryPhotoRef("delivery");
         when(processedEvents.existsById("event-6")).thenReturn(false);
         when(orders.lockById(id)).thenReturn(Optional.of(review));
-        service.applyAdminEvent("event-6", "admin.case.resolved", id, "case-3");
+        service.applyAdminEvent("event-6", "admin.case.resolved", id, "case-3", "courier");
         assertEquals(OrderStatus.COMPLETED, review.getStatus());
+        assertEquals(now, review.getSettledAt());
         assertNull(review.getDeliveryPhotoRef());
 
         ArgumentCaptor<ProcessedEventEntity> processed = ArgumentCaptor.forClass(ProcessedEventEntity.class);
         verify(processedEvents, org.mockito.Mockito.atLeastOnce()).save(processed.capture());
         assertEquals("event-6", processed.getValue().getEventId());
         assertEquals(now, processed.getValue().getProcessedAt());
+
+        ArgumentCaptor<OutboxEntity> outbox = ArgumentCaptor.forClass(OutboxEntity.class);
+        verify(outboxRepository, org.mockito.Mockito.atLeastOnce()).save(outbox.capture());
+        assertTrue(outbox.getAllValues().stream().anyMatch(row ->
+                "foc.credit.commands".equals(row.getTopic()) && row.getPayload().contains("credit.reservation.return")));
+        assertTrue(outbox.getAllValues().stream().anyMatch(row ->
+                "foc.rating.commands".equals(row.getTopic()) && row.getPayload().contains("REQUESTER")));
+        assertTrue(outbox.getAllValues().stream().anyMatch(row ->
+                "foc.order.status".equals(row.getTopic())
+                        && row.getPayload().contains("\"toStatus\":\"COMPLETED\"")
+                        && row.getPayload().contains("\"faultParty\":\"courier\"")));
+    }
+
+    @Test
+    void resolvedWithoutFaultPartyDoesNotCompleteOrMarkProcessed() {
+        OrderEntity review = openOrder();
+        review.setStatus(OrderStatus.UNDER_REVIEW);
+        review.setCourierId(courier.userId());
+        when(orders.lockById(id)).thenReturn(Optional.of(review));
+
+        assertThrows(IllegalStateException.class,
+                () -> service.applyAdminEvent("event-bad", "admin.case.resolved", id, "case-x", null));
+        assertEquals(OrderStatus.UNDER_REVIEW, review.getStatus());
+        verify(processedEvents, never()).save(any());
+    }
+
+    @Test
+    void resolvedRequesterFaultReleasesCreditsAndGrantsRatings() {
+        OrderEntity review = openOrder();
+        review.setStatus(OrderStatus.UNDER_REVIEW);
+        review.setCourierId(courier.userId());
+        when(processedEvents.existsById("event-7")).thenReturn(false);
+        when(orders.lockById(id)).thenReturn(Optional.of(review));
+
+        service.applyAdminEvent("event-7", "admin.case.resolved", id, "case-4", "requester");
+
+        assertEquals(OrderStatus.COMPLETED, review.getStatus());
+        ArgumentCaptor<OutboxEntity> outbox = ArgumentCaptor.forClass(OutboxEntity.class);
+        verify(outboxRepository, org.mockito.Mockito.atLeastOnce()).save(outbox.capture());
+        assertTrue(outbox.getAllValues().stream().anyMatch(row ->
+                "foc.credit.commands".equals(row.getTopic()) && row.getPayload().contains("credit.reservation.release")));
+        assertTrue(outbox.getAllValues().stream().anyMatch(row ->
+                "foc.rating.commands".equals(row.getTopic()) && row.getPayload().contains("\"raterRole\":\"REQUESTER\"")));
+        assertTrue(outbox.getAllValues().stream().anyMatch(row ->
+                "foc.rating.commands".equals(row.getTopic()) && row.getPayload().contains("\"raterRole\":\"COURIER\"")));
     }
 
     private CreateOrderRequest request(Instant expiry, Instant delivery) {
-        return new CreateOrderRequest("Print notes", 8, expiry, delivery, "nus-coop", "cool-spot");
+        return new CreateOrderRequest("Print notes", 8, expiry, delivery, "nus-coop", 4L, null, null, null, null, null);
     }
 
     private OrderEntity openOrder() {
@@ -516,8 +579,10 @@ class OrderCommandServiceTest {
         order.setPickupName("NUS Co-op");
         order.setPickupLat(1.29);
         order.setPickupLng(103.77);
-        order.setDropoffLocationId("cool-spot");
+        order.setDropoffLocationId("4");
         order.setDropoffName("Cool Spot");
+        order.setDropoffBuilding("Building");
+        order.setDropoffDescription("Lobby");
         order.setDropoffLat(1.30);
         order.setDropoffLng(103.78);
         order.setCreatedAt(now);

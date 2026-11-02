@@ -125,16 +125,15 @@ class OrderQueryServiceTest {
         assertTrue(service.pastRequests(requester, 0, 0).content().isEmpty());
 
         when(suppliers.requirePlace(eq("nus-coop"), any())).thenReturn(new Place("nus-coop", "NUS Co-op", 1.0, 103.0));
-        when(suppliers.requirePlace(eq("cool-spot"), any())).thenReturn(new Place("cool-spot", "Cool Spot", 1.0, 103.0));
-        when(orders.searchOpen(eq(OrderStatus.CREATED), eq("11111111-1111-1111-1111-111111111111"), eq("nus-coop"), eq("cool-spot"), any()))
+        when(orders.searchOpen(eq(OrderStatus.CREATED), eq("11111111-1111-1111-1111-111111111111"), eq("nus-coop"), eq("4"), any()))
                 .thenReturn(new PageImpl<>(List.of(order())));
-        when(orders.searchOpen(eq(OrderStatus.CREATED), eq("11111111-1111-1111-1111-111111111111"), isNull(), eq("cool-spot"), any()))
+        when(orders.searchOpen(eq(OrderStatus.CREATED), eq("11111111-1111-1111-1111-111111111111"), isNull(), eq("4"), any()))
                 .thenReturn(new PageImpl<>(List.of()));
-        assertEquals(1, service.search(requester, "nus-coop", "cool-spot", 0, 20).content().size());
-        assertTrue(service.search(requester, " ", "cool-spot", 0, 20).content().isEmpty());
-        assertTrue(service.search(requester, "nus-coop", "cool-spot", 0, 0).content().isEmpty());
+        assertEquals(1, service.search(requester, "nus-coop", "4", 0, 20).content().size());
+        assertTrue(service.search(requester, " ", "4", 0, 20).content().isEmpty());
+        assertTrue(service.search(requester, "nus-coop", "4", 0, 0).content().isEmpty());
         assertThrows(ApiException.class, () -> service.search(requester, " ", null, 0, 20));
-        assertThrows(ApiException.class, () -> service.search(requester, "nus-coop", "cool-spot", 0, -1));
+        assertThrows(ApiException.class, () -> service.search(requester, "nus-coop", "4", 0, -1));
 
         AlertEntity alert = new AlertEntity();
         alert.setId(UUID.randomUUID());

@@ -90,6 +90,18 @@ class HttpClientsTest {
                     status = 201;
                     yield "{\"id\":\"case-1\"}".getBytes(StandardCharsets.UTF_8);
                 }
+                case "/api/v1/rating/11111111-1111-1111-1111-111111111111" ->
+                        "{\"userId\":\"11111111-1111-1111-1111-111111111111\",\"average\":4.5,\"count\":2}".getBytes(StandardCharsets.UTF_8);
+                case "/api/v1/rating/00000000-0000-0000-0000-000000000000" ->
+                        "{\"userId\":\"00000000-0000-0000-0000-000000000000\",\"average\":null,\"count\":0}".getBytes(StandardCharsets.UTF_8);
+                case "/api/v1/rating/not-a-uuid" -> {
+                    status = 400;
+                    yield "{\"error\":\"params/userId must match format\",\"code\":\"VALIDATION_ERROR\"}".getBytes(StandardCharsets.UTF_8);
+                }
+                case "/api/v1/rating/down" -> {
+                    status = 500;
+                    yield "{\"error\":\"nope\",\"code\":\"INTERNAL_ERROR\"}".getBytes(StandardCharsets.UTF_8);
+                }
                 default -> {
                     CreditProblem credit = creditProblem(requestBody);
                     if (credit == null) {
@@ -148,6 +160,16 @@ class HttpClientsTest {
     }
 
     @Test
+    void callsRating() {
+        assertEquals(4.5, clients.ratingFor("11111111-1111-1111-1111-111111111111", ada));
+        assertEquals("/api/v1/rating/11111111-1111-1111-1111-111111111111", lastPath.get());
+        assertEquals("ada-id", lastUser.get());
+        assertEquals(null, clients.ratingFor("00000000-0000-0000-0000-000000000000", ada));
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(ApiException.class, () -> clients.ratingFor("not-a-uuid", ada)).getStatus());
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, assertThrows(ApiException.class, () -> clients.ratingFor("down", ada)).getStatus());
+    }
+
+    @Test
     void callsAdmin() {
         UUID orderId = UUID.randomUUID();
         clients.openConflict(orderId, "ada-id", "wrong item", java.util.List.of("a.png"));
@@ -202,6 +224,7 @@ class HttpClientsTest {
         assertThrows(ApiException.class, () -> down.returnReserved(orderId, ada));
         assertThrows(ApiException.class, () -> down.requirePlace("2", ada));
         assertThrows(ApiException.class, () -> down.telegramHandle("11111111-1111-1111-1111-111111111111"));
+        assertThrows(ApiException.class, () -> down.ratingFor("11111111-1111-1111-1111-111111111111", ada));
         assertThrows(ApiException.class, () -> down.openConflict(orderId, "ada-id", "wrong item", java.util.List.of()));
     }
 
