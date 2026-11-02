@@ -466,6 +466,12 @@ public class UserService {
     }
 
     private User refreshSuspensionStatus(User user) {
+        // Inactive accounts must remain readable, but must not be modified
+        // by the courier suspension refresh operation.
+        if (user.getStatus() != AccountStatus.ACTIVE) {
+            return user;
+        }
+        
         Instant now = Instant.now();
 
         if (Boolean.TRUE.equals(user.getIsCourierSuspended())
