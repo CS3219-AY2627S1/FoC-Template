@@ -24,6 +24,7 @@ public class User {
     private int penalty = 0;
     private boolean isCourierSuspended = false;
     private Instant suspensionEndDate;
+    private boolean isPermanentlySuspended = false;
 
     private AccountStatus status = AccountStatus.ACTIVE;
     private String deletionOperationId;
@@ -73,6 +74,10 @@ public class User {
         return this.suspensionEndDate;
     }
 
+    public boolean getIsPermanentlySuspended() {
+        return this.isPermanentlySuspended;
+    }
+
     public AccountStatus getStatus() {
         return status;
     }
@@ -98,9 +103,9 @@ public class User {
         return;
     }
 
-    public void setRoles(List<String> newRoles) {
-        this.roles = newRoles;
-        return;
+    // This allows roles list to be modified, while still ensuring immutability
+    public void setRoles(List<String> roles) {
+        this.roles = roles == null ? null : List.copyOf(roles);
     }
 
     public void setPenalty(int newPenalty) {
@@ -115,6 +120,11 @@ public class User {
 
     public void setSuspensionEndDate(Instant newSuspensionEndDate) {
         this.suspensionEndDate = newSuspensionEndDate;
+        return;
+    }
+
+    public void setIsPermanentlySuspended(boolean isPermanentlySuspended) {
+        this.isPermanentlySuspended = isPermanentlySuspended;
         return;
     }
 

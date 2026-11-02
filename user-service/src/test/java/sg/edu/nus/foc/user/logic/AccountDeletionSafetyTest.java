@@ -1,6 +1,8 @@
 package sg.edu.nus.foc.user.logic;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 import java.util.List;
@@ -39,6 +41,7 @@ class AccountDeletionSafetyTest {
         });
         doAnswer(call -> { ((User) call.getArgument(0)).setStatus(AccountStatus.DEACTIVATED); return null; })
                 .when(lifecycle).complete(any());
+        when(lifecycle.saveActive(any(User.class))).thenAnswer(call -> call.getArgument(0));
     }
 
     @Test
@@ -84,13 +87,19 @@ class AccountDeletionSafetyTest {
         verify(repository, never()).save(any());
     }
 
+    // Some interaction with lifecycle expected due to refreshSuspensionStatus
     @Test
     void lastAdministratorRuleIsPreserved() {
         user.setRoles(List.of("admin"));
         when(repository.countByRolesContainingAndStatus("admin", AccountStatus.ACTIVE)).thenReturn(1L);
         assertEquals(HttpStatus.CONFLICT, assertThrows(ResponseStatusException.class,
                 () -> service.deactivateUser("admin-token", "student")).getStatusCode());
-        verifyNoInteractions(orders, firebase, lifecycle);
+        verifyNoInteractions(orders, firebase);
+        verify(lifecycle).saveActive(user);
+        verify(lifecycle, never()).begin(anyString());
+        verify(lifecycle, never()).seal(any());
+        verify(lifecycle, never()).restoreAfterDenial(any());
+        verify(lifecycle, never()).complete(any());
     }
 
     @Test
@@ -117,13 +126,15 @@ class AccountDeletionSafetyTest {
         assertEquals(AccountStatus.DEACTIVATED, safe.getStatus());
     }
 
+    // No interaction with lifecycle as refreshSuspensionStatus now terminates early
+    // with inactive accounts
     @Test
     void completedAndAlreadyPendingRequestsDoNotStartAnotherOperation() {
         user.setStatus(AccountStatus.DEACTIVATED);
         service.deactivateUser("token", "student");
         user.setStatus(AccountStatus.DEACTIVATION_PENDING);
         assertThrows(ResponseStatusException.class, () -> service.deactivateUser("token", "student"));
-        verifyNoInteractions(lifecycle, orders, firebase);
+        verifyNoInteractions(orders, firebase, lifecycle);
     }
 
     private void pending(User target, String operation) {

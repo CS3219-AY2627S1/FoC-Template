@@ -54,6 +54,8 @@ export function LoginForm() {
   const [mode, setMode] = useState<Mode>("sign-in")
 
   // Regular field states
+  const [firstName, setFirstName] = useState("")
+  const [lastName, setLastName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -90,15 +92,24 @@ export function LoginForm() {
           }
         }
       } else { 
+        if (!firstName.trim() || !lastName.trim()) {
+          setError("Please enter your first and last name.")
+          return
+        }
+
         if (password !== confirmPassword) {
           setError("Passwords do not match.")
           return
         }
 
-        await signUp(email.trim(), password)
+        const username = `${firstName.trim()} ${lastName.trim()}`
+
+        await signUp(email.trim(), password, username)
 
         // Change page back to sign in
         setMode("sign-in")
+        setFirstName("")
+        setLastName("")
         setPassword("")
         setConfirmPassword("")
 
@@ -181,6 +192,34 @@ export function LoginForm() {
                 </Button>
               </div>
             )}
+            {!isSignIn && (
+              <div className="grid grid-cols-2 gap-4">
+                <Field>
+                  <FieldLabel htmlFor="firstName">First name</FieldLabel>
+                  <Input
+                    id="firstName"
+                    type="text"
+                    autoComplete="given-name"
+                    required
+                    value={firstName}
+                    onChange={(event) => setFirstName(event.target.value)}
+                    placeholder="First name"
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="lastName">Last name</FieldLabel>
+                  <Input
+                    id="lastName"
+                    type="text"
+                    autoComplete="family-name"
+                    required
+                    value={lastName}
+                    onChange={(event) => setLastName(event.target.value)}
+                    placeholder="Last name"
+                  />
+                </Field>
+              </div>
+            )}
             <Field>
               <FieldLabel htmlFor="email">Email</FieldLabel>
               <Input
@@ -203,6 +242,19 @@ export function LoginForm() {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
               />
+              {isSignIn && 
+                <div className="flex justify-start">
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    className="px-0"
+                    onClick={() => {router.push("/password-reset")}}
+                  >
+                    Forgot password?
+                  </Button>
+                </div>
+              }
               {!isSignIn && <PasswordRequirements password={password} onValidityChange={onPasswordValidity} />}
             </Field>
             {!isSignIn && (

@@ -180,7 +180,7 @@ docker compose exec mongodb mongosh UserServiceDB --quiet   --eval 'db.users.upd
 Locally, creating a user with the app's user sign up function will create a user in a local 
 MongoDB database, seperate from the MongoDB Atlas cloud. It is kept across restarts in the 
 `firebase-data` volume. To view this account in the local MongoDB database, connect to
-`mongodb://localhost:27017` on the MongoDB Compass app, 
+`mongodb://localhost:27017/?directConnection=true` on the MongoDB Compass app, 
 or run `docker compose exec mongodb mongosh` while the app is running, 
 then `use UserServiceDB` and `db.users.find()` in the mongosh terminal.
 

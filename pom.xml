@@ -13,6 +13,7 @@
 
     <modules>
         <module>foc-common</module>
+        <module>user-service</module>
         <module>order-service</module>
     </modules>
 </project>

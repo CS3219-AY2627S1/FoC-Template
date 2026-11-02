@@ -55,8 +55,10 @@ public class UserController {
     }
 
     // GET /api/users
+    // Only admins can retrieve all user info
     @Operation(summary = "Get all users")
     @GetMapping
+    @PreAuthorize(ADMIN_ONLY)
     public ResponseEntity<List<User>> fetchAllUsers() {
         return ResponseEntity.ok(userService.fetchAllUsers());
     }
@@ -159,13 +161,17 @@ public class UserController {
     @Operation(summary = "Add user into database")
     @PostMapping
     public ResponseEntity<User> addUser(
+            @RequestBody AddUserRequest addUserRequest,
             JwtAuthenticationToken authentication) {
+
+        // Extract username from request
+        String username = addUserRequest.getUsername();
 
         // Extract claims from the already-validated token
         String userId = authentication.getToken().getSubject();
         String email = authentication.getToken().getClaimAsString("email");
 
-        User user = userService.addUser(userId, email);
+        User user = userService.addUser(userId, email, username);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(user);
     }
@@ -226,6 +232,20 @@ public class UserController {
         return ResponseEntity.ok(promotedUser);
     }
 
+    // PUT /api/users/:userId/user-demotion
+    // Only admin can update other users' info
+    @Operation(summary = "Demote an admin to regular user")
+    @PreAuthorize(ADMIN_ONLY)
+    @PutMapping("/{userId}/user-demotion")
+    public ResponseEntity<User> demoteUser(
+            @PathVariable String userId,
+            JwtAuthenticationToken authentication) {
+
+        User promotedUser = userService.demoteUser(userId);
+
+        return ResponseEntity.ok(promotedUser);
+    }
+
     // PUT /api/users/{userId}/penalty
     // Only used by other services
     @Operation(summary = "Update any user's penalty")
@@ -273,7 +293,7 @@ public class UserController {
 
     // TODO: PUT or POST /api/users/:userid/suspension
     // Admin manual suspension
-    @Operation(summary = "Update any user's info")
+    @Operation(summary = "Manually suspend a user")
     @PreAuthorize(ADMIN_ONLY)
     @PutMapping("/{userId}/suspension")
     public ResponseEntity<User> updateUserSuspension(

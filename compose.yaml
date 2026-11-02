@@ -249,7 +249,9 @@ services:
       retries: 12
 
   user-service:
-    build: ./user-service
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
     ports:
       - "127.0.0.1:${USER_SERVICE_PORT:-8081}:8080"
     environment:
@@ -261,6 +263,7 @@ services:
       ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
       SPRING_PROFILES_ACTIVE: prod
       USER_MESSAGING_MODE: emulator
+      USER_PUBSUB_PUSH_MODE: emulator
       PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
       PUBSUB_PROJECT_ID: demo-foc-local
     depends_on:

@@ -8,12 +8,22 @@ WORKDIR /workspace
 # Dependencies first, so they are cached until pom.xml changes.
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
-RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -ntp -q dependency:go-offline
 
-COPY src/ src/
+# Copy both module POMs first for dependency caching.
+# Also need order-service POM because of its dependency on foc-common
+COPY foc-common/pom.xml foc-common/pom.xml
+COPY user-service/pom.xml user-service/pom.xml
+COPY order-service/pom.xml order-service/pom.xml
+
+RUN chmod +x mvnw
+
+# Copy source code for both modules.
+COPY foc-common/src/ foc-common/src/
+COPY user-service/src/ user-service/src/
+
 # Tests run in CI (they need Docker for Testcontainers), not during the image build.
-RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -ntp -q package -DskipTests \
- && cp target/*.jar app.jar \
+RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -ntp -q -pl user-service -am package -DskipTests \
+ && cp user-service/target/*.jar app.jar \
  && java -Djarmode=tools -jar app.jar extract --layers --launcher --destination extracted
 
 # ---- Runtime: JRE only, non-root -------------------------------------------

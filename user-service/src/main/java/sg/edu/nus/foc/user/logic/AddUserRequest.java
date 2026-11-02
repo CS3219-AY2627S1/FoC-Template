@@ -1,33 +1,23 @@
 package sg.edu.nus.foc.user.logic;
 
+// Only username is passed, other info is taken from token
 public class AddUserRequest {
-    private String userId;
-    private String email;
+    private String username;
 
     public AddUserRequest() {}
 
-    public AddUserRequest(String userId, String email) {
-        this.userId = userId;
-        this.email = email;
+    public AddUserRequest(String username) {
+        this.username = username;
     }
 
     // Getter
-    public String getUserId() {
-        return this.userId;
-    }
-
-    public String getEmail() {
-        return this.email;
+    public String getUsername() {
+        return this.username;
     }
 
     // Setter
-    public void setUserId(String newUserId) {
-        this.userId = newUserId;
-        return;
-    }
-
-    public void setEmail(String newEmail) {
-        this.email = newEmail;
+    public void setUsername(String newUsername) {
+        this.username = newUsername;
         return;
     }
 }

@@ -10,7 +10,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -57,19 +59,24 @@ public class UserService {
     }
 
     public User getUserByUserId(String userId) {
-        return userRepository
+        User user = userRepository
                 .findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "User not found"
                 ));
+        // Refresh to ensure status is up to date
+        return refreshSuspensionStatus(user);
+
     }
 
     public User getProfileInfo(String userId) {
-        return userRepository
+        User user = userRepository
                 .findByUserId(userId)
                 .orElseThrow(() ->
                         new RuntimeException("User not found"));
+        // Refresh to ensure status is up to date
+        return refreshSuspensionStatus(user);          
     }
 
     public UserRoleContext getRoleContext(String userId) {
@@ -77,6 +84,9 @@ public class UserService {
                 .findByUserId(userId)
                 .orElseThrow(() ->
                         new RuntimeException("User not found"));
+
+        // Refresh to ensure status is up to date
+        user = refreshSuspensionStatus(user);
 
         return new UserRoleContext(user.getUserId(),
                 user.getStatus() == AccountStatus.ACTIVE && user.getRoles() != null
@@ -91,6 +101,9 @@ public class UserService {
 
         Instant now = Instant.now();
 
+        // Refresh to ensure status is up to date
+        user = refreshSuspensionStatus(user);
+
         return new CourierEligibility(verifyCourier(user) &&
                 !(user.getPenalty() >= 10
                 && user.getSuspensionEndDate() != null
@@ -103,6 +116,9 @@ public class UserService {
                 .findByUserId(userId)
                 .orElseThrow(() ->
                         new RuntimeException("User not found"));
+        
+        // Refresh to ensure status is up to date
+        user = refreshSuspensionStatus(user);
 
         return new RequesterEligibility(verifyRequester(user));
     }
@@ -112,12 +128,18 @@ public class UserService {
                 .findByUserId(userId)
                 .orElseThrow(() ->
                         new RuntimeException("User not found"));
+        
+        // Refresh to ensure status is up to date
+        user = refreshSuspensionStatus(user);
 
         return new AdminEligibility(verifyAdmin(user));
     }
 
     public UserSummary getUserSummary(String userId) {
         User user = getUserByUserId(userId);
+
+        // Refresh to ensure status is up to date
+        user = refreshSuspensionStatus(user);
 
         return new UserSummary(
             user.getUsername(),
@@ -131,20 +153,21 @@ public class UserService {
 
     // Transactional so adding user and user-created event is done atomically
     @Transactional
-    public User addUser(String userId, String email) {
-        return createUser(userId, email, List.of("courier", "requester"));
+    public User addUser(String userId, String email, String username) {
+        return createUser(userId, email, List.of("courier", "requester"), username);
     }
 
     @Transactional
     public User addAdmin(String userId, String email) {
-        return createUser(userId, email, List.of("courier", "requester", "admin"));
+        return createUser(userId, email, List.of("courier", "requester", "admin"), "Admin");
     }
 
-    public User createUser(String userId, String email, List<String> roles) {
+    public User createUser(String userId, String email, List<String> roles, String username) {
         if (userId == null || userId.isBlank()
-            || email == null || email.isBlank()) {
-        throw new IllegalArgumentException(
-                "User ID and email are required.");
+            || email == null || email.isBlank()
+            || username == null || username.isBlank()) {
+            throw new IllegalArgumentException(
+                "Username, user ID and email are required.");
         }
 
         if (userRepository.findByUserId(userId).isPresent()) {
@@ -163,7 +186,7 @@ public class UserService {
         User user = new User();
         user.setUserId(userId);
         user.setEmail(email);
-        user.setUsername("");
+        user.setUsername(username);
         user.setRoles(roles);
 
         User savedUser = userRepository.save(user);
@@ -235,47 +258,15 @@ public class UserService {
         return lifecycle.saveActive(user);
     }
 
-    /*public void deleteUser(String token, String userId) {
-        User user = userRepository.findByUserId(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        // Check if user has pending orders
-        // Throws error if it has
-        boolean hasActiveOrders = orderServiceClient.hasActiveInvolvement(userId, token);
-        if (hasActiveOrders) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Cannot delete user with active orders"
-            );
-        }
-
-        // Checks if it is the last admin
-        // Throws error if it is
-        boolean isAdmin = user.getRoles() != null && user.getRoles().contains("admin");
-        if (isAdmin) {
-            long adminCount = userRepository.countByRolesContaining("admin");
-
-            if (adminCount <= 1) {
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "Cannot delete the last administrator"
-                );
-            }
-        }
-
-        // Deletes user from Firebase
-        firebaseAuthService.deleteUser(user.getUserId());
-
-        // Deletes user from MongoDB
-        userRepository.delete(user);
-    }*/
-
     public void deactivateUser(String token, String userId) {
         User user = userRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "User not found"
                     ));
+
+        // Refresh to ensure status is up to date
+        user = refreshSuspensionStatus(user);
 
         // Already deactivated.
         if (user.getStatus() == AccountStatus.DEACTIVATED) {
@@ -292,7 +283,7 @@ public class UserService {
 
         // Checks if it is the last admin
         // Throws error if it is
-        boolean isAdmin = user.getRoles() != null && user.getRoles().contains("admin");
+        boolean isAdmin = verifyAdmin(user);
         if (isAdmin) {
             long adminCount = userRepository.countByRolesContainingAndStatus(
                         "admin",
@@ -338,7 +329,6 @@ public class UserService {
         }
     }
 
-    // TODO: Implement this API and demoteAdmin
     // Adds admin role to user
     // Doesn't change role list if already admin
     public User promoteUser(String userId) {
@@ -347,10 +337,49 @@ public class UserService {
                 .orElseThrow(() ->
                         new RuntimeException("User not found"));
 
+        // Refresh to ensure status is up to date
+        user = refreshSuspensionStatus(user);
+
         List<String> roles = user.getRoles();
         if (!roles.contains("admin")) {
-            roles.add("admin");
-            user.setRoles(roles);
+            List<String> updatedRoles = new ArrayList<>(user.getRoles());
+            updatedRoles.add("admin");
+            user.setRoles(updatedRoles);
+        }
+
+        return lifecycle.saveActive(user);
+    }
+
+    // Removes admin role from user
+    // Doesn't change role list if already not admin
+    public User demoteUser(String userId) {
+        User user = userRepository
+                .findByUserId(userId)
+                .orElseThrow(() ->
+                        new RuntimeException("User not found"));
+
+        // Refresh to ensure status is up to date
+        user = refreshSuspensionStatus(user);
+
+        // Checks if it is the last admin
+        // Throws error if it is
+        boolean isAdmin = verifyAdmin(user);
+        if (isAdmin) {
+            long adminCount = userRepository.countByRolesContainingAndStatus(
+                        "admin",
+                        AccountStatus.ACTIVE
+                );
+
+            if (adminCount <= 1) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "Cannot disable the last administrator"
+                );
+            }
+
+            List<String> updatedRoles = new ArrayList<>(user.getRoles());
+            updatedRoles.remove("admin");
+            user.setRoles(updatedRoles);
         }
 
         return lifecycle.saveActive(user);
@@ -358,68 +387,113 @@ public class UserService {
 
     // Single method to update a user's penalty
     // Accepts negative and positive penalty.
-    public User adjustPenalty(String userId, int penalty) {
+    public User adjustPenalty(String userId, int penaltyChange) {
         User user = getUserByUserId(userId);
-        int newPenalty = user.getPenalty() + penalty;
-        System.out.println(String.format("Penalty is %d", newPenalty));
+        Instant now = Instant.now();
 
-        if (newPenalty < 0) {
-            newPenalty = 0;
+        // Permanently suspended couriers cannot receive further adjustments.
+        if (user.getIsPermanentlySuspended()) {
+            return user;
         }
 
-        // Applies suspension
-        if (newPenalty >= MAX_PENALTY) {
-            newPenalty = MAX_PENALTY;
+        // Temporary suspension: lock the penalty until expiry.
+        if (user.getIsCourierSuspended()) {
+            if (user.getSuspensionEndDate() != null
+                    && now.isBefore(user.getSuspensionEndDate())) {
+                return user;
+            }
 
-            // for debugging
-            System.out.println(String.format("Applying suspension to user %s", user.getEmail()));
-
-            List<String> roles = user.getRoles();
-            roles.remove("courier");
-            user.setRoles(roles);
-            user.setIsCourierSuspended(true);
-            user.setSuspensionEndDate(Instant.now().plus(1, ChronoUnit.MONTHS));
+            // Suspension has expired.
+            List<String> updatedRoles = new ArrayList<>(user.getRoles());
+            updatedRoles.add("courier");
+            user.setRoles(updatedRoles);
+            user.setIsCourierSuspended(false);
+            user.setSuspensionEndDate(null);
         }
+
+        int newPenalty = Math.max(
+            0,
+            Math.min(MAX_PENALTY, user.getPenalty() + penaltyChange)
+        );
 
         user.setPenalty(newPenalty);
+
+        if (newPenalty >= MAX_PENALTY) {
+            List<String> updatedRoles = new ArrayList<>(user.getRoles());
+            updatedRoles.remove("courier");
+            user.setRoles(updatedRoles);
+            user.setIsCourierSuspended(true);
+            user.setSuspensionEndDate(createSuspensionEndDate(1));
+        }
 
         return lifecycle.saveActive(user);
     }
 
     // Single method to suspend a user
+    // Can suspend admin because suspended admins still can carry out admin actions
+    // Just not courier actions
     // Sets penalty to MAX_PENALTY
     public User suspendUser(String userId) {
         User user = getUserByUserId(userId);
 
         user.setPenalty(MAX_PENALTY);
 
-        // for debugging
-        System.out.println(String.format("Applying suspension to user %s", user.getEmail()));
+        List<String> updatedRoles = new ArrayList<>(user.getRoles());
+        updatedRoles.remove("courier");
+        user.setRoles(updatedRoles);
+        user.setIsCourierSuspended(true);
+        user.setSuspensionEndDate(createSuspensionEndDate(1));
+
+        return lifecycle.saveActive(user);
+    }
+
+    // Single method to premanently suspend a user
+    // Can suspend admin because suspended admins still can carry out admin actions
+    // Just not courier actions
+    // Sets penalty to MAX_PENALTY
+    public User suspendUserPermanently(String userId) {
+        User user = getUserByUserId(userId);
+
+        user.setPenalty(MAX_PENALTY);
 
         List<String> roles = user.getRoles();
         roles.remove("courier");
         user.setRoles(roles);
         user.setIsCourierSuspended(true);
-        user.setSuspensionEndDate(Instant.now().plus(1, ChronoUnit.MONTHS));
+        user.setIsPermanentlySuspended(true);
 
         return lifecycle.saveActive(user);
     }
 
     private User refreshSuspensionStatus(User user) {
-        if (user.getIsCourierSuspended()
+        // Inactive accounts must remain readable, but must not be modified
+        // by the courier suspension refresh operation.
+        if (user.getStatus() != AccountStatus.ACTIVE) {
+            return user;
+        }
+        
+        Instant now = Instant.now();
+
+        if (Boolean.TRUE.equals(user.getIsCourierSuspended())
+                && !user.getIsPermanentlySuspended()
                 && user.getSuspensionEndDate() != null
-                && Instant.now().isAfter(user.getSuspensionEndDate())) {
+                && !now.isBefore(user.getSuspensionEndDate())) {
 
             user.setIsCourierSuspended(false);
             user.setSuspensionEndDate(null);
-            List<String> roles = user.getRoles();
-            roles.add("courier");
-            user.setRoles(roles);
 
-            return lifecycle.saveActive(user);
+            List<String> updatedRoles = new ArrayList<>(
+                    user.getRoles() != null ? user.getRoles() : List.of()
+            );
+
+            if (!updatedRoles.contains("courier")) {
+                updatedRoles.add("courier");
+            }
+
+            user.setRoles(updatedRoles);
         }
 
-        return user;
+        return lifecycle.saveActive(user);
     }
 
 
@@ -467,5 +541,11 @@ public class UserService {
 
         List<String> roles = user.getRoles();
         return user.getStatus() == AccountStatus.ACTIVE && roles != null && roles.contains("courier");
+    }
+
+    private Instant createSuspensionEndDate(int months) {
+       return ZonedDateTime.now(ZoneId.of("Asia/Singapore"))
+                .plusMonths(months)
+                .toInstant();
     }
 }

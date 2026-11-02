@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
+import { FirebaseError } from "firebase/app"
 
 import EditProfilePage from "@/app/profile/edit/page"
 
@@ -106,11 +107,12 @@ it("does not save an unverified email to User Service", async () => {
 it("refreshes the token and saves the verified Firebase email before reporting success", async () => {
   await loaded()
   await requestEmail()
-  mocks.reload.mockImplementationOnce(async () => { mocks.auth.user!.email = "new@example.com" })
-  mocks.api.mockImplementationOnce(async (_path, options) => {
+  mocks.reload.mockImplementationOnce(async () => {mocks.auth.user!.email = "new@example.com"})
+  mocks.api.mockImplementationOnce(async (path, options) => {
+    expect(path).toBe("/api/users/me/email-sync")
     expect(mocks.freshToken).toHaveBeenCalledWith(true)
-    expect(options).toEqual({ method: "PUT", body: { email: "new@example.com" } })
-    return { ...profile, email: "new@example.com" }
+    expect(options).toEqual({method: "POST", body: {},})
+    return {...profile, email: "new@example.com"}
   })
   fireEvent.click(screen.getByRole("button", { name: "I've verified my email" }))
   expect(await screen.findByText("Your email has been updated and saved successfully.")).toBeInTheDocument()
@@ -144,7 +146,12 @@ it("requires recent Firebase authentication before updating the password", async
 
 it("does not update the password after failed reauthentication", async () => {
   await loaded()
-  mocks.reauthenticate.mockRejectedValueOnce({ code: "auth/wrong-password" })
+  mocks.reauthenticate.mockRejectedValueOnce(
+    new FirebaseError(
+      "auth/wrong-password",
+      "The password is invalid."
+    )
+  )
   fireEvent.change(screen.getByLabelText("Current password"), { target: { value: "Old123!" } })
   fireEvent.change(screen.getByLabelText("New password"), { target: { value: "New123!" } })
   fireEvent.change(screen.getByLabelText("Confirm new password"), { target: { value: "New123!" } })

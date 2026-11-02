@@ -183,7 +183,7 @@ jobs:
       - name: Docker build
         uses: docker/build-push-action@v7
         with:
-          context: ${{ matrix.service == 'order-service' && '.' || matrix.service }}
+          context: ${{ contains(fromJSON('["order-service","user-service"]'), matrix.service) && '.' || matrix.service }}
           file: ${{ format('{0}/Dockerfile', matrix.service) }}
           push: false
           cache-from: type=gha,scope=${{ matrix.service }}

@@ -8,6 +8,8 @@ COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 COPY foc-common/pom.xml foc-common/pom.xml
 COPY order-service/pom.xml order-service/pom.xml
+# Need user-service because of its dependency on foc-common
+COPY user-service/pom.xml user-service/pom.xml
 RUN chmod +x mvnw
 
 COPY foc-common/src/ foc-common/src/

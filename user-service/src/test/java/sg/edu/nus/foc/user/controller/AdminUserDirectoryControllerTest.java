@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -19,7 +20,8 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
-import sg.edu.nus.foc.user.config.SecurityConfig;
+import sg.edu.nus.foc.user.security.SecurityConfig;
+import sg.edu.nus.foc.user.config.UserPushProperties;
 import sg.edu.nus.foc.user.logic.AdminUserDirectory;
 import sg.edu.nus.foc.user.logic.AdminUserPage;
 import sg.edu.nus.foc.user.model.AccountStatus;
@@ -32,6 +34,7 @@ import sg.edu.nus.foc.user.security.MongoUserServiceRoleProvider;
 @Import({SecurityConfig.class, CallerRoles.class, MongoUserServiceRoleProvider.class, AdminUserDirectoryControllerTest.WebSecurityForSlice.class})
 class AdminUserDirectoryControllerTest {
     @TestConfiguration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(UserPushProperties.class)
     @EnableWebSecurity
     static class WebSecurityForSlice { }
     @Autowired MockMvc mvc;

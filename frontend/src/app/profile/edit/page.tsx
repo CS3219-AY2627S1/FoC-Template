@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { verifyBeforeUpdateEmail, reload, EmailAuthProvider, reauthenticateWithCredential, updatePassword, type User } from "firebase/auth"
+import { FirebaseError } from "firebase/app"
 
 import { useAuth } from "@/components/providers/auth-provider"
 import { useApi } from "@/hooks/use-api"
@@ -15,8 +16,39 @@ import { DeleteAccountButton } from "@/components/users/delete-account-button"
 
 import { PasswordRequirements } from "../../login/password-requirements"
 
-
 type UserProfile = { email: string; username?: string | null }
+
+const FIREBASE_MESSAGES: Record<string, string> = {
+  "auth/wrong-password": "Your current password is incorrect.",
+  "auth/invalid-credential": "Incorrect email or password.",
+  "auth/invalid-email": "Enter a valid email address.",
+  "auth/email-already-in-use": "An account with this email already exists.",
+  "auth/weak-password": "Please choose a stronger password.",
+  "auth/password-does-not-meet-requirements": "Your password doesn't meet the requirements listed below the password field.",
+  "auth/operation-not-allowed": "Email sign-up is not enabled for this app. Please contact the team.",
+  "auth/admin-restricted-operation": "New accounts can't be created right now. Please contact the team.",
+  "auth/user-not-found": "No account of this email has been found. Please create an account.",
+  "auth/user-disabled": "This account has been disabled.",
+  "auth/too-many-requests": "Too many attempts. Please wait a moment and try again.",
+  "auth/network-request-failed": "Could not reach the sign-in service. Check your connection.",
+  "auth/requires-recent-login": "Please sign in again before changing your password.",
+}
+
+function describeError(error: unknown): string {
+    if (error instanceof Error && error.message === "EMAIL_NOT_VERIFIED") {
+        return "Email is not verified."
+    }
+    if (error instanceof FirebaseError) {
+        // Include the code for anything unexpected so it can be diagnosed.
+        return FIREBASE_MESSAGES[error.code] ?? `Authentication failed (${error.code}). Please try again.`
+    }
+
+    if (error instanceof Error) {
+        return error.message
+    }
+
+    return "Something went wrong. Please try again."
+}
 
 export default function EditProfilePage() {
     const { user, loading } = useAuth()
@@ -168,9 +200,7 @@ function EditProfileForm({ user }: { user: User }) {
                 "Verification email sent. Verify the new address before returning."
             )
         } catch (err) {
-            setEmailError(
-                err instanceof Error ? err.message : "Failed to send verification email."
-            )
+            setEmailError(describeError(err))
         } finally {
             setSendingVerification(false)
         }
@@ -199,8 +229,8 @@ function EditProfileForm({ user }: { user: User }) {
             // verified identity email through the existing authenticated self API.
             await user.getIdToken(true)
             if (!active.current) return
-            const saved = await api<UserProfile>("/api/users/me", {
-                method: "PUT", body: { email: currentEmail },
+            const saved = await api<UserProfile>("/api/users/me/email-sync", {
+                method: "POST", body: {},
             })
             if (saved.email.toLowerCase() !== currentEmail.toLowerCase()) {
                 throw new Error("Your verified email has not been saved to your profile. Please try again.")
@@ -213,9 +243,7 @@ function EditProfileForm({ user }: { user: User }) {
             setEmailVerifiedMessage("Your email has been updated and saved successfully.")
         } catch (err) {
             setEmailVerifiedMessage("")
-            setEmailError(
-                err instanceof Error ? err.message : "Failed to check email verification."
-            )
+            setEmailError(describeError(err))
         } finally {
             setCheckingVerification(false)
         }
@@ -274,29 +302,8 @@ function EditProfileForm({ user }: { user: User }) {
             setPasswordMessage("Password changed successfully.") 
         } catch (error: unknown) { 
             // Display the corresponding error message to user
-            const code = 
-                typeof error === "object" && 
-                error !== null && 
-                "code" in error ? String(error.code) : "" 
-                
-            switch (code) { 
-                case "auth/invalid-credential": 
-                case "auth/wrong-password": 
-                    setPasswordError("Your current password is incorrect.") 
-                    break 
-                case "auth/weak-password": 
-                    setPasswordError("Please choose a stronger password.") 
-                    break
-                case "auth/requires-recent-login": 
-                    setPasswordError("Please sign in again before changing your password.") 
-                    break 
-                case "auth/too-many-requests": 
-                    setPasswordError("Too many attempts. Please wait before trying again.") 
-                    break 
-                default: 
-                    console.error("Password change failed:", error) 
-                    setPasswordError( "Unable to change your password. Please try again." ) 
-            } 
+            console.error("Password change failed:", error) 
+            setPasswordError(describeError(error))
         } finally { 
             setChangingPassword(false)
         }

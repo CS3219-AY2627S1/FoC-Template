@@ -73,8 +73,9 @@ longer calls Credit Service synchronously, so a temporary Credit outage leaves t
 | ------ | ------------------------ | ----------------------------------- | ------------------------------------------------------ |
 | POST   | `/api/users`             | unauthenticated during registration | Create an application user after Firebase registration |
 | POST   | `/api/users/me/email-sync`| authenticated user                 | Syncs MongoDB user email with Firebase user email      |
-| GET    | `/api/users`             | services                            | Retrieve all users in MongoDB                          |
+| GET    | `/api/users`             | authenticated admin user            | Retrieve all users in MongoDB                          |
 | GET    | `/api/users/{:userId}`   | authenticated admin user            | Retrieve a specific user in MongoDB                    |
+| GET    | `/api/users/summary/{:userId}`| services                       | Retrieve a user summary from user id in MongoDB        |
 | GET    | `/api/users/me`          | authenticated user                  | Retrieve the currently authenticated user's profile    |
 | GET    | `/api/users/role-context`| authenticated / services            | Retrieve roles for authorization by other services     |
 | GET    | `/api/users/courier-eligibility`| authenticated / services     | Retrieve boolean if user is a courier by other services|
@@ -83,7 +84,8 @@ longer calls Credit Service synchronously, so a temporary Credit outage leaves t
 | PUT    | `/api/users/me`          | authenticated user                  | Update own information after registration              |
 | PUT    | `/api/users/{:userId}`   | authenticated admin user            | Update user information after registration             |
 | PUT    | `/api/users/{:userId}/user-promotion`| authenticated admin user| Promotes a regular user to admin                       |
-| PUT    | `/api/users/{:userId}/penalty`| services                       | Updates given user's penalty by a specified amount     |
+| PUT    | `/api/users/{:userId}/user-demotion`| authenticated admin user | Demotes an admin to regular user                       |
+| PUT    | `/api/users/{:userId}/penalty`| admin and services             | Updates given user's penalty by a specified amount     |
 | PUT    | `/api/users/{:userId}/suspension`| authenticated admin user    | Suspends a given user                                  |
 | DELETE | `/api/users/me`          | authenticated user                  | Deletes user information from user databases           |
 | DELETE | `/api/users/{:userId}`   | authenticated admin user            | Deletes specified user's information from user databases |
@@ -103,6 +105,8 @@ The `users` collection contains one document per application user in MongoDB.
 | `penalty`            | integer          | Current user penalty count; defaults to `0`                  |
 | `isCourierSuspended` | boolean          | Whether the user is currently suspended from courier actions |
 | `suspensionEndDate`  | date / null      | End date of the courier suspension                           |
+| `status`             | enum             | `ACTIVE`, `DEACTIVATION_PENDING` and `DEACTIVATED` are the enums allowed |
+| `isPermanentlySuspended`| boolean       | Whether user is suspended forever                            |
 
 ## Test
 

@@ -6,6 +6,7 @@ import {
   sendEmailVerification,
   onIdTokenChanged,
   signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut as firebaseSignOut,
   type User,
 } from "firebase/auth"
@@ -22,10 +23,11 @@ type AuthContextValue = {
   profileError: string | null
   refreshProfile: () => Promise<void>
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string) => Promise<void>
+  signUp: (email: string, password: string, username: string) => Promise<void>
   resendVerificationEmail: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   getIdToken: (forceRefresh?: boolean) => Promise<string | null>
+  sendFirebasePasswordResetEmail: (email: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -46,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const profileRequestIdRef = useRef(0)
 
   // Refreshes user profile information when needed
-   const refreshProfile = useCallback(async () => {
+  const refreshProfile = useCallback(async () => {
     const auth = getFirebaseAuth(config)
     const currentUser = auth.currentUser
     const requestId = ++profileRequestIdRef.current
@@ -150,7 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   )
 
   const signUp = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string, username: string) => {
         let user = null;
         const auth = getFirebaseAuth(config);
 
@@ -171,15 +173,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${idToken}`
-                }
+                },
+                body: JSON.stringify({
+                    username: username
+                })
             });
 
             // Checks if API succeeded
             if (!response.ok) {
-                const data = await response.json();
+              let message = "Failed to create user profile.";
 
-                console.log("API Error: ", data.message || "Unknown error")
-                throw new Error(data.message || "Failed to create user");
+              try {
+                const data = await response.json();
+                message = data.message || message;
+              } catch {
+                // Response wasn't valid JSON
+              }
+
+              throw new Error(message);
             }
         } catch (error) {
             // Error happened
@@ -263,11 +274,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [config]
   )
 
+  const sendFirebasePasswordResetEmail = useCallback(async (email: string) => {
+      const auth = getFirebaseAuth(config)
+      await sendPasswordResetEmail(auth, email.trim())
+    },
+    [config]
+  )
+
   const value = useMemo(
     () => ({ user, loading, profile, profileLoading, profileError, refreshProfile, 
-      signIn, signUp, signOut, getIdToken, resendVerificationEmail }),
+      signIn, signUp, signOut, getIdToken, resendVerificationEmail, sendFirebasePasswordResetEmail }),
     [user, loading, profile, profileLoading, profileError, refreshProfile, 
-      signIn, signUp, signOut, getIdToken, resendVerificationEmail],
+      signIn, signUp, signOut, getIdToken, resendVerificationEmail, sendFirebasePasswordResetEmail],
   )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

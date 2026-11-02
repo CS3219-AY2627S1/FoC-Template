@@ -63,6 +63,7 @@ class LiveUserDeletionIntegrationTest {
             .withEnv("FOC_INTERNAL_ORDER_API_ENABLED", "true")
             .withEnv("ORDER_SERVICE_URL", "http://host.testcontainers.internal:" + ORDER_PORT)
             .withEnv("USER_MESSAGING_MODE", "emulator")
+            .withEnv("USER_PUBSUB_PUSH_MODE", "emulator")
             .withEnv("PUBSUB_EMULATOR_HOST", "127.0.0.1:9")
             .withEnv("PUBSUB_PROJECT_ID", "demo-foc-local")
             .withEnv("USER_OUTBOX_RECOVERY_CRON", "-")
@@ -251,9 +252,23 @@ class LiveUserDeletionIntegrationTest {
 
     private static DockerImageName image(String directory, String name) {
         String tag = "foc-deletion-integration-" + name + ":" + UUID.randomUUID();
-        Path source = Path.of("..", directory).toAbsolutePath();
+        Path repositoryRoot = Path.of("..").toAbsolutePath().normalize();
+        Path source = repositoryRoot.resolve(directory).normalize();
         try {
-            Process build = new ProcessBuilder("docker", "build", "-t", tag, source.toString())
+            ProcessBuilder builder;
+            if ("user-service".equals(directory)) {
+                // User Service Dockerfile needs the entire Maven reactor as context.
+                builder = new ProcessBuilder(
+                        "docker", "build",
+                        "-f", source.resolve("Dockerfile").toString(),
+                        "-t", tag,
+                        repositoryRoot.toString()
+                );
+            } else {
+                // Other images retain their existing directory-specific context.
+                builder = new ProcessBuilder("docker", "build", "-t", tag, source.toString());
+            }
+            Process build = builder
                     .redirectErrorStream(true)
                     .redirectOutput(Path.of("target", "deletion-" + name + "-build.log").toFile()).start();
             // Cold Firebase builds download the CLI/emulators before exporting the image.

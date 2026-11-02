@@ -15,6 +15,11 @@
 !order-service/Dockerfile
 !order-service/src/
 !order-service/src/**
+!user-service/*
+!user-service/pom.xml
+!user-service/Dockerfile
+!user-service/src/*
+!user-service/src/**
 **/target/
 **/.env
 **/.env.*

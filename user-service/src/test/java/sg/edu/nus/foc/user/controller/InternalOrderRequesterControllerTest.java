@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
@@ -14,13 +15,15 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 import sg.edu.nus.foc.user.config.InternalOrderSecurityConfiguration;
-import sg.edu.nus.foc.user.config.SecurityConfig;
+import sg.edu.nus.foc.user.config.UserPushProperties;
+import sg.edu.nus.foc.user.security.SecurityConfig;
 import sg.edu.nus.foc.user.logic.UserService;
 import sg.edu.nus.foc.user.model.User;
 import sg.edu.nus.foc.user.model.AccountStatus;
 
 @WebMvcTest(controllers = InternalOrderRequesterController.class,
         properties = {"FOC_INTERNAL_ORDER_API_ENABLED=true", "FOC_ENVIRONMENT=staging"})
+@EnableConfigurationProperties(UserPushProperties.class)
 @Import({InternalOrderSecurityConfiguration.class, SecurityConfig.class})
 class InternalOrderRequesterControllerTest {
     @Autowired MockMvc mvc;

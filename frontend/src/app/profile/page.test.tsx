@@ -27,7 +27,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks() })
 it("renders the responsive profile summary alongside transaction history", async () => {
   render(<ProfilePage />)
   await waitFor(() => expect(mocks.api).toHaveBeenCalledWith("/api/users/me", expect.anything()))
-  expect(screen.queryByText("Username")).not.toBeInTheDocument()
+  expect(screen.queryByText("Account name")).toBeInTheDocument()
   expect(await screen.findByText("anna@example.com")).toBeInTheDocument()
   expect(screen.getByText("requester")).toBeInTheDocument()
   expect(screen.getByText("Active")).toBeInTheDocument()

@@ -64,6 +64,18 @@ create("/subscriptions/order-credit-compensation-result-local-v1", {
     "ackDeadlineSeconds": 30,
     "pushConfig": {"pushEndpoint": "http://order-service:8080/api/orders/internal/credit-compensations"},
 })
+
+# Penalty events consumed by User Service.
+for topic, route in (
+    ("courier-penalty-addition","addition"),
+    ("courier-penalty-deduction","deduction")
+):
+    create(f"/subscriptions/user-{topic}-local-v1", {
+        "topic": f"projects/demo-foc-local/topics/{topic}-local-v1",
+        "ackDeadlineSeconds": 30,
+        "pushConfig": {"pushEndpoint": f"http://user-service:8080/api/users/internal/penalties/{route}"},
+    })
+
 create("/subscriptions/report-resolution-request-local", {
     "topic": "projects/demo-foc-local/topics/report-resolution-compensation-local-v1",
     "ackDeadlineSeconds": 30,

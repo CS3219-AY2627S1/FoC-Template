@@ -58,5 +58,14 @@ user:
     topics:
       user-created: ${USER_CREATED_TOPIC:user-created-dev-v1}
 
+foc:
+  user:
+    push:
+      project-id: ${USER_PUBSUB_PROJECT_ID:demo-foc-local}
+      audience: ${USER_PUBSUB_PUSH_AUDIENCE:http://localhost:8080}
+      service-account: ${USER_PUBSUB_PUSH_SERVICE_ACCOUNT:foc-user-push-local@demo-foc-local.iam.gserviceaccount.com}
+      penalty-addition-subscription: ${USER_PUBSUB_PENALTY_ADDITION_SUBSCRIPTION:user-courier-penalty-addition-local-v1}
+      penalty-deduction-subscription: ${USER_PUBSUB_PENALTY_DEDUCTION_SUBSCRIPTION:user-courier-penalty-deduction-local-v1}
+      
 server:
   port: ${PORT:8080}

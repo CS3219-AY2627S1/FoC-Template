@@ -1,10 +1,13 @@
 package sg.edu.nus.foc.user.logic;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import java.util.List;
 import java.util.Optional;
+
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import sg.edu.nus.foc.user.authentication.FirebaseAuthService;
 import sg.edu.nus.foc.user.model.AccountStatus;
@@ -15,8 +18,15 @@ import tools.jackson.databind.json.JsonMapper;
 
 class InactiveAccountAuthorizationTest {
     private final UserRepository repository = mock(UserRepository.class);
+    private final UserLifecycleStore lifecycle = mock(UserLifecycleStore.class);
     private final UserService service = new UserService(repository, mock(FirebaseAuthService.class),
-            mock(OrderServiceClient.class), mock(OutboxEventRepository.class), JsonMapper.builder().build(), mock(UserLifecycleStore.class));
+            mock(OrderServiceClient.class), mock(OutboxEventRepository.class), JsonMapper.builder().build(), lifecycle);
+
+    @BeforeEach
+    void setUp() {
+        when(lifecycle.saveActive(any(User.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+    }
 
     @Test
     void onlyActiveAccountsExposeTheirStoredRoles() {

@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useApi } from "@/hooks/use-api"
 
 type UserProfile = {
+  username: string
   email: string
   roles: string[]
   penalty: number
@@ -75,6 +76,7 @@ export default function ProfilePage() {
             <div aria-label="Loading profile" className="grid gap-4 sm:grid-cols-2">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-14 w-full" />)}</div>
           ) : profile ? (
             <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              <div><dt className="text-sm text-muted-foreground">Account name</dt><dd className="mt-1 break-all font-medium">{profile.username}</dd></div>
               <div><dt className="text-sm text-muted-foreground">Email</dt><dd className="mt-1 break-all font-medium">{profile.email}</dd></div>
               <div><dt className="text-sm text-muted-foreground">Roles</dt><dd className="mt-1 flex flex-wrap gap-1">{profile.roles.map((role) => <Badge key={role} variant="secondary">{role}</Badge>)}</dd></div>
               <div><dt className="text-sm text-muted-foreground">Courier status</dt><dd className="mt-1"><Badge variant={profile.isCourierSuspended ? "destructive" : "outline"}>{profile.isCourierSuspended ? "Suspended" : "Active"}</Badge></dd></div>

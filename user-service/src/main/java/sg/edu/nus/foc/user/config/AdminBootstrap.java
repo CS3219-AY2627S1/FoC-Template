@@ -7,7 +7,6 @@ import com.google.firebase.auth.UserRecord;
 import sg.edu.nus.foc.user.logic.UserService;
 import sg.edu.nus.foc.user.repository.UserRepository;
 
-import com.fasterxml.jackson.core.JacksonException;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
@@ -18,6 +17,7 @@ import org.springframework.stereotype.Component;
 public class AdminBootstrap implements CommandLineRunner {
     private final UserRepository userRepository;
     private final UserService userService;
+    private final FirebaseAuth firebaseAuth;
 
     @Value("${admin.bootstrap-enabled:false}")
     private boolean enabled;
@@ -25,9 +25,10 @@ public class AdminBootstrap implements CommandLineRunner {
     @Value("${admin.bootstrap-email:}")
     private String bootstrapEmail;
 
-    public AdminBootstrap(UserRepository userRepository, UserService userService) {
+    public AdminBootstrap(UserRepository userRepository, UserService userService, FirebaseAuth firebaseAuth) {
         this.userRepository = userRepository;
         this.userService = userService;
+        this.firebaseAuth = firebaseAuth;
     }
 
     // Executes on user service startup
@@ -55,7 +56,7 @@ public class AdminBootstrap implements CommandLineRunner {
         }
 
         try {
-            UserRecord firebaseUser = FirebaseAuth.getInstance().getUserByEmail(bootstrapEmail);
+            UserRecord firebaseUser = firebaseAuth.getUserByEmail(bootstrapEmail);
             userService.addAdmin(firebaseUser.getUid(), firebaseUser.getEmail());
         } catch (FirebaseAuthException e) {
             throw new RuntimeException(
