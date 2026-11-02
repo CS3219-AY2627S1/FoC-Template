@@ -8,7 +8,6 @@
 
 import { sql } from 'drizzle-orm';
 import {
-  bigserial,
   check,
   doublePrecision,
   index,
@@ -19,7 +18,6 @@ import {
   primaryKey,
   text,
   timestamp,
-  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import type { BadgeCondition, MetricName } from '../types.js';
@@ -27,8 +25,8 @@ import type { BadgeCondition, MetricName } from '../types.js';
 export const targetRole = pgEnum('badge_target_role', ['courier', 'requester', 'any']);
 export const orderRole = pgEnum('order_role', ['COURIER', 'REQUESTER']);
 export const badgeState = pgEnum('badge_state', ['earned', 'revoked']);
-export const runTrigger = pgEnum('run_trigger', ['schedule', 'manual']);
-export const runStatus = pgEnum('run_status', ['running', 'succeeded', 'failed']);
+// Admin Service's FaultParty values, hyphen included.
+export const faultParty = pgEnum('fault_party', ['requester', 'courier', 'no-fault']);
 
 // F1.1: the catalog, upserted from src/catalog/badges.json at startup.
 export const badgeCatalog = pgTable('badge_catalog', {
@@ -59,15 +57,21 @@ export const countedOrder = pgTable(
   (t) => [primaryKey({ columns: [t.orderId, t.role] }), index('counted_order_user_idx').on(t.userId)],
 );
 
-// Orders that went to ESCALATED. They never count, whatever the outcome
-// (team decision 2026-10-30; fault-aware counting is future work).
+// Orders that went to ESCALATED. Uncounted until Admin's verdict, then counted
+// again for whoever was not at fault (decision 2026-11-02). The two events come
+// on different topics, so either half of a row may arrive first: the parties
+// from order.status.changed, the verdict from admin.case.resolved.
 export const disputedOrder = pgTable('disputed_order', {
   orderId: uuid('order_id').primaryKey(),
+  requesterId: uuid('requester_id'),
+  courierId: uuid('courier_id'),
+  faultParty: faultParty('fault_party'),
   disputedAt: timestamp('disputed_at', { withTimezone: true }).notNull().defaultNow(),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
 });
 
-// What badges are judged on. Counts come from order events and are overwritten
-// by the daily run; the rating pair comes from user.rating.updated only.
+// What badges are judged on, kept current by events only (decision 2026-11-02):
+// counts from order and admin events, the rating pair from user.rating.updated.
 export const userMetrics = pgTable(
   'user_metrics',
   {
@@ -76,10 +80,8 @@ export const userMetrics = pgTable(
     completedOrders: integer('completed_orders').notNull().default(0),
     averageRating: doublePrecision('average_rating'),
     ratingCount: integer('rating_count').notNull().default(0),
-    // Last time an order event changed the counts; the daily run skips users
-    // whose counts changed after it asked Order Service for theirs.
+    // Last time an order event changed the counts.
     lastOrderEventAt: timestamp('last_order_event_at', { withTimezone: true }),
-    reconciledAt: timestamp('reconciled_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -107,28 +109,7 @@ export const userBadge = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.badgeId] })],
 );
 
-// Run log for the daily and manual runs: demo evidence and the admin job list.
-export const jobRun = pgTable(
-  'job_run',
-  {
-    runId: bigserial('run_id', { mode: 'number' }).primaryKey(),
-    trigger: runTrigger('trigger').notNull(),
-    // The admin who started a manual run; null for the schedule.
-    triggeredBy: uuid('triggered_by'),
-    status: runStatus('status').notNull().default('running'),
-    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
-    finishedAt: timestamp('finished_at', { withTimezone: true }),
-    usersProcessed: integer('users_processed').notNull().default(0),
-    usersSkipped: integer('users_skipped').notNull().default(0),
-    badgesAwarded: integer('badges_awarded').notNull().default(0),
-    badgesRevoked: integer('badges_revoked').notNull().default(0),
-    error: text('error'),
-  },
-  // At most one run at a time, across replicas too.
-  (t) => [uniqueIndex('job_run_one_running').on(t.status).where(sql`${t.status} = 'running'`)],
-);
-
 export type CatalogRow = typeof badgeCatalog.$inferSelect;
 export type UserMetricsRow = typeof userMetrics.$inferSelect;
 export type UserBadgeRow = typeof userBadge.$inferSelect;
-export type JobRunRow = typeof jobRun.$inferSelect;
+export type DisputedOrderRow = typeof disputedOrder.$inferSelect;

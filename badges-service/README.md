@@ -2,67 +2,80 @@
 
 Awards and revokes profile badges for FoC users (Badges F1-F4, NFR1-NFR2; UI
 FR12.2.2 shows them). It has its own PostgreSQL database and learns about
-activity two ways: order and rating **events** for immediate updates, and a
-**daily run** that reconciles counts with Order Service and is how a stale badge
-is corrected by the next day at the latest (NFR2.1.1).
+activity from order, rating and admin **events** only: each event updates the
+user's metrics and re-checks their badges straight away. It calls no other
+service.
 
 Stack mirrors rating-service: Fastify + TypeBox, Drizzle + postgres.js, Vitest
 (90% coverage floor), `@confluentinc/kafka-javascript`.
 
 ## Decisions this implementation follows
 
-- Events plus daily reconciliation (2026-10-30), replacing polling only.
-- Rating metrics come from `user.rating.updated` only; Badges never calls Rating.
+- Events only (2026-11-02). This replaces the daily 22:00 UTC poll of User,
+  Order and Rating (D1 Badges F2, F2.1, F2.1.1) and the admin manual run: a poll
+  needed a badge-specific endpoint in Order that copies Badges' counting rules,
+  and it repaired only what events had missed. Badges therefore has no
+  scheduled job; NFR1.1 still holds, as evaluation never runs inside Order's or
+  Rating's request handling.
 - An order counts once, the first time it reaches DELIVERED, ACKNOWLEDGED,
   UNACKNOWLEDGED or COMPLETED (2026-10-30). Same list as Order Service's
   completed deliveries.
-- An order that goes to ESCALATED never counts, whatever the admin decides
-  (2026-10-30). Fault-aware counting is future work with Order Service.
+- An order that goes to ESCALATED is uncounted until Admin's verdict, then
+  counted again for whoever was not at fault (2026-11-02): requester at fault →
+  the courier's delivery counts; courier at fault → the requester's order
+  counts; no-fault → both. Badges reads the verdict from `admin.case.resolved`
+  itself.
 - `GET /api/v1/badges/{userId}`, readable by its owner only (2026-09-21, path from the contract).
-- The manual run is an admin route through the gateway (2026-10-30).
 - Users are keyed by user ID; badges can be revoked (2026-09-21).
-- Daily run at 22:00 UTC (D1 Badges F2.1).
 
 ## How badges change
 
-Event path (`src/messaging`), one consumer group `badges-service`:
+One consumer group `badges-service` (`src/messaging`):
 
 - `order.status.changed` (foc.order.status): on a counted status, adds a
   `counted_order` row per role (requester → completed requests, courier →
   completed deliveries) and re-checks both users. The primary key makes later
-  statuses and redeliveries no-ops. On ESCALATED, records the order in
-  `disputed_order`, removes its rows and takes the counts back.
+  statuses and redeliveries no-ops. On ESCALATED, records the order and its
+  parties in `disputed_order`, removes its rows and takes the counts back. A
+  later counted status of a disputed order is ignored; only the verdict counts it.
+- `admin.case.resolved` (foc.admin.events): stores `faultParty` on the
+  `disputed_order` row and counts the order again for the party not at fault
+  (`src/messaging/counting.ts`). The first verdict is kept. If it arrives
+  before the escalation (different topics), it is applied when that comes.
 - `user.rating.updated` (foc.user.rating): stores the whole average and count.
   Ratings are never deleted, so a message with a lower or equal count is older
   and is ignored.
 - A message that fails 4 times is logged and skipped (NFR3.1.1).
 
-Daily run (`src/jobs/evaluationRun.ts`), also started by the admin route:
+A new consumer group reads what the topics still retain, so activity from
+before Badges was first deployed is picked up if Kafka still has it.
 
-1. Pages through user IDs from User Service, at most 1,000 at a time (NFR1.1.1).
-2. Asks Order Service for those users' counts and overwrites the stored ones,
-   except for a user an order event changed after the run asked (that event is
-   newer than Order's answer).
-3. Re-checks every user's badges, awarding and revoking.
-4. Records the run in `job_run`. A partial unique index allows one running run
-   at a time; a run cut off by a restart is closed when the service starts.
+When the catalog changes (a new badge, or a changed threshold or wording),
+startup re-checks every user Badges has metrics for, 1,000 at a time
+(`src/services/recheck.service.ts`, NFR1.1.1), in the background so the health
+probes keep answering.
 
-Known gap: an order event consumed between Order answering and the run writing
-that user's counts is counted twice until the next run. The window is the
-consumer lag, so this is rare and self-correcting.
+## Known limitations
+
+Badge state is only as complete as the events Badges has read. Nothing repairs
+metrics after the fact, so these stay wrong until the user's next event (or for
+good, if they have none):
+
+- Activity Kafka no longer holds: Badges first deployed, or its database reset,
+  more than 7 days (Kafka's default retention) after it happened.
+- A message skipped after 4 failed attempts, e.g. the database down at that moment.
+- An `admin.case.resolved` Admin failed to publish: Admin has no outbox, so a
+  verdict given while Kafka was down is logged and dropped.
+- A verdict for an escalation Badges never saw: it has no parties to count.
 
 ## Endpoints
 
-Identity comes from the gateway's `x-user-id` / `x-is-admin` headers.
+Identity comes from the gateway's `x-user-id` header.
 
 - `GET /health`, `GET /health/db`.
 - `GET /api/v1/badges/{userId}`: every catalog badge with `earned`, `earnedAt`,
   the unlock `criteria` (F4.1) and `progress` `{current, target}` for unearned
   ones (F4.1.1), plus `metricsAsOf`. 404 unless `x-user-id` is `userId`.
-- `POST /api/v1/badges/admin/evaluate`: admins only (404 otherwise, Admin
-  F2.2.1). Starts a run in the background, answers `202 { runId, status }`;
-  409 `RUN_IN_PROGRESS` if one is running.
-- `GET /api/v1/badges/admin/jobs`: admins only. The last 20 runs.
 
 ## Badge catalog
 
@@ -73,20 +86,9 @@ a badge must hold. Thresholds are placeholders for the demo.
 
 ## What this service needs from teammates
 
-Neither endpoint exists yet; paths are in `src/clients/peers.ts`. The mesh
-policies allowing Badges to call them are already in
-`deploy/values/services/user.yaml` and `order.yaml`.
-
-- User Service: `GET /api/v1/user/internal/user-ids?offset&limit` →
-  `{ userIds: string[], total: number }`, every user, stable order.
-- Order Service: `POST /api/v1/orders/internal/badge-counts` with `{ userIds }` →
-  `[{ userId, completedDeliveries, completedOrders }]`. Count orders in
-  DELIVERED, ACKNOWLEDGED, UNACKNOWLEDGED or COMPLETED with no `caseId`
-  (never escalated); courier ID for deliveries, requester ID for requests.
-  Users with no orders may be left out.
-
-Until they exist the daily run fails and is recorded as failed; events keep
-working.
+Nothing beyond the events it already reads. The badges KafkaUser may read
+foc.order.status, foc.user.rating and foc.admin.events
+(`deploy/charts/foc-kafka/values.yaml`).
 
 ## Running it
 
@@ -98,12 +100,12 @@ npm run dev                     # http://localhost:8086
 npm run test:coverage           # creates badges_test and migrates it
 ```
 
-Set `KAFKA_BROKERS` to consume events; without it only the daily and manual
-runs change badges. `BADGES_SCHEDULE_ENABLED=false` turns the schedule off.
+Set `KAFKA_BROKERS` to consume events; without it badges never change.
 Schema changes: edit `src/database/schema.ts`, then `npm run db:generate`.
 
 ## AI assistance
 
 Generated with Claude Code (Claude Opus 5 on 2026-09-21 for the original
-scaffold, Claude Opus 5.5 on 2026-10-30 for this port); each file names its
-scope in a header. Reviewed by Ngooi Jun Sen.
+scaffold, Claude Opus 5.5 on 2026-10-30 for this port and 2026-11-02 for
+fault-aware disputes and the move to events only); each file names its scope
+in a header. Reviewed by Ngooi Jun Sen.

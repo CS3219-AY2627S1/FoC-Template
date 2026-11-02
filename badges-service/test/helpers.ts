@@ -11,7 +11,7 @@ import { db } from '../src/database/index.js';
 import { userBadge, userMetrics } from '../src/database/schema.js';
 
 export { db };
-export { countedOrder, disputedOrder, jobRun, userBadge, userMetrics } from '../src/database/schema.js';
+export { countedOrder, disputedOrder, userBadge, userMetrics } from '../src/database/schema.js';
 
 // An order.status.changed message as Order Service publishes it.
 export function orderMessage(overrides: Record<string, unknown> = {}) {
@@ -40,6 +40,20 @@ export function ratingMessage(overrides: Record<string, unknown> = {}) {
     userId: randomUUID(),
     newAverage: 4.8,
     totalRatings: 10,
+    ...overrides,
+  };
+}
+
+// An admin.case.resolved message as Admin Service publishes it.
+export function resolvedMessage(overrides: Record<string, unknown> = {}) {
+  return {
+    eventId: randomUUID(),
+    eventType: 'admin.case.resolved',
+    schemaVersion: 1,
+    occurredAt: new Date().toISOString(),
+    orderId: randomUUID(),
+    caseId: randomUUID(),
+    faultParty: 'requester',
     ...overrides,
   };
 }

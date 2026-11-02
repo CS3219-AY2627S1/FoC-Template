@@ -49,17 +49,6 @@ export interface BadgeEvaluation {
   progress: { current: number; target: number } | null;
 }
 
-export interface JobSummary {
-  runId: number;
-  trigger: 'schedule' | 'manual';
-  usersProcessed: number;
-  /** Users whose counts an order event changed after the run asked Order Service. */
-  usersSkipped: number;
-  badgesAwarded: number;
-  badgesRevoked: number;
-  durationMs: number;
-}
-
 /** Badges awarded and revoked by one evaluation. */
 export interface BadgeChanges {
   awarded: number;

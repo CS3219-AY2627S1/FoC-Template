@@ -1,7 +1,7 @@
 /**
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
- * Scope: Generated TypeBox request/response schemas for the badges and admin routes.
+ * Scope: Generated TypeBox request/response schemas for the badges routes.
  * Author review: Ngooi Jun Sen to validate before merge.
  */
 
@@ -56,27 +56,3 @@ export const UserBadgesResponse = Type.Object({
   ),
 });
 export type UserBadgesResponse = Static<typeof UserBadgesResponse>;
-
-// POST /api/v1/badges/admin/evaluate: the run starts in the background.
-export const StartRunResponse = Type.Object({
-  runId: Type.Integer(),
-  status: Type.Literal('running'),
-});
-
-const JobRun = Type.Object({
-  runId: Type.Integer(),
-  trigger: Type.Union([Type.Literal('schedule'), Type.Literal('manual')]),
-  triggeredBy: Type.Union([Type.String(), Type.Null()]),
-  status: Type.Union([Type.Literal('running'), Type.Literal('succeeded'), Type.Literal('failed')]),
-  startedAt: Type.String({ format: 'date-time' }),
-  finishedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
-  usersProcessed: Type.Integer(),
-  usersSkipped: Type.Integer(),
-  badgesAwarded: Type.Integer(),
-  badgesRevoked: Type.Integer(),
-  error: Type.Union([Type.String(), Type.Null()]),
-});
-
-// GET /api/v1/badges/admin/jobs: the last 20 runs, newest first.
-export const JobRunsResponse = Type.Object({ runs: Type.Array(JobRun) });
-export type JobRunsResponse = Static<typeof JobRunsResponse>;

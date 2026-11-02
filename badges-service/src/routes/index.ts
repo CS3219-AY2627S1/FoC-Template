@@ -6,13 +6,10 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import { adminRoutes } from './admin.routes.js';
 import { badgeRoutes } from './badges.routes.js';
 import { healthRoutes } from './health.js';
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await app.register(healthRoutes);
-  // The static /admin prefix is matched before /api/v1/badges/:userId.
-  await app.register(adminRoutes, { prefix: '/api/v1/badges/admin' });
   await app.register(badgeRoutes, { prefix: '/api/v1/badges' });
 }

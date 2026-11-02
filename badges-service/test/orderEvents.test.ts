@@ -6,8 +6,9 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { handleAdminEvent } from '../src/messaging/adminEvents.js';
 import { handleOrderEvent } from '../src/messaging/orderEvents.js';
-import { badgeState, countedOrder, db, disputedOrder, metricsOf, orderMessage } from './helpers.js';
+import { badgeState, countedOrder, db, disputedOrder, metricsOf, orderMessage, resolvedMessage } from './helpers.js';
 
 const send = (message: Record<string, unknown>) => handleOrderEvent(JSON.stringify(message));
 
@@ -67,7 +68,7 @@ describe('handleOrderEvent', () => {
     expect(await db.select().from(countedOrder)).toHaveLength(0);
   });
 
-  it('never counts a disputed order, even once it is resolved to COMPLETED', async () => {
+  it('does not count a disputed order when Order moves it to COMPLETED; only the verdict can', async () => {
     const message = orderMessage({ fromStatus: 'COLLECTED', toStatus: 'ESCALATED' });
     expect(await send(message)).toBe('disputed');
     expect(await db.select().from(disputedOrder)).toHaveLength(1);
@@ -76,6 +77,25 @@ describe('handleOrderEvent', () => {
       'disputed',
     );
     expect(await db.select().from(countedOrder)).toHaveLength(0);
+  });
+
+  it('applies a verdict that arrived before the escalation', async () => {
+    const message = orderMessage();
+    await send(message);
+    await handleAdminEvent(JSON.stringify(resolvedMessage({ orderId: message.orderId, faultParty: 'courier' })));
+
+    expect(await send({ ...message, eventId: 'esc', fromStatus: 'DELIVERED', toStatus: 'ESCALATED' })).toBe(
+      'uncounted',
+    );
+    expect(await metricsOf(message.courierId as string)).toMatchObject({ completedDeliveries: 0 });
+    expect(await metricsOf(message.requesterId as string)).toMatchObject({ completedOrders: 1 });
+  });
+
+  it('counts the not-at-fault party when an uncounted order is escalated after its verdict', async () => {
+    const message = orderMessage({ toStatus: 'ESCALATED' });
+    await handleAdminEvent(JSON.stringify(resolvedMessage({ orderId: message.orderId, faultParty: 'no-fault' })));
+    expect(await send(message)).toBe('counted');
+    expect(await db.select().from(countedOrder)).toHaveLength(2);
   });
 
   it('records a repeated escalation once', async () => {

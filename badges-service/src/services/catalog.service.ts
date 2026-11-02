@@ -2,6 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
  * Scope: Ported catalog seeding and loading from the scaffold's db.ts to Drizzle.
+ *        2026-11-02: seeding reports whether the catalog changed.
  * Author review: Ngooi Jun Sen to validate before merge.
  */
 
@@ -12,11 +13,12 @@ import type { BadgeDefinition } from '../types.js';
 
 /**
  * Upserts the catalog from src/catalog/badges.json, so a new badge or a changed
- * threshold needs no code change beyond the catalog data (F1.1).
+ * threshold needs no code change beyond the catalog data (F1.1). Returns whether
+ * any badge was added or changed, i.e. whether users need re-checking.
  */
-export async function seedCatalog(definitions: BadgeDefinition[], executor: Executor = db): Promise<void> {
-  if (definitions.length === 0) return;
-  await executor
+export async function seedCatalog(definitions: BadgeDefinition[], executor: Executor = db): Promise<boolean> {
+  if (definitions.length === 0) return false;
+  const written = await executor
     .insert(badgeCatalog)
     .values(
       definitions.map((badge) => ({
@@ -44,7 +46,16 @@ export async function seedCatalog(definitions: BadgeDefinition[], executor: Exec
         progressMetric: sql`excluded.progress_metric`,
         updatedAt: sql`now()`,
       },
-    });
+      // Unchanged rows are left alone, so they don't count as a change.
+      setWhere: sql`(${badgeCatalog.title}, ${badgeCatalog.description}, ${badgeCatalog.targetRole},
+        ${badgeCatalog.displayOrder}, ${badgeCatalog.iconEarnedUrl}, ${badgeCatalog.iconUnearnedUrl},
+        ${badgeCatalog.conditions}, ${badgeCatalog.progressMetric})
+        is distinct from (excluded.title, excluded.description, excluded.target_role,
+        excluded.display_order, excluded.icon_earned_url, excluded.icon_unearned_url,
+        excluded.conditions, excluded.progress_metric)`,
+    })
+    .returning({ badgeId: badgeCatalog.badgeId });
+  return written.length > 0;
 }
 
 export async function loadCatalog(executor: Executor = db): Promise<BadgeDefinition[]> {

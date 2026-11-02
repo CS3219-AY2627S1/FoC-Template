@@ -2,15 +2,16 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
  * Scope: Generated the order.status.changed handler that keeps delivery and request counts
- *        up to date between daily runs.
+ *        up to date. 2026-11-02: disputes go through counting.ts.
  * Author review: Ngooi Jun Sen to validate before merge.
  */
 
 import { Value } from '@sinclair/typebox/value';
-import { eq, sql } from 'drizzle-orm';
-import { db, type Executor } from '../database/index.js';
-import { countedOrder, disputedOrder, userMetrics } from '../database/schema.js';
+import { eq } from 'drizzle-orm';
+import { db } from '../database/index.js';
+import { countedOrder, disputedOrder } from '../database/schema.js';
 import { evaluateUser } from '../services/badges.service.js';
+import { adjustCount, applyDispute, type Role } from './counting.js';
 import { ORDER_STATUS_CHANGED, OrderStatusChanged } from './messages.js';
 
 export type OrderOutcome = 'counted' | 'uncounted' | 'duplicate' | 'disputed' | 'ignored' | 'invalid';
@@ -18,30 +19,6 @@ export type OrderOutcome = 'counted' | 'uncounted' | 'duplicate' | 'disputed' | 
 // An order counts once, the first time it reaches any of these (team decision
 // 2026-10-30). The same list as Order Service's COMPLETED_DELIVERIES.
 export const COUNTED_STATUSES = new Set(['DELIVERED', 'ACKNOWLEDGED', 'UNACKNOWLEDGED', 'COMPLETED']);
-
-type Role = 'COURIER' | 'REQUESTER';
-
-// COURIER rows feed completedDeliveries, REQUESTER rows completedOrders.
-async function adjustCount(executor: Executor, userId: string, role: Role, delta: 1 | -1): Promise<void> {
-  const initial = delta > 0 ? 1 : 0;
-  const counts =
-    role === 'COURIER'
-      ? {
-          insert: { completedDeliveries: initial },
-          update: { completedDeliveries: sql`greatest(${userMetrics.completedDeliveries} + ${delta}, 0)` },
-        }
-      : {
-          insert: { completedOrders: initial },
-          update: { completedOrders: sql`greatest(${userMetrics.completedOrders} + ${delta}, 0)` },
-        };
-  await executor
-    .insert(userMetrics)
-    .values({ userId, ...counts.insert, lastOrderEventAt: new Date() })
-    .onConflictDoUpdate({
-      target: userMetrics.userId,
-      set: { ...counts.update, lastOrderEventAt: sql`now()`, updatedAt: sql`now()` },
-    });
-}
 
 /**
  * Handles one message from foc.order.status. Throws only on failures worth
@@ -62,21 +39,17 @@ export async function handleOrderEvent(raw: string): Promise<OrderOutcome> {
   const { orderId, requesterId, courierId, toStatus } = message;
 
   return db.transaction(async (tx) => {
-    // A disputed order never counts, whatever the admin decides: take back
-    // anything already counted for it (team decision 2026-10-30).
+    // A disputed order is uncounted until Admin's verdict (admin.case.resolved),
+    // which may already be here: the two arrive on different topics.
     if (toStatus === 'ESCALATED') {
-      await tx.insert(disputedOrder).values({ orderId }).onConflictDoNothing();
-      const removed = await tx
-        .delete(countedOrder)
-        .where(eq(countedOrder.orderId, orderId))
-        .returning({ userId: countedOrder.userId, role: countedOrder.role });
-      for (const row of removed) {
-        await adjustCount(tx, row.userId, row.role, -1);
-      }
-      for (const userId of new Set(removed.map((row) => row.userId))) {
-        await evaluateUser(userId, tx);
-      }
-      return removed.length > 0 ? 'uncounted' : 'disputed';
+      const [dispute] = await tx
+        .insert(disputedOrder)
+        .values({ orderId, requesterId, courierId })
+        .onConflictDoUpdate({ target: disputedOrder.orderId, set: { requesterId, courierId } })
+        .returning();
+      const changes = await applyDispute(tx, dispute!);
+      if (changes.removed > 0) return 'uncounted';
+      return changes.added > 0 ? 'counted' : 'disputed';
     }
 
     if (!COUNTED_STATUSES.has(toStatus)) return 'ignored';

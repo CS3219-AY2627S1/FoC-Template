@@ -1,7 +1,7 @@
 /**
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
- * Scope: Tests for catalog seeding and loading.
+ * Scope: Tests for catalog seeding and loading, and change detection (2026-11-02).
  * Author review: Ngooi Jun Sen to validate before merge.
  */
 
@@ -23,6 +23,13 @@ describe('catalog', () => {
     await seedCatalog([{ ...first!, title: 'Renamed', conditions: [{ metric: 'completedDeliveries', op: 'gte', value: 2 }] }]);
     const updated = (await loadCatalog()).find((b) => b.badgeId === first!.badgeId);
     expect(updated).toMatchObject({ title: 'Renamed', conditions: [{ metric: 'completedDeliveries', op: 'gte', value: 2 }] });
+  });
+
+  it('reports a change only when a badge was added or changed', async () => {
+    expect(await seedCatalog(seed)).toBe(false);
+    expect(await seedCatalog([{ ...seed[0]!, description: 'New wording' }])).toBe(true);
+    expect(await seedCatalog([{ ...seed[0]!, badgeId: 'brand_new', displayOrder: 99 }])).toBe(true);
+    expect(await seedCatalog([])).toBe(false);
   });
 
   it('leaves out progressMetric when a badge has none, and accepts an empty seed', async () => {

@@ -1,13 +1,15 @@
 /**
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
- * Scope: Generated the Kafka consumer wiring, adapted from rating-service's kafka.ts.
+ * Scope: Generated the Kafka consumer wiring, adapted from rating-service's kafka.ts
+ *        (foc.admin.events added 2026-11-02).
  * Author review: Ngooi Jun Sen to validate before merge.
  */
 
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import type { FastifyBaseLogger } from 'fastify';
 import { config } from '../config.js';
+import { handleAdminEvent } from './adminEvents.js';
 import { handleOrderEvent } from './orderEvents.js';
 import { handleRatingEvent } from './ratingEvents.js';
 import { withRetries } from './retry.js';
@@ -39,10 +41,11 @@ function createKafka(settings: KafkaSettings): KafkaJS.Kafka {
 export function handlerFor(topic: string): ((raw: string) => Promise<string>) | undefined {
   if (topic === config.kafka.orderTopic) return handleOrderEvent;
   if (topic === config.kafka.ratingTopic) return handleRatingEvent;
+  if (topic === config.kafka.adminTopic) return handleAdminEvent;
   return undefined;
 }
 
-// Starts the foc.order.status and foc.user.rating consumer. Returns a function that stops it.
+// Starts the consumer of foc.order.status, foc.user.rating and foc.admin.events. Returns a function that stops it.
 export async function startMessaging(log: FastifyBaseLogger): Promise<() => Promise<void>> {
   const settings = config.kafka;
   const kafka = createKafka(settings);
@@ -53,7 +56,8 @@ export async function startMessaging(log: FastifyBaseLogger): Promise<() => Prom
     kafkaJS: { groupId: settings.groupId, fromBeginning: true },
   });
   await consumer.connect();
-  await consumer.subscribe({ topics: [settings.orderTopic, settings.ratingTopic] });
+  const topics = [settings.orderTopic, settings.ratingTopic, settings.adminTopic];
+  await consumer.subscribe({ topics });
 
   await consumer.run({
     eachMessage: async ({ topic, partition, message }) => {
@@ -79,7 +83,7 @@ export async function startMessaging(log: FastifyBaseLogger): Promise<() => Prom
     },
   });
 
-  log.info({ brokers: settings.brokers, topics: [settings.orderTopic, settings.ratingTopic] }, 'kafka messaging started');
+  log.info({ brokers: settings.brokers, topics }, 'kafka messaging started');
 
   return async () => {
     await consumer.disconnect();

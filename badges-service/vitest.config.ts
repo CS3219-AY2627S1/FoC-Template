@@ -17,10 +17,8 @@ export default defineConfig({
       BADGES_SERVICE_PORT: '8086',
       DB_POOL_MAX: '10',
       KAFKA_BROKERS: '',
-      // Small batches so the paging in the daily run is exercised.
+      // Small batches so the paging in the catalog re-check is exercised.
       BADGES_BATCH_SIZE: '2',
-      USER_SERVICE_URL: 'http://user.test',
-      ORDER_SERVICE_URL: 'http://order.test',
     },
     coverage: {
       provider: 'v8',

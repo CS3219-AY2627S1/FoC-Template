@@ -21,7 +21,7 @@ if (!config.databaseUrl.includes('badges_test')) {
 // Clean slate before every test, with the real catalog in place (user_badge needs it).
 beforeEach(async () => {
   await db.execute(
-    sql`TRUNCATE badge_catalog, counted_order, disputed_order, user_metrics, user_badge, job_run RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE badge_catalog, counted_order, disputed_order, user_metrics, user_badge RESTART IDENTITY CASCADE`,
   );
   await seedCatalog(catalogSeed as BadgeDefinition[]);
 });

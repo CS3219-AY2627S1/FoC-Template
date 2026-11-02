@@ -1,7 +1,7 @@
 /**
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
- * Scope: Generated TypeBox schemas for the two consumed messages.
+ * Scope: Generated TypeBox schemas for the consumed messages (admin.case.resolved added 2026-11-02).
  * Author review: Ngooi Jun Sen to validate before merge.
  */
 
@@ -57,3 +57,18 @@ export const UserRatingUpdated = Type.Object({
   totalRatings: Type.Integer({ minimum: 0 }),
 });
 export type UserRatingUpdated = Static<typeof UserRatingUpdated>;
+
+export const ADMIN_CASE_RESOLVED = 'admin.case.resolved';
+
+// From foc.admin.events. Admin Service builds it in publish_conflict_resolved;
+// faultParty is its stored verdict (FaultParty in app/models/conflict_case.py).
+export const AdminCaseResolved = Type.Object({
+  eventId: Type.String(),
+  eventType: Type.Literal(ADMIN_CASE_RESOLVED),
+  schemaVersion: Type.Literal(1),
+  occurredAt: Type.String(),
+  orderId: Uuid,
+  caseId: Type.String(),
+  faultParty: Type.Union([Type.Literal('requester'), Type.Literal('courier'), Type.Literal('no-fault')]),
+});
+export type AdminCaseResolved = Static<typeof AdminCaseResolved>;
