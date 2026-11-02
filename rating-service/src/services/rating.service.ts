@@ -1,10 +1,11 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { config } from '../config.js';
 import { db } from '../database/index.js';
 import { outbox, rating, ratingGrant, userRating } from '../database/schema.js';
 import { RatingAlreadySubmittedError, RatingNotPermittedError } from '../errors.js';
 import { ratingUpdatedMessage } from '../messaging/messages.js';
 import type {
+  BatchRatingsResponse,
   PendingRatingsResponse,
   SubmitRatingBody,
   SubmitRatingResponse,
@@ -26,6 +27,27 @@ export async function getUserRating(userId: string): Promise<UserRatingResponse>
   const sum = row?.sum ?? 0;
   const count = row?.count ?? 0;
   return { userId, average: averageOf(sum, count), count };
+}
+
+// One entry per distinct requested ID, in request order; unrated users get a
+// null average, as in getUserRating.
+export async function getUserRatings(userIds: string[]): Promise<BatchRatingsResponse> {
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return { ratings: [] };
+
+  const rows = await db
+    .select({ userId: userRating.userId, sum: userRating.ratingSum, count: userRating.ratingCount })
+    .from(userRating)
+    .where(inArray(userRating.userId, ids));
+  const byId = new Map(rows.map((r) => [r.userId, r]));
+
+  return {
+    ratings: ids.map((userId) => {
+      const row = byId.get(userId);
+      const count = row?.count ?? 0;
+      return { userId, average: averageOf(row?.sum ?? 0, count), count };
+    }),
+  };
 }
 
 export async function submitRating(
