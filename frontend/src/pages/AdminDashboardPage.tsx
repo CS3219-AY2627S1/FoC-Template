@@ -225,9 +225,8 @@ export function AdminDashboardPage() {
             ))}
           </ul>
         ) : null}
-        <p className={styles.activityBody}>
-          Supplier changes only. Escalations, credit adjustments and suspensions have no shared feed.
-        </p>
+        {/* Supplier changes only: escalations, credit adjustments and
+            suspensions have no shared feed. */}
       </section>
     </div>
   );

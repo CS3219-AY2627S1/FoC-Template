@@ -15,62 +15,55 @@ import { useEffect, useState } from 'react';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
 import { Icon } from '../components/ui/Icon';
-import { errorMessage } from '../lib/api';
-import { fetchAdminUsers, type AdminUser } from '../lib/adminUsers';
 import { formatRating } from '../lib/format';
 import { fetchUserRating, type UserRating } from '../lib/rating';
+import { useAdminUserSearch } from '../lib/useAdminUserSearch';
 import styles from './AdminRatingsPage.module.css';
 
-const SEARCH_DELAY_MS = 300;
+/** Ratings change only when an order is rated, so a minute is fresh enough. */
+const RATING_CACHE_MS = 60_000;
+const ratingCache = new Map<string, { at: number; rating: UserRating }>();
+const inFlight = new Set<string>();
 
 /** Null: the Rating Service could not be reached for that user. */
 type RatingCell = UserRating | null | 'loading';
 
 export function AdminRatingsPage() {
   const [query, setQuery] = useState('');
-  const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [users, setUsers] = useState<AdminUser[] | null>(null);
-  const [hasMore, setHasMore] = useState(false);
   const [ratings, setRatings] = useState<Record<string, RatingCell>>({});
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { users, hasMore, loadError, search } = useAdminUserSearch(
+    query,
+    page,
+    0,
+    'Could not reach the Admin Service.',
+  );
 
+  // Each user's rating once: cached across searches, so narrowing or
+  // retyping never asks again for someone already shown.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(query);
-      setPage(1);
-    }, SEARCH_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [query]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoadError(null);
-    fetchAdminUsers(search, page)
-      .then((result) => {
-        if (cancelled) return;
-        setUsers(result.items);
-        setHasMore(result.hasMore);
-        setRatings(Object.fromEntries(result.items.map((user) => [user.userId, 'loading'])));
-        // One call per user on the page, at most a page of 20.
-        for (const user of result.items) {
-          fetchUserRating(user.userId)
-            .catch(() => null)
-            .then((rating) => {
-              if (!cancelled) setRatings((current) => ({ ...current, [user.userId]: rating }));
-            });
-        }
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setUsers([]);
-        setHasMore(false);
-        setLoadError(errorMessage(error, 'Could not reach the Admin Service.'));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [search, page]);
+    if (users === null) return;
+    for (const user of users) {
+      const cached = ratingCache.get(user.userId);
+      if (cached !== undefined && Date.now() - cached.at < RATING_CACHE_MS) {
+        setRatings((current) =>
+          current[user.userId] === cached.rating ? current : { ...current, [user.userId]: cached.rating },
+        );
+        continue;
+      }
+      if (inFlight.has(user.userId)) continue;
+      inFlight.add(user.userId);
+      setRatings((current) => ({ ...current, [user.userId]: 'loading' }));
+      fetchUserRating(user.userId)
+        .catch(() => null)
+        .then((rating) => {
+          inFlight.delete(user.userId);
+          // A failure is not cached, so the next search tries again.
+          if (rating !== null) ratingCache.set(user.userId, { at: Date.now(), rating });
+          setRatings((current) => ({ ...current, [user.userId]: rating }));
+        });
+    }
+  }, [users]);
 
   return (
     <div className={styles.page}>
@@ -84,7 +77,10 @@ export function AdminRatingsPage() {
             type="search"
             placeholder="Search by name, email or user ID"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setPage(1);
+            }}
           />
         </label>
       </header>
@@ -143,11 +139,6 @@ export function AdminRatingsPage() {
           </Button>
         </div>
       ) : null}
-
-      <p className={styles.note}>
-        One average across both roles. The Rating Service does not expose individual ratings or
-        comments.
-      </p>
     </div>
   );
 }

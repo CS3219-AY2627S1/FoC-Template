@@ -142,11 +142,6 @@
   color: var(--color-text-muted);
 }
 
-.note {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--color-text-subtle);
-}
 
 @media (max-width: 767px) {
   .page {

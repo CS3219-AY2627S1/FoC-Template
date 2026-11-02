@@ -149,11 +149,26 @@
 }
 
 .rowActions {
-  display: flex;
-  /* Up to four buttons (approve or reject, edit, delete); wrap rather than
-     widen the table. */
-  flex-wrap: wrap;
+  /* Up to four buttons (approve or reject, edit, delete), all one fixed
+     width in a 2 x 2 block, so the set reads as one and leaves the text
+     columns room. 1fr would let the table squeeze them to their own text
+     widths. */
+  display: grid;
+  grid-template-columns: repeat(2, 6.5rem);
+  justify-content: end;
   gap: var(--touch-gap);
+}
+
+/* Edit and Delete always on the second row, so they line up across rows
+   whichever of Approve and Reject a row has. */
+.editAction {
+  grid-row: 2;
+  grid-column: 1;
+}
+
+.deleteAction {
+  grid-row: 2;
+  grid-column: 2;
 }
 
 .empty {
@@ -181,11 +196,6 @@
   margin: 0;
 }
 
-.gap {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--color-text-subtle);
-}
 
 /* NFR11.1.1: readable text on a narrow screen, no collapsed grid. */
 @media (max-width: 767px) {
@@ -262,9 +272,9 @@
     color: var(--color-text-subtle);
   }
 
+  /* The same 2 x 2 block, stretched to the card's width. */
   .rowActions {
-    flex-wrap: wrap;
-    justify-content: flex-start;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     padding-top: var(--space-2);
   }
 }

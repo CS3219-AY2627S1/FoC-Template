@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthProvider';
 import { Icon } from '../ui/Icon';
+import { useAdminCountsVersion } from '../../lib/adminCounts';
 import { fetchConflicts, isOpen } from '../../lib/conflicts';
 import { fetchSuppliersForAdmin } from '../../lib/suppliers';
 import styles from './AdminLayout.module.css';
@@ -37,8 +38,12 @@ export function AdminLayout() {
   // Close the mobile menu whenever the route changes.
   useEffect(() => setMenuOpen(false), [location.pathname]);
 
+  const countsVersion = useAdminCountsVersion();
+
   // A count is left off when its service fails, rather than shown as zero,
-  // which would read as "nothing waiting".
+  // which would read as "nothing waiting". Read again after an action that
+  // changes one, and on every move between admin pages, which also catches a
+  // case that resolved itself at its deadline.
   useEffect(() => {
     let cancelled = false;
     fetchSuppliersForAdmin('pending')
@@ -58,7 +63,7 @@ export function AdminLayout() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [countsVersion, location.pathname]);
 
   async function handleSignOut() {
     await signOut();

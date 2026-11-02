@@ -21,6 +21,7 @@ import { Button } from '../components/ui/Button';
 import { Chip } from '../components/ui/Chip';
 import { Dialog } from '../components/ui/Dialog';
 import { useAuth } from '../auth/AuthProvider';
+import { adminCountsChanged } from '../lib/adminCounts';
 import { ApiError, errorMessage } from '../lib/api';
 import { fetchAdminUser } from '../lib/adminUsers';
 import {
@@ -154,16 +155,14 @@ export function AdminEscalationsPage() {
         </ul>
       ) : null}
 
-      <p className={styles.gap}>
-        Orders and evidence photos are not shown: Order returns an order only to its requester and
-        courier, and nothing serves the photos to a browser.
-      </p>
-
       <CaseDialog
         caseId={openCaseId}
         myUserId={me?.userId ?? null}
         onClose={() => setOpenCaseId(null)}
-        onChanged={() => void load()}
+        onChanged={() => {
+          void load();
+          adminCountsChanged();
+        }}
       />
     </div>
   );

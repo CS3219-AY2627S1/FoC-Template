@@ -153,11 +153,6 @@
   text-align: center;
 }
 
-.gap {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--color-text-subtle);
-}
 
 /* The case dialog. */
 .case {

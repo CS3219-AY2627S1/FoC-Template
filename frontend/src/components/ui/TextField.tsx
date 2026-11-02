@@ -5,7 +5,8 @@
  * Reviewed by Ngooi Jun Sen.
  */
 
-import { useId, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react';
+import { Icon } from './Icon';
 import styles from './TextField.module.css';
 
 interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'id'> {
@@ -33,9 +34,14 @@ export function TextField({
   labelAction,
   children,
   className,
+  type,
   ...rest
 }: TextFieldProps) {
   const id = useId();
+  // Every password field gets a show/hide toggle, so a typo can be checked
+  // before submitting. It only changes what this field displays.
+  const [revealed, setRevealed] = useState(false);
+  const isPassword = type === 'password';
   const messageId = `${id}-message`;
   const state = error ? styles.invalid : success ? styles.valid : '';
 
@@ -59,8 +65,21 @@ export function TextField({
           className={styles.input}
           aria-invalid={error ? true : undefined}
           aria-describedby={error || success || hint ? messageId : undefined}
+          type={isPassword && revealed ? 'text' : type}
           {...rest}
         />
+        {isPassword ? (
+          <button
+            type="button"
+            className={styles.reveal}
+            aria-label={revealed ? 'Hide password' : 'Show password'}
+            aria-pressed={revealed}
+            aria-controls={id}
+            onClick={() => setRevealed((shown) => !shown)}
+          >
+            <Icon name={revealed ? 'eyeOff' : 'eye'} size={18} />
+          </button>
+        ) : null}
       </div>
 
       {children}

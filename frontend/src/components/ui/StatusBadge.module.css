@@ -33,6 +33,11 @@
   color: var(--color-warning);
 }
 
+.info {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+}
+
 .neutral {
   background: var(--color-disabled-bg);
   color: var(--color-text-muted);

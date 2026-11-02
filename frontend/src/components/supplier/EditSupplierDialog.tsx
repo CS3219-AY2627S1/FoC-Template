@@ -92,6 +92,9 @@ function EditSupplierForm({
 
   const errors = {
     name: name.trim() === '' ? 'Give the supplier a name' : null,
+    // Also applies to an older listing saved without one: editing it means
+    // adding a building.
+    building: building.trim() === '' ? 'Say which building it is in' : null,
     // Supplier F1.1.1: well-formed coordinates. On campus is checked only when
     // they are edited, like the hours below, so an older listing stays editable.
     latitude:
@@ -189,6 +192,8 @@ function EditSupplierForm({
             name="building"
             value={building}
             onChange={(event) => setBuilding(event.target.value)}
+            error={errors.building}
+            required
           />
           <TextField
             label="Floor"

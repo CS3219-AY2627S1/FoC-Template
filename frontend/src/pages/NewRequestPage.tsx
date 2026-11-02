@@ -283,7 +283,10 @@ export function NewRequestPage() {
       {/* UI FR20.2.1: the primary action is pinned on mobile. */}
       <div className={styles.mobileActions}>
         <Button type="submit" fullWidth disabled={!isValid} loading={submitting}>
-          {Number.isNaN(credits) ? 'Post request' : `Post request · reserve ${credits}`}
+          {/* The desktop summary panel is not shown here, so the amount goes on the button. */}
+          {Number.isNaN(credits)
+            ? 'Post request'
+            : `Post request · ${credits} credit${credits === 1 ? '' : 's'}`}
         </Button>
       </div>
     </form>

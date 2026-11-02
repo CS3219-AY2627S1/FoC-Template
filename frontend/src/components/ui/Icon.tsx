@@ -16,7 +16,9 @@ type IconName =
   | 'star'
   | 'arrowRight'
   | 'chevronDown'
-  | 'check';
+  | 'check'
+  | 'eye'
+  | 'eyeOff';
 
 const PATHS: Record<IconName, string[]> = {
   menu: ['M4 6h16M4 12h16M4 18h16'],
@@ -29,6 +31,12 @@ const PATHS: Record<IconName, string[]> = {
   arrowRight: ['M4 12h16', 'm14 6 6 6-6 6'],
   chevronDown: ['m6 9 6 6 6-6'],
   check: ['m5 13 4 4 10-10'],
+  eye: ['M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z', 'M12 15a3 3 0 100-6 3 3 0 000 6z'],
+  eyeOff: [
+    'M9.9 5.2A9.8 9.8 0 0112 5c6.5 0 10 7 10 7a17.6 17.6 0 01-3.2 4.2M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 005.4-1.6',
+    'M9.9 9.9a3 3 0 004.2 4.2',
+    'm3 3 18 18',
+  ],
 };
 
 export function Icon({

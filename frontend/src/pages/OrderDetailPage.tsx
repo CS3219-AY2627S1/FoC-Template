@@ -16,6 +16,7 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { ReportUser } from '../components/moderation/ReportUser';
 import { PickupDetail } from '../components/order/PickupDetail';
+import { ReportIssueDialog } from '../components/order/ReportIssueDialog';
 import { StatusStepper } from '../components/order/StatusStepper';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
@@ -70,12 +71,23 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [reportingIssue, setReportingIssue] = useState(false);
 
   const secondsLeft = useCountdown(order.acceptanceExpiry.getTime());
   const showExpiry = order.status === 'Created' && secondsLeft > 0;
   const canCancel = order.status === 'Created';
   // Order F2.6: the requester acknowledges from Collected or Delivered.
   const canAcknowledge = order.status === 'Collected' || order.status === 'Delivered';
+  // Escalating has the same window as acknowledging: Order refuses it once
+  // the acknowledgement deadline has passed.
+  const canEscalate =
+    canAcknowledge &&
+    (order.acknowledgementDeadline === null || order.acknowledgementDeadline.getTime() > Date.now());
+  const withAdmins = order.status === 'Escalated' || order.status === 'Under review';
+  const adminNote =
+    order.status === 'Escalated'
+      ? 'A problem was reported. An admin will look at it soon.'
+      : 'An admin is reviewing the problem with this order.';
 
   const postedTime = clockTime(order.requestedAt);
 
@@ -114,9 +126,16 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
       Cancel request
     </Button>
   ) : canAcknowledge ? (
-    <Button fullWidth loading={busy} onClick={acknowledge}>
-      Acknowledge receipt
-    </Button>
+    <>
+      <Button fullWidth loading={busy} onClick={acknowledge}>
+        Acknowledge receipt
+      </Button>
+      {canEscalate ? (
+        <Button variant="ghost" fullWidth disabled={busy} onClick={() => setReportingIssue(true)}>
+          Report a problem
+        </Button>
+      ) : null}
+    </>
   ) : null;
 
   return (
@@ -244,6 +263,8 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
                   : `Acknowledging releases the ${order.credits} credits to the courier.`}
               </p>
             </div>
+          ) : withAdmins ? (
+            <p className={styles.actionNote}>{adminNote}</p>
           ) : (
             <p className={styles.actionNote}>
               No action is available in the {order.status} state.
@@ -252,7 +273,24 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
         </aside>
       </div>
 
-      {actions ? <div className={styles.mobileActions}>{actions}</div> : null}
+      {actions ? (
+        <div className={styles.mobileActions}>{actions}</div>
+      ) : withAdmins ? (
+        // The status panel is hidden on mobile, so the note goes in the bar.
+        <div className={styles.mobileActions}>
+          <p className={styles.actionNote}>{adminNote}</p>
+        </div>
+      ) : null}
+
+      <ReportIssueDialog
+        open={reportingIssue}
+        order={order}
+        onClose={() => setReportingIssue(false)}
+        onEscalated={(escalated) => {
+          setReportingIssue(false);
+          onChange(escalated);
+        }}
+      />
 
       <ConfirmDialog
         open={confirmingCancel}
