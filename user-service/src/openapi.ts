@@ -456,7 +456,7 @@ export const openApiDocument = {
     "/api/v1/user/me": {
       delete: {
         tags: ["User"], summary: "Schedule account deletion in six calendar months",
-        description: "Requires explicit confirmation. Revokes sessions immediately; login before the deadline cancels deletion. The last active admin is protected.",
+        description: "Requires explicit confirmation. Revokes sessions immediately; login before the deadline cancels deletion. The last active admin is protected. Final cleanup after the deadline atomically queues a UserDeleted event; requesting or cancelling deletion does not. Kafka delivery is retried when configured; downstream handling belongs to each consumer.",
         security: [{ bearerAuth: [] }],
         requestBody: { required: true, content: { "application/json": { schema: {
           type: "object", required: ["confirm"], properties: { confirm: { type: "boolean", enum: [true] } },

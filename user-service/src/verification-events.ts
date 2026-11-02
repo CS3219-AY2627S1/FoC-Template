@@ -33,7 +33,7 @@ const databaseStore: VerifiedEventStore = {
 
 export class VerificationEventDispatcher {
   private running?: Promise<void>;
-  constructor(private publisher: UserEventPublisher, private store: VerifiedEventStore = databaseStore) {}
+  constructor(private publisher: Pick<UserEventPublisher, "publishUserVerified">, private store: VerifiedEventStore = databaseStore) {}
 
   flush(): Promise<void> {
     if (this.running) return this.running;

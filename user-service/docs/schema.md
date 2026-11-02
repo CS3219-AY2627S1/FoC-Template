@@ -2,11 +2,11 @@
 
 A **schema** is the database blueprint: the tables, their columns, allowed values and relationships. A table is like a spreadsheet; a row is one record and a column is one field.
 
-We already have an executable schema in [prisma/schema.prisma](../prisma/schema.prisma). This guide explains it; it does not introduce another schema or change the database. [Prisma migrations](../prisma/migrations) record the SQL changes applied to existing databases. See the [architecture guide](architecture.md) for how the database fits into the service.
+We already have an executable schema in [prisma/schema.prisma](../prisma/schema.prisma). This guide explains it; documentation does not change the database. [Prisma migrations](../prisma/migrations) record the SQL changes applied to existing databases. See the [architecture guide](architecture.md) for how the database fits into the service.
 
 ## Table relationships
 
-All eight tables belong to the User Service PostgreSQL database. They are not separate databases or containers. The diagram shows selected columns; the tables below explain every stored field.
+The executable schema has nine models, including `UserDeletedOutbox`. All belong to the User Service PostgreSQL database, not separate databases or containers. The diagram includes selected columns; the tables below explain the stored fields. The new deletion-outbox migration is required; normal local and cloud databases have not been migrated for this change.
 
 User report and suspension-appeal intake adds no User table or migration. Admin Service owns report/appeal records and review state in its own database; they are intentionally absent from this diagram. User checks accounts and forwards only the necessary UUIDs and trimmed text, never passwords or bearer tokens. Submission does not change suspension status or create a session. The appeal attempt limiter is bounded process memory keyed by normalized email hash, not a Prisma table; it resets on restart and is not distributed. Generic `/me/escalate` and Created-account verification help still need an agreed API.
 
@@ -70,6 +70,12 @@ erDiagram
         uuid userId FK,UK
         datetime publishedAt "nullable"
     }
+    UserDeletedOutbox {
+        uuid id PK "eventId"
+        uuid userId UK "not a foreign key"
+        datetime createdAt "deletion event time"
+        datetime publishedAt "nullable"
+    }
     UserAuditLog {
         uuid id PK
         uuid actorUserId "nullable; not a foreign key"
@@ -87,13 +93,13 @@ erDiagram
 - **One-to-many:** one user may have zero or many OTPs, sessions, reset tokens and Telegram challenges. A user may also send and receive many friendship rows; each friendship has exactly one sender and one distinct recipient.
 - **One-to-zero-or-one:** one user may have at most one verification-outbox row, enforced by its unique `userId`.
 
-`UserAuditLog` intentionally has no relationship line: its UUID references are **not foreign keys**. This lets the minimal audit record survive account removal. UUIDs still identify records and should be treated as sensitive, not as anonymous data.
+`UserAuditLog` and `UserDeletedOutbox` intentionally have no relationship line: their user UUID references are **not foreign keys**. This lets both the minimal audit record and deletion event survive account removal. Unique `UserDeletedOutbox.userId` allows at most one final-removal event row per user UUID without requiring the account to exist. UUIDs still identify records and should be treated as sensitive, not as anonymous data.
 
 ## Common types and conventions
 
 Prisma `String @db.Uuid` is a PostgreSQL UUID; ordinary `String` fields are text. `DateTime` records timestamps and `Int` stores whole numbers. See the schema and migration SQL for exact database types and defaults.
 
-Every table has `id` (UUID, primary key, generated with `uuid()`) and `createdAt` (timestamp, defaults to creation time). Each table section below lists its remaining stored fields. Prisma relation properties such as `User.sessions` are navigation helpers, not extra columns storing copies of child rows.
+Every table has `id` (UUID, primary key, generated with `uuid()`) and `createdAt` (timestamp, normally defaults to creation time). For `UserDeletedOutbox`, cleanup explicitly supplies its deletion-event `now`, including a test-injected value, as `createdAt`; publication retries do not replace it. Each table section below lists its remaining stored fields. Prisma relation properties such as `User.sessions` are navigation helpers, not extra columns storing copies of child rows.
 
 ### User: the account
 
@@ -205,6 +211,23 @@ The common `id` becomes `eventId`, and `createdAt` becomes `occurredAt` in the e
 
 The worker publishes to `foc.user.status` (configurable), keyed by user UUID, with `{ eventId, type: "UserVerified", occurredAt, data: { userId, email } }`. If publication succeeds but saving `publishedAt` fails, another delivery is possible. Consumers must handle duplicates. A published marker does not prove Credit has finished processing. This is an event outbox, not an email-delivery queue or the full verification history.
 
+### UserDeletedOutbox: final-removal event
+
+This ninth model is independent of `User`; there is no FK or cascading relationship.
+
+| Field | Meaning / rule |
+| --- | --- |
+| `id` | UUID primary key; becomes the stable `eventId`. |
+| `userId` | Required unique UUID of the deleted account, deliberately not an FK. |
+| `createdAt` | Deletion event timestamp supplied from cleanup's `now`, including test injection; becomes the stable `occurredAt`. |
+| `publishedAt` | Nullable timestamp; pending until Kafka acknowledgement and successful marker persistence. |
+
+Cleanup inserts this row and the deletion audit record and physically deletes `User` in the same transaction. Failure rolls back all three operations. Scheduling deletion and login cancellation insert no deletion event. `UserDeleted` means final removal, not a request or merely reaching the deadline. The existing `UserVerifiedOutbox.userId` FK remains cascading, so its rows are still removed with the account.
+
+The dispatcher retries every five seconds when Kafka is configured, on the same configured `foc.user.status` topic keyed by user UUID. Its envelope is `{ eventId, type: "UserDeleted", occurredAt, data: { userId } }`; no email, name, Telegram or other profile PII is copied. IDs and event time remain unchanged across retries. Kafka being disabled/unavailable leaves rows pending. Saving `publishedAt` only after acknowledgement permits duplicate delivery if a send succeeds but the marker write fails or the process crashes. Consumers must deduplicate by `eventId`; delivery is at least once and eventual upon dispatcher/Kafka recovery, not synchronous downstream completion.
+
+There is no ordering guarantee against `UserVerified` already in flight across replicas. Credit should retain a user-UUID deletion tombstone and ignore late verification to prevent resurrection or another starting-credit grant. Its checked-in consumer currently ignores all types except `UserVerified`; deletion processing and balance/history retention rules are Credit owner handoffs, with integration/cloud acceptance unverified. See section 15 of the [shared-contract edit proposal](../API_CONTRACT_UPDATES.txt).
+
 ### UserAuditLog: minimal administrative audit trail
 
 | Field | Meaning / rule |
@@ -234,7 +257,7 @@ With the correct password before the deletion deadline, suspended login returns 
 
 ## Expiry, deletion and indexes
 
-All six FK-linked child tables use `onDelete: Cascade`: physically deleting a `User` also deletes its OTPs, sessions, reset tokens, Telegram challenges, outbox row and friendships where it is sender or recipient. Scheduling deletion is not immediate physical deletion. It revokes credentials, sets a deadline and lets the cleanup worker remove the account after that deadline. Correct-password login before the deadline can cancel the request; it does not restore old revoked sessions.
+All six FK-linked child tables use `onDelete: Cascade`: physically deleting a `User` also deletes its OTPs, sessions, reset tokens, Telegram challenges, `UserVerifiedOutbox` row and friendships where it is sender or recipient. `UserDeletedOutbox` and existing audit records survive independently. Cleanup queues the deletion outbox row and audit record atomically with removal. Scheduling deletion is not immediate physical deletion and emits no `UserDeleted`. It revokes credentials, sets a deadline and lets cleanup remove the account after that deadline. Correct-password login before the deadline can cancel the request without a deletion event; it does not restore old revoked sessions.
 
 There is no automatic retention sweep for all expired OTP/session/reset/challenge rows described by this schema. Expiry makes a credential unusable through application checks; it does not by itself delete its row. Audit retention and any future cleanup policy need separate operational decisions.
 
@@ -257,7 +280,9 @@ The custom unique `Friendship_active_pair_key` described above is additional to 
 
 ## Changing the schema safely
 
-Report/appeal intake leaves the executable User schema unchanged. The friendship migration `20261027000000_friendships` still needs deployment through the normal migration workflow; adding moderation forwarding does not install it. Admin's open-record deduplication keeps one open appeal per user and one open report per ordered reporter/target pair, preserving original text on retries; it is not a lifetime limit or a User database constraint. Admin-owned retention and account-deletion handling require their own contract, beyond User's existing cascades.
+`UserDeletedOutbox` requires migration `20261102000000_user_deleted_outbox` and a regenerated Prisma Client before the updated service runs. On 2 November 2026, Prisma generation/validation, build, 90 unit tests, focused event-test types/syntax and isolated lifecycle integration passed. Integration applied the migration only to a temporary PostgreSQL database, then removed it; its Kafka publisher was fake. Normal local/cloud databases have not been migrated and live Kafka/Credit acceptance remains unverified. Full coverage and the separate onboarding preflight limitation are recorded in the [README](../README.md#userdeleted-transactional-outbox). This change introduces no HTTP routes.
+
+Report/appeal intake itself leaves the executable User schema unchanged. The friendship migration `20261027000000_friendships` still needs deployment through the normal migration workflow; adding moderation forwarding does not install it. Admin's open-record deduplication keeps one open appeal per user and one open report per ordered reporter/target pair, preserving original text on retries; it is not a lifetime limit or a User database constraint. Admin-owned retention and account-deletion handling require their own contract, beyond User's existing cascades.
 
 Historical checks before the camelCase response fix, reported on 30 October 2026, passed: TypeScript build, Prisma generation/validation, 83/83 unit tests, all seven isolated integration suites (email, lifecycle, admin-bootstrap, admin-users, lockout, friendships and account-support), strict new-unit-test type checking and integration-script syntax checks. All temporary databases were cleaned up. Support integration used real User HTTP/PostgreSQL with an HTTP Admin stub, not the actual Admin application or database. The Node 20 production Docker build and network-isolated smoke test passed (Node 20.20.2, non-root, 256 MiB, no `.env`, health/OpenAPI checks; no database or real Admin exercised). The 183-package install audit and Docker `npm ci` reported zero vulnerabilities. No normal database was migrated, no real email/bot messages were sent and no cloud deployment occurred. Actual Admin, cloud/frontend, gateway/mesh, load and full cross-service acceptance remain unproven; infrastructure changes are handoff only.
 

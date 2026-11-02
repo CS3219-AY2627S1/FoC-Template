@@ -31,6 +31,7 @@ test("account lifecycle and service integration in an isolated PostgreSQL databa
     const { config } = require("../dist/config");
     const { hashPassword, hashSessionToken } = require("../dist/security");
     const { deleteExpiredAccounts, scheduleAccountDeletion, deletionDeadline } = require("../dist/account-lifecycle");
+    const { DeletionEventDispatcher } = require("../dist/deletion-events");
     const { DevelopmentEmailSender } = require("../dist/email");
     DevelopmentEmailSender.prototype.sendVerificationOtp = async () => undefined;
     const password = "LifecycleTestPass1";
@@ -143,6 +144,8 @@ test("account lifecycle and service integration in an isolated PostgreSQL databa
     const deletion = await request("/me", "DELETE", { confirm: true }, ownerToken);
     assert.equal(deletion.status, 202);
     const pending = await prisma.user.findUnique({ where: { id: owner.id } });
+    assert.equal(await prisma.userDeletedOutbox.count({ where: { userId: owner.id } }), 0);
+    assert.equal(await deleteExpiredAccounts({ userIds: [owner.id] }), 0);
     assert.equal(pending.scheduledDeletionAt.toISOString(), deletionDeadline(pending.deletionRequestedAt).toISOString());
     assert.equal(deletion.body.scheduledDeletionAt, pending.scheduledDeletionAt.toISOString());
     assert.equal((await request("/me", "GET", undefined, ownerToken)).status, 401);
@@ -156,6 +159,7 @@ test("account lifecycle and service integration in an isolated PostgreSQL databa
     const restored = await prisma.user.findUnique({ where: { id: owner.id } });
     assert.equal(restored.scheduledDeletionAt, null);
     assert.equal(restored.deletionRequestedAt, null);
+    assert.equal(await prisma.userDeletedOutbox.count({ where: { userId: owner.id } }), 0);
     assert.equal((await request("/me", "GET", undefined, oldSession)).status, 401);
     assert.equal((await request("/me", "GET", undefined, restoredToken)).status, 200);
     assert.equal(await prisma.userAuditLog.count({ where: { targetUserId: owner.id, action: "ACCOUNT_DELETION_CANCELLED" } }), 1);
@@ -173,8 +177,9 @@ test("account lifecycle and service integration in an isolated PostgreSQL databa
     for (const endpoint of ["/internal/authorize", "/authorize"]) {
       assert.equal((await request(endpoint, "POST", {}, fakeActive)).status, 401);
     }
+    const cleanupAt = new Date();
     const cleaned = await Promise.all([
-      deleteExpiredAccounts({ userIds: [owner.id] }), deleteExpiredAccounts({ userIds: [owner.id] }),
+      deleteExpiredAccounts({ userIds: [owner.id], now: cleanupAt }), deleteExpiredAccounts({ userIds: [owner.id], now: cleanupAt }),
     ]);
     assert.equal(cleaned.reduce((sum, count) => sum + count, 0), 1);
     assert.equal(await prisma.user.findUnique({ where: { id: owner.id } }), null);
@@ -182,11 +187,49 @@ test("account lifecycle and service integration in an isolated PostgreSQL databa
       assert.equal(await model.count({ where: { userId: owner.id } }), 0);
     }
     assert.equal(await prisma.userAuditLog.count({ where: { targetUserId: owner.id, action: "ACCOUNT_DELETED" } }), 1);
+    const deletedEvent = await prisma.userDeletedOutbox.findUniqueOrThrow({ where: { userId: owner.id } });
+    assert.equal(deletedEvent.createdAt.toISOString(), cleanupAt.toISOString());
+    assert.equal(deletedEvent.publishedAt, null);
+    assert.equal(await prisma.userDeletedOutbox.count({ where: { userId: owner.id } }), 1);
+    // Real durable outbox + controlled broker failure: never contacts Kafka.
+    const sends = [];
+    const deletionDispatcher = new DeletionEventDispatcher({ publishUserDeleted: async (...args) => {
+      sends.push(args);
+      if (sends.length === 1) throw new Error("synthetic broker outage");
+    } });
+    await assert.rejects(deletionDispatcher.flush(), /synthetic broker outage/);
+    assert.equal((await prisma.userDeletedOutbox.findUniqueOrThrow({ where: { id: deletedEvent.id } })).publishedAt, null);
+    await deletionDispatcher.flush();
+    assert.deepEqual(sends[0], [{ userId: owner.id }, deletedEvent.id, cleanupAt.toISOString()]);
+    assert.deepEqual(sends[0], sends[1]);
+    assert.ok((await prisma.userDeletedOutbox.findUniqueOrThrow({ where: { id: deletedEvent.id } })).publishedAt);
+    await deletionDispatcher.flush();
+    assert.equal(sends.length, 2);
     const registeredAgain = await request("/signup", "POST", { name: owner.name, email: owner.email, password, telegramHandle: owner.telegramHandle });
     assert.equal(registeredAgain.status, 201);
     assert.notEqual(registeredAgain.body.userId, owner.id);
     assert.equal(registeredAgain.body.status, "Created");
+    assert.notEqual(registeredAgain.body.userId, deletedEvent.userId);
     console.log("PASS: expired accounts cannot restore; concurrent cleanup deletes once; owned data cascades; fresh signup is possible");
+    console.log("PASS: only final deletion queues one surviving notification; broker retry preserves ID/time; acknowledged rows are not resent");
+
+    // Force a real SQL deletion failure in this temporary database to prove the
+    // audit entry, outbox insertion and account deletion roll back together.
+    const rollbackOwner = await user({ scheduledDeletionAt: new Date(Date.now() - 1000) });
+    await prisma.$executeRawUnsafe(`CREATE FUNCTION reject_test_user_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic delete failure'; RETURN OLD; END $$`);
+    await prisma.$executeRawUnsafe(`CREATE TRIGGER reject_test_user_delete BEFORE DELETE ON "User" FOR EACH ROW EXECUTE FUNCTION reject_test_user_delete()`);
+    try {
+      await assert.rejects(deleteExpiredAccounts({ userIds: [rollbackOwner.id] }));
+      assert.ok(await prisma.user.findUnique({ where: { id: rollbackOwner.id } }));
+      assert.equal(await prisma.userDeletedOutbox.count({ where: { userId: rollbackOwner.id } }), 0);
+      assert.equal(await prisma.userAuditLog.count({ where: { targetUserId: rollbackOwner.id, action: "ACCOUNT_DELETED" } }), 0);
+    } finally {
+      await prisma.$executeRawUnsafe(`DROP TRIGGER reject_test_user_delete ON "User"`);
+      await prisma.$executeRawUnsafe(`DROP FUNCTION reject_test_user_delete()`);
+    }
+    assert.equal(await deleteExpiredAccounts({ userIds: [rollbackOwner.id] }), 1);
+    assert.equal(await prisma.userDeletedOutbox.count({ where: { userId: rollbackOwner.id } }), 1);
+    console.log("PASS: a failing account delete rolls back the notification and audit; subsequent cleanup queues it once");
 
     const adminDeletions = await Promise.all([
       request("/me", "DELETE", { confirm: true }, adminTokenA),
@@ -201,6 +244,8 @@ test("account lifecycle and service integration in an isolated PostgreSQL databa
     await prisma.user.update({ where: { id: remainingAdmin.id }, data: { scheduledDeletionAt: new Date(Date.now() - 1000) } });
     assert.equal(await deleteExpiredAccounts({ userIds: [remainingAdmin.id] }), 0);
     assert.ok(await prisma.user.findUnique({ where: { id: remainingAdmin.id } }));
+    assert.equal(await prisma.userDeletedOutbox.count({ where: { userId: pendingAdmin.id } }), 1);
+    assert.equal(await prisma.userDeletedOutbox.count({ where: { userId: remainingAdmin.id } }), 0);
     console.log("PASS: simultaneous admin deletion requests and cleanup preserve the last administrator");
   } finally {
     if (server) await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
