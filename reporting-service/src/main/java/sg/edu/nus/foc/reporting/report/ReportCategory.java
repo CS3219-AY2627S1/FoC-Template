@@ -8,6 +8,6 @@
 package sg.edu.nus.foc.reporting.report;
 
 public enum ReportCategory {
-    ORDER, COURIER, CREDITS, GENERAL;
-    public boolean requiresOrder() { return this == ORDER || this == COURIER; }
+    ORDER, ERRAND, COURIER, CREDITS, GENERAL;
+    public boolean requiresOrder() { return this == ORDER || this == ERRAND || this == COURIER; }
 }

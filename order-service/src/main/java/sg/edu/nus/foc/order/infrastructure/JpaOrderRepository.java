@@ -99,6 +99,26 @@ public interface JpaOrderRepository extends JpaRepository<Order, UUID>, JpaSpeci
     Page<Order> findActiveRequesterOrders(@Param("requesterId") String requesterId,
             @Param("statuses") List<OrderStatus> statuses, Pageable pageable);
 
+    @Query("select o from Order o where (o.requesterId = :participantId or o.courierId = :participantId) and o.status in :statuses order by o.createdAt desc, o.id desc")
+    Page<Order> findActiveParticipantOrders(@Param("participantId") String participantId,
+            @Param("statuses") List<OrderStatus> statuses, Pageable pageable);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "0"))
+    @Query("select o from Order o where o.id = :id and (o.requesterId = :participantId or o.courierId = :participantId) and o.status in :statuses")
+    Optional<Order> findActiveParticipantOrderForUpdate(@Param("id") String id,
+            @Param("participantId") String participantId, @Param("statuses") List<OrderStatus> statuses);
+
+    @Query("select o from Order o where o.courierId = :courierId and o.status in :statuses order by o.createdAt desc, o.id desc")
+    Page<Order> findActiveAssignedOrders(@Param("courierId") String courierId,
+            @Param("statuses") List<OrderStatus> statuses, Pageable pageable);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "0"))
+    @Query("select o from Order o where o.id = :id and o.courierId = :courierId and o.status in :statuses")
+    Optional<Order> findActiveAssignedOrderForUpdate(@Param("id") String id,
+            @Param("courierId") String courierId, @Param("statuses") List<OrderStatus> statuses);
+
     @Query("select o from Order o where o.status = :status "
             + "and (o.requesterId = :userId or o.courierId = :userId) order by o.createdAt desc, o.id desc")
     Page<Order> findCreditHistoryInvolving(@Param("userId") String userId, @Param("status") OrderStatus status, Pageable pageable);

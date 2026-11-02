@@ -26,6 +26,20 @@ public class OrderQueryService {
         return orders.findActiveRequestedBy(requesterId, page - 1, size);
     }
 
+    public OrderPage participantActive(String participantId, int page, int size) {
+        if (page < 1 || size < 1 || size > 100) {
+            throw new OrderProblem("VALIDATION_ERROR", "Page must be at least 1 and size must be between 1 and 100.");
+        }
+        return orders.findActiveInvolving(participantId, page - 1, size);
+    }
+
+    public OrderPage assignedActiveTo(String courierId, int page, int size) {
+        if (page < 1 || size < 1 || size > 100) {
+            throw new OrderProblem("VALIDATION_ERROR", "Page must be at least 1 and size must be between 1 and 100.");
+        }
+        return orders.findActiveAssignedTo(courierId, page - 1, size);
+    }
+
     public OrderPage available(int page, int size) {
         return orders.findAvailable(Instant.now(), page, size);
     }
@@ -76,11 +90,20 @@ public class OrderQueryService {
     }
 
     public OrderPage allOrders(OrderStatus status, String orderId, Instant createdFrom, Instant createdBefore, int page, int size) {
+        return allOrders(status, orderId, createdFrom, createdBefore, false, page, size);
+    }
+
+    public OrderPage allOrders(OrderStatus status, String orderId, Instant createdFrom, Instant createdBefore,
+                               boolean actionEligibleOnly, int page, int size) {
         validateCreatedRange(createdFrom, createdBefore);
         if (orderId != null && orderId.length() > 128) {
             throw new OrderProblem("VALIDATION_ERROR", "Order ID must not exceed 128 characters.");
         }
-        return orders.findAllOrders(status, orderId == null || orderId.isBlank() ? null : orderId.strip(),
+        String normalizedId = orderId == null || orderId.isBlank() ? null : orderId.strip();
+        if (actionEligibleOnly) {
+            return orders.findAllOrders(status, normalizedId, createdFrom, createdBefore, true, page, size);
+        }
+        return orders.findAllOrders(status, normalizedId,
                 createdFrom, createdBefore, page, size);
     }
 

@@ -79,6 +79,24 @@ class OrderCompensationPostgresIntegrationTest {
     }
 
     String key() { return UUID.randomUUID().toString(); }
+    @Test void heldAbortReturnsTheReportExplanationAndNeverCallsCredit() {
+        String requester = key();
+        String courier = key();
+        CommandView created = service.submit(key(), input(requester), null);
+        CommandView accepted = service.submit(key(), new CommandRequest("ACCEPT", courier,
+                created.result().getId(), created.result().getVersion(), null), null);
+        String orderId = accepted.result().getId();
+        jdbc.update("update orders set completion_hold=true where id=?", orderId);
+        String commandId = key();
+        CommandView result = service.submit(commandId, new CommandRequest("ABORT", courier,
+                orderId, accepted.result().getVersion(), null), null);
+        assertEquals("REJECTED", result.outcome());
+        assertEquals("ORDER_ON_HOLD", result.reason());
+        assertEquals("This order has an active report. Please resolve it before proceeding.", result.message());
+        assertEquals("FULLY_COMPENSATED", field(commandId, "final_stage_status"));
+        assertEquals(0, jdbc.queryForObject("select count(*) from order_event_outbox where command_id=?", Integer.class, commandId));
+        verify(credit, never()).execute(eq(commandId), any(), anyLong(), nullable(String.class));
+    }
     CommandRequest input(String actor) {
         return new CommandRequest("CREATE", actor, null, 0, new CommandRequest.Creation("fixture", "pickup", "delivery", 5, 15,
             Instant.now().plusSeconds(7200), false, null, 0, 0, null));
@@ -207,7 +225,7 @@ class OrderCompensationPostgresIntegrationTest {
                 .schemas(schema).defaultSchema(schema).load();
         flyway.migrate();
         // V16 is additive: upgrading must not delegate legacy user-authorized commands.
-        assertEquals("18", flyway.info().current().getVersion().toString());
+        assertEquals("19", flyway.info().current().getVersion().toString());
         assertFalse(Boolean.TRUE.equals(jdbc.queryForObject("select automatic_execution from " + schema
                 + ".order_commands where command_id=?", Boolean.class, k)));
         assertEquals("RETRY", jdbc.queryForObject("select recovery_policy from " + schema + ".order_commands where command_id=?", String.class, k));

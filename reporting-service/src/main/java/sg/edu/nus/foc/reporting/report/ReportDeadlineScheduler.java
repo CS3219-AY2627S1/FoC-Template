@@ -15,7 +15,7 @@ public class ReportDeadlineScheduler {
     @Scheduled(cron="${REPORT_RESPONSE_RECOVERY_CRON:0 * * * * *}")
     public void reconcileDue() {
         try {
-            for (String id : reports.dueResponseIds(clock.instant())) {
+            for (String id : java.util.stream.Stream.concat(reports.unresolvedErrandIds().stream(), reports.dueResponseIds(clock.instant()).stream()).distinct().toList()) {
                 try { reports.update(id,current->current.reconcile(clock.instant())); }
                 catch(RuntimeException e) { log.warn("Report {} deadline reconciliation failed; other cases continue",id,e); }
             }

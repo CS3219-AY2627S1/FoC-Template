@@ -53,10 +53,12 @@ export function CopyId({ id, name, compact = false }: {
   </button>
 }
 
-export function AdminFilterForm({ children, onSubmit }: {
-  children: React.ReactNode; onSubmit: React.FormEventHandler<HTMLFormElement>
+export function AdminFilterForm({ children, onSubmit, hasToggle = false }: {
+  children: React.ReactNode; onSubmit: React.FormEventHandler<HTMLFormElement>; hasToggle?: boolean
 }) {
-  return <form className="grid grid-cols-2 items-end gap-3 sm:grid-cols-[10rem_minmax(0,1fr)_auto]" onSubmit={onSubmit}>
+  return <form className={"grid grid-cols-2 items-end gap-3 " + (hasToggle
+    ? "lg:grid-cols-[10rem_minmax(0,1fr)_auto_auto]"
+    : "sm:grid-cols-[10rem_minmax(0,1fr)_auto]")} onSubmit={onSubmit}>
     {children}
   </form>
 }

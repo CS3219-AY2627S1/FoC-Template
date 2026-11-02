@@ -34,6 +34,27 @@ class ReportServiceTest {
 
     @BeforeEach void setUp() { service = at(NOW); }
 
+    @Test void courierErrandReportNotifiesRequesterWithoutASelfResponse() {
+        orders.courierId = "courier";
+        Report report = service.submit("courier", "Bearer courier", ReportCategory.ERRAND,
+                "Cannot reach requester", "order", List.of());
+        assertEquals("courier", report.reporterId());
+        assertEquals("requester", report.requesterId());
+        assertEquals("courier", report.courierId());
+        assertEquals(ReportCategory.ERRAND, report.category());
+        assertEquals(List.of("COURIER"), orders.reporterRoles);
+        assertEquals(ReportStatus.AWAITING_COURIER_RESPONSE, report.status());
+        assertEquals(NOW.plusSeconds(86400), report.responseDeadlineAt());
+        assertEquals("requester", report.respondentId());
+        assertEquals(1, service.awaitingResponseCount("requester"));
+        assertEquals(1, service.listMine("requester", "against-me", 1, 20).totalItems());
+        assertDoesNotThrow(() -> service.detail(report.id(), "requester", false));
+        assertEquals(0, service.awaitingResponseCount("courier"));
+        assertEquals(1, service.listMine("courier", "submitted", 1, 20).totalItems());
+        assertEquals(0, service.listMine("courier", "against-me", 1, 20).totalItems());
+        assertThrows(ForbiddenException.class, () -> service.respond(report.id(), "courier", "Self response", List.of()));
+    }
+
     @Test void assignedOrderCreatesHoldAndTwentyFourHourResponseWindow() {
         orders.courierId = "courier";
         Report report = service.submit("requester", "Bearer token", ReportCategory.ORDER,
@@ -43,19 +64,28 @@ class ReportServiceTest {
         assertEquals(NOW.plusSeconds(24 * 60 * 60), report.responseDeadlineAt());
         assertEquals("courier", report.courierId());
         assertEquals(List.of(true), orders.requireCourier);
+        assertEquals(List.of("REQUESTER"), orders.reporterRoles);
         assertEquals("Bearer token", orders.tokens.getFirst());
         assertEquals(1, report.attachments().size());
         assertEquals(1, service.awaitingResponseCount("courier"));
         assertEquals(0, service.awaitingResponseCount("other"));
     }
 
-    @Test void openOrdersAreRejectedForBothOrderLinkedCategories() {
+    @Test void retiredCategoriesRejectNewReportsBeforeUploadsOrOrderCalls() {
+        for (ReportCategory category : List.of(ReportCategory.COURIER, ReportCategory.CREDITS)) {
+            BadRequestException failure = assertThrows(BadRequestException.class,
+                    () -> service.submit("requester", "Bearer token", category, "Issue", null, List.of()));
+            assertEquals("Choose Order, Errand or General for a new report.", failure.getMessage());
+        }
+        assertTrue(repository.values.isEmpty());
+        assertTrue(orders.requireCourier.isEmpty());
+    }
+
+    @Test void openOrdersAreRejectedForOrderReports() {
         orders.status = "OPEN";
         assertThrows(NotFoundException.class, () -> service.submit("requester", "Bearer token", ReportCategory.ORDER,
                 "No courier accepted", "order", List.of()));
-        assertThrows(NotFoundException.class, () -> service.submit("requester", "Bearer token",
-                ReportCategory.COURIER, "No courier", "order", List.of()));
-        assertEquals(List.of(true, true), orders.requireCourier);
+        assertEquals(List.of(true), orders.requireCourier);
         assertTrue(repository.values.isEmpty());
     }
 
@@ -114,7 +144,7 @@ class ReportServiceTest {
 
     @Test void responseAndReadsAreParticipantScoped() {
         orders.courierId = "courier";
-        Report report = service.submit("requester", "Bearer token", ReportCategory.COURIER,
+        Report report = service.submit("requester", "Bearer token", ReportCategory.ORDER,
                 "Issue", "order", List.of(png("proof.png")));
         assertThrows(ForbiddenException.class, () -> service.respond(report.id(), "someone", "No", List.of()));
         assertThrows(ForbiddenException.class, () -> service.detail(report.id(), "someone", false));
@@ -142,7 +172,7 @@ class ReportServiceTest {
 
 
     @Test void creditsAreUnlinkedAndRejectSubmittedOrderIdsWithoutCallingOrder() {
-        Report result = service.submit("requester", "Bearer token", ReportCategory.CREDITS, "Missing credit", null, List.of());
+        Report result = service.submit("requester", "Bearer token", ReportCategory.GENERAL, "Missing credit", null, List.of());
         assertNull(result.orderId());
         assertNull(result.courierId());
         assertNull(result.responseDeadlineAt());
@@ -164,10 +194,12 @@ class ReportServiceTest {
         String status = "DELIVERED";
         boolean completionHold = true;
         final List<Boolean> requireCourier = new ArrayList<>();
+        final List<String> reporterRoles = new ArrayList<>();
         final List<String> tokens = new ArrayList<>();
         final List<String> releasedReports = new ArrayList<>();
-        @Override public AssociatedOrder placeReportHold(String id, String reportId, boolean required, String token) {
+        @Override public AssociatedOrder placeReportHold(String id, String reportId, boolean required, String token, String reporterRole) {
             requireCourier.add(required); tokens.add(token);
+            reporterRoles.add(reporterRole);
             if (status.equals("OPEN")) throw new NotFoundException("not reportable");
             if (required && courierId == null) throw new ConflictException("missing courier");
             return new AssociatedOrder(id, requesterId, courierId, status, reportId, completionHold);
@@ -187,13 +219,13 @@ class ReportServiceTest {
     static class MemoryRepository implements ReportRepository {
         final Map<String, Report> values = new LinkedHashMap<>();
         @Override public long countAwaitingResponse(String id, Instant now) {
-            return values.values().stream().filter(r -> id.equals(r.courierId()) && r.status() == ReportStatus.AWAITING_COURIER_RESPONSE && r.responseDeadlineAt() != null && now.isBefore(r.responseDeadlineAt())).count();
+            return values.values().stream().filter(r -> id.equals(r.respondentId()) && r.status() == ReportStatus.AWAITING_COURIER_RESPONSE && r.responseDeadlineAt() != null && now.isBefore(r.responseDeadlineAt())).count();
         }
         @Override public Report save(Report report) { values.put(report.id(), report); return report; }
         @Override public Optional<Report> findById(String id) { return Optional.ofNullable(values.get(id)); }
         @Override public PageResult<Report> findAll(int page, int size) { return page(item -> true, page, size); }
         @Override public PageResult<Report> findByReporterId(String id, int page, int size) { return page(item -> id.equals(item.reporterId()), page, size); }
-        @Override public PageResult<Report> findByCourierId(String id, int page, int size) { return page(item -> id.equals(item.courierId()), page, size); }
+        @Override public PageResult<Report> findByRespondentId(String id, int page, int size) { return page(item -> id.equals(item.respondentId()), page, size); }
         @Override public Optional<Report> update(String id, UnaryOperator<Report> operation) {
             Report current = values.get(id);
             if (current == null) return Optional.empty();

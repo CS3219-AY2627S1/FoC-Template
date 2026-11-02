@@ -17,7 +17,7 @@ public record ReportResponse(String id, String reporterId, ReportCategory catego
                              String orderId, String courierId, ReportStatus status, Instant createdAt,
                              Instant responseDeadlineAt, String courierResponse, Instant respondedAt,
                              Instant resolvedAt, List<AttachmentResponse> attachments,
-                             List<AttachmentResponse> responseAttachments, String resolutionNote, String resolvedBy) {
+                             List<AttachmentResponse> responseAttachments, String resolutionNote, String resolvedBy, String requesterId, String respondentId, String responseExplanation) {
     public static ReportResponse from(Report report) {
         return from(report, null, false);
     }
@@ -27,6 +27,6 @@ public record ReportResponse(String id, String reporterId, ReportCategory catego
                 report.status(), report.createdAt(), report.responseDeadlineAt(), report.courierResponse(),
                 report.respondedAt(), report.resolvedAt(), report.attachments().stream().map(AttachmentResponse::from).toList(),
                 report.responseAttachments().stream().map(AttachmentResponse::from).toList(),
-                privateReply ? report.resolutionNote() : null, privateReply ? report.resolvedBy() : null);
+                privateReply ? report.resolutionNote() : null, privateReply ? report.resolvedBy() : null, report.requesterId(), report.respondentId(), report.courierResponse());
     }
 }

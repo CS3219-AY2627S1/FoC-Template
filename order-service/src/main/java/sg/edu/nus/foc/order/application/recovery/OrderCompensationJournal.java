@@ -50,12 +50,17 @@ public class OrderCompensationJournal {
 
     @Transactional
     public void abandon(OrderCommandStore.Entry claim, String code) {
+        abandon(claim, code, null);
+    }
+
+    @Transactional
+    public void abandon(OrderCommandStore.Entry claim, String code, String businessMessage) {
         var row = locked(claim.key());
         // A lost commit acknowledgment, or a newer worker/decision, must not
         // allow this caller to compensate committed success or steal ownership.
         if (!pending(row) || !Objects.equals(claim.owner(), row.get("owner"))
                 || ((Number) row.get("generation")).longValue() != claim.generation()) return;
-        chooseCompensation(row, code);
+        chooseCompensation(row, code, businessMessage);
     }
 
     public List<String> due(int limit) {
@@ -96,9 +101,15 @@ public class OrderCompensationJournal {
     }
 
     private void chooseCompensation(Map<String,Object> row, String code) {
+        chooseCompensation(row, code, null);
+    }
+
+    private void chooseCompensation(Map<String,Object> row, String code, String businessMessage) {
         String key = (String) row.get("command_id");
         if (!Boolean.TRUE.equals(row.get("possible_effect"))) {
-            finishRejected(key, "FAILED", code, "Request ended before any Credit operation was sent.");
+            finishRejected(key, "FAILED", code, businessMessage == null || businessMessage.isBlank()
+                    ? "We could not complete this request. Please refresh the order and try again."
+                    : businessMessage);
             return;
         }
         if (row.get("compensation_id") != null) return;

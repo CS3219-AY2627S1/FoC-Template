@@ -7,7 +7,7 @@
  */
 import type { Order, OrderPage } from "@/lib/orders"
 
-export type ReportCategory = "ORDER" | "COURIER" | "CREDITS" | "GENERAL"
+export type ReportCategory = "ORDER" | "ERRAND" | "COURIER" | "CREDITS" | "GENERAL"
 export type ReportStatus = "AWAITING_COURIER_RESPONSE" | "READY_FOR_REVIEW" | "RESOLVED"
 
 export type ReportAttachment = {
@@ -21,6 +21,9 @@ export type ReportAttachment = {
 export type ReportResponse = {
   id: string
   reporterId: string
+  requesterId?: string | null
+  respondentId?: string | null
+  responseExplanation?: string | null
   category: ReportCategory
   description: string
   orderId: string | null
@@ -47,19 +50,23 @@ export type ReportPage = {
 
 export type AssociatedOrderPage = OrderPage
 
-export const REPORT_CATEGORIES: Record<ReportCategory, string> = {
+export const REPORT_CATEGORY_LABELS: Record<ReportCategory, string> = {
   ORDER: "Order",
+  ERRAND: "Errand",
   COURIER: "Courier",
   CREDITS: "Credits",
   GENERAL: "General",
 }
 
+export const REPORT_CATEGORIES = { ORDER: "Order", ERRAND: "Errand", GENERAL: "General" }
+
 export function reportCategoryRequiresOrder(category: ReportCategory) {
-  return category === "ORDER" || category === "COURIER"
+  return category === "ORDER" || category === "ERRAND" || category === "COURIER"
 }
 
 export function validReportCategory(value: string | undefined): ReportCategory {
-  return value && value in REPORT_CATEGORIES ? value as ReportCategory : "GENERAL"
+  if (!value) return "ORDER"
+  return value in REPORT_CATEGORIES ? value as ReportCategory : "GENERAL"
 }
 
 export function associatedOrderLabel(order: Order) {
@@ -67,7 +74,7 @@ export function associatedOrderLabel(order: Order) {
 }
 
 export const REPORT_STATUS_LABELS: Record<ReportStatus, string> = {
-  AWAITING_COURIER_RESPONSE: "Awaiting courier response",
+  AWAITING_COURIER_RESPONSE: "Awaiting response",
   READY_FOR_REVIEW: "Ready for review",
   RESOLVED: "Resolved",
 }

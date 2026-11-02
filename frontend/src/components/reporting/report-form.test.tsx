@@ -22,6 +22,27 @@ const order = (id: string, status: Order["status"]): Order => ({
   deliveryTimeLimitMinutes: 30, version: 0, originalOrderId: null, repostedOrderId: null,
 })
 
+it("Errand uses the courier-scoped active list and submits an assigned order", async () => {
+  mocks.api.mockImplementation((path: string) => path.startsWith("/api/orders")
+    ? Promise.resolve({ items: [order("assigned", "ACCEPTED")], page: 1, size: 100, totalItems: 1, totalPages: 1 })
+    : Promise.resolve({ id: "errand-report" }))
+  render(<ReportForm initialCategory="ERRAND" initialOrderId="assigned" />)
+  await waitFor(() => expect(mocks.api).toHaveBeenCalledWith("/api/orders/mine/active?mode=courier&page=1&size=100", expect.anything()))
+  expect(screen.getByText(/The requester has 24 hours to reply/)).toBeInTheDocument()
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Associated order" })).toHaveTextContent(/assigned/))
+  fireEvent.change(screen.getByLabelText("Description (required)"), { target: { value: "Cannot contact requester" } })
+  fireEvent.click(screen.getByRole("button", { name: "Submit report" }))
+  await waitFor(() => expect(mocks.api.mock.calls.some(([path]) => path === "/api/reports")).toBe(true))
+  const body = mocks.api.mock.calls.find(([path]) => path === "/api/reports")![1].body as FormData
+  const json = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(body.get("report") as Blob)
+  })
+  expect(JSON.parse(json)).toEqual({ category: "ERRAND", description: "Cannot contact requester", orderId: "assigned" })
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
   Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => "blob:preview") })
@@ -30,6 +51,20 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe("report form", () => {
+  it.each(["ORDER", "ERRAND"] as const)("shows the server's active-report reason for a stale %s selection and keeps the form", async category => {
+    mocks.api.mockImplementation((path: string) => path.startsWith("/api/orders")
+      ? Promise.resolve({ items: [order("stale", "ACCEPTED")], totalPages: 1 })
+      : Promise.reject(new ApiError(409, "CONFLICT", "This order has an active report. Please resolve it before proceeding.")))
+    render(<ReportForm initialCategory={category} initialOrderId="stale" />)
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Associated order" })).toHaveTextContent(/stale/))
+    fireEvent.change(screen.getByLabelText("Description (required)"), { target: { value: "Keep my explanation" } })
+    fireEvent.click(screen.getByRole("button", { name: "Submit report" }))
+    expect(await screen.findByText("This order has an active report. Please resolve it before proceeding.")).toBeInTheDocument()
+    expect(screen.queryByText("Could not submit")).not.toBeInTheDocument()
+    expect(screen.getByLabelText("Description (required)")).toHaveValue("Keep my explanation")
+    expect(screen.getByRole("combobox", { name: "Associated order" })).toHaveTextContent(/stale/)
+    expect(screen.queryByText(/Reference:/)).not.toBeInTheDocument()
+  })
   it("uses only the active-order endpoint, follows its pages, and applies a valid prefill", async () => {
     mocks.api.mockImplementation((path: string) => path.includes("page=1")
       ? Promise.resolve({ items: [order("open", "OPEN"), order("progress", "IN_PROGRESS")], page: 1, size: 100, totalItems: 3, totalPages: 2 })
@@ -50,7 +85,7 @@ describe("report form", () => {
     expect(screen.queryByRole("option", { name: /COMPLETED/ })).not.toBeInTheDocument()
   })
 
-  it("requires an order for ORDER and COURIER but submits unlinked CREDITS as FormData", async () => {
+  it("requires an order for ORDER but submits unlinked GENERAL as FormData", async () => {
     mocks.api.mockImplementation((path: string) => path.startsWith("/api/orders")
       ? Promise.resolve({ items: [], page: 1, size: 100, totalItems: 0, totalPages: 0 })
       : Promise.resolve({ id: "report-1" }))
@@ -62,8 +97,10 @@ describe("report form", () => {
     expect(mocks.api.mock.calls.filter(([path]) => path === "/api/reports")).toHaveLength(0)
 
     fireEvent.click(screen.getByRole("combobox", { name: "Report category" }))
-    fireEvent.pointerDown(await screen.findByRole("option", { name: "Credits" }), { pointerType: "mouse" })
-    fireEvent.click(screen.getByRole("option", { name: "Credits" }))
+    expect(screen.queryByRole("option", { name: "Courier" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("option", { name: "Credits" })).not.toBeInTheDocument()
+    fireEvent.pointerDown(await screen.findByRole("option", { name: "General" }), { pointerType: "mouse" })
+    fireEvent.click(screen.getByRole("option", { name: "General" }))
     expect(screen.queryByRole("combobox", { name: "Associated order" })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Submit report" }))
     await waitFor(() => expect(mocks.api.mock.calls.some(([path]) => path === "/api/reports")).toBe(true))
@@ -72,9 +109,9 @@ describe("report form", () => {
     expect((options.body as FormData).getAll("photos")).toHaveLength(0)
   })
 
-  it("does not offer an active order without an assigned courier for a COURIER report", async () => {
+  it("does not offer OPEN orders for an ORDER report", async () => {
     mocks.api.mockResolvedValue({ items: [order("open", "OPEN"), order("accepted", "ACCEPTED")], page: 1, size: 100, totalItems: 2, totalPages: 1 })
-    render(<ReportForm initialCategory="COURIER" />)
+    render(<ReportForm initialCategory="ORDER" />)
     await waitFor(() => expect(mocks.api).toHaveBeenCalledWith("/api/orders/mine/active?page=1&size=100", expect.anything()))
     fireEvent.click(screen.getByRole("combobox", { name: "Associated order" }))
     expect(await screen.findByRole("option", { name: /ACCEPTED/ })).toBeInTheDocument()
@@ -129,7 +166,7 @@ describe("report form", () => {
     resolveReport({ id: "once" })
     expect(await screen.findByText("Reference: once")).toBeInTheDocument()
   })
-  it("submits Credits without an order picker or lookup, even when a link contains an order ID", async () => {
+  it("normalizes a retired Credits link to General without attaching its order ID", async () => {
     mocks.api.mockResolvedValue({ id: "credit-report" })
     render(<ReportForm initialCategory="CREDITS" initialOrderId="paid" />)
     expect(screen.queryByRole("combobox", { name: "Associated order" })).not.toBeInTheDocument()
@@ -145,7 +182,7 @@ describe("report form", () => {
       reader.onerror = reject
       reader.readAsText(body.get("report") as Blob)
     })
-    expect(JSON.parse(payload)).toMatchObject({ category: "CREDITS", orderId: null })
+    expect(JSON.parse(payload)).toMatchObject({ category: "GENERAL", orderId: null })
   })
   it("explains an existing active report without sending another submission", async () => {
     mocks.api.mockResolvedValue({ items: [{ ...order("held", "DELIVERED"), isCompletionHold: true }], totalPages: 1 })
@@ -154,7 +191,7 @@ describe("report form", () => {
     expect(screen.queryByText("Active report")).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText("Description (required)"), { target: { value: "Duplicate" } })
     fireEvent.click(screen.getByRole("button", { name: "Submit report" }))
-    expect(await screen.findByText("This order already has an active report. Please resolve it before submitting another report.")).toBeInTheDocument()
+    expect(await screen.findByText("This order has an active report. Please resolve it before proceeding.")).toBeInTheDocument()
     expect(mocks.api.mock.calls.some(([path]) => path === "/api/reports")).toBe(false)
   })
 

@@ -21,7 +21,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useApi } from "@/hooks/use-api"
 import type { Order } from "@/lib/orders"
 import { ApiError } from "@/lib/api"
-import { associatedOrderLabel, REPORT_CATEGORIES, reportCategoryRequiresOrder, type AssociatedOrderPage, type ReportCategory, type ReportResponse } from "@/lib/reporting"
+import { associatedOrderLabel, REPORT_CATEGORIES, reportCategoryRequiresOrder, validReportCategory, type AssociatedOrderPage, type ReportCategory, type ReportResponse } from "@/lib/reporting"
 
 const MAX_FILES = 5
 const MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -33,7 +33,7 @@ export function ReportForm({ initialCategory, initialOrderId, onSubmitted }: { i
   const api = useApi()
   const inputRef = useRef<HTMLInputElement>(null)
   const photosRef = useRef<Preview[]>([])
-  const [category, setCategory] = useState(initialCategory)
+  const [category, setCategory] = useState(validReportCategory(initialCategory))
   const [description, setDescription] = useState("")
   const [orderId, setOrderId] = useState("")
   const [orders, setOrders] = useState<Order[]>([])
@@ -57,7 +57,8 @@ export function ReportForm({ initialCategory, initialOrderId, onSubmitted }: { i
         let page = 1
         let totalPages = 1
         do {
-          const response = await api<AssociatedOrderPage>(`/api/orders/mine/active?page=${page}&size=100`, { signal: controller.signal })
+          const mode = category === "ERRAND" ? "mode=courier&" : ""
+          const response = await api<AssociatedOrderPage>(`/api/orders/mine/active?${mode}page=${page}&size=100`, { signal: controller.signal })
           collected.push(...response.items.filter(order => ["ACCEPTED", "IN_PROGRESS", "PICKED_UP", "DELIVERED"].includes(order.status)))
           totalPages = response.totalPages
           page += 1
@@ -114,7 +115,7 @@ export function ReportForm({ initialCategory, initialOrderId, onSubmitted }: { i
     setSuccessId("")
     if (!description.trim()) return setFormError("Describe what happened.")
     if (required && !orderId) return setFormError("Select an associated order for this category.")
-    if (required && selectedOrder?.isCompletionHold) return setFormError("This order already has an active report. Please resolve it before submitting another report.")
+    if (required && selectedOrder?.isCompletionHold) return setFormError("This order has an active report. Please resolve it before proceeding.")
     setSubmitting(true)
     try {
       const body = new FormData()
@@ -159,7 +160,7 @@ export function ReportForm({ initialCategory, initialOrderId, onSubmitted }: { i
                   <SelectTrigger id="report-order" className="w-full" aria-label="Associated order"><SelectValue placeholder={ordersLoading ? "Loading associated orders..." : "Select an order"} /></SelectTrigger>
                   <SelectContent>{selectableOrders.map(order => <SelectItem key={order.id} value={order.id}>{associatedOrderLabel(order)}</SelectItem>)}</SelectContent>
                 </Select>
-                <FieldDescription>Only your accepted, in-progress, picked-up or delivered orders can be reported. Open and terminal orders cannot be reported.</FieldDescription>
+                <FieldDescription>{category === "ERRAND" ? "Choose an accepted, in-progress, picked-up or delivered errand assigned to you. The requester has 24 hours to reply." : "Choose an accepted, in-progress, picked-up or delivered order you created. The assigned courier has 24 hours to reply."} Open and terminal orders cannot be reported.</FieldDescription>
                 {ordersError && <FieldError>{ordersError}</FieldError>}
                 {initialOrderId && category === initialCategory && !ordersLoading && !selectedOrder && <FieldError>The linked order is not eligible and was not preselected.</FieldError>}
               </Field>}
@@ -184,7 +185,7 @@ export function ReportForm({ initialCategory, initialOrderId, onSubmitted }: { i
               </Field>
             </FieldGroup>
 
-            {formError && <Alert variant="destructive"><AlertTitle>Could not submit</AlertTitle><AlertDescription>{formError}</AlertDescription></Alert>}
+            {formError && <Alert variant="destructive"><AlertTitle>{formError}</AlertTitle>{formError.includes("active report") && <AlertDescription><a className="underline underline-offset-4" href="/reporting?tab=against-me">View reports against me and reply</a></AlertDescription>}</Alert>}
             {successId && <Alert><CheckCircle2Icon /><AlertTitle>Report submitted</AlertTitle><AlertDescription>Reference: {successId}</AlertDescription></Alert>}
             <Button type="submit" className="w-full sm:w-auto" disabled={submitting || (required && ordersLoading)}>
               {submitting ? <><LoaderCircleIcon className="animate-spin" />Submitting…</> : "Submit report"}

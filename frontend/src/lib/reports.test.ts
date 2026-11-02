@@ -2,6 +2,13 @@ import { describe, it, expect, vi } from "vitest"
 import { createReportApi } from "./reports"
 const report = { id: "report-1", reporterId: "owner", courierId: "courier", orderId: "order-1", category: "COURIER", description: "Issue", status: "READY_FOR_REVIEW", attachments: [{ id: "a", filename: "proof.png", contentType: "image/png" }], responseAttachments: [] }
 describe("real Report transport", () => {
+  it("keeps an Errand submitter distinct from the Order requester", async () => {
+    const request = vi.fn().mockResolvedValue({ items: [{ ...report, category: "ERRAND", reporterId: "courier", requesterId: "owner" }], totalItems: 1, totalPages: 1 })
+    const result = await createReportApi(request).list("admin", "admin", 1)
+    expect(result.items[0].reporterId).toBe("courier")
+    expect(result.items[0].requesterId).toBe("owner")
+    expect(result.items[0].violationCategory).toBe("ERRAND")
+  })
   it("uses real filtered Report pages without Order lookups or mode-dependent mocks", async () => {
     const request = vi.fn().mockResolvedValue({ items: [report], totalItems: 1, totalPages: 1 })
     const signal = new AbortController().signal

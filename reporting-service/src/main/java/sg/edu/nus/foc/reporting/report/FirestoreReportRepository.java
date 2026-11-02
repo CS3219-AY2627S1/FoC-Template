@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
-import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 
 import com.google.api.core.ApiFuture;
@@ -28,6 +27,7 @@ import sg.edu.nus.foc.reporting.error.DependencyUnavailableException;
 public class FirestoreReportRepository implements ReportRepository {
     static final String COLLECTION = "reports";
     private final Firestore firestore;
+    private String legacyCursor;
 
     public FirestoreReportRepository(Firestore firestore) { this.firestore = firestore; }
 
@@ -62,7 +62,7 @@ public class FirestoreReportRepository implements ReportRepository {
 
     private static sg.edu.nus.foc.reporting.error.ConflictException activeReportConflict() {
         return new sg.edu.nus.foc.reporting.error.ConflictException(
-                "This order already has an active report. Please resolve it before submitting another report.");
+                "This order has an active report. Please resolve it before proceeding.");
     }
 
     @Override
@@ -93,19 +93,35 @@ public class FirestoreReportRepository implements ReportRepository {
 
     @Override
     public PageResult<Report> findByReporterId(String reporterId, int page, int size) {
-        return filtered(item -> reporterId.equals(item.reporterId()), page, size);
+        List<Report> reports = await(firestore.collection(COLLECTION).whereEqualTo("reporterId", reporterId).get())
+                .getDocuments().stream().map(FirestoreReportRepository::fromDocument)
+                .sorted(Comparator.comparing(Report::createdAt).reversed().thenComparing(Report::id)).toList();
+        return page(reports, page, size);
     }
 
     @Override
-    public PageResult<Report> findByCourierId(String courierId, int page, int size) {
-        return filtered(item -> courierId.equals(item.courierId()), page, size);
+    public PageResult<Report> findByRespondentId(String courierId, int page, int size) {
+        return page(participantReports(courierId).stream().filter(item -> courierId.equals(item.respondentId())).toList(), page, size);
     }
 
-    private PageResult<Report> filtered(Predicate<Report> predicate, int page, int size) {
-        List<Report> reports = await(firestore.collection(COLLECTION).get()).getDocuments().stream()
-                .map(FirestoreReportRepository::fromDocument).filter(predicate)
-                .sorted(Comparator.comparing(Report::createdAt).reversed()).toList();
-        return page(reports, page, size);
+    private List<Report> participantReports(String callerId) {
+        return await(firestore.collection(COLLECTION).where(com.google.cloud.firestore.Filter.or(
+                com.google.cloud.firestore.Filter.equalTo("courierId", callerId),
+                com.google.cloud.firestore.Filter.equalTo("requesterId", callerId))).get())
+                .getDocuments().stream().map(FirestoreReportRepository::fromDocument)
+                .sorted(Comparator.comparing(Report::createdAt).reversed().thenComparing(Report::id)).toList();
+    }
+
+    @Override
+    public synchronized List<String> unresolvedErrandIds() {
+        var query = firestore.collection(COLLECTION).whereEqualTo("category", "ERRAND")
+                .orderBy(com.google.cloud.firestore.FieldPath.documentId()).limit(100);
+        if (legacyCursor != null) query = query.startAfter(legacyCursor);
+        var rows = await(query.get()).getDocuments();
+        legacyCursor = rows.size() < 100 ? null : rows.getLast().getId();
+        return rows.stream().filter(row -> !"RESOLVED".equals(row.getString("status"))
+                && row.getTimestamp("responseDeadlineAt") == null && row.getTimestamp("respondedAt") == null)
+                .map(DocumentSnapshot::getId).toList();
     }
 
     private static PageResult<Report> page(List<Report> reports, int page, int size) {
@@ -142,9 +158,9 @@ public class FirestoreReportRepository implements ReportRepository {
 
     @Override
     public long countAwaitingResponse(String courierId, Instant now) {
-        return await(firestore.collection(COLLECTION).whereEqualTo("courierId", courierId)
-                .whereEqualTo("status", "AWAITING_COURIER_RESPONSE")
-                .whereGreaterThan("responseDeadlineAt", timestamp(now)).count().get()).getCount();
+        return participantReports(courierId).stream().filter(report -> courierId.equals(report.respondentId())
+                && report.status() == ReportStatus.AWAITING_COURIER_RESPONSE && report.respondedAt() == null
+                && report.responseDeadlineAt() != null && now.isBefore(report.responseDeadlineAt())).count();
     }
 
     static Map<String, Object> toDocument(Report report) {
@@ -154,6 +170,7 @@ public class FirestoreReportRepository implements ReportRepository {
                 "uploadedAt", Timestamp.ofTimeSecondsAndNanos(item.uploadedAt().getEpochSecond(), item.uploadedAt().getNano()))).toList();
         var map = new java.util.HashMap<String, Object>();
         map.put("id", report.id()); map.put("reporterId", report.reporterId());
+        map.put("requesterId", report.requesterId());
         map.put("category", report.category().name()); map.put("description", report.description());
         map.put("orderId", report.orderId()); map.put("courierId", report.courierId());
         map.put("status", report.status().name());
@@ -195,7 +212,7 @@ public class FirestoreReportRepository implements ReportRepository {
                 created.toDate().toInstant(), deadline == null ? null : deadline.toDate().toInstant(),
                 snapshot.getString("courierResponse"), responded == null ? null : responded.toDate().toInstant(),
                 resolved == null ? null : resolved.toDate().toInstant(), attachments, responseAttachments,
-                snapshot.getString("resolutionNote"), snapshot.getString("resolvedBy"));
+                snapshot.getString("resolutionNote"), snapshot.getString("resolvedBy"), snapshot.getString("requesterId"));
     }
 
     private static List<Attachment> attachments(Object raw) {

@@ -50,7 +50,7 @@ public class AdminOrderController {
     private boolean coordinatedReportResolution;
 
     @Operation(summary = "List orders for administrators by status, exact ID and creation date range",
-            description = "Filters are applied in SQL before pagination. createdFrom is inclusive; createdBefore is exclusive. Send explicit ISO8601 instants; omitted bounds are unrestricted.")
+            description = "Filters are applied in SQL before pagination. actionEligibleOnly includes OPEN, ACCEPTED, IN_PROGRESS, PICKED_UP and DELIVERED, including held Orders. These states permit an admin cancellation; assigned active Orders may also receive a penalty. Existing command guards still apply. createdFrom is inclusive; createdBefore is exclusive. Omitted filters are unrestricted.")
     @ApiResponse(responseCode = "200", description = "Filtered page and total count")
     @ApiResponse(responseCode = "400", description = "Invalid status, date, range or Order ID")
     @SecurityRequirement(name = "bearerAuth")
@@ -63,7 +63,13 @@ public class AdminOrderController {
             @Parameter(description = "Inclusive creation timestamp") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
             @RequestParam(required = false) Instant createdFrom,
             @Parameter(description = "Exclusive creation timestamp") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            @RequestParam(required = false) Instant createdBefore) {
+            @RequestParam(required = false) Instant createdBefore,
+            @Parameter(description = "Only lifecycle states permitting at least one admin action; combines with other filters before count/paging. Defaults false.")
+            @RequestParam(defaultValue = "false") boolean actionEligibleOnly) {
+        if (actionEligibleOnly) {
+            return orderMapper.toResponse(queries.allOrders(status, orderId, createdFrom, createdBefore, true,
+                    pageable.getPageNumber(), pageable.getPageSize()));
+        }
         if (orderId != null || createdFrom != null || createdBefore != null) {
             return orderMapper.toResponse(queries.allOrders(status, orderId, createdFrom, createdBefore,
                     pageable.getPageNumber(), pageable.getPageSize()));

@@ -6,13 +6,21 @@
  * Author review: I reviewed for correctness
  */
 import { expect, it } from "vitest"
-import { reportCategoryRequiresOrder, validReportCategory } from "@/lib/reporting"
+import { REPORT_CATEGORIES, reportCategoryRequiresOrder, validReportCategory } from "@/lib/reporting"
 
 it("requires associations only for order and courier categories", () => {
   expect(reportCategoryRequiresOrder("ORDER")).toBe(true)
+  expect(reportCategoryRequiresOrder("ERRAND")).toBe(true)
+  expect(validReportCategory("ERRAND")).toBe("ERRAND")
   expect(reportCategoryRequiresOrder("COURIER")).toBe(true)
   expect(reportCategoryRequiresOrder("CREDITS")).toBe(false)
   expect(reportCategoryRequiresOrder("GENERAL")).toBe(false)
   expect(validReportCategory("ORDER")).toBe("ORDER")
   expect(validReportCategory("unexpected")).toBe("GENERAL")
+})
+
+it("offers Order, Errand and General for new reports and normalizes retired deep links", () => {
+  expect(Object.keys(REPORT_CATEGORIES)).toEqual(["ORDER", "ERRAND", "GENERAL"])
+  expect(validReportCategory("COURIER")).toBe("GENERAL")
+  expect(validReportCategory("CREDITS")).toBe("GENERAL")
 })

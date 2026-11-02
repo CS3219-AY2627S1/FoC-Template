@@ -9,13 +9,14 @@ import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { StatusSelect } from "@/components/orders/status-select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAdminApi } from "@/hooks/use-admin-api"
 import { useOrderDisplayNames } from "@/hooks/use-order-display-names"
 import { useAdminPage } from "@/hooks/use-admin-page"
-import { ADMIN_ORDER_STATUSES, type AdminOrder, type AdminOrderQuery, type AdminOrderAction } from "@/lib/admin-api"
+import { ADMIN_ACTION_ELIGIBLE_STATUSES, ADMIN_ORDER_STATUSES, type AdminOrder, type AdminOrderQuery, type AdminOrderAction } from "@/lib/admin-api"
 import { formatOrderStatus, type OrderStatus } from "@/lib/orders"
 import { AdminDetails, AdminFilterActions, AdminFilterForm, AdminHeading, AdminLoadState, AdminPagination, CopyId, adminDate } from "./admin-ui"
 import { AdminOrderActionBar, AdminOrderResolutionDialog } from "./admin-order-actions"
@@ -95,17 +96,17 @@ function AdminOrderDetails({ orderId, onBack }: { orderId: string; onBack: () =>
   </section>
 }
 
-export function AdminOrders({ initialOrderId }: { initialOrderId?: string }) {
+export function AdminOrders({ initialOrderId, initialSearchOrderId = "" }: { initialOrderId?: string; initialSearchOrderId?: string }) {
   const router = useRouter()
   return initialOrderId
     ? <AdminOrderDetails key={initialOrderId} orderId={initialOrderId} onBack={() => router.push("/admin/orders")} />
-    : <AdminOrderList />
+    : <AdminOrderList key={initialSearchOrderId} initialSearchOrderId={initialSearchOrderId} />
 }
 
-function AdminOrderList() {
+function AdminOrderList({ initialSearchOrderId }: { initialSearchOrderId: string }) {
   const api = useAdminApi()
-  const [query, setQuery] = useState<AdminOrderQuery>({ page: 1, status: null, orderId: "" })
-  const [orderId, setOrderId] = useState("")
+  const [query, setQuery] = useState<AdminOrderQuery>({ page: 1, status: null, orderId: initialSearchOrderId.trim() })
+  const [orderId, setOrderId] = useState(initialSearchOrderId.trim())
   const [penaltyOrder, setPenaltyOrder] = useState<AdminOrder | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [resolution, setResolution] = useState<{ order: AdminOrder; action: AdminOrderAction } | null>(null)
@@ -122,18 +123,30 @@ function AdminOrderList() {
   return <section className="mx-auto w-full max-w-7xl space-y-6 p-4 md:p-8">
     {penaltyOrder && <ApplyPenaltyDialog orderId={penaltyOrder.id} onClose={() => setPenaltyOrder(null)} onSaved={() => { setPenaltyOrder(null); refresh() }} />}
     <AdminHeading title="Orders" description="View every order, across all statuses. Latest orders appear first." />
-    <AdminFilterForm onSubmit={(event) => {
+    <AdminFilterForm hasToggle onSubmit={(event) => {
       event.preventDefault(); changeQuery({ ...query, page: 1, orderId: orderId.trim() })
     }}>
       <div className="flex min-w-0 flex-col gap-2"><Label htmlFor="admin-order-status">Status</Label>
         <StatusSelect id="admin-order-status" aria-label="Order status" className="w-full" value={query.status ?? "all"}
-          onChange={event => changeQuery({ ...query, page: 1, status: event.target.value === "all" ? null : event.target.value as OrderStatus })}>
+          onChange={event => {
+            const status = event.target.value === "all" ? null : event.target.value as OrderStatus
+            const next = { ...query, page: 1, status }
+            if (query.actionEligibleOnly && status && !ADMIN_ACTION_ELIGIBLE_STATUSES.includes(status)) next.actionEligibleOnly = false
+            changeQuery(next)
+          }}>
           {Object.entries(statuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </StatusSelect>
       </div>
       <div className="flex min-w-0 flex-col gap-2"><Label htmlFor="admin-order-id">Order ID</Label>
         <Input className="h-10 min-w-0" id="admin-order-id" value={orderId} onChange={(event) => setOrderId(event.target.value)} placeholder="Enter an exact Order ID" />
       </div>
+      <Label className="col-span-2 flex h-10 w-fit cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-sm font-normal sm:col-span-1">
+        <Switch checked={query.actionEligibleOnly ?? false} onCheckedChange={checked => changeQuery({
+          ...query, page: 1, actionEligibleOnly: checked,
+          status: checked && query.status && !ADMIN_ACTION_ELIGIBLE_STATUSES.includes(query.status) ? null : query.status,
+        })} />
+        Action-eligible orders
+      </Label>
       <AdminFilterActions>
         <Button className="h-10" type="submit">Search</Button>
         <Button className="h-10" type="button" variant="outline" onClick={() => {

@@ -41,8 +41,18 @@ const order = {
   createdAt: "2026-10-01T00:00:00Z", expiresAt: "2026-10-01T02:00:00Z",
 }
 const page = (items: unknown[], current = 1) => ({ items, page: current, size: 10, totalItems: 12, totalPages: 2 })
+
+it("opens an exact order search from a Report link while retaining table actions", async () => {
+  render(<AdminOrders initialSearchOrderId="order-1" />)
+  await waitFor(() => expect(mocks.orders).toHaveBeenCalledWith(
+    expect.objectContaining({ orderId: "order-1", page: 1, status: null }), expect.anything()))
+  expect(screen.getByLabelText("Order ID")).toHaveValue("order-1")
+  expect(await screen.findByRole("link", { name: "View order order-1" })).toBeInTheDocument()
+})
 beforeEach(() => {
   vi.clearAllMocks()
+  // JSDOM lacks PointerEvent; Base UI forwards a click to its native checkbox.
+  vi.stubGlobal("PointerEvent", MouseEvent)
   mocks.mode = "mock"
   mocks.capabilities = { userDirectory: true, userActions: true, creditTransactions: true }
   mocks.orders.mockImplementation((query) => Promise.resolve(page([order], query.page)))
@@ -58,9 +68,28 @@ beforeEach(() => {
   mocks.deactivateUser.mockResolvedValue({ ...user, active: false })
   mocks.deactivateSupplier.mockResolvedValue({ ...supplier, active: false })
 })
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe("Admin pages", () => {
+  it("toggles action-eligible orders with pagination reset and compatible status filters", async () => {
+    render(<AdminOrders />)
+    const toggle = screen.getByRole("switch", { name: "Action-eligible orders" })
+    expect(toggle.closest("form")).toBe(screen.getByLabelText("Order ID").closest("form"))
+    expect(toggle).toHaveAttribute("aria-checked", "false")
+    await screen.findByRole("link", { name: "View order order-1" })
+    fireEvent.click(screen.getByRole("button", { name: "Next" }))
+    await waitFor(() => expect(mocks.orders).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }), expect.any(AbortSignal)))
+    fireEvent.click(toggle)
+    await waitFor(() => expect(mocks.orders).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, actionEligibleOnly: true }), expect.any(AbortSignal)))
+    fireEvent.change(screen.getByRole("combobox", { name: "Order status" }), { target: { value: "ACCEPTED" } })
+    expect(toggle).toHaveAttribute("aria-checked", "true")
+    fireEvent.change(screen.getByRole("combobox", { name: "Order status" }), { target: { value: "COMPLETED" } })
+    expect(toggle).toHaveAttribute("aria-checked", "false")
+    fireEvent.click(toggle)
+    expect(screen.getByRole("combobox", { name: "Order status" })).toHaveValue("all")
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }))
+    expect(toggle).toHaveAttribute("aria-checked", "false")
+  })
   it("places a full-width Admin resolution below repost information and hides retired waiver fields", async () => {
     mocks.order.mockResolvedValue({ ...order, originalOrderId: "original", adminResolutionReason: "Investigation complete", adminResolutionAt: "2026-10-29T01:00:00Z", adminPenaltyAmount: 0,
       overduePenaltyWaived: true, overdueWaivedAt: "2026-10-28T01:00:00Z", overdueWaivedBy: "old-admin", overdueWaiverReason: "Old waiver" })

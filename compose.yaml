@@ -323,6 +323,14 @@ services:
       ORDER_COMPENSATION_REQUEST_TOPIC: credit-command-compensation-local-v1
       ORDER_COMPENSATION_RESULT_SUBSCRIPTION: order-credit-compensation-result-local-v1
       ORDER_COMPENSATION_PUSH_MODE: emulator
+      # Both Report and Order use the real local resolution saga and private emulator.
+      ORDER_REPORT_RESOLUTION_ENABLED: "true"
+      REPORT_SERVICE_URL: http://reporting-service:8080
+      ORDER_REPORT_RESOLUTION_TIMEOUT: 5s
+      ORDER_REPORT_COMPENSATION_TOPIC: report-resolution-compensation-local-v1
+      REPORT_COMPENSATION_RESULT_TOPIC: report-resolution-compensation-result-local-v1
+      ORDER_REPORT_COMPENSATION_RESULT_SUBSCRIPTION: order-resolution-result-local
+      ORDER_REPORT_COMPENSATION_PUSH_MODE: emulator
       ORDER_COMMAND_LEASE_SECONDS: ${ORDER_COMMAND_LEASE_SECONDS:-120}
       ORDER_COMMAND_RETRY_SECONDS: ${ORDER_COMMAND_RETRY_SECONDS:-15}
       ORDER_COMMAND_BATCH_SIZE: ${ORDER_COMMAND_BATCH_SIZE:-20}
@@ -362,12 +370,13 @@ services:
       REPORTING_STORAGE_BUCKET: demo-foc-reporting-local
       ORDER_SERVICE_URL: http://order-service:8080
       USER_SERVICE_MODE: http
-      # Requires the contract-capable Order branch and both saga subscriptions.
-      REPORT_RESOLUTION_ENABLED: ${REPORT_RESOLUTION_ENABLED:-false}
+      # Outer request must outlast Order's inner Report call and final local commit.
+      ORDER_SERVICE_TIMEOUT: 20s
+      REPORT_RESOLUTION_ENABLED: "true"
       REPORT_PUBSUB_PROJECT_ID: demo-foc-local
       PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
-      REPORT_RESOLUTION_RESULT_TOPIC: ${REPORT_RESOLUTION_RESULT_TOPIC:-report-resolution-compensation-result-local-v1}
-      REPORT_RESOLUTION_COMPENSATION_SUBSCRIPTION: ${REPORT_RESOLUTION_COMPENSATION_SUBSCRIPTION:-projects/demo-foc-local/subscriptions/report-resolution-request-local}
+      REPORT_RESOLUTION_RESULT_TOPIC: report-resolution-compensation-result-local-v1
+      REPORT_RESOLUTION_COMPENSATION_SUBSCRIPTION: projects/demo-foc-local/subscriptions/report-resolution-request-local
       REPORT_RESOLUTION_PUSH_MODE: emulator
     depends_on:
       <<: *backend-depends

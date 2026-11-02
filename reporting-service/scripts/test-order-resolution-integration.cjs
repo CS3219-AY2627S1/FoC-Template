@@ -52,9 +52,18 @@ try {
  startJar('report',reportJar,{...common,PORT:String(reportPort),FIRESTORE_PROJECT_ID:project,FIRESTORE_DATABASE_ID:'reporting-saga-test',FIRESTORE_EMULATOR_HOST:'127.0.0.1:'+firestore.port,STORAGE_EMULATOR_HOST:'http://127.0.0.1:9',ORDER_SERVICE_URL:order,ORDER_SERVICE_TIMEOUT:'20s',REPORT_RESOLUTION_ENABLED:'true',REPORT_PUBSUB_PROJECT_ID:project,REPORT_RESOLUTION_RESULT_TOPIC:resultTopic,REPORT_RESOLUTION_COMPENSATION_SUBSCRIPTION:'projects/'+project+'/subscriptions/'+requestSub,REPORT_RESOLUTION_PUSH_MODE:'emulator',REPORT_RESULT_RECOVERY_CRON:'-'});
  startJar('order',orderJar,{...common,PORT:String(orderPort),SPRING_PROFILES_ACTIVE:'prod',SPRING_DATASOURCE_URL:'jdbc:postgresql://127.0.0.1:'+pg.port+'/order_test',SPRING_DATASOURCE_USERNAME:'test',SPRING_DATASOURCE_PASSWORD:'fixture-only',SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE:'3',ORDER_PEERS_MODE:'mock',ORDER_USER_SERVICE_MODE:'mock',ORDER_LIFECYCLE_CRON:'-',ORDER_OUTBOX_RECOVERY_CRON:'*/1 * * * * *',ORDER_MESSAGING_MODE:'emulator',PUBSUB_PROJECT_ID:project,ORDER_REPORT_RESOLUTION_ENABLED:'true',ORDER_REPORT_RESOLUTION_TIMEOUT:'3s',REPORT_SERVICE_URL:reportGateway,ORDER_REPORT_COMPENSATION_TOPIC:requestTopic,REPORT_COMPENSATION_RESULT_TOPIC:resultTopic,ORDER_REPORT_COMPENSATION_RESULT_SUBSCRIPTION:resultSub,ORDER_REPORT_COMPENSATION_PUSH_MODE:'emulator'});
  for(const [name,origin] of [['Order',order],['Report',report]])await until(async()=>{const r=await fetch(origin+'/actuator/health');return r.status===200;},name+' health');
+ // Exercise the browser's Nginx boundary as well as the service-to-service calls.
+ d(['build','-q','-t','foc-gateway:report-resolution-check',path.join(root,'gateway')]);
+ const gatewayName='report-saga-'+suffix+'-gateway';
+ d(['run','-d','--name',gatewayName,'-p','127.0.0.1::8080',
+   '-e','REPORTING_SERVICE_URL=http://host.docker.internal:'+reportPort,
+   '-e','ORDER_SERVICE_URL=http://host.docker.internal:'+orderPort,'foc-gateway:report-resolution-check']);
+ names.push(gatewayName);
+ const browserGateway='http://127.0.0.1:'+d(['port',gatewayName,'8080/tcp']).split(':').at(-1);
+ await until(async()=>{const r=await fetch(browserGateway+'/gateway/health');return r.status===200;},'browser gateway health');
  async function create(){const expiry=new Date(Date.now()+4*3600000);expiry.setUTCMinutes(Math.ceil(expiry.getUTCMinutes()/15)*15,0,0);return call(order,'/api/orders','requester',{commandId:crypto.randomUUID(),requesterId:'requester',itemDescription:'Saga integration parcel',pickupSupplierId:'pickup',deliverySupplierId:'delivery',offeredCredits:1,deliveryTimeLimitMinutes:60,expiresAt:expiry.toISOString(),automaticRepost:false,repostDueAt:null,repostCreditAmount:0,repostDeliveryDurationMinutes:0,repostExpiresAt:null});}
  async function action(o,step,who,expected=200){return call(order,'/api/orders/'+o.id+'/'+step,who,{commandId:crypto.randomUUID(),actorId:who,expectedVersion:o.version},'POST',expected);}
- async function submit(o,expected=201){const form=new FormData();form.append('report',new Blob([JSON.stringify({category:'COURIER',description:'Parcel damaged',orderId:o.id})],{type:'application/json'}));return call(report,'/api/reports','requester',form,'POST',expected);}
+ async function submit(o,expected=201){const form=new FormData();form.append('report',new Blob([JSON.stringify({category:'ORDER',description:'Parcel damaged',orderId:o.id})],{type:'application/json'}));return call(report,'/api/reports','requester',form,'POST',expected);}
  const open=await create();
  assert(!(await call(order,'/api/orders/mine/active?page=1&size=100','requester')).items.some(x=>x.id===open.id));
  await call(order,'/api/orders/mine/active/'+open.id+'/report-holds/'+crypto.randomUUID(),'requester',{requireAssignedCourier:false},'PUT',404);
@@ -66,7 +75,13 @@ try {
  assert.equal(r.status,'AWAITING_COURIER_RESPONSE');
  assert.equal((await call(report,'/api/reports/mine/response-count','courier')).count,1);
  assert.equal((await call(report,'/api/reports/mine/response-count','other')).count,0);
- const duplicate=await submit(o,409);assert(duplicate.message.includes('already has an active report'));
+ const duplicate=await submit(o,409);assert.equal(duplicate.message,'This order has an active report. Please resolve it before proceeding.');
+ await submitCourierOrder(o,'courier',409);
+ const heldAbortKey=crypto.randomUUID();
+ const heldAbort=await call(order,'/api/orders/commands/'+o.id+'/abort','courier',{commandId:heldAbortKey,actorId:'courier',expectedVersion:o.version});
+ assert.equal(heldAbort.outcome,'REJECTED');assert.equal(heldAbort.reason,'ORDER_ON_HOLD');
+ assert.equal(heldAbort.message,'This order has an active report. Please resolve it before proceeding.');
+ assert.equal(sql("select possible_effect from order_commands where command_id='"+heldAbortKey+"'"),'f');
  const mine=await call(order,'/api/orders/mine/active?page=1&size=100','requester');assert(mine.items.some(x=>x.id===o.id));
  assert.equal((await call(order,'/api/orders/mine/active?page=1&size=100','other')).totalItems,0);
  const hold=await call(order,'/api/orders/mine/active/'+o.id+'/report-holds/'+r.id,'requester',{requireAssignedCourier:true},'PUT');assert.equal(hold.isCompletionHold,true);
@@ -75,8 +90,9 @@ try {
  await action(o,'complete','requester',409);
  await call(report,'/api/reports/'+r.id+'/status','admin',{status:'RESOLVED'},'PATCH',409);
  const key=crypto.randomUUID(),body={commandId:key,reply:'Evidence reviewed; continue with completion.'};
- const resolved=await call(report,'/api/reports/'+r.id+'/resolve','admin',body);assert.equal(resolved.status,'SUCCEEDED');
- const replay=await call(report,'/api/reports/'+r.id+'/resolve','admin',body);assert.deepEqual(replay,resolved);
+ const resolved=await call(browserGateway,'/api/reports/'+r.id+'/resolve','admin',body);assert.equal(resolved.status,'SUCCEEDED');
+ const replay=await call(browserGateway,'/api/reports/'+r.id+'/resolve','admin',body);assert.deepEqual(replay,resolved);
+ evidence.push('Actual Nginx browser route returns 200 and intact SUCCEEDED JSON for resolution and exact replay PASS');
  const privateView=await call(report,'/api/reports/'+r.id,'requester');assert.equal(privateView.resolutionNote,body.reply);
  assert.equal((await call(report,'/api/reports/'+r.id,'courier')).resolutionNote,null);
  o=await call(order,'/api/orders/'+o.id,'requester');assert.equal(o.isCompletionHold,false);
@@ -92,8 +108,10 @@ try {
  async function credit(who,id,expected=201){const form=new FormData();form.append('report',new Blob([JSON.stringify({category:'CREDITS',description:'Missing delivery credit',orderId:id})],{type:'application/json'}));return call(report,'/api/reports',who,form,'POST',expected);}
 
  await credit('courier',o.id,400);
- const creditReport=await credit('courier',null);assert.equal(creditReport.status,'READY_FOR_REVIEW');assert.equal(creditReport.courierId,null);assert.equal(creditReport.orderId,null);
- const creditResolved=await call(report,'/api/reports/'+creditReport.id+'/resolve','admin',{commandId:crypto.randomUUID(),reply:'Credit issue reviewed.'});assert.equal(creditResolved.status,'RESOLVED');
+ await credit('courier',null,400);
+ const generalForm=new FormData();generalForm.append('report',new Blob([JSON.stringify({category:'GENERAL',description:'General issue'})],{type:'application/json'}));
+ const generalReport=await call(report,'/api/reports','courier',generalForm,'POST',201);assert.equal(generalReport.status,'READY_FOR_REVIEW');assert.equal(generalReport.courierId,null);assert.equal(generalReport.orderId,null);
+ const generalResolved=await call(report,'/api/reports/'+generalReport.id+'/resolve','admin',{commandId:crypto.randomUUID(),reply:'General issue reviewed.'});assert.equal(generalResolved.status,'RESOLVED');
  const cancelled=await action(await create(),'cancel','requester');assert.equal(cancelled.status,'CANCELLED');
  assert((await call(order,'/api/orders/mine/cancelled?page=1&size=20','requester')).items.some(x=>x.id===cancelled.id));
  assert.equal((await call(order,'/api/orders/mine/cancelled/'+cancelled.id,'requester')).status,'CANCELLED');
@@ -102,19 +120,51 @@ try {
  await call(order,'/api/orders/mine/completed/'+cancelled.id,'requester',undefined,'GET',404);
  assert.equal(sql("select completion_hold from orders where id='"+o.id+"'"),'f');
  assert.equal((await call(report,'/api/reports/mine/response-count','courier')).count,0);
- evidence.push('Completed/cancelled caller-scoped SQL history, unlinked credit submission/resolution, linked-credit rejection and courier reminder count PASS');
+ evidence.push('Completed/cancelled caller-scoped SQL history, unlinked general submission/resolution, retired-credit rejection and courier reminder count PASS');
+ async function submitCourierOrder(orderValue,who='courier',expected=201){const form=new FormData();form.append('report',new Blob([JSON.stringify({category:'ERRAND',description:'Nothing at pickup',orderId:orderValue.id})],{type:'application/json'}));return call(report,'/api/reports',who,form,'POST',expected);}
+ const assigned=await action(await create(),'accept','courier');
+ for(const who of ['requester','courier'])assert((await call(order,'/api/orders/mine/active?mode=participant&page=1&size=100',who)).items.some(x=>x.id===assigned.id));
+ assert(!(await call(order,'/api/orders/mine/active?mode=participant&page=1&size=100','other')).items.some(x=>x.id===assigned.id));
+ await submitCourierOrder(assigned,'other',404);
+ await submitCourierOrder(assigned,'requester',404);
+ const wrongMode=new FormData();wrongMode.append('report',new Blob([JSON.stringify({category:'ORDER',description:'Wrong category',orderId:assigned.id})],{type:'application/json'}));
+ await call(report,'/api/reports','courier',wrongMode,'POST',404);
+ const retired=new FormData();retired.append('report',new Blob([JSON.stringify({category:'COURIER',description:'Old category',orderId:assigned.id})],{type:'application/json'}));
+ await call(report,'/api/reports','courier',retired,'POST',400);
+ assert.equal(sql("select count(*) from order_completion_holds where order_id='"+assigned.id+"'"),'0');
+ const errand=await submitCourierOrder(assigned);assert.equal(errand.requesterId,'requester');assert.equal(errand.reporterId,'courier');
+ assert.equal(errand.category,'ERRAND');assert.equal(errand.respondentId,'requester');assert.equal(errand.status,'AWAITING_COURIER_RESPONSE');
+ assert.equal(Date.parse(errand.responseDeadlineAt)-Date.parse(errand.createdAt),86400000);
+ assert((await call(report,'/api/reports/mine?view=submitted&page=1&size=20','courier')).items.some(x=>x.id===errand.id));
+ assert(!(await call(report,'/api/reports/mine?view=against-me&page=1&size=20','courier')).items.some(x=>x.id===errand.id));
+ assert((await call(report,'/api/reports/mine?view=against-me&page=1&size=20','requester')).items.some(x=>x.id===errand.id));
+ assert.equal((await call(report,'/api/reports/mine/response-count','requester')).count,1);
+ assert.equal((await call(report,'/api/reports/mine/response-count','courier')).count,0);
+ await submit(assigned,409);
+ async function reply(who,expected=200){const form=new FormData();form.append('response',new Blob([JSON.stringify({explanation:'Supplier moved it to the counter'})],{type:'application/json'}));return call(report,'/api/reports/'+errand.id+'/response',who,form,'POST',expected);}
+ await reply('courier',403);await reply('other',403);
+ const response=await reply('requester');assert.equal(response.status,'READY_FOR_REVIEW');assert.equal(response.responseExplanation,'Supplier moved it to the counter');
+ await reply('requester',409);
+ assert.equal((await call(report,'/api/reports/mine/response-count','requester')).count,0);
+ const errandResolution={commandId:crypto.randomUUID(),reply:'Both sides reviewed.'};
+ assert.equal((await call(browserGateway,'/api/reports/'+errand.id+'/resolve','admin',errandResolution)).status,'SUCCEEDED');
+ assert.equal((await call(report,'/api/reports/'+errand.id,'courier')).resolutionNote,errandResolution.reply);
+ assert.equal((await call(report,'/api/reports/'+errand.id,'requester')).resolutionNote,null);
+ assert.equal(sql("select completion_hold from orders where id='"+assigned.id+"'"),'f');
+ evidence.push('Separate ORDER/ERRAND: role-scoped ownership, cross-category duplicate block, requester incoming report and badge,24h response, no self/stranger response, duplicate rejection, actual participant saga binding/private reply PASS');
  // Fail only final Order hold release AFTER Report commits. No service mock handles resolution/compensation.
- let bad=await action(await create(),'accept','courier'),dispute=await submit(bad);
+ let bad=await action(await create(),'accept','courier'),dispute=await submitCourierOrder(bad);
+ const persistedDeadline=(await call(report,'/api/reports/'+dispute.id,'courier')).responseDeadlineAt;
  sql("CREATE FUNCTION fail_test_release() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF OLD.id='"+bad.id+"' AND OLD.completion_hold AND NOT NEW.completion_hold THEN RAISE EXCEPTION 'isolated test release failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_test_release BEFORE UPDATE ON orders FOR EACH ROW EXECUTE FUNCTION fail_test_release();");
  const failedKey=crypto.randomUUID();await call(report,'/api/reports/'+dispute.id+'/resolve','admin',{commandId:failedKey,reply:'Test rollback recovery'},'POST',202);
  await until(()=>sql("select state from order_report_resolutions where command_id='"+failedKey+"'")==='COMPENSATED','two-way real Pub/Sub compensation');
- const restored=await call(report,'/api/reports/'+dispute.id,'requester');assert.equal(restored.status,'AWAITING_COURIER_RESPONSE');assert.equal(restored.resolutionNote,null);
+ const restored=await call(report,'/api/reports/'+dispute.id,'courier');assert.equal(restored.status,'AWAITING_COURIER_RESPONSE');assert.equal(restored.resolutionNote,null);assert.equal(restored.requesterId,'requester');assert.equal(restored.responseDeadlineAt,persistedDeadline);
  assert.equal(sql("select completion_hold from orders where id='"+bad.id+"'"),'t');
  const compensationId=sql("select compensation_id from order_report_resolutions where command_id='"+failedKey+"'");
  const event={eventId:compensationId,commandId:failedKey,reportId:dispute.id,orderId:bad.id,requesterId:'requester',courierId:'courier',adminId:'admin',generation:2};
  await broker(brokerUrl,'/topics/'+requestTopic+':publish',{messages:[{data:Buffer.from(JSON.stringify(event)).toString('base64'),attributes:{eventId:compensationId,eventType:'ReportResolutionCompensationRequested',eventVersion:'1'}}]},'POST');
  await wait(1500);assert.equal(sql("select count(*) from order_report_resolution_results where command_id='"+failedKey+"'"),'1');
- assert.equal((await call(report,'/api/reports/'+dispute.id,'requester')).status,'AWAITING_COURIER_RESPONSE');
+ assert.equal((await call(report,'/api/reports/'+dispute.id,'courier')).status,'AWAITING_COURIER_RESPONSE');
  evidence.push('Actual final Order rollback -> durable compensation outbox -> Pub/Sub push -> Report conditional restore/result outbox -> Pub/Sub result -> Order COMPENSATED, hold retained; duplicate delivery one inbox/result PASS');
  sql('DROP TRIGGER fail_test_release ON orders; DROP FUNCTION fail_test_release();');
  const recovered=await call(report,'/api/reports/'+dispute.id+'/resolve','admin',{commandId:crypto.randomUUID(),reply:'Retried after confirmed compensation'});assert.equal(recovered.status,'SUCCEEDED');

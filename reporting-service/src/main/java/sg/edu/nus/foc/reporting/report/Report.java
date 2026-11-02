@@ -17,7 +17,15 @@ public record Report(String id, String reporterId, ReportCategory category, Stri
                      String orderId, String courierId, ReportStatus status, Instant createdAt,
                      Instant responseDeadlineAt, String courierResponse, Instant respondedAt,
                      Instant resolvedAt, List<Attachment> attachments,
-                     List<Attachment> responseAttachments, String resolutionNote, String resolvedBy) {
+                     List<Attachment> responseAttachments, String resolutionNote, String resolvedBy, String requesterId) {
+    public Report(String id, String reporterId, ReportCategory category, String description,
+                  String orderId, String courierId, ReportStatus status, Instant createdAt,
+                  Instant responseDeadlineAt, String courierResponse, Instant respondedAt,
+                  Instant resolvedAt, List<Attachment> attachments, List<Attachment> responseAttachments,
+                  String resolutionNote, String resolvedBy) {
+        this(id, reporterId, category, description, orderId, courierId, status, createdAt, responseDeadlineAt,
+                courierResponse, respondedAt, resolvedAt, attachments, responseAttachments, resolutionNote, resolvedBy, null);
+    }
     public Report(String id, String reporterId, ReportCategory category, String description,
                   String orderId, String courierId, ReportStatus status, Instant createdAt,
                   Instant responseDeadlineAt, String courierResponse, Instant respondedAt,
@@ -27,11 +35,21 @@ public record Report(String id, String reporterId, ReportCategory category, Stri
                 responseAttachments, null, null);
     }
     public Report {
+        // Historical linked reports were requester-submitted. ERRAND must carry its actual owner.
+        if (requesterId == null && orderId != null && category != ReportCategory.ERRAND) requesterId = reporterId;
         attachments = List.copyOf(attachments == null ? List.of() : attachments);
         responseAttachments = List.copyOf(responseAttachments == null ? List.of() : responseAttachments);
     }
 
     public Report reconcile(Instant now) {
+        if (category == ReportCategory.ERRAND && status != ReportStatus.RESOLVED
+                && responseDeadlineAt == null && respondedAt == null
+                && requesterId != null && reporterId.equals(courierId)) {
+            return new Report(id, reporterId, ReportCategory.ERRAND, description, orderId, courierId,
+                    ReportStatus.AWAITING_COURIER_RESPONSE, createdAt, now.plusSeconds(86400),
+                    courierResponse, respondedAt, resolvedAt, attachments, responseAttachments,
+                    resolutionNote, resolvedBy, requesterId);
+        }
         if (status != ReportStatus.AWAITING_COURIER_RESPONSE || responseDeadlineAt == null
                 || now.isBefore(responseDeadlineAt)) return this;
         return copy(ReportStatus.READY_FOR_REVIEW, responseDeadlineAt, courierResponse, respondedAt, resolvedAt,
@@ -40,32 +58,38 @@ public record Report(String id, String reporterId, ReportCategory category, Stri
 
     public Report respond(String callerId, String explanation, Instant at, List<Attachment> evidence) {
         Report current = reconcile(at);
-        if (courierId == null || !courierId.equals(callerId)) {
-            throw new ForbiddenException("Only the reported courier can respond to this report.");
+        if (callerId == null || !callerId.equals(current.respondentId())) {
+            throw new ForbiddenException("Only the other order participant can respond to this report.");
         }
-        if (current.respondedAt != null) throw new ConflictException("A courier response has already been submitted.");
+        if (current.respondedAt != null) throw new ConflictException("A response has already been submitted.");
         if (current.status != ReportStatus.AWAITING_COURIER_RESPONSE) {
             throw new ConflictException(responseDeadlineAt != null && !at.isBefore(responseDeadlineAt)
                     ? "The 24-hour response window has closed."
-                    : "This report no longer accepts a courier response.");
+                    : "This report no longer accepts a response.");
         }
-        return copy(ReportStatus.READY_FOR_REVIEW, responseDeadlineAt, explanation, at, resolvedAt, evidence);
+        return current.copy(ReportStatus.READY_FOR_REVIEW, current.responseDeadlineAt, explanation, at, current.resolvedAt, evidence);
     }
 
     public Report resolved(Instant at) {
         Report current = reconcile(at);
         if (current.status == ReportStatus.RESOLVED) return current;
-        return copy(ReportStatus.RESOLVED, current.responseDeadlineAt, current.courierResponse,
+        return current.copy(ReportStatus.RESOLVED, current.responseDeadlineAt, current.courierResponse,
                 current.respondedAt, at, current.responseAttachments);
     }
 
+    /** Opposite participant; independent of who submitted the complaint. */
+    public String respondentId() {
+        if (orderId == null || courierId == null) return null;
+        return reporterId.equals(courierId) ? requesterId : courierId;
+    }
+
     public boolean participant(String callerId) {
-        return reporterId.equals(callerId) || (courierId != null && courierId.equals(callerId));
+        return reporterId.equals(callerId) || (respondentId() != null && respondentId().equals(callerId));
     }
 
     private Report copy(ReportStatus nextStatus, Instant deadline, String response, Instant responseAt,
                         Instant resolutionAt, List<Attachment> responseEvidence) {
         return new Report(id, reporterId, category, description, orderId, courierId, nextStatus, createdAt,
-                deadline, response, responseAt, resolutionAt, attachments, responseEvidence, resolutionNote, resolvedBy);
+                deadline, response, responseAt, resolutionAt, attachments, responseEvidence, resolutionNote, resolvedBy, requesterId);
     }
 }

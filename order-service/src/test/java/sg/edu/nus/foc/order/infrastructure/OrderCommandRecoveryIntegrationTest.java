@@ -45,6 +45,7 @@ class OrderCommandRecoveryIntegrationTest {
     @Autowired sg.edu.nus.foc.order.application.OrderTransitionService transitions;
     @Autowired sg.edu.nus.foc.order.application.LifecycleProcessingService lifecycle;
     @Autowired OrderLifecycleScheduler scheduler;
+    @Autowired sg.edu.nus.foc.order.application.OrderCompletionHoldService reportHolds;
 
     CommandRequest create(String actor) {
         return new CommandRequest("CREATE", actor, null, 0,
@@ -53,6 +54,47 @@ class OrderCommandRecoveryIntegrationTest {
     }
     String key() { return UUID.randomUUID().toString(); }
     void due(String k) { jdbc.update("update order_commands set next_retry_at=clock_timestamp()-interval '1 second', owner=null, lease_expires_at=null where command_id=?", k); }
+
+    @Test void reportPlacementVersionChangeDoesNotHideTheHoldFromAStaleCourier() {
+        String requester = key();
+        String courier = key();
+        OrderResponse created = service.submit(key(), create(requester), null).result();
+        OrderResponse accepted = service.submit(key(), new CommandRequest("ACCEPT", courier,
+                created.getId(), created.getVersion(), null), null).result();
+        reportHolds.placeActive(accepted.getId(), key(), requester, true, null);
+        assertTrue(jdbc.queryForObject("select version from orders where id=?", Long.class, accepted.getId()) > accepted.getVersion());
+        String commandId = key();
+        CommandView rejected = service.submit(commandId, new CommandRequest("ABORT", courier,
+                accepted.getId(), accepted.getVersion(), null), null);
+        assertEquals("REJECTED", rejected.outcome());
+        assertEquals("ORDER_ON_HOLD", rejected.reason());
+        assertEquals("This order has an active report. Please resolve it before proceeding.", rejected.message());
+        verify(credit, never()).execute(eq(commandId), any(), anyLong(), nullable(String.class));
+        assertEquals("ACCEPTED", jdbc.queryForObject("select status from orders where id=?", String.class, accepted.getId()));
+    }
+
+    @Test void heldAbortKeepsTheBusinessExplanationInRetryModeAndTerminalReplay() {
+        CommandView created = service.submit(key(), create(key()), null);
+        String courier = key();
+        CommandView accepted = service.submit(key(), new CommandRequest("ACCEPT", courier,
+                created.result().getId(), created.result().getVersion(), null), null);
+        String orderId = accepted.result().getId();
+        jdbc.update("update orders set completion_hold=true where id=?", orderId);
+        String commandId = key();
+        CommandRequest abort = new CommandRequest("ABORT", courier, orderId,
+                accepted.result().getVersion(), null);
+
+        CommandView result = service.submit(commandId, abort, null);
+        assertEquals("REJECTED", result.outcome());
+        assertEquals("ORDER_ON_HOLD", result.reason());
+        assertEquals("This order has an active report. Please resolve it before proceeding.", result.message());
+        assertEquals(result, service.submit(commandId, abort, null));
+        assertFalse(jdbc.queryForObject("select possible_effect from order_commands where command_id=?", Boolean.class, commandId));
+        verify(credit, never()).execute(eq(commandId), any(), anyLong(), nullable(String.class));
+        verify(credit, never()).compensate(eq(commandId), any(), anyLong(), nullable(String.class));
+        assertEquals("ACCEPTED", jdbc.queryForObject("select status from orders where id=?", String.class, orderId));
+        assertEquals(0, jdbc.queryForObject("select count(*) from order_event_outbox where command_id=?", Integer.class, commandId));
+    }
 
     @Test void savedPendingProjectionSurvivesLostResponsesAndUsesCommittedTargetOrFrozenInput() {
         String createKey = key(), requester = key();
