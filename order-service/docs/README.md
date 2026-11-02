@@ -50,7 +50,7 @@ Each due order is handled on its own. One failure is logged and the sweep contin
 
 ![Admin events](seq-admin.png)
 
-`processed_events` makes a repeated `eventId` a no-op. An unknown order id is recorded and does not change a status. Review can start only from ESCALATED. Resolution from ESCALATED or UNDER_REVIEW completes the order, deletes its photos, and fans out credit/rating from `faultParty`: `courier` → return reservation to requester + requester may rate courier; `requester` / `no-fault` → release to courier (same as acknowledge) + both may rate. `caseId` is stored even when the current status does not allow the transition.
+`processed_events` makes a repeated `eventId` a no-op. An unknown order id is recorded and does not change a status. Review can start only from ESCALATED. Resolution from ESCALATED or UNDER_REVIEW requires a known `faultParty`; then completes the order (and puts `faultParty` on `order.status.changed`), deletes photos, and fans out credit/rating: `courier` → return reservation + requester may rate courier; `requester` / `no-fault` → release to courier (same as acknowledge) + both may rate. `caseId` is stored even when the current status does not allow the transition.
 
 ## Reads
 

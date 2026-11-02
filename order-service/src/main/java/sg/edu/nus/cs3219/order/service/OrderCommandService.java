@@ -314,27 +314,40 @@ public class OrderCommandService {
         if (processedEvents.existsById(eventId)) {
             return;
         }
+
+        OrderEntity order = orders.lockById(orderId).orElse(null);
+        boolean resolving = "admin.case.resolved".equals(eventType)
+                && order != null
+                && OrderStateMachine.canResolve(order.snapshot());
+        if (resolving && !knownFaultParty(faultParty)) {
+            // Do not mark processed: Admin must republish a valid verdict; retrying a poison
+            // COMPLETED-without-settlement would stick the reservation.
+            throw new IllegalStateException("admin.case.resolved requires faultParty requester|courier|no-fault");
+        }
+
         ProcessedEventEntity processed = new ProcessedEventEntity();
         processed.setEventId(eventId);
         processed.setProcessedAt(clock.instant());
         processedEvents.save(processed);
-
-        OrderEntity order = orders.lockById(orderId).orElse(null);
         if (order == null) {
             return;
         }
         Instant now = clock.instant();
         order.setCaseId(caseId);
         if ("admin.review.started".equals(eventType) && OrderStateMachine.canReview(order.snapshot())) {
-            transition(order, OrderStatus.UNDER_REVIEW, true, now, OrderAction.REVIEW_STARTED, null);
+            transition(order, OrderStatus.UNDER_REVIEW, true, now, OrderAction.REVIEW_STARTED, null, null);
             return;
         }
-        if ("admin.case.resolved".equals(eventType) && OrderStateMachine.canResolve(order.snapshot())) {
+        if (resolving) {
             deletePhotos(order);
             order.setSettledAt(now);
-            transition(order, OrderStatus.COMPLETED, true, now, OrderAction.CASE_RESOLVED, null);
+            transition(order, OrderStatus.COMPLETED, true, now, OrderAction.CASE_RESOLVED, null, faultParty);
             settleResolvedCase(order, faultParty, now);
         }
+    }
+
+    private static boolean knownFaultParty(String faultParty) {
+        return "courier".equals(faultParty) || "requester".equals(faultParty) || "no-fault".equals(faultParty);
     }
 
     private static List<String> evidence(OrderEntity order) {
@@ -352,19 +365,19 @@ public class OrderCommandService {
     }
 
     private void settleResolvedCase(OrderEntity order, String faultParty, Instant now) {
+        // no-fault = inconclusive / neither party clearly wrong → treat like a completed
+        // delivery: pay the courier (same release path as acknowledge).
         if ("courier".equals(faultParty)) {
             outbox.append(order.getId(), KafkaTopics.CREDIT, messages.creditReturn(order, "CASE_RESOLVED", now), now);
             allowRequesterRatesCourier(order, now);
             return;
         }
-        if ("requester".equals(faultParty) || "no-fault".equals(faultParty)) {
-            if (order.getCourierId() == null) {
-                outbox.append(order.getId(), KafkaTopics.CREDIT, messages.creditReturn(order, "CASE_RESOLVED", now), now);
-                return;
-            }
-            releaseAndAllowRequesterRating(order, "CASE_RESOLVED", now);
-            allowCourierRatesRequester(order, now);
+        if (order.getCourierId() == null) {
+            outbox.append(order.getId(), KafkaTopics.CREDIT, messages.creditReturn(order, "CASE_RESOLVED", now), now);
+            return;
         }
+        releaseAndAllowRequesterRating(order, "CASE_RESOLVED", now);
+        allowCourierRatesRequester(order, now);
     }
 
     private void releaseAndAllowRequesterRating(OrderEntity order, String reason, Instant now) {
@@ -404,10 +417,22 @@ public class OrderCommandService {
             OrderAction action,
             String actorId
     ) {
+        transition(order, to, notifyRequester, now, action, actorId, null);
+    }
+
+    private void transition(
+            OrderEntity order,
+            OrderStatus to,
+            boolean notifyRequester,
+            Instant now,
+            OrderAction action,
+            String actorId,
+            String faultParty
+    ) {
         OrderStatus from = order.getStatus();
         order.setStatus(to);
         order.setUpdatedAt(now);
-        publishStatus(order, from, to, notifyRequester, now, action, actorId);
+        publishStatus(order, from, to, notifyRequester, now, action, actorId, faultParty);
     }
 
     private void publishStatus(
@@ -418,6 +443,19 @@ public class OrderCommandService {
             Instant now,
             OrderAction action,
             String actorId
+    ) {
+        publishStatus(order, from, to, notifyRequester, now, action, actorId, null);
+    }
+
+    private void publishStatus(
+            OrderEntity order,
+            OrderStatus from,
+            OrderStatus to,
+            boolean notifyRequester,
+            Instant now,
+            OrderAction action,
+            String actorId,
+            String faultParty
     ) {
         orderLog.append(order.getId(), action, from, to, actorId, now);
         AlertEntity alert = new AlertEntity();
@@ -432,7 +470,7 @@ public class OrderCommandService {
         outbox.append(
                 order.getId(),
                 KafkaTopics.ORDER_STATUS,
-                messages.statusChanged(order, from, to, notifyRequester, now),
+                messages.statusChanged(order, from, to, notifyRequester, faultParty, now),
                 now
         );
     }

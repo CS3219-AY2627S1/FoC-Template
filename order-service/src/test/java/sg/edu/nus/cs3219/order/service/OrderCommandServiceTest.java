@@ -519,6 +519,23 @@ class OrderCommandServiceTest {
                 "foc.credit.commands".equals(row.getTopic()) && row.getPayload().contains("credit.reservation.return")));
         assertTrue(outbox.getAllValues().stream().anyMatch(row ->
                 "foc.rating.commands".equals(row.getTopic()) && row.getPayload().contains("REQUESTER")));
+        assertTrue(outbox.getAllValues().stream().anyMatch(row ->
+                "foc.order.status".equals(row.getTopic())
+                        && row.getPayload().contains("\"toStatus\":\"COMPLETED\"")
+                        && row.getPayload().contains("\"faultParty\":\"courier\"")));
+    }
+
+    @Test
+    void resolvedWithoutFaultPartyDoesNotCompleteOrMarkProcessed() {
+        OrderEntity review = openOrder();
+        review.setStatus(OrderStatus.UNDER_REVIEW);
+        review.setCourierId(courier.userId());
+        when(orders.lockById(id)).thenReturn(Optional.of(review));
+
+        assertThrows(IllegalStateException.class,
+                () -> service.applyAdminEvent("event-bad", "admin.case.resolved", id, "case-x", null));
+        assertEquals(OrderStatus.UNDER_REVIEW, review.getStatus());
+        verify(processedEvents, never()).save(any());
     }
 
     @Test

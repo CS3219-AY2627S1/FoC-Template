@@ -43,11 +43,15 @@ class MessagingTest {
         JsonNode created = mapper.readTree(messages.statusChanged(order, null, OrderStatus.CREATED, true, now));
         assertTrue(created.get("courierId").isNull());
         assertTrue(created.get("fromStatus").isNull());
+        assertTrue(created.get("faultParty").isNull());
         assertEquals("CREATED", created.get("toStatus").asText());
 
         order.setCourierId("22222222-2222-2222-2222-222222222222");
         JsonNode accepted = mapper.readTree(messages.statusChanged(order, OrderStatus.CREATED, OrderStatus.ACCEPTED, true, now));
         assertEquals("22222222-2222-2222-2222-222222222222", accepted.get("courierId").asText());
+        JsonNode resolved = mapper.readTree(messages.statusChanged(
+                order, OrderStatus.UNDER_REVIEW, OrderStatus.COMPLETED, true, "no-fault", now));
+        assertEquals("no-fault", resolved.get("faultParty").asText());
 
         JsonNode returned = mapper.readTree(messages.creditReturn(order, now));
         assertEquals("EXPIRED", returned.get("reason").asText());

@@ -163,6 +163,8 @@ Order consumes it (dedupe `eventId` in `processed_events`) and applies the same 
 
 At-least-once: duplicate `eventId` is a no-op. Malformed / non-`UserDeleted` messages are ignored.
 
+Open orders are **not** cancelled here: User only physically deletes after ~6 months of inactivity after a deletion request, while order lifetimes are days/weeks, so reserved credits and in-flight statuses should already be gone. Association cleanup is the remaining personal data on Order.
+
 ### What delete loses vs what orders keep
 
 - **Kept on past orders:** snapshotted dropoff fields on the order row (extend snapshot to **name, building, description, lat, lng** so courier-visible detail survives even if the point is inactive).

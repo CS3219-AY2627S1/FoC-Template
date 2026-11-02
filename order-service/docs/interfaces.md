@@ -77,12 +77,12 @@ Every published payload has `eventId`, `eventType`, `schemaVersion` (1), `occurr
 
 | Topic | eventType | When |
 | --- | --- | --- |
-| foc.order.status | order.status.changed | Every successful transition. Fields: `requesterId`, `courierId`, `fromStatus`, `toStatus`, `notifyRequester` |
+| foc.order.status | order.status.changed | Every successful transition. Fields: `requesterId`, `courierId`, `fromStatus`, `toStatus`, `notifyRequester`, `faultParty` (set only on case resolve → `COMPLETED`; otherwise null). Values: `requester` \| `courier` \| `no-fault` |
 | foc.credit.commands | credit.reservation.return | Acceptance expiry (`EXPIRED`) or case resolve when `faultParty` is `courier` (`CASE_RESOLVED`) |
 | foc.credit.commands | credit.reservation.release | Acknowledge / unacknowledge (`ACKNOWLEDGED` / `UNACKNOWLEDGED`), or case resolve when `faultParty` is `requester` or `no-fault` (`CASE_RESOLVED`). Includes `courierId` and `amount` |
 | foc.rating.commands | rating.permission.granted | Deliver: courier rates requester. Acknowledge / unacknowledge: requester rates courier. Case resolve: requester rates courier; when courier is paid (`requester` / `no-fault`) also courier rates requester. Fields: `raterId`, `raterRole`, `rateeId`, `rateeRole` |
 | foc.admin.events | OrderUnderReview / `admin.review.started` | Consumed. ESCALATED → UNDER_REVIEW when `caseId` is present |
-| foc.admin.events | ConflictResolved / `admin.case.resolved` | Consumed. Requires `faultParty` (`requester` \| `courier` \| `no-fault`). ESCALATED or UNDER_REVIEW → COMPLETED, photos deleted, then credit + rating fan-out by fault |
+| foc.admin.events | ConflictResolved / `admin.case.resolved` | Consumed. Requires `faultParty` (`requester` \| `courier` \| `no-fault`); missing/unknown → retry, no status change. Then ESCALATED or UNDER_REVIEW → COMPLETED (status event includes `faultParty`), photos deleted, credit + rating fan-out. `no-fault` pays the courier like acknowledge |
 | foc.user.status | UserDeleted | Consumed. Deletes that user’s `user_delivery_point` rows; soft-inactivates orphan forks. Envelope uses `type` + `data.userId` (not `eventType`) |
 
 `order.status.changed` has no consumer in this service. A duplicate `eventId`, a missing field, or a non-UUID order id is ignored and is not stored. A readable event for an unknown order is stored in `processed_events` and does not change a status. A known order stores the event, copies `caseId`, and changes status only when the current status allows that event. `UserDeleted` is also deduped by `eventId` in `processed_events`. A failure while applying a readable event is retried.
