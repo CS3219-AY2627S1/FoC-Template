@@ -1,3 +1,10 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: OpenAI Codex (GPT-5), date: 2026-10-13
+ * Mode: Implementation.
+ * Scope: Generated or updated frontend code for the team-specified report form, order association, navigation, and completion reminder.
+ * Author review: I reviewed for correctness
+ */
 "use client"
 
 import { useMemo, useState } from "react"

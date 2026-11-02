@@ -111,3 +111,8 @@ Default `ORDER_REPORT_RESOLUTION_ENABLED=false`. Activation needs REPORT_SERVICE
 V18 adds `order_report_resolutions` and `order_report_resolution_results`; V1–V17 stay immutable. It does not freeze hold-placement snapshots or fabricate Report records. Normal Flyway applies it on next deployment. Preserve journals/outbox/holds on rollback; disabling transport does not reconcile pending work. Do not roll back to a binary lacking journal release guards with pending work. Reports UI remains local sample/cloud Coming soon.
 
 Acceptance gates: actual Report journal/revision/fence implementation; authenticated delivery; lost HTTP response/local rollback/delayed original/lost or duplicate result/newer revision tests; IAM/subscription/retry/dead-letter setup; operator reconciliation runbook. Current PostgreSQL/HTTP/broker fixtures verify only Order's contract stub.
+
+
+## Implemented peer and eligibility amendment ? CHANGE-166
+
+Reporting Service is now present and implements the contracts above; see ../../reporting-service/HANDOFF.md and ../../reporting-service/docs/order-resolution-saga.md. The approved latest eligibility excludes OPEN and terminal Orders from the active reporting list and locked hold endpoint. Report always sends requireAssignedCourier=true. Current snapshot retry remains unchanged. Admin frontend uses real APIs, including the early-response warning and required private reply. The prior absent-provider/sample-only descriptions are historical. Default-off cloud activation, identity/subscription/index provisioning and creation-hold recovery remain separate gates.

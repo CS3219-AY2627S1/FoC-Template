@@ -7,7 +7,66 @@ Scope: Generated and updated the AI usage record from the available conversation
 Author review: I reviewed for correctness and course compliance.
 -->
 
+## 2026-11-01 — CHANGE-170 local recovery follow-up
+
+CHANGE-171 planning follow-up: user requests allowing assigned couriers to report their active Orders. Inspected actual requester-only SQL/hold checks, Report self-response logic, Firestore fields and resolution participant binding, plus frontend adapters/labels. Wrote changes/CHANGE-171-courier-order-reports.md and active-work handoff. Proposed actual requester separate from submitter, unchanged holds/saga and direct admin review for courier submissions; alternative requester-response workflow requires a user decision. Order AGENTS explicitly gates contract/source changes on detailed approval. Asked the user before implementation; no application source or tests changed for171. No cloud/container/database action for171. Prior170 work preserved. OpenAI Codex; human review pending.
+
+OpenAI Codex; Yao Xiang on hfix/report-service; implementation/verification, human review pending. Reproduced the remaining generic active-report error in default RETRY mode with isolated PostgreSQL. Preserve the trusted validation message in that catch; keep remote Credit-code mapping, authorization, temporary-failure and compensation behavior unchanged. Added replay/no-Credit/no-outbox regression and updated the isolated Report saga harness's retired category fixtures. Actual Order/Report HTTP, PostgreSQL, Firestore and Pub/Sub verification passes seven success/failure/duplicate/fencing scenario groups. Read-only Docker inspection found resolution disabled and no local resolution journal rows; the prior response-header fix is already in the running Report class. A fresh failing request is requested rather than claiming this proves the 502's cause. No cloud change or application data reset. Full reactor verification and local Order image rebuild evidence will be recorded in CHANGE-170.
+
+Final follow-up: user reproduced404 at127.0.0.1:8080, confirming disabled resolution. Completed required local Compose/emulator wiring for the existing saga: both flags enabled locally, fixed demo topics/subscriptions,20s outer/5s inner timeout. Bootstrap twice and both Compose configs pass. Rebuilt Order/frontend and recreated only Order/Reporting/frontend; all healthy, both routes visible in gateway OpenAPI. Added reason-code UI explanations for old saved rejections. Final677 Order+13 common verify/coverage and38 affected frontend tests, lint and Docker production/types build pass; enhanced real Nginx/saga harness passes eight groups. Original502 cause not independently proven by the newer404. No user report resolved, volumes deleted, cloud mutations or peer-backend changes. Await authenticated browser retry; evidence and limitations in CHANGE-170.
+
 # AI Usage Log
+
+## User Dashboard removal
+
+- **Tool:** OpenAI Codex
+- **Date:** 2026-11-01
+- **Mode:** User-requested frontend navigation update; human review pending.
+- **Prompt:** Remove the Dashboard in user mode.
+- **Affected locations:** frontend/src/config/navigation.ts, frontend/src/app/page.tsx, the existing admin-navigation test and this log.
+- **Key response:** Removed Dashboard from shared desktop/mobile user navigation and replaced the root coming-soon page with a server redirect to Browse Errands. Existing root login/Normal Mode links remain usable; admin navigation and authorization are unchanged. Updated Report navigation description to match the already-approved Order/General choices.
+- **Verification:** All10 existing navigation/mode-switch tests pass; production build including TypeScript, lint and whitespace checks pass. Earlier CHANGE-170 work remains intact; no backend, cloud, commit or push changes.
+
+## CHANGE-170 Report resolution response, feedback and policy hotfix
+
+- **Tool:** OpenAI Codex
+- **Date:** 2026-11-01
+- **Mode:** Diagnosis, approved implementation and regression verification; human review pending.
+- **Developer/branch:** Yao Xiang on hfix/report-service, explicitly confirmed in chat.
+- **Prompt:** Fix Report resolve 502/Resume behavior and unclear held-abort errors; link Admin Report order to an exact-search Orders table; restrict new categories to Order/General; add courier bad attitude at confirmed 2 points.
+- **Design selection:** The developer selected the required behaviors and policy value. AI supported source/log comparison and tests; no independent architecture approval is claimed. Preserve existing saga, holds, event identities and historical retired report categories.
+- **Implementation:** Fresh Report HTTP response without downstream framing headers; same-command UI status recovery; preserve known pre-Credit business rejection messages; table-search navigation; two submission categories; shared penalty enum plus new V19 constraints. No sibling User/Credit/Supplier implementation, cloud writes, deployment, commit or push.
+- **Verification:** Four frontend regressions and real PostgreSQL's old policy constraint reproduced the defects. Report62/full and frontend280/full pass; lint/production build and generated OpenAPI pass. Full Order674 run found four latest-schema assertions needing18-to19 updates; affected final42 Order+13 common verify passes with unchanged preservation checks and two extra PG cases. Source-matched reports total676 Order+13 common, zero failures/errors/skips. Coverage gates pass (Order branch81.02/line94.82%; Report branch81.63/line95.03%). Context TOML and whitespace checks pass. Post-deployment cloud resolution and live User penalty processing are not claimed.
+
+## Reporting staging activation reapplied on integration branch
+
+- **Tool:** OpenAI Codex
+- **Date:** 2026-11-01
+- **Mode:** User-requested configuration update and verification; human review pending.
+- **Prompt:** Redo the flag toggle after discarded changes, on the new branch feat/integrate-report-service.
+- **Affected locations:** infra/environments/staging.env, scripts/ci/test_report_pubsub.py, reporting-service/README.md, reporting-service/HANDOFF.md and this log.
+- **Key response:** Enabled both staging resolution flags and updated the rollout test and current documentation. Production and application/local defaults stay disabled. Reused the session's earlier confirmed cloud wiring and six READY indexes; no new cloud mutation, deployment, commit or push.
+- **Verification:** Seven focused tests pass, covering coordinated staging flags, disabled production, template forwarding and existing bucket-reader checks. Staging Bash syntax and diff whitespace checks pass. Live resolution/recovery remains a post-deployment check.
+
+## Reporting CI deployer bucket-policy inspection permission
+
+- **Tool:** OpenAI Codex
+- **Date:** 2026-10-31
+- **Mode:** CI diagnosis, implementation and regression verification; human review pending.
+- **Prompt:** User supplied cloud infrastructure CI failure: foc-deployer lacks storage.buckets.getIamPolicy on both Reporting attachment buckets.
+- **Affected locations:** infra/gcp/bootstrap.sh, scripts/ci/check-infra.sh, scripts/ci/test_report_pubsub.py, reporting-service/HANDOFF.md and this log.
+- **Key response:** Added only bucket-policy inspection to the existing infrastructure-reader role definition. Distinguished inability to read bucket policy from a missing runtime object-access binding. Documented an additive owner-run custom-role update; no cloud IAM mutation, deployment or commit by the assistant.
+- **Verification:** Two new regressions failed before the fix; six focused privacy/access/reader-role checks pass afterward using SDK Python, Git Bash and jq without cloud access. Live CI remains pending after the authorized owner updates the deployed role.
+
+## Reporting bucket infrastructure-check correction
+
+- **Tool:** OpenAI Codex
+- **Date:** 2026-10-31
+- **Mode:** Diagnosis, implementation and regression verification; human review pending.
+- **Prompt:** User supplied the completed infrastructure check showing two Reporting attachment bucket privacy failures after bootstrap.
+- **Affected locations:** scripts/ci/check-infra.sh, scripts/ci/test_report_pubsub.py, reporting-service/HANDOFF.md and this log.
+- **Key response:** Read-only GCP metadata showed both buckets already enforced public-access prevention. Fixed the checker to accept gcloud's top-level public_access_prevention field, preserving nested API-format compatibility and the object-access requirement. No cloud mutations, deployment, billing changes or commits.
+- **Verification:** Two regression cases failed before the correction; all four privacy/access tests pass afterward. Actual staging and production bucket checks pass; Bash syntax and diff whitespace checks pass. Docker was unavailable, so focused tests ran with installed SDK Python, Git Bash and jq. Full infrastructure verification and cloud integration remain rollout steps.
 
 ## Command submission polling race fix assistance (Order Service / Frontend)
 
@@ -3085,6 +3144,39 @@ CHANGE-155 (2026-10-19), Yao Xiang: retire accepted-cancellation producer/replay
 
 CHANGE-155 verification: final full reactor verify passed: 531 Order tests +12 common tests, zero failures/errors/skips; coverage checks passed with fresh execution data and no class-mismatch warning. First full run also passed but accumulated old mapper coverage, so only jacoco.exec was backed up/cleared before the final run (no Maven clean). Local bootstrap3 tests pass; base/http-peers/http-peers+local-live Compose config checks pass; shell syntax and stubbed staging/production provisioning pass (four topics each; no live gcloud calls). AsyncAPI checker passes four channels/operations, four DTO field sets, six examples, negative schemas and source/config/cadence parity; initial stale validator/missing example attributes were corrected. AsyncAPI parses and all local refs resolve. Docker foc-order-service:change155-check built; packaged JAR contains no retired event/publisher/snapshot classes; git diff --check passes. Production backlog and deployed User scoring remain unverified. No DB/GCP modifications, app-container recreation, commit or staging.
 
+## 2026-10-14 — Reporting Service implementation and disclosure assistance
+
+- **Tool:** OpenAI Codex (GPT-5)
+- **Mode:** Implementation, test generation, verification, infrastructure, documentation, and disclosure maintenance.
+- **Exact prompts:**
+
+  > Create `feat/reporting-service` from `main` and add a dedicated Reporting Service plus its user-facing report form.
+
+  > can you help me add ai declaration on the files and also in the ai log file
+
+- **Key response:** Created `feat/reporting-service` from `main` and implemented the required Reporting Service, multipart report submission, authoritative Order association client, Firestore persistence, private Cloud Storage attachments, admin APIs, authenticated frontend form, all-page/all-status order selector, completion reminder, gateway routing, local emulators, cloud bucket provisioning, OpenAPI, tests, and documentation. Reporting Service verification passes 29 tests and both JaCoCo gates; the frontend passes 132 tests, lint with three unrelated existing warnings, typecheck, and production build; Reporting Service, frontend, and gateway images build; Compose and patch validation pass. Added scoped disclosure headers to AI-assisted text files. Standard Maven wrapper files retain their upstream license text without AI headers, and `infra/firebase-emulator/firebase.json` remains valid strict JSON without comments; their use and modification are covered by this entry. `REPORTING-ORDER-001` remains an external Order Service dependency, so authenticated end-to-end integration is pending its merge and branch rebase.
+- **Affected locations:** `reporting-service/`; `frontend/src/app/reporting/`, `frontend/src/components/reporting/`, shared frontend API/navigation/request-completion files and tests; gateway configuration; Firebase emulator, GCP bootstrap, and infrastructure checks; `.env.example`, `compose.yaml`, root and CI/CD documentation; and this usage log. Order Service source was not changed.
+- **Author verification:** The author supplied the feature contract and requested the disclosures. Automated verification is complete as recorded above. No commit, push, cloud mutation, or peer-service implementation was performed.
+
+## 2026-10-14 — Reporting Service handoff documentation assistance
+
+- **Tool:** OpenAI Codex (GPT-5)
+- **Mode:** Read-only source/contract inspection, documentation, and verification.
+- **Prompt:** Prepare a handoff document for the Reporting Service branch describing the implementation, endpoints, Order Service changes, dependencies, expected payloads/formats, and work required before startup and merge to `main`.
+- **Key response:** Added `reporting-service/HANDOFF.md` and linked it from the service README. The handoff records implemented backend/frontend/infrastructure behavior, exact Reporting request/response contracts, runtime dependencies and environment variables, the two missing bearer-derived Order association endpoints, required ownership/security/error semantics, an unresolved `ABORTED` attempt identity ambiguity, operational limitations, and a pre-merge/staging checklist. Fresh verification passed 29 Reporting tests and both JaCoCo gates, 8 focused frontend tests, scoped lint, and full frontend typecheck.
+- **Affected locations:** `reporting-service/HANDOFF.md`, `reporting-service/README.md`, and this disclosure log. No application source, peer service, cloud resource, commit, push, or deployment was changed.
+- **Author verification:** Pending human review of the handoff and the cross-service Order contract.
+
+## 2026-10-27 — Active-order disputes and courier response assistance
+
+- **Tool:** OpenAI Codex (GPT-5)
+- **Mode:** Implementation, test generation, verification, contract documentation, and disclosure maintenance.
+- **Prompts:** Restrict reporting to active requester orders without fetching complete Order history; document the two required Order Service blockers; remove the unnecessary single-order active `GET`; implement atomic report holds, 24-hour courier responses, caller-scoped report views, the three-tab reporting frontend, and the delivered-order completion warning; add AI declaration comments and update this log.
+- **Key response:** Updated Reporting Service to generate the report ID before calling `PUT /api/orders/mine/active/{orderId}/report-holds/{reportId}`, validate the authoritative hold snapshot, persist `AWAITING_COURIER_RESPONSE`/`READY_FOR_REVIEW`/`RESOLVED`, reconcile deadlines at the 24-hour boundary, accept one participant-scoped courier response with private evidence, preserve legacy `OPEN` compatibility, and release report-specific holds before resolution. Added caller-scoped list/detail/response APIs and participant/admin attachment access. Rebuilt `/reporting` as `Report issue`, `Submitted`, and `Against me`, using only `GET /api/orders/mine/active` for selection and five-second visible polling. Added the pre-completion dispute dialog and removed completed-order reporting reminders/prefill. Replaced the handoff contract with the two exact blocking Order APIs and documented why a separate `GET /api/orders/mine/active/{orderId}` would create a validation-to-hold race. Added disclosure headers to all newly created source/test files.
+- **Affected locations:** Reporting Service report domain, repository, Order client, API/error DTOs, OpenAPI annotations, tests, README and handoff; frontend reporting page/components/types/tests and requester completion actions; `ai/usage-log.md`. No Order Service source, schema, infrastructure, cloud resource, commit, push, or deployment was changed.
+- **Verification:** Reporting `./mvnw verify` passed 34 tests, Firestore Testcontainers, OpenAPI checks, and JaCoCo line/branch gates. Frontend passed 255 tests, typecheck, lint, and the production build. `git diff --check` passed. Authenticated end-to-end verification remains blocked until the separately owned active-order list and atomic validate-and-hold Order APIs are implemented, secured, OpenAPI-documented, and contract-tested.
+- **Author verification:** The user supplied and approved the behavior and blocker contracts, explicitly excluded Order Service implementation, and requested these disclosures. AI supports implementation and verification; final human review and cross-service integration remain pending.
+
 ## Compensation-first Order recovery assistance (Order Service)
 
 - **Tool:** OpenAI Codex (GPT-6)
@@ -3183,3 +3275,195 @@ CHANGE-164 final verification (2026-10-29): native full Order/common Maven verif
 - **Key response:**Pinned the introduced directory test to mongo:7.0.43 used by the existing Order/User fixture; kept real query checks. Confirmed the localhost warnings belong to passing full-context tests, not the reported startup error. Full User verify runs against disposable Mongo7 replica sets;36 tests pass including4 directory cases and OpenAPI, native exit0. No production, pom/env/workflow or application-data changes; exact GitHub kernel/container crash not reproduced locally.
 - **Affected locations:**User AdminUserDirectoryTest and maintainer handoff; Order CHANGE165/context/index/active-work and this disclosure.
 - **Author verification:**User explicitly requests CI fix; human review remains pending. Supplied CI log is failure evidence, local Mongo8 had passed earlier. New pinned-image full verification passes; GitHub CI rerun is still required. No commit/push/deploy/staging.
+
+
+## Reporting resolution integration assistance - CHANGE-166 (2026-10-29)
+
+- **Tool:** OpenAI Codex.
+- **Developer/branch:** Yao Xiang, feat/reporting-service.
+- **Prompt/scope:** Link requester Report frontend to active-order/atomic hold APIs, implement Report resolution and saga consumer/result producer against Order contract, run live integration, and list topics. User approved real Admin Reports APIs, then excluded OPEN reporting and merged main, requesting resolution of the three frontend conflicts.
+- **Implementation assistance:** Firestore atomic decision/preimage/revision/fence/outbox, strict push DTOs and separate Google identity checks, real frontend transport/private reply/evidence/retry status, database-selected deadline/filter processing, four-state SQL Order eligibility and hold scope. Preserved imported unrelated main changes. Added Report-only shared environment/Compose settings and maintainer/architecture/traceability records.
+- **Verification:** Initial53 Report/264 frontend tests, coverage and actual two-way Pub/Sub rollback/duplicate tests passed. Final merged checks are in progress and will be appended; no final count is assumed from earlier evidence. Fixed a real Firestore business-error wrapping issue found by the new tests; corrected fixture request fields and a test generic compilation error before green results.
+- **Limitations:** No GCP/app-data mutation, deployment, commit or push by AI. Current main merge was initiated by the user. Production OIDC/IAM/index rollout, human review and separate report-creation recovery remain open.
+
+
+## Final verification - CHANGE-166 (2026-10-29)
+
+- Full root reactor verify: 666 Order tests plus12 common tests; zero failures/errors/skips; original coverage gates pass (BRANCH 80.98%, LINE 94.86%). Log: order-service/target/report-saga-order-final.log.
+- Final Report verify:54 tests, zero failures/errors/skips; fresh coverage gates pass (BRANCH 81.20%, LINE 94.97%); complete opt-in resolution OpenAPI artifact generated. Log: order-service/target/report-saga-release-verify.log.
+- Frontend:267 tests pass with --maxWorkers=2; lint, TypeScript and production build pass. A prior unconstrained parallel run timed out four existing map/date/request tests under host load; none are represented as passes, and no unrelated source/global timeout was changed. The first sandbox build could not fetch existing Google fonts; the network-enabled production build passes. Logs: report-saga-complete-frontend-bounded.log / complete-lint / complete-typecheck / complete-build under order-service/target.
+- Actual current-branch Order and Report HTTP applications, separate PostgreSQL/Firestore and actual Pub/Sub push pass all six scenario groups: OPEN rejected without an orphan hold, current-snapshot retry and held delivery/completion guard, successful resolution/replay/private reply, forced final Order rollback with duplicate compensation, safe fresh command after compensation, lost Report reply, and compensation preceding a delayed original. Some related checks share a recorded group; evidence: reporting-service/target/live-order-resolution-result.json and order-service/target/report-saga-release-live.log. No resolution/compensation endpoint was replaced with a stub; User/Supplier/Credit adapters are explicitly local mocks.
+- Extended harness initially disabled outbox recovery and timed out on a pending immediate-dispatch attempt; enabling the real recovery job makes lost-response/delayed-original scenarios pass. No production scheduler cadence or outbox behavior was changed.
+- User approved Report-only gateway protection. Disposable gateway image build/health, eight internal-route HTTP checks (normal/encoded/matrix) and the remaining public proxy path pass via reporting-service/scripts/test-report-gateway.cjs. Local unsigned push remains gated; cloud uses Google OIDC.
+- Base and HTTP-peer Compose config checks pass. Context TOML, Report index JSON and resolution OpenAPI schemas validate. No merge markers/unmerged paths remain; working diff whitespace check passes. Containers/processes created by the live/gateway harnesses were removed; no application volume or GCP resource changed.
+
+Cloud IAM/OIDC/subscriptions/indexes, operator retention/dead-letter settings, browser visual review and explicit feature activation remain rollout work. Both saga flags remain disabled by default. Optional normal-Compose automatic Report-topic/subscription wiring was requested for approval and has not been applied; the isolated live harness is fully configured. Report creation after a confirmed/uncertain hold but failed Report save remains a separate pre-existing recovery requirement. No commit/push/deployment was performed by the assistant.
+
+
+## Report saga cloud configuration - CHANGE-167 (2026-10-30)
+
+Yao Xiang approved Report-only shared provisioning and Report/Order deployment settings on feat/reporting-service. Existing Order Publisher grants must remain unchanged; no cloud provisioning or deployment is authorized by this code change. Added infra/gcp/configure-report-pubsub.sh with prepare/wire phases: Report runtime and per-environment push identities, result-topic Publisher, Google token minting/invoker permissions, checked existing subscription bindings, authenticated push, retry and retained dead-letter recovery. Wire preflights both backend services. Existing bootstrap owns Firestore/attachment buckets and permissions. Staging reuses the owner-created dev topics/subscriptions; production uses prod. Both deployment templates now pass the exact saga settings, direct backend audiences/URLs and the 20s Report-to-Order / 5s Order-to-Report timeout budget. Both flags remain false. No application Java/frontend/domain/API/schema/event changes.
+
+Verification: existing CI infrastructure test entry point now discovers five Report provisioning cases; all 10 combined tests pass with fake gcloud and no credentials/network. Covers prepare idempotency, preserving existing pull subscriptions while wiring push, fresh creation, bad bindings/missing services rejected before mutation, separate environment names/identities and disabled deployment flags. ShellCheck passes the new script. Live local HTTP/PubSub integration evidence from CHANGE-166 remains valid; cloud delivery has not been exercised. Actual read-only GCP inspection confirmed all four topics and pull-only subscriptions, missing Report runtime account and absent Cloud Run Report service.
+
+Operations and exact commands: reporting-service/HANDOFF.md, Cloud rollout. Run approved prerequisites and prepare, deploy with flags off, install indexes, wire, then explicitly enable/redeploy and validate staging. The script creates an extra report-resolution-dead-letter-{dev|prod}-v1 topic and recovery subscription; no manual creation required. Main application/Compose and sibling backend behavior are unchanged by CHANGE-167.
+
+Final CHANGE-167 checks: all 10 credential-free cloud wiring regression tests pass; full CI ShellCheck scope (scripts/ci/*.sh and infra/gcp/*.sh) passes after explicitly expanding Windows wildcards; both Compose config checks pass; context TOML parses; working diff whitespace check passes and no unmerged paths remain. No Maven/frontend application tests were repeated because CHANGE-167 changes provisioning/configuration/docs only. No real provisioning script, IAM mutation, subscription update, application deployment or feature activation was executed.
+
+
+## Credit report context and courier reminders - CHANGE-168 (2026-10-30)
+
+Owner: Yao Xiang on feat/reporting-service. The user requested optional Order context for credit issues, dates and a clearer order picker, an actionable duplicate-report message, and a red unanswered-report reminder. They explicitly approved completed-order context for either the requester or assigned courier, with no completion hold, no courier response request and direct admin review. Compact radio cards reuse the existing UI theme; all original report categories and active ORDER/COURIER restrictions remain.
+
+Contracts: GET /api/orders/mine/completed?page=1&size=20 lists only COMPLETED orders where the verified caller is requester/current courier. GET /api/orders/mine/completed/{orderId} performs the same ownership/status check for Report backend validation; missing, unrelated and non-completed records return 404. No userId is accepted. Any recognized Order role may use these caller-scoped reads. SQL applies status/ownership/count/pagination; no all-order scan. OrderResponse.startedAt is nullable and derived from the stored deadline minus its declared delivery duration; no SQL migration or speculative legacy backfill.
+
+CREDITS may remain unlinked or reference that completed order. GENERAL remains unlinked. Credit linkage is context only: courierId/deadline remain null, status READY_FOR_REVIEW, no hold or funding/penalty action. Credit resolution stays in Report's durable local journal even with an orderId; it never calls Order's hold-release coordinator or polls an Order command. Only submitter/admin can access these credit reports. ORDER/COURIER still require own assigned ACCEPTED/IN_PROGRESS/PICKED_UP/DELIVERED order and their existing hold/response flow.
+
+Duplicate protection: public placeActive locks the Order and rejects another active report while preserving same-report retry. Report saveNewLinked also serializes creation with Firestore active_report_orders slots, checking both the referenced report and a bounded legacy active-report query before writing report+slot atomically. Slot records can reference resolved history; a new report is permitted after resolution. Existing generic historical/admin multi-hold data is preserved. The response says: This order already has an active report. Please resolve it before submitting another report. Other conflicts are not relabeled as duplicates. This does not introduce a separate cross-service report-creation saga; the known hold-commit/report-save uncertainty remains a separate recovery requirement.
+
+Reminder: GET /api/reports/mine/response-count returns {count}, scoped solely by the JWT subject, using Firestore aggregate predicates on courierId/status/responseDeadlineAt. Expired, responded and resolved reports do not count. One visible/authenticated five-second poller in the app shell supplies both desktop/mobile Report an Issue navigation badges; admin mode does not poll, account changes cannot inherit another user's badge and transient failures retain the same user's last confirmed count. No new event topic, secret or env var is required.
+
+UI: optional completed-order cards for Credits and required active-order cards for Order/Courier; truncated description/ID, status, Created and actual Started dates, explicit unknown/not-started labels, bounded scroll and existing photo validation retained. Empty optional link remains supported, active-hold cards show their report state, and API errors preserve the entered form. No User/Credit/Supplier backend or cloud resources were modified.
+
+Verification (final application source): root reactor 669 Order +12 common tests, zero failures/errors/skips, Maven SUCCESS and coverage gates (Order BRANCH81.03%, LINE94.80%). Report61 tests, zero failures/errors/skips, coverage BRANCH81.63%, LINE95.13%. Initial client test reproduced rejection of a response missing hold fields; fixed with a separate completed-context DTO, not by weakening hold validation. Real local Order/Report HTTP, PostgreSQL/Firestore and two-way Pub/Sub integration passes all seven scenario groups, including the new ownership/credit-context/duplicate/count cases plus existing compensation/replay/lost-response/fencing cases. Test containers/processes removed. Root Surefire emitted a post-success fork shutdown timeout warning; Maven still completed with exit0, zero failed tests. No production timeout or coverage gate changed. Logs: order-service/target/change168-order-verify.log, change168-report-final.log, change168-live.log; reporting-service/target/live-order-resolution-result.json.
+
+Final frontend verification: all274 tests pass across52 files after the credit-case UI refinements; TypeScript, lint and production build pass. Credit case details show Submitter account, no courier-response section, and use actual Order participant IDs for Order names. The Order OpenAPI MVC slice now includes CompletedReportOrderController, with explicit path assertions; all4 focused documentation tests pass and the regenerated artifact includes both completed-context routes and startedAt. Report response-count OpenAPI and Firestore index/context validation pass. Live staging/production and Google IAM delivery remain unverified; this change does not deploy/rebuild the user's running stack. Install the two additional Firestore indexes in reporting-service/firestore.indexes.json before cloud rollout (courierId/status/responseDeadlineAt and orderId/status). No SQL migration is needed; Firestore slots are created lazily with a legacy-record check.
+
+
+Report picker UI refinement (2026-10-30, Yao Xiang, CHANGE-168): the user explicitly replaced the radio-card layout with compact single-column selectable rows. Keep description, truncated Order ID, status and Created date; remove Started and the pre-submit Active report label. Existing optional credit context, selection/accessibility, photo validation and duplicate message on submission remain. This is frontend display only: no backend/API/event, schema/index, environment, permission, workflow or cloud changes. Source: frontend/src/components/reporting/report-form.tsx; existing regression tests updated. Focused verification results recorded below.
+
+Picker-row refinement verification: all8 existing ReportForm tests pass, including optional credit selection, prefill, uploads/retries and duplicate feedback on submit; scoped ESLint and working diff whitespace checks pass. No backend tests or full build repeated for this display-only change. Running application containers were not rebuilt.
+
+
+## Effective reporting simplification - CHANGE-169 (2026-10-30)
+
+Owner: Yao Xiang on feat/reporting-service. The user revoked the optional CREDITS/Order association introduced in CHANGE-168 and requested the initial submission UI, while retaining completed/cancelled Order lookup and the red courier reply reminder. This supersedes only credit association and picker layout from CHANGE-168; active reporting/hold restrictions, duplicate feedback and the response-count behavior remain.
+
+CREDITS and GENERAL submissions are unlinked: no Order selector or lookup, orderId null, READY_FOR_REVIEW, no reported courier, response deadline, completion hold or automatic credit adjustment. Sending a nonblank orderId for either category returns400. ORDER/COURIER keep the existing active-only associated-order dropdown. The card/row/date alternatives are removed from this form. A supplied initialOrderId is ignored for unlinked categories. Form contents/photos and the helpful active-report message remain on failure.
+
+Retain GET /api/orders/mine/completed and /api/orders/mine/completed/{orderId}. Add the matching GET /api/orders/mine/cancelled and /api/orders/mine/cancelled/{orderId}. OrderCreditHistoryController replaces the internal CompletedReportOrderController class name without changing the completed URLs. List endpoints return the existing one-based Order page, with status/ownership/count/pagination in SQL; detail returns404 for wrong status, missing or unrelated orders. Requester/current assigned courier only, from verified principal, with any recognized Order role. Read-only history: no Credit ledger access, hold, funds or penalty changes. These APIs are independent of Report submission. Expiry also has refund behavior in the existing system; the requested retained history scope here is COMPLETED/CANCELLED, not a statement that other statuses have no Credit activity.
+
+Remove the now-unused Report getCompletedOrder HTTP adapter/interface method and CompletedOrderContext DTO. Keep reading historical linked credit reports and resolving them locally through the existing Report journal; no database records are deleted or backfilled. The Report result/compensation contracts and topics remain unchanged. No SQL/Firestore migration or new index/env/role is required. Existing completed-query metadata, including nullable startedAt, is retained as response compatibility; the form does not display it.
+
+Preserve GET /api/reports/mine/response-count and the red badge in normal desktop/mobile Report an Issue navigation, including five-second visible/authenticated polling, caller isolation and deadline filtering. No User/Credit/Supplier backend, CI workflow, cloud setup, running container or application database mutation is part of this change. Backend Java, Report form/tests and existing documentation are the affected slice. Tests and final evidence are recorded below after verification.
+
+Final CHANGE-169 verification: root reactor670 Order +12 common tests, zero failures/errors/skips; coverage gates pass (Order BRANCH81.03%, LINE94.81%). Report60 tests, zero failures/errors/skips; gates pass (BRANCH81.49%, LINE95.01%). Frontend274 tests across52 files, lint and production build (including TypeScript) pass; focused form/reminder/navigation14 tests pass. All four completed/cancelled list/detail routes and retained response-count API are present in generated OpenAPI; context TOML validates. Updated actual Order/Report HTTP + PostgreSQL/Firestore + two-way Pub/Sub live integration passes all seven scenario groups, including unlinked credit creation/local resolution, rejection of supplied credit orderId, completed/cancelled ownership/status filtering and the preserved response count, plus existing rollback/duplicate/lost-response/fencing scenarios. Disposable fixtures removed. Logs: order-service/target/change169-order.log, change169-report.log, change169-frontend.log, change169-lint.log, change169-build.log, change169-live.log; reporting-service/target/live-order-resolution-result.json. No production deployment, GCP change, database cleanup or running frontend rebuild was performed. Working diff whitespace and merge checks pass.
+
+## 2026-11-01 — CHANGE-171 courier Errand reports
+
+Tool: OpenAI Codex. Owner: Yao Xiang on hfix/report-service. Mode: approved implementation, tests and local verification; human review pending. User chose a separate ERRAND category for assigned couriers, direct admin review. Added courier-scoped SQL list/locked hold with role/token checks and requester-compatible defaults; actual requesterId separate from reporterId with legacy fallback; direct READY_FOR_REVIEW with no self-response/deadline/reminder; correct normal/admin UI category, selection and submitter mapping; actual-owner saga binding. Existing holds/funding/penalty and two-way compensation unchanged. No User/Credit/Supplier/common-policy, GCP, new SQL migration/topic or cloud flag change. Added ADR-064, synchronized current contracts/traceability/context/handoffs and AI disclosure. Full681 Order+13 common and66 Report verify/coverage pass; final9 Firestore saga checks,284 frontend full plus final32 affected, lint/build/types and nine actual gateway/saga groups pass. New test expiry/precision/JSDOM fixtures corrected without weakening product rules. Local Order/Report/frontend images rebuilt/recreated and healthy; volumes preserved. No user report mutation, commit/push/cloud rollout. Full evidence and residual browser/deployment limitations: order-service/changes/CHANGE-171-courier-order-reports.md.
+
+## CHANGE-172 — meaningful active-report feedback (task started2026-11-01)
+
+OpenAI Codex; Yao Xiang on hfix/report-service; authorized implementation detail, human review pending. User clarified the failing action is submitting another report. Promoted the actual reason to the form's alert title and removed the generic "Could not submit" heading; normalized active-report explanations across local/server duplicate checks and saved held-command feedback, retaining historical message compatibility and form content. Initial cancellation example exposed a real stale-version/hold precedence bug: final owner-only priority explains the hold while preserving unrelated-caller checks, unheld version/status rejection and all financial recovery. RED reproduced both the actual PostgreSQL conflict and generic frontend heading. Final683 Order+13 common and66 Report full verify/coverage,42 affected frontend tests, lint/build/types and nine actual gateway/saga groups pass. First root verification intentionally stopped for the final precedence refinement; final verify succeeds with existing post-test Surefire warning. Rebuilt/recreated local Order/Report/frontend only, all healthy; volumes preserved. No new API shape/schema/topic/infra/workflow or sibling backend changes, no real user report mutation or cloud/commit/push. Evidence and browser/cloud limitations: order-service/changes/CHANGE-172-active-report-error-messages.md.
+
+Advisory — courier report hold / two admins: OpenAI Codex inspected actual hold placement, NOWAIT lock, Report journal active guard/partial unique index, immutable retry binding, Firestore transaction and current409 recovery UI. Confirmed same funding hold for ERRAND and single active resolution; documented losing-admin generic/Resume UX limitation without claiming a live simultaneous-admin test. Review notes only; no code/tests/contracts/config/cloud or user-data changes. Human review pending.
+
+## CHANGE-173 — Order as default report category (2026-11-02)
+
+OpenAI Codex; Yao Xiang on hfix/report-service; authorized frontend implementation detail, human review pending. Screenshot shows empty Description/0 counter; explained the placeholder is not submitted content and kept required validation. Changed only missing/empty category fallback to ORDER; explicit ERRAND/GENERAL and historical invalid/retired GENERAL fallback retained.16 existing tests,8 direct checks, lint and Docker build/types pass. Recreated only frontend; actual built routes verify defaults/explicit categories and container healthy. First probe during startup retried successfully after readiness. No new low-impact tests, backend/schema/API/workflow/infra/data/cloud/volume changes or commit/push. Context/active work and change173 contain evidence; authenticated browser confirmation pending.
+
+
+## Unified participant Order-report responses assistance (Order Service / Reporting Service / Frontend)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-02
+- **Mode:** Design, implementation, test generation, verification and documentation
+- **Affected locations:** Order participant list/hold/repository, Reporting domain/repository/API/saga preimage and tests, existing frontend reporting/admin components and tests, CHANGE-174/ADR-065 and persistent context.
+- **Prompt:** The requester does not know about a courier-submitted report; use Order category and allow the requester to reply. Approved admin review after24h timeout and upgrading unresolved Errand reports with a fresh response window.
+- **Key response:** AI supported design comparison; developer selected unified Order reports, opposite-party response, existing holds and saga. Implementation retains authoritative actual participant IDs and compatibility wire fields, scopes notifications to the respondent, upgrades legacy cases transactionally once and preserves deadlines on compensation. Focused tests and full Reporting verification passed; final Order/frontend/integration evidence follows in CHANGE-174.
+- **Author verification:** Yao Xiang approved the design in chat; code and final verification review pending. No independent AI architecture approval, commit, push or cloud change.
+
+- **Verification update (CHANGE-174):**685 Order+13common and69Reporting full verify/coverage pass;287frontend tests and full lint pass;three images build including frontend TypeScript. Nine real isolated gateway/saga groups pass, including opposite-participant response, reminders, authorization, duplicate protection, rollback/compensation preserving the persisted deadline, dropped reply and delayed-original fencing. Three changed local containers healthy. Initial outdated expectation and timestamp fixture corrections are documented in CHANGE-174. No cloud/Git publication; developer browser/code review pending.
+
+
+## Separate Order and Errand report categories assistance (Reporting Service / Frontend / Order documentation)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-02
+- **Mode:** Implementation, test generation, verification and documentation
+- **Affected locations:** Reporting domain/service/request schema/tests/live harness; frontend reporting category/selector/help and tests; CHANGE-175/ADR-066 and required context/handoffs.
+- **Prompt:** Restore Errand category but require the other side to reply; an acknowledged ongoing Errand report must block another requester report.
+- **Key response:** AI supported implementation comparison; Yao Xiang explicitly selected separate requester ORDER/courier ERRAND with the existing opposite-party24-hour response, notification and cross-category active-case guard. Reuse actual role-scoped Order endpoints and preserve funding/saga. Regression tests reproduced Errand rejection and unintended deadline resetting before implementation; final verification pending in CHANGE-175. No new cloud resources or Order application changes.
+- **Author verification:** Developer directed the product change; code and final verification review pending. No independent AI architecture approval, commit or push.
+
+- **Verification update (CHANGE-175):**70Reporting full verify/coverage;41affected frontend tests;full lint and Reporting/frontend production builds including TypeScript pass. Nine isolated real gateway/saga groups verify restored categories, requester response/reminders and cross-category duplicates in both directions. Local services healthy; live OpenAPI categories and Errand route verified. Only Reporting/frontend recreated; no data removal, cloud/Git publication or Order application change. Browser/code review pending.
+
+## Report navigation recommendation assistance (Frontend / Order documentation)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-02
+- **Mode:** Read-only review and advisory documentation
+- **Affected locations:** Existing frontend shell/navigation and reporting route inspected; Order active-work and AI notes appended only.
+- **Prompt:** Is it a good idea to open Reports against me when a user with a pending response clicks Reports, otherwise keep the current report section?
+- **Key response:** Recommend conditional navigation on click using the existing response count and tab=against-me route, retaining the current form when count is zero and never moving a user mid-form due to polling. Proposal only; not approved or implemented.
+- **Author verification:** Product decision remains with Yao Xiang; no application source, tests, deployment or data changed.
+
+
+## Pending-response Report navigation assistance (Frontend / Order documentation)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-02
+- **Mode:** Implementation, verification and documentation
+- **Affected locations:** frontend/src/components/app-shell.tsx, reporting/reporting-hub.tsx and existing navigation/reporting tests; CHANGE-176 and required context/handoff/AI notes.
+- **Prompt:** "do it", approving the prior conditional Report navigation recommendation.
+- **Key response:** Developer selected positive-count Against me navigation and zero-count default form, without background tab switches. AI supported implementation of the shared desktop/mobile link and URL-aware reporting tabs so explicit same-page navigation works. Existing regression first failed for the old href;22 final affected tests pass, including preserving a draft on count updates and following explicit tab URLs. Final lint/build/local evidence in CHANGE-176.
+- **Author verification:** Product approval from Yao Xiang; code/browser review pending. No backend/API/schema/resource/config/data, commit or push change.
+
+- **Verification update (CHANGE-176):**22 affected frontend tests,full lint and Docker production build/TypeScript pass. Only frontend recreated,healthy; built form and Against me destinations return200 with correct initial tabs. Backend/API/config/data/cloud unchanged; browser/code review and staging rollout pending. No commit or push.
+
+## Admin action clarity and Reports pagination review assistance (Frontend / Order documentation)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-02
+- **Mode:** Read-only review, targeted verification and advisory documentation
+- **Affected locations:** Existing admin Order action/table, Reports client/cards/filter, shared pagination, normal reporting list and Report provider inspected; active-work and AI records appended only.
+- **Prompt:** Review confusing action availability in a large admin Orders/Reports list and check whether Reports has a next page at its page-size limit.
+- **Key response:** Exact-order navigation aids finding the record; recommend retaining it/statuses while explaining disabled actions and offering active-order/ready-review shortcuts. Report status and Order lifecycle are distinct. Admin/normal Reports request20 per page; Previous/Next shown when more than one page. Existing mocked21-result Admin Reports pagination regression passes, including page2 request and filter page reset;14 unrelated cases intentionally unselected, not run. No implementation or production-data mutation.
+- **Author verification:** Recommendations remain proposals for Yao Xiang; no application source, tests, deployment, API or schema changed.
+
+## Quick-filter style clarification assistance (Frontend / Order documentation)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-02
+- **Mode:** Read-only review and explanation
+- **Affected locations:** frontend/src/components/suppliers/supplier-filters.tsx inspected; active-work and AI notes appended only.
+- **Prompt:** Is the proposed shortcut similar to normal Suppliers' existing Open now control?
+- **Key response:** Confirmed the existing Switch/query filter pattern; propose the same style for Active orders only and Ready for review only, preserving synchronized status controls and pagination reset. Proposal only; no product implementation.
+- **Author verification:** Product decision remains with Yao Xiang; no source/test/config/API/cloud changes.
+
+## Admin filter wording clarification assistance (Frontend / Order documentation)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-02
+- **Mode:** Advisory clarification
+- **Affected locations:** Active-work and AI review notes only; previously inspected admin eligibility gates inform recommendation.
+- **Prompt:** Would an undefined Active orders label confuse admins?
+- **Key response:** Backend already has a concrete active-state set, but unexplained UI wording can confuse. Recommend an Action filter with All orders, Can cancel and Can apply penalty; Report Ready for review retains its existing status meaning. No lifecycle change or source/test/config/API implementation.
+- **Author verification:** Proposed wording remains for Yao Xiang's selection; no code, data, deployment or cloud changes.
+
+
+## Action-eligible Admin Orders toggle assistance (Order Service / Frontend)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-02
+- **Mode:** Implementation, test generation, verification and documentation
+- **Affected locations:** Order admin list controller/query/repository adapter and existing tests; frontend AdminOrders/admin-api/action eligibility and existing tests; CHANGE-177 and required context/AI records.
+- **Prompt:** "or just name it as action eligible order then just reuse toggle as well"
+- **Key response:** Developer selected the action-eligible label and existing Supplier Switch pattern. AI supported database-filter implementation so optional admin-list actionEligibleOnly preserves accurate totals/pages. Existing5states include held Orders; status synchronization/page reset/exact-ID transport covered. Backend regression first failed for missing filter overload; frontend regressions first failed for missing switch/query. Focused20backend and60frontend tests pass. Removed duplicate accessible label and supplied missing PointerEvent only in JSDOM fixtures. Full verification follows in CHANGE-177. No new financial rule or cloud resources.
+- **Author verification:** Product decision by Yao Xiang; code/browser review pending. No independent AI architecture approval, commit or push.
+
+- **Verification update (CHANGE-177):**Full Order/common rerun passes687+13 tests and coverage gates (Order branch80.96%,line94.71%);291 frontend tests,full lint and Order/frontend production builds/TypeScript pass. Initial full run revealed a missed old reflection signature; corrected only that fixture and reran all checks. Both changed local containers healthy,live optional false-default OpenAPI/anonymous401/Admin Orders200 verified. No cloud/Git publication,data removal,peer/config/schema changes; browser/code review and staging rollout pending.
+
+
+## Matching inline admin filter toggles assistance (Frontend / Order and Reporting documentation)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-02
+- **Mode:** Implementation, regression verification and documentation
+- **Affected locations:** Shared AdminFilterForm opt-in layout, AdminOrders and AdminReports existing controls and tests; CHANGE-178/context/handoff/AI records.
+- **Prompt:** Put the toggle on the same row as status/search, shorten the long search input, and add the Reports toggle.
+- **Key response:** Developer explicitly extends prior Orders-only scope to Admin Reports. AI supported matching desktop filter rows with existing style and narrow-screen wrapping; Reports toggle aliases existing READY_FOR_REVIEW status and preserves server paging. Existing tests reproduced detached/missing toggles before implementation;54 affected page tests pass. No backend/API/auth/schema/financial/broker/shared-config change. Final lint/build/local evidence follows in CHANGE-178.
+- **Author verification:** User-directed UI choice; code/browser review pending. No independent AI architecture approval, commit or push.
+
+- **Verification update (CHANGE-178):**54 affected page tests,full lint and frontend production build/TypeScript pass. Frontend-only recreation is healthy; Orders/Reports routes return200. Existing unrelated test warnings retained, no failed final checks. No backend/API/config/cloud/data change or publication. Code/browser review and staging rollout pending.

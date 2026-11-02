@@ -2,6 +2,7 @@ package sg.edu.nus.foc.common.penalty;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
@@ -35,6 +36,14 @@ class PenaltySystemPolicyTest {
     }
 
     @Test
+    void badAttitudeIsAnAdminSelectableTwoPointPenalty() {
+        PenaltySystemPolicy policy = PenaltySystemPolicy.valueOf("COURIER_BAD_ATTITUDE");
+        assertEquals(2, policy.getPenaltyAmount());
+        assertTrue(PenaltySystemPolicy.getCourierPenaltyCases().contains(policy));
+        assertTrue(PenaltySystemPolicy.getFullPenaltyPolicy().contains(policy));
+    }
+
+    @Test
     void successfulDeliveryRewardReturnsTheSuccessfulPolicy() {
         assertEquals(PenaltySystemPolicy.SUCCESSFUL_DELIVERY,
                 PenaltySystemPolicy.getSuccessfulDeliveryReward());
@@ -46,7 +55,8 @@ class PenaltySystemPolicyTest {
         assertEquals(List.of(
                 PenaltySystemPolicy.WRONG_LOCATION_DELIVERY,
                 PenaltySystemPolicy.ITEM_MISHANDLING_OR_DAMAGE,
-                PenaltySystemPolicy.DELIBERATE_ITEM_RETENTION_OR_THEFT),
+                PenaltySystemPolicy.DELIBERATE_ITEM_RETENTION_OR_THEFT,
+                PenaltySystemPolicy.COURIER_BAD_ATTITUDE),
                 PenaltySystemPolicy.getCourierPenaltyCases());
     }
 
@@ -58,7 +68,8 @@ class PenaltySystemPolicyTest {
                 PenaltySystemPolicy.SUCCESSFUL_DELIVERY,
                 PenaltySystemPolicy.WRONG_LOCATION_DELIVERY,
                 PenaltySystemPolicy.ITEM_MISHANDLING_OR_DAMAGE,
-                PenaltySystemPolicy.DELIBERATE_ITEM_RETENTION_OR_THEFT),
+                PenaltySystemPolicy.DELIBERATE_ITEM_RETENTION_OR_THEFT,
+                PenaltySystemPolicy.COURIER_BAD_ATTITUDE),
                 PenaltySystemPolicy.getFullPenaltyPolicy());
     }
 

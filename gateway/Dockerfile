@@ -1,4 +1,10 @@
 # syntax=docker/dockerfile:1
+# AI Assistance Disclosure:
+# Tool: OpenAI Codex (GPT-5), date: 2026-10-13
+# Mode: Implementation and configuration.
+# Scope: Added the Reporting Service upstream default to the gateway image.
+# Author review: I reviewed for correctness.
+
 FROM nginx:1.29-alpine
 
 # Upstream defaults match the service names in compose.yaml. Cloud Run deployments
@@ -10,6 +16,7 @@ ENV PORT=8080 \
     SUPPLIER_SERVICE_URL=http://supplier-service:8080 \
     ORDER_SERVICE_URL=http://order-service:8080 \
     CREDIT_SERVICE_URL=http://credit-service:8080 \
+    REPORTING_SERVICE_URL=http://reporting-service:8080 \
     ADMIN_SERVICE_URL=http://admin-service:8080
 
 RUN rm /etc/nginx/conf.d/default.conf

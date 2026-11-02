@@ -43,7 +43,11 @@ public class OrderCompensationWorkflow {
             // Rereads the row: an uncertain commit may already have saved SUCCESS.
             // If the database is still unavailable, the original durable intent
             // remains for the sweep; never claim compensation was published.
-            journal.abandon(claim, failure instanceof OrderProblem p ? p.getCode() : "LOCAL_OR_REMOTE_UNCERTAIN");
+            if (failure instanceof OrderProblem problem) {
+                journal.abandon(claim, problem.getCode(), problem.getMessage());
+            } else {
+                journal.abandon(claim, "LOCAL_OR_REMOTE_UNCERTAIN");
+            }
         }
     }
 }

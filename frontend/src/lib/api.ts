@@ -1,3 +1,10 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: OpenAI Codex (GPT-5), date: 2026-10-13
+ * Mode: Implementation.
+ * Scope: Generated or updated frontend code for the team-specified report form, order association, navigation, and completion reminder.
+ * Author review: I reviewed for correctness
+ */
 // Error envelope every FoC backend service returns (see AGENTS.md "API conventions").
 export type ApiErrorBody = {
   status: number
@@ -34,14 +41,16 @@ export function requireBearerToken(token: string | null): string {
 
 export type RequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
-  body?: unknown
+  body?: unknown | FormData
   token?: string | null
   signal?: AbortSignal
+  responseType?: "json" | "blob"
 }
 
 export async function apiRequest<T>(baseUrl: string, path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" }
-  if (options.body !== undefined) headers["Content-Type"] = "application/json"
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData
+  if (options.body !== undefined && !isFormData) headers["Content-Type"] = "application/json"
   if (options.token) headers.Authorization = `Bearer ${options.token}`
 
   let response: Response
@@ -49,7 +58,7 @@ export async function apiRequest<T>(baseUrl: string, path: string, options: Requ
     response = await fetch(`${baseUrl}${path}`, {
       method: options.method ?? "GET",
       headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: options.body === undefined ? undefined : isFormData ? options.body as FormData : JSON.stringify(options.body),
       signal: options.signal,
       cache: "no-store",
     })
@@ -59,6 +68,7 @@ export async function apiRequest<T>(baseUrl: string, path: string, options: Requ
   }
 
   if (response.status === 204) return undefined as T
+  if (response.ok && options.responseType === "blob") return await response.blob() as T
 
   const payload = await response.json().catch(() => null)
   if (!response.ok) {

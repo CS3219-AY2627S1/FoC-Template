@@ -11,11 +11,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { useAdminApi } from "@/hooks/use-admin-api"
 import { useAdminPage } from "@/hooks/use-admin-page"
-import type { AdminOrder, AdminOrderAction } from "@/lib/admin-api"
+import { ADMIN_ACTION_ELIGIBLE_STATUSES, type AdminOrder, type AdminOrderAction } from "@/lib/admin-api"
 import { AdminLoadState, CopyId } from "./admin-ui"
 
 export function canResolveOrder(order: AdminOrder) {
-  return ["OPEN", "ACCEPTED", "IN_PROGRESS", "PICKED_UP", "DELIVERED"].includes(order.status)
+  return ADMIN_ACTION_ELIGIBLE_STATUSES.includes(order.status)
 
 }
 
@@ -41,6 +41,7 @@ const policyLabels: Record<string, string> = {
   ACCEPTED_TASK_CANCELLATION: "Accepted task cancellation",
   OVERDUE_DELIVERY: "Overdue delivery",
   WRONG_LOCATION_DELIVERY: "Wrong location delivery",
+  COURIER_BAD_ATTITUDE: "Courier bad attitude",
   ITEM_MISHANDLING_OR_DAMAGE: "Item mishandling or damage",
   DELIBERATE_ITEM_RETENTION_OR_THEFT: "Deliberate item retention or theft",
 }

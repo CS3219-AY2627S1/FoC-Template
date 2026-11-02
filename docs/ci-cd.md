@@ -1,3 +1,11 @@
+<!--
+AI Assistance Disclosure:
+Tool: OpenAI Codex (GPT-5), date: 2026-10-13
+Mode: Documentation.
+Scope: Documented Reporting Service deployment, storage ownership, and infrastructure requirements.
+Author review: I reviewed for correctness.
+-->
+
 # CI/CD and cloud deployment
 
 ## Shared Java library build (CHANGE-130, 2026-10-15)
@@ -42,7 +50,7 @@ flowchart LR
   https://gateway-staging-374055363871.asia-southeast1.run.app.
 - **Only the gateway is public.** Every other Cloud Run service (backends and frontend) has
   **internal ingress**: it only accepts requests from the project's VPC and from Pub/Sub push. The
-  gateway, and every service that calls another (Order, Credit, Supplier), sends its traffic through the
+  gateway, and every service that calls another (Order, Credit, Supplier, Reporting), sends its traffic through the
   VPC with Direct VPC egress (`foc-vpc` / `foc-run-asia-southeast1`, Private Google Access on), so
   those calls count as internal. Internet-bound traffic from them (e.g. Cloud SQL's public IP) leaves
   through Cloud NAT (`foc-nat`). Opening a backend's own `*.run.app` URL returns 404.
@@ -70,7 +78,8 @@ Plus two cross-cutting jobs:
   - its runtime identity `foc-<service>@`, which the deployer may deploy as;
   - if it uses Firestore: databases `<name>-staging` and `<name>-production`, with access
     granted to that identity only;
-  - the config buckets.
+  - the config buckets;
+  - Reporting Service's private attachment bucket, public-access prevention, and bucket-scoped object permission.
 
   A new service therefore fails its PR, not a deploy, until the bootstrap has provisioned it.
   The check uses the custom role `focInfraReader`, which can read metadata and IAM policies
@@ -146,7 +155,8 @@ Or re-run **Deploy production** with an older commit SHA (its images are still i
   - `iam.serviceAccountUser` on each runtime identity;
   - `storage.objectAdmin` on the config buckets.
 - **Least privilege at runtime.** Each Cloud Run service runs as `foc-<service>@`, which can
-  only access its own Firestore databases (IAM condition on the database name).
+  only access its own Firestore databases (IAM condition on the database name). Reporting Service is
+  additionally the sole runtime identity with object access to its private per-environment attachment bucket.
 - **Config vs secrets.** Non-secret settings are committed in `infra/environments/*.env`.
   Secrets go in Secret Manager and are mounted with `--set-secrets` in `EXTRA_FLAGS`: the Order and
   Credit database passwords, and the User Service's MongoDB Atlas connection string

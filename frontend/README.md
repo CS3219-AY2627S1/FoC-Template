@@ -59,3 +59,10 @@ My Requests/My Errands use the existing gateway Order mine API with optional sta
 ## Missing locations in saved orders (CHANGE-097)
 
 Order lists show saved cards even when Supplier lookup reports missingIds, using the existing Location unavailable label for missing locations. Valid location names remain unchanged. Missing locations no longer leave My Requests, My Errands or Available Errands waiting indefinitely. This display fallback does not restore deleted/reset supplier data.
+
+
+## Real Reporting integration (2026-10-29)
+
+Requester reporting uses the authenticated reportable-Order list and atomic hold API. OPEN/terminal Orders cannot be reported. Admin Reports now calls /api/reports in every runtime mode, downloads evidence with a bearer token and uses stable command IDs for Order-coordinated resolution; 202 remains pending. It no longer uses reportApiMode to select sample data. Configure/enable both service sagas before resolving; Report backend flags remain default-off. See ../reporting-service/HANDOFF.md.
+
+Report form (effective CHANGE-169): Order/Courier reports use the original active-order dropdown; Credits/General have no Order selector and submit without association. The red response-count badge and five-second visible/authenticated polling remain. Duplicate-report errors preserve the form. No new public runtime configuration is needed.

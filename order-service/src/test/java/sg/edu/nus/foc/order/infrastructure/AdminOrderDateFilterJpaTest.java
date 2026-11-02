@@ -73,4 +73,28 @@ class AdminOrderDateFilterJpaTest {
         assertEquals(2, queries.allOrders(null, null, null, null, 0, 1).getTotalItems());
         assertEquals(after.getId(), queries.allOrders(null, after.getId(), null, null, 0, 10).getItems().getFirst().getId());
     }
+
+    @Test
+    void actionEligibilityFiltersStatesAndHeldRowsBeforeCountingAndPaging() {
+        for (OrderStatus status : OrderStatus.values()) {
+            Order order = save(FROM.plusSeconds(status.ordinal()), false);
+            org.springframework.test.util.ReflectionTestUtils.setField(order, "status", status);
+            if (status != OrderStatus.OPEN) org.springframework.test.util.ReflectionTestUtils.setField(order, "courierId", "courier");
+            if (status == OrderStatus.DELIVERED) org.springframework.test.util.ReflectionTestUtils.setField(order, "completionHold", true);
+            orders.saveAndFlush(order);
+        }
+        OrderPage first = queries.allOrders(null, null, FROM, FROM.plusSeconds(60), true, 0, 2);
+        assertEquals(5, first.getTotalItems());
+        assertEquals(3, first.getTotalPages());
+        assertEquals(2, first.getItems().size());
+        Order held = first.getItems().getFirst();
+        assertEquals(OrderStatus.DELIVERED, held.getStatus());
+        assertTrue(held.isCompletionHold());
+        assertEquals(1, queries.allOrders(null, null, FROM, FROM.plusSeconds(60), true, 2, 2).getItems().size());
+        assertEquals(1, queries.allOrders(null, held.getId(), null, null, true, 0, 20).getTotalItems());
+        assertEquals(0, queries.allOrders(OrderStatus.COMPLETED, null, null, null, true, 0, 20).getTotalItems());
+        assertEquals(1, queries.allOrders(OrderStatus.OPEN, null, null, null, true, 0, 20).getTotalItems());
+        assertEquals(0, queries.allOrders(null, null, FROM.plusSeconds(60), null, true, 0, 20).getTotalItems());
+        assertEquals(OrderStatus.values().length, queries.allOrders(null, null, null, null, false, 0, 20).getTotalItems());
+    }
 }

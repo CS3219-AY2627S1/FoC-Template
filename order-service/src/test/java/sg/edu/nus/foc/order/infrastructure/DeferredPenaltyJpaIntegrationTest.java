@@ -33,6 +33,7 @@ class DeferredPenaltyJpaIntegrationTest {
     @Autowired private AdminOrderCancellationService cancellations;
     @Autowired private OrderTransitionService transitions;
     @Autowired private JpaOrderRepository orders;
+    @Autowired private JpaOrderCourierAttemptRepository attempts;
     @Autowired private JpaOrderEventOutboxRepository outbox;
     @Autowired private JpaPenaltyOutcomeRepository outcomes;
     @Autowired private JpaCommandReceiptRepository receipts;
@@ -46,6 +47,27 @@ class DeferredPenaltyJpaIntegrationTest {
         o.accept("courier",0,delivered.minusSeconds(7100));o.start("courier",0,delivered.minusSeconds(late?3600:60));o.markPickedUp("courier",0);o.markDelivered("courier",0,delivered);return orders.saveAndFlush(o);
     }
     private Order apply(Order o,String cmd,PenaltySystemPolicy policy){return applications.apply(cmd,o.getId(),"courier",o.getVersion(),policy,"Investigation: "+cmd,"admin");}
+    @Test void badAttitudePersistsAndWinsOverOverdueOnlyAtCompletion() {
+        Order order = apply(delivered(true, false), "bad-attitude", PenaltySystemPolicy.COURIER_BAD_ATTITUDE);
+        assertEquals(PenaltySystemPolicy.COURIER_BAD_ATTITUDE,
+                orders.findById(order.getId()).orElseThrow().getAppliedPenalty());
+        assertEquals(0, outbox.count());
+        transitions.complete("complete-attitude", order.getId(), "owner", order.getVersion(), null);
+        assertEquals(2, outcomes.findByOrderIdOrderByCreatedAtAsc(order.getId()).getFirst().getSignedAmount());
+        assertEquals(1, outbox.findAll().stream().filter(event -> "PenaltyScoreAdditionEvent".equals(event.getEventType())).count());
+    }
+    @Test void badAttitudeRemainsReadableWhenTheCourierAttemptIsArchived() {
+        Instant now = Instant.now();
+        Order order = Order.open("owner", "books", "p", "d", 5, 30, now, now.plusSeconds(3600));
+        order.accept("courier", 0, now);
+        order = apply(orders.saveAndFlush(order), "attitude-archive", PenaltySystemPolicy.COURIER_BAD_ATTITUDE);
+        String orderId = order.getId();
+        // This test isolates archival persistence after an externally confirmed Credit step.
+        transitions.abortConfirmed("abort-attitude", orderId, "courier", order.getVersion(), null);
+        assertTrue(attempts.findAll().stream().anyMatch(attempt -> orderId.equals(attempt.getOrderId())
+                && attempt.getAppliedPenalty() == PenaltySystemPolicy.COURIER_BAD_ATTITUDE));
+        assertNull(orders.findById(orderId).orElseThrow().getAppliedPenalty());
+    }
     @Test void storingHighestPenaltyOnHeldOrderIsAtomicIdempotentAndEmitsNothing(){
         Order o=delivered(true,false);o.placeCompletionHold("owner");o=orders.saveAndFlush(o);
         Order first=apply(o,"damage",PenaltySystemPolicy.ITEM_MISHANDLING_OR_DAMAGE);

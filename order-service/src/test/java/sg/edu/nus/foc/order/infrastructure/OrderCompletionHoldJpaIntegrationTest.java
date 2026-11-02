@@ -307,6 +307,64 @@ class OrderCompletionHoldJpaIntegrationTest {
 
     @Autowired private sg.edu.nus.foc.order.application.OrderQueryService activeQueries;
 
+    @Test void unifiedParticipantSelectionAndHoldUseActualOwnershipBeforePaging() {
+        Order own = open();
+        own.accept("other", 0, own.getCreatedAt().plusSeconds(60));
+        orders.saveAndFlush(own);
+        Order assigned = Order.open("different-owner", "other", "p", "d", 1, 30, NOW, NOW.plusSeconds(7200));
+        assigned.accept("owner", 0, NOW.plusSeconds(60));
+        orders.saveAndFlush(assigned);
+        orders.saveAndFlush(open());
+        assertEquals(2, activeQueries.participantActive("owner", 1, 1).getTotalItems());
+        assertEquals(1, activeQueries.participantActive("owner", 2, 1).getItems().size());
+        assertEquals(0, activeQueries.participantActive("stranger", 1, 20).getTotalItems());
+        assertThrows(OrderProblem.class, () -> activeQueries.participantActive("owner", 0, 20));
+        assertThrows(OrderProblem.class, () -> activeQueries.participantActive("owner", 1, 0));
+        assertThrows(OrderProblem.class, () -> activeQueries.participantActive("owner", 1, 101));
+        assertThrows(OrderProblem.class, () -> holdService.placeActive(assigned.getId(), "foreign", "stranger", true, null, "PARTICIPANT"));
+        assertTrue(holdService.placeActive(assigned.getId(), "assigned", "owner", true, null, "PARTICIPANT").isCompletionHold());
+        assertEquals("different-owner", holds.findById("assigned").orElseThrow().getRequesterId());
+        assertTrue(holdService.placeActive(own.getId(), "owned", "owner", true, null, "PARTICIPANT").isCompletionHold());
+    }
+
+    @Test void courierReportingListFiltersCurrentAssignmentAndStatusBeforePaging() {
+        for (OrderStatus status : OrderStatus.values()) {
+            Order candidate = open();
+            org.springframework.test.util.ReflectionTestUtils.setField(candidate, "status", status);
+            org.springframework.test.util.ReflectionTestUtils.setField(candidate, "courierId", "courier");
+            orders.saveAndFlush(candidate);
+        }
+        Order other = open();
+        other.accept("different-courier", 0, other.getCreatedAt().plusSeconds(60));
+        orders.saveAndFlush(other);
+        sg.edu.nus.foc.order.domain.repository.OrderPage first = activeQueries.assignedActiveTo("courier", 1, 2);
+        sg.edu.nus.foc.order.domain.repository.OrderPage second = activeQueries.assignedActiveTo("courier", 2, 2);
+        assertEquals(4, first.getTotalItems());
+        assertEquals(2, first.getTotalPages());
+        assertEquals(2, first.getItems().size());
+        assertEquals(2, second.getItems().size());
+        assertEquals(0, activeQueries.assignedActiveTo("stranger", 1, 20).getTotalItems());
+        assertThrows(OrderProblem.class, () -> activeQueries.assignedActiveTo("courier", 0, 20));
+        assertThrows(OrderProblem.class, () -> activeQueries.assignedActiveTo("courier", 1, 101));
+    }
+
+    @Test void courierReportHoldKeepsActualOwnerBindingAndBlocksStrangersAndDuplicates() {
+        Order candidate = open();
+        candidate.accept("courier", 0, candidate.getCreatedAt().plusSeconds(60));
+        String id = orders.saveAndFlush(candidate).getId();
+        assertEquals("NOT_FOUND", assertThrows(OrderProblem.class,
+                () -> holdService.placeActive(id, "foreign", "stranger", true, null, "COURIER")).getCode());
+        Order held = holdService.placeActive(id, "errand-report", "courier", true, null, "COURIER");
+        assertTrue(held.isCompletionHold());
+        assertEquals("owner", holds.findById("errand-report").orElseThrow().getRequesterId());
+        assertTrue(holdService.placeActive(id, "errand-report", "courier", true, null, "COURIER").isCompletionHold());
+        assertEquals(1, holds.count());
+        assertThrows(OrderProblem.class, () -> holdService.placeActive(id, "second", "owner", true, null));
+        holdService.release(id, "errand-report", "admin");
+        assertFalse(orders.findById(id).orElseThrow().isCompletionHold());
+        assertThrows(OrderProblem.class, () -> holdService.placeActive(id, "errand-report", "courier", true, null, "COURIER"));
+    }
+
     @Test
     void reportingActiveListFiltersOwnerAndTerminalBeforePagination() {
         for (OrderStatus status : OrderStatus.values()) {
@@ -319,14 +377,14 @@ class OrderCompletionHoldJpaIntegrationTest {
         var first = activeQueries.requestedActiveBy("owner", 1, 2);
         var second = activeQueries.requestedActiveBy("owner", 2, 2);
         var third = activeQueries.requestedActiveBy("owner", 3, 2);
-        assertEquals(5, first.getTotalItems());
-        assertEquals(3, first.getTotalPages());
+        assertEquals(4, first.getTotalItems());
+        assertEquals(2, first.getTotalPages());
         assertEquals(2, first.getItems().size());
-        assertEquals(1, third.getItems().size());
+        assertEquals(0, third.getItems().size());
         var ids = new java.util.HashSet<String>();
         for (var page : java.util.List.of(first, second, third)) for (Order o : page.getItems()) {
             assertEquals("owner", o.getRequesterId());
-            assertTrue(java.util.Set.of(OrderStatus.OPEN, OrderStatus.ACCEPTED, OrderStatus.IN_PROGRESS,
+            assertTrue(java.util.Set.of(OrderStatus.ACCEPTED, OrderStatus.IN_PROGRESS,
                     OrderStatus.PICKED_UP, OrderStatus.DELIVERED).contains(o.getStatus()));
             assertTrue(ids.add(o.getId()));
         }
@@ -343,7 +401,7 @@ class OrderCompletionHoldJpaIntegrationTest {
         org.springframework.test.util.ReflectionTestUtils.setField(candidate, "status", status);
         candidate = orders.saveAndFlush(candidate);
         String id = candidate.getId();
-        boolean active = java.util.Set.of(OrderStatus.OPEN, OrderStatus.ACCEPTED, OrderStatus.IN_PROGRESS,
+        boolean active = java.util.Set.of(OrderStatus.ACCEPTED, OrderStatus.IN_PROGRESS,
                 OrderStatus.PICKED_UP, OrderStatus.DELIVERED).contains(status);
         if (active) {
             assertTrue(holdService.placeActive(id, "active-report", "owner", false, null).isCompletionHold());
@@ -363,17 +421,50 @@ class OrderCompletionHoldJpaIntegrationTest {
                 () -> holdService.placeActive(id, "report", "stranger", false, null)).getCode());
         assertEquals("NOT_FOUND", assertThrows(OrderProblem.class,
                 () -> holdService.placeActive("missing", "report", "owner", false, null)).getCode());
-        assertEquals("CONFLICT", assertThrows(OrderProblem.class,
+        assertEquals("NOT_FOUND", assertThrows(OrderProblem.class,
                 () -> holdService.placeActive(id, "report", "owner", true, null)).getCode());
+        assertFalse(holds.existsById("report"));
+        candidate.accept("courier", candidate.getVersion(), candidate.getCreatedAt().plusSeconds(60));
+        orders.saveAndFlush(candidate);
         holdService.placeActive(id, "report", "owner", false, null);
         Order progressing = orders.findById(id).orElseThrow();
-        progressing.accept("courier", progressing.getVersion(), progressing.getCreatedAt().plusSeconds(60));
+        progressing.start("courier", progressing.getVersion(), progressing.getCreatedAt().plusSeconds(120));
         orders.saveAndFlush(progressing);
-        assertEquals(OrderStatus.ACCEPTED, holdService.placeActive(id, "report", "owner", true, null).getStatus());
+        assertEquals(OrderStatus.IN_PROGRESS, holdService.placeActive(id, "report", "owner", true, null).getStatus());
         assertEquals(1, holds.count());
-        Order other = orders.saveAndFlush(open());
+        Order otherCandidate = open();
+        otherCandidate.accept("courier", 0, otherCandidate.getCreatedAt().plusSeconds(60));
+        Order other = orders.saveAndFlush(otherCandidate);
         assertEquals("CONFLICT", assertThrows(OrderProblem.class,
                 () -> holdService.placeActive(other.getId(), "report", "owner", false, null)).getCode());
+    }
+
+
+    @Test
+    void completedCreditContextIsSqlScopedAndReportHoldRejectsADifferentActiveReport() {
+        Order completed = delivered();
+        completed.confirmCompletion("owner", completed.getVersion());
+        completed = orders.saveAndFlush(completed);
+        Order active = delivered();
+        Order cancelled = open();
+        cancelled.cancelOpen("owner", 0);
+        cancelled = orders.saveAndFlush(cancelled);
+        assertEquals(1, orders.findCreditHistoryInvolving("owner", OrderStatus.CANCELLED, org.springframework.data.domain.PageRequest.of(0, 20)).getTotalElements());
+        assertEquals(0, orders.findCreditHistoryInvolving("outsider", OrderStatus.CANCELLED, org.springframework.data.domain.PageRequest.of(0, 20)).getTotalElements());
+        assertTrue(orders.findCreditHistoryInvolving(cancelled.getId(), "owner", OrderStatus.CANCELLED).isPresent());
+        assertTrue(orders.findCreditHistoryInvolving(completed.getId(), "owner", OrderStatus.CANCELLED).isEmpty());
+        assertEquals(1, orders.findCreditHistoryInvolving("owner", OrderStatus.COMPLETED, org.springframework.data.domain.PageRequest.of(0, 20)).getTotalElements());
+        assertEquals(1, orders.findCreditHistoryInvolving("courier", OrderStatus.COMPLETED, org.springframework.data.domain.PageRequest.of(0, 20)).getTotalElements());
+        assertEquals(0, orders.findCreditHistoryInvolving("outsider", OrderStatus.COMPLETED, org.springframework.data.domain.PageRequest.of(0, 20)).getTotalElements());
+        assertTrue(orders.findCreditHistoryInvolving(completed.getId(), "outsider", OrderStatus.COMPLETED).isEmpty());
+        assertTrue(orders.findCreditHistoryInvolving(active.getId(), "owner", OrderStatus.COMPLETED).isEmpty());
+        assertTrue(orders.findCreditHistoryInvolving(completed.getId(), "courier", OrderStatus.COMPLETED).isPresent());
+        holdService.placeActive(active.getId(), "first", "owner", true, null);
+        holdService.placeActive(active.getId(), "first", "owner", true, null);
+        OrderProblem duplicate = assertThrows(OrderProblem.class,
+                () -> holdService.placeActive(active.getId(), "second", "owner", true, null));
+        assertTrue(duplicate.getMessage().contains("This order has an active report. Please resolve it before proceeding."));
+        assertEquals(1, holds.count());
     }
 
     private Order delivered() {

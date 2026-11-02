@@ -1,3 +1,9 @@
+# AI Assistance Disclosure:
+# Tool: OpenAI Codex (GPT-5), date: 2026-10-13
+# Mode: Implementation and configuration.
+# Scope: Added Reporting Service routing and its route-specific 30 MiB request limit.
+# Author review: I reviewed for correctness.
+
 # FoC API gateway. Rendered by the nginx image's envsubst step at container start;
 # ${VARS} come from the environment (defaults in the Dockerfile, overrides in
 # compose.yaml / Cloud Run). nginx's own $variables are left untouched.
@@ -108,6 +114,18 @@ server {
     location /api/credits/internal/ {
         default_type application/json;
         return 404 '{"status":404,"error":"NOT_FOUND","message":"No service handles this path."}';
+    }
+
+    # Report coordination and broker delivery use the Report backend directly.
+    location ~ "^/api/reports/internal([;/].*)?$" {
+        default_type application/json;
+        return 404 '{"status":404,"error":"NOT_FOUND","message":"No service handles this path."}';
+    }
+
+    location /api/reports {
+        client_max_body_size 30m;
+        set $upstream ${REPORTING_SERVICE_URL};
+        include /etc/nginx/snippets/proxy.conf;
     }
 
     location /api/admin {

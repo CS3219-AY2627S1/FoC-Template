@@ -5,7 +5,7 @@ import { useAuth } from "@/components/providers/auth-provider"
 import { useApi } from "@/hooks/use-api"
 import { ORDER_POLL_INTERVAL_MS, useVisiblePolling } from "@/hooks/use-visible-polling"
 import { ApiError } from "@/lib/api"
-import { commandPath, type OrderCommandIntent, type OrderCommandKind, type OrderCommandStatus } from "@/lib/order-commands"
+import { commandPath, orderCommandRejectionMessage, type OrderCommandIntent, type OrderCommandKind, type OrderCommandStatus } from "@/lib/order-commands"
 import { readOrderIntent, removeOrderIntent, writeOrderIntent } from "@/lib/order-command-storage"
 import type { Order } from "@/lib/orders"
 import { useOrderCommandDiscovery } from "@/components/orders/order-command-discovery"
@@ -65,7 +65,7 @@ export function useOrderCommand(scope: string, onSuccess: (order: Order) => void
       if (session.current !== `${account}:${scope}`) return
       setIntent(null); setMessage(null)
       if (result.outcome === "SUCCESS") callbacks.current.onSuccess(result.result!)
-      else callbacks.current.onRejected(result.message ?? "The request could not be completed.")
+      else callbacks.current.onRejected(orderCommandRejectionMessage(result))
     } else {
       setMessage(`${result.message ?? "Your request is pending."}${result.attemptCount ? ` Attempt ${result.attemptCount}.` : ""}`)
     }

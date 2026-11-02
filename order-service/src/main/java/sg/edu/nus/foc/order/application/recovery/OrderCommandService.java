@@ -241,7 +241,9 @@ public class OrderCommandService {
                         return view(store.get(key));
                     }
                 }
-                reject(claim, invalid.getCode(), rejectionMessage(claim, invalid.getCode()));
+                // Preserve the trusted validation explanation (for example an active
+                // report hold). Credit response codes still use the safe mapping below.
+                reject(claim, invalid.getCode(), invalid.getMessage());
                 return view(store.get(key));
             }
             // Persist the uncertainty barrier BEFORE invoking Credit, even if this process crashes next.

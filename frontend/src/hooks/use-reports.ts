@@ -1,13 +1,11 @@
 ﻿"use client"
 import { useCallback, useMemo, useState } from "react"
 import { useApi } from "@/hooks/use-api"
-import { useConfig } from "@/components/providers/config-provider"
 import { useVisiblePolling } from "@/hooks/use-visible-polling"
 import { createReportApi } from "@/lib/reports"
 export function useReportApi() {
   const request = useApi()
-  const { reportApiMode } = useConfig()
-  return useMemo(() => createReportApi(request, reportApiMode), [request, reportApiMode])
+  return useMemo(() => createReportApi(request), [request])
 }
 export function useReportResource<T>(load: (signal: AbortSignal) => Promise<T>, enabled: boolean) {
   const [state, setState] = useState<{ load: typeof load; data: T | null; error: string | null } | null>(null)

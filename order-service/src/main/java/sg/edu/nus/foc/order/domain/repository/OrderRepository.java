@@ -23,6 +23,18 @@ public interface OrderRepository {
 
     OrderPage findActiveRequestedBy(String requesterId, int page, int size);
 
+    Optional<Order> getActiveCourierReportHoldUpdate(String id, String courierId);
+
+    OrderPage findActiveAssignedTo(String courierId, int page, int size);
+
+    OrderPage findActiveInvolving(String participantId, int page, int size);
+
+    Optional<Order> getActiveParticipantReportHoldUpdate(String id, String participantId);
+
+    OrderPage findCreditHistoryInvolving(String userId, OrderStatus status, int page, int size);
+
+    Optional<Order> getCreditHistoryInvolving(String id, String userId, OrderStatus status);
+
     Optional<Order> getForLifecycleUpdate(String id);
 
     Order save(Order order);
@@ -42,6 +54,9 @@ public interface OrderRepository {
     OrderPage findAllOrders(OrderStatus status, int page, int size);
 
     OrderPage findAllOrders(OrderStatus status, String orderId, Instant createdFrom, Instant createdBefore, int page, int size);
+
+    OrderPage findAllOrders(OrderStatus status, String orderId, Instant createdFrom, Instant createdBefore,
+                           boolean actionEligibleOnly, int page, int size);
 
     List<Order> findDueUnassigned(OrderStatus status, Instant now);
 

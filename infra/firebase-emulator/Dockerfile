@@ -1,4 +1,10 @@
 # syntax=docker/dockerfile:1
+# AI Assistance Disclosure:
+# Tool: OpenAI Codex (GPT-5), date: 2026-10-13
+# Mode: Implementation and configuration.
+# Scope: Updated the local Firebase emulator image for Storage emulator support.
+# Author review: I reviewed for correctness.
+
 # Local-only Firebase Auth + Firestore emulators for compose.yaml. Never deployed.
 FROM node:24-slim
 
@@ -18,7 +24,7 @@ RUN apt-get update \
 WORKDIR /srv/firebase
 COPY firebase.json .
 
-EXPOSE 4000 4400 8090 9099
+EXPOSE 4000 4400 8090 9099 9199
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=10 \
   CMD curl -fs http://127.0.0.1:4400/emulators >/dev/null || exit 1
 

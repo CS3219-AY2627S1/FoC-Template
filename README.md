@@ -1,5 +1,13 @@
 <!--
 AI Assistance Disclosure:
+Tool: OpenAI Codex (GPT-5), date: 2026-10-13
+Mode: Documentation.
+Scope: Updated repository documentation for the Reporting Service, attachment storage, routing, and ownership.
+Author review: I reviewed for correctness.
+-->
+
+<!--
+AI Assistance Disclosure:
 Tool: OpenAI Codex (GPT-5), date: 2026-09-25
 Mode: Documentation refactoring and disclosure assistance.
 Scope: Assisted with documentation cleanup and Credit Service disclosure content.
@@ -48,6 +56,7 @@ flowchart LR
   gateway -- "/api/suppliers" --> supplier[supplier-service]
   gateway -- "/api/orders" --> order[order-service]
   gateway -- "/api/credits" --> credit[credit-service]
+  gateway -- "/api/reports" --> reporting[reporting-service]
   gateway -- "/api/admin" --> admin[admin-service]
   browser -. "sign in" .-> auth[(Firebase Auth)]
   order -- "HTTP: roles" --> user
@@ -57,14 +66,17 @@ flowchart LR
   supplier --> sdb[(Firestore<br/>supplier-*)]
   order --> odb[(PostgreSQL<br/>Cloud SQL order_*)]
   credit --> cdb[(PostgreSQL<br/>Cloud SQL credit_*)]
+  reporting --> rdb[(Firestore<br/>reporting-*)]
+  reporting --> photos[(Private Cloud Storage<br/>report photos)]
   user --> udb[(MongoDB Atlas)]
 ```
 
 - **Microservices**: each backend service is an independent Spring Boot app with its own
   database, chosen per service (database-per-service): Firestore for the read-heavy supplier
-  catalogue, PostgreSQL on Cloud SQL for Order and Credit (transactions, row locks and constraints
-  for order state and money), MongoDB Atlas for user profiles. Services never read another
-  service's data directly; they call its API or consume its events.
+  catalogue and reports, PostgreSQL on Cloud SQL for Order and Credit (transactions, row locks
+  and constraints for order state and money), MongoDB Atlas for user profiles, and private Cloud
+  Storage for report attachments. Services never read another service's data directly; they call
+  its API or consume its events.
 - **Network**: only the gateway is public. Every other Cloud Run service has internal ingress and
   is reached over a VPC (see [docs/ci-cd.md](docs/ci-cd.md)).
 - **Frontend**: a single Next.js app that only renders UI and calls the services' APIs.
@@ -78,7 +90,7 @@ flowchart LR
 | Layer | Technology |
 | --- | --- |
 | Backend services | Java 21, Spring Boot 4.1.1 (Web MVC, Security OAuth2 Resource Server, Validation, Actuator), Maven wrapper |
-| Data | Firestore (Supplier), PostgreSQL on Cloud SQL with Flyway (Order, Credit), MongoDB Atlas (User); one database per service per environment |
+| Data | Firestore (Supplier, Reporting), PostgreSQL on Cloud SQL with Flyway (Order, Credit), MongoDB Atlas (User), private Cloud Storage (report attachments); one database per service per environment |
 | Messaging | Google Cloud Pub/Sub (cloud), Pub/Sub emulator (local) |
 | Auth | Firebase Authentication (ID tokens verified by each service) |
 | Frontend | Next.js 16 (App Router), TypeScript, Tailwind CSS 4, shadcn/ui |
@@ -100,13 +112,14 @@ microservice lives in its own top-level folder.
 ├── supplier-service/
 ├── order-service/
 ├── credit-service/
+├── reporting-service/     # report records and private photo attachments
 ├── admin-service/         # N2H: admin dashboard backend
 ├── frontend/              # Next.js UI for every feature
 ├── gateway/               # nginx: routes /api/<service> and serves the UI
 ├── data/                  # seed data (CSV, images)
 ├── infra/
 │   ├── environments/      # non-secret config per cloud environment
-│   ├── firebase-emulator/ # local Firebase Auth + Firestore emulators
+│   ├── firebase-emulator/ # local Firebase Auth, Firestore and Storage emulators
 │   └── gcp/               # one-time GCP bootstrap (infrastructure as code)
 ├── scripts/ci/            # scripts used by the GitHub Actions workflows
 ├── docs/                  # CI/CD runbook, templates
@@ -189,7 +202,7 @@ are pre-built images, used unmodified:
 | `postgres:15-alpine` | [Docker Official Image](https://hub.docker.com/_/postgres) (PostgreSQL) | Order and Credit Service databases (local) |
 | `gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators` (pinned by digest in compose) | [Google Cloud CLI](https://cloud.google.com/sdk/docs/downloads-docker) | Pub/Sub emulator (local); Firestore emulator in integration tests (Testcontainers) |
 | `python:3.12-alpine` | [Docker Official Image](https://hub.docker.com/_/python) (Python) | `pubsub-init`: creates the local Pub/Sub topics and subscriptions (`infra/pubsub-emulator-init.py`) |
-| `firebase-tools@15.31.0` (npm) | [Firebase CLI](https://github.com/firebase/firebase-tools) | Firebase Auth and Firestore emulators (`infra/firebase-emulator`) |
+| `firebase-tools@15.31.0` (npm) | [Firebase CLI](https://github.com/firebase/firebase-tools) | Firebase Auth, Firestore and Storage emulators (`infra/firebase-emulator`) |
 
 ---
 

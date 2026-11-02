@@ -1,4 +1,10 @@
 # AI Assistance Disclosure:
+# Tool: OpenAI Codex (GPT-5), date: 2026-10-13
+# Mode: Implementation and configuration.
+# Scope: Updated local orchestration for the Reporting Service, Firestore database, and Storage emulator.
+# Author review: I reviewed for correctness.
+#
+# AI Assistance Disclosure:
 # Tool: OpenAI Codex (GPT-5), date: 2026-09-25
 # Scope: Updated deployment boilerplate to integrate the Credit Service.
 # Author review: I reviewed for correctness.
@@ -93,6 +99,8 @@ services:
         condition: service_healthy
       order-service:
         condition: service_healthy
+      reporting-service:
+        condition: service_healthy
 
   frontend:
     build: ./frontend
@@ -117,6 +125,7 @@ services:
       - "127.0.0.1:4000:4000" # emulator UI
       - "127.0.0.1:9099:9099" # Auth
       - "127.0.0.1:8090:8090" # Firestore
+      - "127.0.0.1:9199:9199" # Storage
     volumes:
       - firebase-data:/data
     stop_signal: SIGINT # the Firebase CLI exports data on SIGINT
@@ -317,6 +326,14 @@ services:
       ORDER_COMPENSATION_REQUEST_TOPIC: credit-command-compensation-local-v1
       ORDER_COMPENSATION_RESULT_SUBSCRIPTION: order-credit-compensation-result-local-v1
       ORDER_COMPENSATION_PUSH_MODE: emulator
+      # Both Report and Order use the real local resolution saga and private emulator.
+      ORDER_REPORT_RESOLUTION_ENABLED: "true"
+      REPORT_SERVICE_URL: http://reporting-service:8080
+      ORDER_REPORT_RESOLUTION_TIMEOUT: 5s
+      ORDER_REPORT_COMPENSATION_TOPIC: report-resolution-compensation-local-v1
+      REPORT_COMPENSATION_RESULT_TOPIC: report-resolution-compensation-result-local-v1
+      ORDER_REPORT_COMPENSATION_RESULT_SUBSCRIPTION: order-resolution-result-local
+      ORDER_REPORT_COMPENSATION_PUSH_MODE: emulator
       ORDER_COMMAND_LEASE_SECONDS: ${ORDER_COMMAND_LEASE_SECONDS:-120}
       ORDER_COMMAND_RETRY_SECONDS: ${ORDER_COMMAND_RETRY_SECONDS:-15}
       ORDER_COMMAND_BATCH_SIZE: ${ORDER_COMMAND_BATCH_SIZE:-20}
@@ -344,10 +361,43 @@ services:
       start_period: 30s
       retries: 10
 
+  reporting-service:
+    build: ./reporting-service
+    ports:
+      - "127.0.0.1:${REPORTING_SERVICE_PORT:-8086}:8080"
+    environment:
+      <<: [*backend-env, *firestore-env]
+      FIRESTORE_DATABASE_ID: reporting-local
+      STORAGE_PROJECT_ID: demo-foc
+      STORAGE_EMULATOR_HOST: http://firebase-emulator:9199
+      REPORTING_STORAGE_BUCKET: demo-foc-reporting-local
+      ORDER_SERVICE_URL: http://order-service:8080
+      USER_SERVICE_MODE: http
+      # Outer request must outlast Order's inner Report call and final local commit.
+      ORDER_SERVICE_TIMEOUT: 20s
+      REPORT_RESOLUTION_ENABLED: "true"
+      REPORT_PUBSUB_PROJECT_ID: demo-foc-local
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      REPORT_RESOLUTION_RESULT_TOPIC: report-resolution-compensation-result-local-v1
+      REPORT_RESOLUTION_COMPENSATION_SUBSCRIPTION: projects/demo-foc-local/subscriptions/report-resolution-request-local
+      REPORT_RESOLUTION_PUSH_MODE: emulator
+    depends_on:
+      <<: *backend-depends
+      order-service:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:8080/actuator/health/readiness"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 10
+
   # ---- Backend service template ------------------------------------------
   # Copy, uncomment and rename once <name>-service has a working Dockerfile.
   # admin-service is currently an empty placeholder, so it is intentionally not built here.
-  # Host ports: user 8081, supplier 8082, order 8083, credit 8084, admin 8085.
+  # Host ports: user 8081, supplier 8082, order 8083, credit 8084, admin 8085, reporting 8086.
   #
   # <name>-service:
   #   build: ./<name>-service

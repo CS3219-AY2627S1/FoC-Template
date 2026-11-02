@@ -81,4 +81,14 @@ class OrderCompensationWorkflowTest {
         verify(journal).abandon(eq(claim), anyString());
         verifyNoInteractions(gateway);
     }
+
+    @Test void heldOrderValidationPreservesItsBusinessMessageWithoutCallingCredit() {
+        OrderCommandStore.Entry claim = claim(1, false);
+        String message = "This order has an active report. It must be resolved before you can cancel or abort the order.";
+        workflow.execute(claim, mutation, "auth", () -> {
+            throw new sg.edu.nus.foc.order.domain.OrderProblem("ORDER_ON_HOLD", message);
+        }, () -> fail("must not finalize"));
+        verify(journal).abandon(claim, "ORDER_ON_HOLD", message);
+        verifyNoInteractions(gateway);
+    }
 }

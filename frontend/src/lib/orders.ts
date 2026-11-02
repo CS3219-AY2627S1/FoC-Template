@@ -33,6 +33,7 @@ export type Order = {
   overdueWaiverReason?: string | null
   isOverdue?: boolean | null
   deliveryDeadlineAt?: string | null
+  startedAt?: string | null
   deliveredAt?: string | null
   adminPenaltyDecision?: string | null
   adminPenaltyReason?: string | null

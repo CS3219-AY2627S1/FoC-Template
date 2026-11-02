@@ -6,6 +6,7 @@ import re
 import subprocess
 import tempfile
 import unittest
+from test_report_pubsub import ReportCloudWorkflowTest
 
 ROOT = Path(__file__).resolve().parents[2]
 FAKE = r'''#!/usr/bin/env python3

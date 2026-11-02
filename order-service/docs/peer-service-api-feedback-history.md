@@ -1452,3 +1452,24 @@ Renewable delegated authorization is still missing for unattended Order calls. C
 
 User/Supplier/Credit/platform owners must agree trusted service identity, issuer/audience, delegated requester/consent/revocation, restricted operations, stable command IDs and audit/error/retry semantics. Exact new routes remain unapproved. See [archived proposal](peer-service-api-feedback-history.md#5-feedback-005-trusted-background-authorization--documentation-only). Foreground APIs remain unchanged; this is not required for the current Admin UI rollout.
 
+
+
+## Report resolution requests completed in CHANGE-166 (2026-10-29)
+
+## Report Service — resolution integration (FEEDBACK-018)
+
+CHANGE-163 approved clarification2026-10-29: response deadline is required; preserve responseDeadlineAt and server-owned READY_FOR_REVIEW transition on timely response or deadline expiry. Admin may also resolve a still-awaiting report after a UI warning/confirmation. Persist required reply/resolutionNote, resolvedBy and resolvedAt; return reply only to submitter/admin. The provided Report model lacks these reply/audit fields and its resolved() guard currently blocks early resolution. Report owner must implement these changes plus the saga journal/conditional restore/fence/result protocol below. Category changes are not approved. Exact requirements and acceptance cases: [Report handoff](report-servicehandoff.md#approved-report-behavior--change-163-2026-10-29). This is pending provider/UI work, not a verified integration.
+
+Report Service is absent. Order now has the user-approved guarded contract stub, default disabled. Actual peer integration remains pending; Admin Reports is local sample data/cloud Coming soon.
+
+Required Report implementation (proposed contract, full examples in [handoff](report-servicehandoff.md)):
+
+| Operation | Required input | Required result/guarantee |
+|---|---|---|
+| PUT /api/reports/internal/order-resolutions/{commandId} without Order callback | command/report/order/requester/courier/admin IDs, generation1, reply; verified admin token | Durable bound APPLIED/NO_EFFECT response; exact replay. Save prior state/reply and resulting revision atomically inside Report. |
+| Pub/Sub compensation consumer | Eight fields: eventId, commandId, reportId, orderId, requesterId, courierId, adminId, generation2 | Deduplicate and fence delayed generation1; conditionally restore only this operation, preserving newer work. |
+| Committed result producer | Same bound IDs plus compensationId, result eventId, outcome/code | Report outbox publishes COMPENSATED (REVERSED/FENCED_NO_EFFECT) or RECONCILIATION_REQUIRED; repeated requests republish the saved result. Dedicated OIDC push. |
+
+This replaces the prior proposed HTTP restore/result-query requirement. Specify400/401/403/404/409/503 and conflicting-key behavior with the owner. Do not call a Report route that calls back into Order release. Keep the hold until local release commits; never compensate committed success due to a lost response. Request/result topics: report-resolution-compensation-{local|dev|prod}-v1 and report-resolution-compensation-result-{local|dev|prod}-v1. No GCP resources were created; agreed retention/reconciliation and real authenticated tests are activation gates.
+
+Report creation must persist stable report/intent identity before remote hold placement and recover uncertain calls, preventing orphan holds. Confirm acceptance of Order's approved retry behavior: repeated placement reuses the hold but returns the **current** Order snapshot; delivery may have progressed. No snapshot migration is planned. Admin replies must be visible only to the submitter and authorized admins.

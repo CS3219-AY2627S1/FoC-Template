@@ -46,7 +46,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 @WebMvcTest(controllers = {OrderController.class, AdminOrderController.class,
         OrderCommandController.class, OrderOutboxAdminController.class,
-        OrderCompletionHoldController.class, OrderInvolvementController.class,
+        OrderCompletionHoldController.class, OrderCreditHistoryController.class, OrderInvolvementController.class,
         CreditCompensationResultController.class, UserDeletionEligibilityController.class,
         AdminReportResolutionController.class, ReportCompensationResultController.class},
     excludeAutoConfiguration = {
@@ -114,6 +114,10 @@ class OpenApiDocumentationTest {
         assertThat(paths.path(ReportCompensationResultController.PATH).path("post").path("responses").has("204")).isTrue();
         assertThat(paths.path(PREFIX + "/admin/{orderId}/reports/{reportId}/resolve").path("post").path("responses").has("202")).isTrue();
         assertThat(paths.path(PREFIX + "/admin/report-resolutions/{commandId}").has("get")).isTrue();
+        assertThat(paths.path(PREFIX + "/mine/completed").path("get").path("responses").has("200")).isTrue();
+        assertThat(paths.path(PREFIX + "/mine/completed/{orderId}").path("get").path("responses").has("404")).isTrue();
+        assertThat(paths.path(PREFIX + "/mine/cancelled").path("get").path("responses").has("200")).isTrue();
+        assertThat(paths.path(PREFIX + "/mine/cancelled/{orderId}").path("get").path("responses").has("404")).isTrue();
 
         assertThat(paths.has(PREFIX + "/internal/lifecycle/expire")).isFalse();
         assertThat(paths.path(PREFIX + "/internal/lifecycle/repost").has("post")).isTrue();

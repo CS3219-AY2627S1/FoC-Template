@@ -38,6 +38,7 @@ public interface OrderMapper {
     @Mapping(target = "adminResolutionAt", source = "adminResolutionAt")
     @Mapping(target = "adminResolutionReason", source = "adminResolutionReason")
     @Mapping(target = "deliveryDeadlineAt", source = "deliveryDeadlineAt")
+    @Mapping(target = "startedAt", expression = "java(order.getDeliveryDeadlineAt() == null ? null : order.getDeliveryDeadlineAt().minusSeconds(order.getDeliveryTimeLimitMinutes() * 60L))")
     @Mapping(target = "deliveredAt", source = "deliveredAt")
     @Mapping(target = "id", source = "id")
     @Mapping(target = "attemptId", source = "attemptId")

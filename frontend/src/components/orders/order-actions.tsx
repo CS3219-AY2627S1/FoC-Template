@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useState } from "react"
 import { toast } from "sonner"
 
@@ -15,7 +16,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { useApi } from "@/hooks/use-api"
 import { useOrderCommand } from "@/hooks/use-order-command"
 import { OrderCommandNotice } from "@/components/orders/order-command-notice"
@@ -114,9 +124,23 @@ function LiveOrderActions({ order, mode, onUpdated }: { order: Order; mode: Orde
       {order.isCompletionHold && <p role="status" className="text-sm text-muted-foreground">
         This order has an ongoing report. You can complete it after the report is resolved.
       </p>}
-      <Button size="sm" onClick={() => void perform("complete", "Order completed")} disabled={busy || order.isCompletionHold}>
-        {busy ? "Saving…" : "Confirm completion"}
-      </Button>
+      {order.isCompletionHold
+        ? <Button size="sm" disabled>Confirm completion</Button>
+        : <Dialog>
+          <DialogTrigger render={<Button size="sm" disabled={busy} />}>{busy ? "Saving…" : "Confirm completion"}</DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Check this order before completing it</DialogTitle>
+              <DialogDescription>
+                Make sure the order is complete and everything is correct. If there is an issue, report it now. Completed orders cannot be disputed.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Link className={buttonVariants({ variant: "outline" })} href={`/reporting?tab=create&category=ORDER&orderId=${encodeURIComponent(order.id)}`}>Report an issue</Link>
+              <Button disabled={busy} onClick={() => void perform("complete", "Order completed")}>Complete order</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>}
     </div>
   }
 

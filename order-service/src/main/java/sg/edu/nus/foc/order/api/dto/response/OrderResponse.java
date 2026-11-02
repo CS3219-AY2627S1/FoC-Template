@@ -33,6 +33,8 @@ public class OrderResponse {
     private String overdueWaiverReason;
     @Schema(description = "Assigned courier START time plus delivery duration; null before START or when legacy timing is unknown.", nullable = true)
     private Instant deliveryDeadlineAt;
+    @Schema(description = "Courier START time derived from the stored deadline and delivery duration; null before START or for unknown legacy timing.", nullable = true)
+    private Instant startedAt;
     @Schema(description = "Actual courier delivery time; null before delivery or when legacy timing is unknown.", nullable = true)
     private Instant deliveredAt;
     private String appliedPenalty;

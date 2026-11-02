@@ -6,7 +6,7 @@ import { useAuth } from "@/components/providers/auth-provider"
 import { useApi } from "@/hooks/use-api"
 import { ORDER_POLL_INTERVAL_MS, useVisiblePolling } from "@/hooks/use-visible-polling"
 import { invalidateCreditBalance } from "@/lib/credit-balance-events"
-import type { OrderCommandStatus } from "@/lib/order-commands"
+import { orderCommandRejectionMessage, type OrderCommandStatus } from "@/lib/order-commands"
 import { removeOrderIntent } from "@/lib/order-command-storage"
 
 type Discovery = {
@@ -56,7 +56,7 @@ export function OrderCommandDiscoveryProvider({ children, onResolved }: { childr
     }
     if (session.current !== owner || epoch.current !== generation) return
     invalidateCreditBalance()
-    if (command.outcome === "REJECTED") toast.error(command.message ?? "The request could not be completed.")
+    if (command.outcome === "REJECTED") toast.error(orderCommandRejectionMessage(command))
     else toast.success(command.kind === "ACCEPT" ? "Errand accepted" : command.kind === "ABORT" ? "Errand aborted" : command.kind === "REPOST" ? "Order reposted" : "Request posted")
     resolved.current()
   }, [])

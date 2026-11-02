@@ -522,3 +522,15 @@ Yao Xiang explicitly requests repeated automatic repost attempts until success. 
 Safe completed automatic rejections no longer permanently exclude the original. Each later eligible minute pass may register a fresh server-only AUTO_REPOST:<originalId>:retry:<UUID> command/candidate after the previous attempt is COMPLETED/REJECTED, FULLY_COMPENSATED and its Credit step is FAILED or COMPENSATED. First legacy key, all old candidate IDs/results/fences and public/peer payloads stay intact. Pending/reconciling/uncertain work blocks another attempt; success is replayed rather than repeated. DB selection prioritizes older due work over recently failed plans and remains bounded100; latest-attempt SQL is actor/order scoped, newest-first/limit1, not an in-memory history search.
 
 No attempt-count cutoff is imposed on safe later attempts. Retry stops when a successor exists or the configured plan expires/is disabled/used; holds and deactivation/pending guards remain. Unresolved or exhausted compensation publication is not bypassed and retains the existing operator recovery requirement. No new schema, API, topic, credentials, timer, flag, frontend or sibling/backend/cloud change. Existing automatic-repost/compensation activation gates remain unchanged. Tests and rollout evidence: changes/CHANGE-164-automatic-repost-retry-until-success.md (relative to Order root).
+
+
+## Reporting integration ? CHANGE-166
+
+Report selectors and atomic hold placement exclude OPEN and terminal Orders; only ACCEPTED, IN_PROGRESS, PICKED_UP and DELIVERED are reportable. This restriction does not change deletion/involvement checks. Reporting Service now implements the agreed resolution/compensation contracts and real Admin UI transport. Both saga flags remain opt-in; see [Report handoff](../reporting-service/HANDOFF.md).
+
+
+Report saga cloud setup (CHANGE-167): `infra/gcp/configure-report-pubsub.sh staging|production prepare|wire` prepares identities and wires the existing subscriptions after deployment. Order Publisher grants remain untouched and both saga flags default false. Follow [Report rollout instructions](../reporting-service/HANDOFF.md#cloud-rollout-change-167-approved-2026-10-30); this does not provision resources automatically during CI.
+
+Report enhancements (CHANGE-168): optional completed Order context for credit complaints, requester/courier-scoped SQL reads, nullable startedAt, duplicate-report protection and the caller-scoped courier response count are implemented. See [Report handoff](../reporting-service/HANDOFF.md). No credit adjustment or new topic is introduced.
+
+Effective Report simplification (CHANGE-169): credit/general reports are unlinked and the original active-order dropdown is restored. The courier reply badge remains. Independent caller-scoped completed/cancelled Order history lives in OrderCreditHistoryController at /api/orders/mine/completed and /api/orders/mine/cancelled (list/detail); Report submission does not call these APIs. No new topics or migration.

@@ -31,7 +31,7 @@ export type AdminUser = {
 
 export type AdminRoleContext = { userId: string; roles: string[] }
 export type AdminSearch = { page: number; searchBy: "name" | "id"; q: string }
-export type AdminOrderQuery = { page: number; status: OrderStatus | null; orderId: string; fromDate?: string; toDate?: string }
+export type AdminOrderQuery = { page: number; status: OrderStatus | null; orderId: string; fromDate?: string; toDate?: string; actionEligibleOnly?: boolean }
 export type AdminRequest = <T>(path: string, options?: Omit<RequestOptions, "token">) => Promise<T>
 export type AdminApiMode = "mock" | "live"
 export type AdminOrderAction = "cancel"
@@ -47,6 +47,10 @@ export type AdminOrderResolution = {
 export const ADMIN_ORDER_STATUSES: OrderStatus[] = [
   "OPEN", "ACCEPTED", "IN_PROGRESS", "PICKED_UP", "DELIVERED",
   "COMPLETED", "CANCELLED", "ABORTED", "EXPIRED",
+]
+
+export const ADMIN_ACTION_ELIGIBLE_STATUSES: readonly OrderStatus[] = [
+  "OPEN", "ACCEPTED", "IN_PROGRESS", "PICKED_UP", "DELIVERED",
 ]
 
 const ADMIN_TABLE_PAGE_SIZE = 20
@@ -75,11 +79,12 @@ function createLiveAdminApi(request: AdminRequest) {
       adminOrder(await request<Order>(detail("/api/orders/admin", id) + "/" + action, { method: "POST", body: input })),
     roleContext: (_userId: string, signal?: AbortSignal) => request<AdminRoleContext>("/api/users/role-context", { signal }),
     orders: async (query: AdminOrderQuery, signal?: AbortSignal): Promise<Page<AdminOrder>> => {
-      if (query.orderId.trim() && !query.fromDate && !query.toDate) {
+      if (query.orderId.trim() && !query.fromDate && !query.toDate && !query.actionEligibleOnly) {
         return exactPage(() => order(query.orderId.trim(), signal), query.page,
           (result) => !query.status || result.status === query.status, ADMIN_TABLE_PAGE_SIZE)
       }
       const params = new URLSearchParams({ page: String(query.page), size: String(ADMIN_TABLE_PAGE_SIZE) })
+      if (query.actionEligibleOnly) params.set("actionEligibleOnly", "true")
       if (query.status) params.set("status", query.status)
       if (query.orderId.trim()) params.set("orderId", query.orderId.trim())
       addDateBounds(params, query)

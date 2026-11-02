@@ -64,8 +64,30 @@ describe("requester completion holds", () => {
     })
     render(<OrderActions order={{ ...acceptedOrder, requesterId: "courier-1", status: "DELIVERED" }} mode="requester" onUpdated={onUpdated} />)
     fireEvent.click(screen.getByRole("button", { name: "Confirm completion" }))
+    expect(screen.getByRole("heading", { name: "Check this order before completing it" })).toBeInTheDocument()
+    expect(screen.getByText(/Completed orders cannot be disputed/)).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Report an issue" })).toHaveAttribute("href", "/reporting?tab=create&category=ORDER&orderId=order-1")
+    expect(screen.queryByRole("button", { name: "Keep reviewing" })).not.toBeInTheDocument()
+    expect(mocks.api).not.toHaveBeenCalledWith(expect.stringContaining("complete"), expect.anything())
+    fireEvent.click(screen.getByRole("button", { name: "Complete order" }))
     await waitFor(() => expect(mocks.error).toHaveBeenCalledWith(message))
     expect(onUpdated).not.toHaveBeenCalled()
+  })
+
+  it("dismisses the completion dialog from the close button or backdrop without taking an action", async () => {
+    render(<OrderActions order={{ ...acceptedOrder, requesterId: "courier-1", status: "DELIVERED" }} mode="requester" onUpdated={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm completion" }))
+    fireEvent.click(screen.getByRole("button", { name: "Close" }))
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Check this order before completing it" })).not.toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm completion" }))
+    const backdrop = document.querySelector('[data-slot="dialog-overlay"]')
+    expect(backdrop).not.toBeNull()
+    fireEvent.click(backdrop!)
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Check this order before completing it" })).not.toBeInTheDocument())
+
+    expect(mocks.api).not.toHaveBeenCalledWith(expect.stringContaining("complete"), expect.anything())
   })
 })
 

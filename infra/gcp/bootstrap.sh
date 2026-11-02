@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# AI Assistance Disclosure:
+# Tool: OpenAI Codex (GPT-5), date: 2026-10-13
+# Mode: Infrastructure implementation.
+# Scope: Added private Reporting Service buckets and bucket-scoped object permissions.
+# Author review: I reviewed for correctness.
+
 # GCP setup for FoC CI/CD and Cloud Run. Idempotent: it only creates what is missing.
 # Re-run it whenever a service is added: the service lists are derived from the repository,
 # and CI's "Cloud infrastructure" check (scripts/ci/check-infra.sh) fails until it has run.
@@ -59,6 +65,7 @@ retry() {
 create_sa() { retry gc iam service-accounts create "$@"; }
 project_binding() { retry gc projects add-iam-policy-binding "$PROJECT_ID" "$@" >/dev/null; }
 config_bucket() { echo "${PROJECT_ID}-foc-config-$1"; }
+reporting_bucket() { echo "${PROJECT_ID}-foc-reporting-$1"; }
 sql_database() { [[ $1 == staging ]] && echo "$CLOUD_SQL_STAGING_DATABASE" || echo "$CLOUD_SQL_PRODUCTION_DATABASE"; }
 sql_user() { [[ $1 == staging ]] && echo "$CLOUD_SQL_STAGING_USER" || echo "$CLOUD_SQL_PRODUCTION_USER"; }
 sql_secret() { [[ $1 == staging ]] && echo "$CLOUD_SQL_STAGING_SECRET" || echo "$CLOUD_SQL_PRODUCTION_SECRET"; }
@@ -190,6 +197,17 @@ for env in "${ENVIRONMENTS[@]}"; do
   done
 done
 
+log "Private Reporting Service attachment buckets"
+for env in "${ENVIRONMENTS[@]}"; do
+  bucket=$(reporting_bucket "$env")
+  exists gcloud storage buckets describe "gs://$bucket" ||
+    gcloud storage buckets create "gs://$bucket" --project "$PROJECT_ID" --location "$REGION" \
+      --uniform-bucket-level-access --public-access-prevention
+  gcloud storage buckets update "gs://$bucket" --public-access-prevention --uniform-bucket-level-access >/dev/null
+  gcloud storage buckets add-iam-policy-binding "gs://$bucket" \
+    --member "serviceAccount:$(runtime_sa reporting-service)" --role roles/storage.objectAdmin >/dev/null
+done
+
 log "VPC for Cloud Run Direct VPC egress: $VPC_NETWORK / $VPC_SUBNET ($VPC_SUBNET_RANGE)"
 exists gc compute networks describe "$VPC_NETWORK" ||
   gc compute networks create "$VPC_NETWORK" --subnet-mode custom \
@@ -227,7 +245,7 @@ gc compute networks subnets add-iam-policy-binding "$VPC_SUBNET" --region "$REGI
   --member "serviceAccount:$DEPLOYER_SA" --role roles/compute.networkUser >/dev/null
 
 log "Read-only infrastructure role for the CI check (scripts/ci/check-infra.sh)"
-reader_permissions="iam.serviceAccounts.get,iam.serviceAccounts.getIamPolicy,datastore.databases.getMetadata,datastore.databases.list,cloudsql.instances.get,cloudsql.instances.list,cloudsql.databases.get,cloudsql.databases.list,cloudsql.users.list,secretmanager.secrets.get,secretmanager.secrets.getIamPolicy,secretmanager.versions.list,resourcemanager.projects.getIamPolicy,storage.buckets.get,pubsub.topics.get,pubsub.topics.getIamPolicy,pubsub.subscriptions.get,pubsub.subscriptions.getIamPolicy,run.services.get,run.services.getIamPolicy,compute.networks.get,compute.subnetworks.get,compute.subnetworks.getIamPolicy,compute.routers.get"
+reader_permissions="iam.serviceAccounts.get,iam.serviceAccounts.getIamPolicy,datastore.databases.getMetadata,datastore.databases.list,cloudsql.instances.get,cloudsql.instances.list,cloudsql.databases.get,cloudsql.databases.list,cloudsql.users.list,secretmanager.secrets.get,secretmanager.secrets.getIamPolicy,secretmanager.versions.list,resourcemanager.projects.getIamPolicy,storage.buckets.get,storage.buckets.getIamPolicy,pubsub.topics.get,pubsub.topics.getIamPolicy,pubsub.subscriptions.get,pubsub.subscriptions.getIamPolicy,run.services.get,run.services.getIamPolicy,compute.networks.get,compute.subnetworks.get,compute.subnetworks.getIamPolicy,compute.routers.get"
 if exists gc iam roles describe focInfraReader; then
   gc iam roles update focInfraReader --permissions "$reader_permissions" >/dev/null
 else

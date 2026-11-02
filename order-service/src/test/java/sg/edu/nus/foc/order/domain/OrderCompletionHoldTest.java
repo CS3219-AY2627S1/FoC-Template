@@ -13,6 +13,27 @@ class OrderCompletionHoldTest {
 
     private static final Instant START = Instant.parse("2026-10-14T00:00:00Z");
 
+    @Test void authorizedStaleCancellationsExplainHoldAndUnheldStaleCallsStillRejectVersion() {
+        Order order = open();
+        assertEquals("CONFLICT", assertThrows(OrderProblem.class,
+                () -> order.validateOpenCancellation("requester", 99)).getCode());
+        order.placeCompletionHold("requester");
+        assertEquals("ORDER_ON_HOLD", assertThrows(OrderProblem.class,
+                () -> order.validateOpenCancellation("requester", 99)).getCode());
+        assertEquals("CONFLICT", assertThrows(OrderProblem.class,
+                () -> order.validateOpenCancellation("stranger", 99)).getCode());
+        Order accepted = open();
+        accepted.accept("courier", 0, START.plusSeconds(60));
+        assertEquals("CONFLICT", assertThrows(OrderProblem.class,
+                () -> accepted.validateAcceptedCancellation("courier", 99)).getCode());
+        accepted.placeCompletionHold("requester");
+        assertEquals("ORDER_ON_HOLD", assertThrows(OrderProblem.class,
+                () -> accepted.validateAcceptedCancellation("courier", 99)).getCode());
+        assertEquals("CONFLICT", assertThrows(OrderProblem.class,
+                () -> accepted.validateAcceptedCancellation("stranger", 99)).getCode());
+        assertEquals(OrderStatus.ACCEPTED, accepted.getStatus());
+    }
+
     @Test
     void heldDeliveredOrderRejectsBothCompletionPathsWithoutChangingStatus() {
         Order order = delivered();

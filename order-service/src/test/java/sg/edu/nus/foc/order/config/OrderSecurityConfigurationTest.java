@@ -53,7 +53,7 @@ class OrderSecurityConfigurationTest {
         customizer.customize(resolver);
         MethodParameter parameter = new MethodParameter(AdminOrderController.class.getMethod(
                 "listOrders", sg.edu.nus.foc.order.domain.OrderStatus.class,
-                org.springframework.data.domain.Pageable.class, String.class, java.time.Instant.class, java.time.Instant.class), 1);
+                org.springframework.data.domain.Pageable.class, String.class, java.time.Instant.class, java.time.Instant.class, boolean.class), 1);
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setParameter("page", "2");
         request.setParameter("size", "500");

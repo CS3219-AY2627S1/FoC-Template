@@ -25,6 +25,13 @@ export type OrderCommandDisplayDetails = Pick<Order, "itemDescription" | "pickup
   version?: number | null
 }
 
+export function orderCommandRejectionMessage(command: Pick<OrderCommandStatus, "reason" | "message">): string {
+  // Older immutable command results may retain the previous generic message.
+  if (command.reason === "ORDER_ON_HOLD") return "This order has an active report. Please resolve it before proceeding."
+  if (command.reason === "COMPLETION_ON_HOLD") return "This order has an ongoing report. You can complete it after the report is resolved."
+  return command.message ?? "The request could not be completed."
+}
+
 export function commandPath(kind: OrderCommandKind, legacyPath: string): string {
   if (kind === "CREATE") return "/api/orders/commands/create"
   const orderId = legacyPath.split("/")[3]

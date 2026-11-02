@@ -29,6 +29,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Skeleton } from "@/components/ui/skeleton"
 import { ADMIN_NAV_ITEMS, POST_REQUEST_ITEM, SIDEBAR_NAV_ITEMS } from "@/config/navigation"
 import { useCreditBalance } from "@/hooks/use-credit-balance"
+import { useReportResponseCount } from "@/hooks/use-report-response-count"
 import { cn } from "@/lib/utils"
 
 type CreditSummaryProps = ReturnType<typeof useCreditBalance>
@@ -89,9 +90,11 @@ function CreditSummary({ balance, error, loading, refresh }: CreditSummaryProps)
 function SidebarNavigation({
   pathname,
   onNavigate,
+  reportResponseCount,
 }: {
   pathname: string
   onNavigate?: () => void
+  reportResponseCount: number
 }) {
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/")
   const postRequestActive = isActive(POST_REQUEST_ITEM.href)
@@ -102,7 +105,7 @@ function SidebarNavigation({
       {(adminMode ? ADMIN_NAV_ITEMS : SIDEBAR_NAV_ITEMS).map((item) => (
         <Link
           key={item.href}
-          href={item.href}
+          href={item.href === "/reporting" && reportResponseCount > 0 ? "/reporting?tab=against-me" : item.href}
           onClick={onNavigate}
           aria-current={isActive(item.href) ? "page" : undefined}
           className={cn(
@@ -112,6 +115,9 @@ function SidebarNavigation({
         >
           <item.icon className="size-4" />
           {item.label}
+          {item.href === "/reporting" && reportResponseCount > 0 && <Badge variant="destructive" className="ml-auto" aria-label={`${reportResponseCount} reports awaiting your response`}>
+            {reportResponseCount > 99 ? "99+" : reportResponseCount}
+          </Badge>}
         </Link>
       ))}
       {!adminMode && <div className="pt-3">
@@ -135,12 +141,14 @@ function SidebarPanel({
   onNavigate,
   onSignOut,
   pathname,
+  reportResponseCount,
 }: {
   credit: CreditSummaryProps
   email: string | null
   onNavigate?: () => void
   onSignOut: () => Promise<void>
   pathname: string
+  reportResponseCount: number
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-sidebar text-sidebar-foreground">
@@ -151,7 +159,7 @@ function SidebarPanel({
         </Link>
       </div>
 
-      <SidebarNavigation pathname={pathname} onNavigate={onNavigate} />
+      <SidebarNavigation pathname={pathname} onNavigate={onNavigate} reportResponseCount={reportResponseCount} />
 
       <div className="mt-auto p-4">
         {!pathname.startsWith("/admin") && <CreditSummary {...credit} />}
@@ -184,6 +192,8 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   const admin = useAdminMode()
   const adminMode = pathname === "/admin" || pathname.startsWith("/admin/")
 
+  const reportResponseCount = useReportResponseCount(!adminMode)
+
   async function handleSignOut() {
     setMobileOpen(false)
     await signOut()
@@ -199,6 +209,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
             email={user.email}
             onSignOut={handleSignOut}
             pathname={pathname}
+            reportResponseCount={reportResponseCount}
           />
         </aside>
       )}
@@ -226,6 +237,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
                     onNavigate={() => setMobileOpen(false)}
                     onSignOut={handleSignOut}
                     pathname={pathname}
+                    reportResponseCount={reportResponseCount}
                   />
                 </SheetContent>
               </Sheet>
