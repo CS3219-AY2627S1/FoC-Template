@@ -18,7 +18,9 @@ type IconName =
   | 'chevronDown'
   | 'check'
   | 'eye'
-  | 'eyeOff';
+  | 'eyeOff'
+  | 'bag'
+  | 'lock';
 
 const PATHS: Record<IconName, string[]> = {
   menu: ['M4 6h16M4 12h16M4 18h16'],
@@ -37,6 +39,8 @@ const PATHS: Record<IconName, string[]> = {
     'M9.9 9.9a3 3 0 004.2 4.2',
     'm3 3 18 18',
   ],
+  bag: ['M5 8h14l-1 12H6z', 'M9 10V6a3 3 0 016 0v4'],
+  lock: ['M6 11h12v9H6z', 'M8.5 11V8a3.5 3.5 0 017 0v3'],
 };
 
 export function Icon({
