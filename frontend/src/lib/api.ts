@@ -104,11 +104,14 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
 
   if (!response.ok) {
-    const shape = payload as { error?: string; code?: string } | null;
+    const shape = payload as { error?: string; code?: string; detail?: unknown } | null;
+    // The Admin Service is FastAPI, which answers { detail } rather than the
+    // contract's { error, code }. A string detail is still worth showing.
+    const detail = typeof shape?.detail === 'string' ? shape.detail : undefined;
     throw new ApiError(
       response.status,
       shape?.code ?? 'UNKNOWN',
-      shape?.error ?? `Request failed with status ${response.status}`,
+      shape?.error ?? detail ?? `Request failed with status ${response.status}`,
     );
   }
 

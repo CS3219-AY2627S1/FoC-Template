@@ -121,8 +121,10 @@ session; old sessions stay revoked. After the deadline, login and authorization
 are rejected even before cleanup runs. A background worker permanently removes
 expired User Service records. The last active admin cannot request deletion:
 409 LAST_ADMIN. Missing confirmation: 400 CONFIRMATION_REQUIRED. Invalid
-session: 401 UNAUTHORIZED. Other services retain their own records; no new
-cross-service deletion event is introduced by this endpoint.
+session: 401 UNAUTHORIZED. This endpoint queues no UserDeleted event: it is only
+a deletion request. The final-removal event is queued by cleanup, not
+by scheduling or login cancellation (see section 15). Other services own their
+records and must agree their deletion/retention rules separately.
 
 7. ADD THESE TWO ROWS IN "1. User Service"
 ------------------------------------------------------------
@@ -206,8 +208,9 @@ When: Both email and Telegram verification are complete
 Envelope: { eventId, type: "UserVerified", occurredAt, data: { userId, email } }
 Partition key: userId
 
-This branch does NOT change the existing Kafka wire format. Do not apply the
-Order format to this event by documentation alone, or change only one service.
+The existing UserVerified wire format is unchanged. Section 15 proposes a
+separate UserDeleted type on the same configured topic. Do not apply the Order
+format to these events by documentation alone; coordinate consumer changes.
 
 10. TEAM HANDOFF / DEPLOYMENT CHECKLIST
 ------------------------------------------------------------
@@ -539,3 +542,63 @@ sets Cache-Control: no-store and never logs raw parser/database errors; an
 unexpected 500 INTERNAL_ERROR logs only a constant message, not credentials/body.
 
 Historical checks before the camelCase response fix, reported on 30 October 2026, passed: TypeScript build, Prisma generation/validation, 83/83 unit tests, all seven isolated integration suites (email, lifecycle, admin-bootstrap, admin-users, lockout, friendships and account-support), strict new-unit-test type checking and integration-script syntax checks. All temporary databases were cleaned up. Support integration used real User HTTP/PostgreSQL with an HTTP Admin stub, not the actual Admin application or database. The Node 20 production Docker build and network-isolated smoke test passed (Node 20.20.2, non-root, 256 MiB, no `.env`, health/OpenAPI checks; no database or real Admin exercised). The 183-package install audit and Docker `npm ci` reported zero vulnerabilities. No normal database was migrated, no real email/bot messages were sent and no cloud deployment occurred. Actual Admin, cloud/frontend, gateway/mesh, load and full cross-service acceptance remain unproven; infrastructure changes are handoff only.
+
+15. ADD UserDeleted EVENT CATALOG ROW (PROPOSED SHARED CONTRACT)
+------------------------------------------------------------
+Manual proposal for the shared Google Doc, to agree with the Credit owner.
+This repository update has not edited that Doc. No HTTP routes, request bodies
+or responses change; the existing UserVerified envelope remains unchanged.
+
+Event: UserDeleted
+Topic: same configured user-status topic, default foc.user.status
+Direction: User publishes; Credit deletion consumption requires owner work
+When: Cleanup commits final physical User removal, not the deletion request,
+the deadline alone, or login cancellation
+Envelope: { eventId, type: "UserDeleted", occurredAt, data: { userId } }
+Partition key: userId UUID
+Data: userId only; no email, name, Telegram details or other profile PII.
+UUIDs remain sensitive identifiers and are not anonymous data.
+
+Implemented producer/storage:
+- UserDeletedOutbox is the ninth User schema model. id is a UUID primary
+  key and eventId; userId is a required unique UUID with no User foreign key,
+  so the row survives account deletion. createdAt is the deletion event time
+  supplied from cleanup's now (including a test-injected value); it becomes
+  occurredAt. publishedAt is nullable and starts pending.
+- The same database transaction queues the outbox row, writes the deletion
+  audit and deletes User. Any failure rolls back all three. Scheduling deletion
+  and cancelling through login queue no UserDeleted event. Existing
+  UserVerifiedOutbox rows still cascade on physical User deletion.
+- With Kafka configured, dispatch retries pending rows every five seconds;
+  disabled/unavailable Kafka leaves them pending. Save publishedAt only after
+  acknowledgement. Preserve eventId, userId and occurredAt across retries.
+  An acknowledged send followed by a crash or failed marker write may repeat
+  delivery. Consumers must deduplicate by eventId. Delivery is at least once
+  and eventual when Kafka/dispatch recover, not synchronous consumer completion.
+- The shared UUID key does not guarantee ordering against already in-flight
+  UserVerified sends across replicas; deletion cannot retract such a send.
+
+Credit owner handoff:
+- The checked-in consumer currently ignores every type except UserVerified;
+  UserDeleted consumption is not integrated or verified. Agree the new contract
+  before relying on downstream deletion handling.
+- Implement idempotent UserDeleted handling and retain a durable deletion
+  tombstone keyed by user UUID. Ignore late UserVerified for tombstoned users
+  to prevent account resurrection or another starting-credit grant.
+- Agree balance handling and transaction-history retention rules with the
+  team. User does not decide those rules or delete Credit-owned records.
+- Verify duplicate/replayed deletion and verification-after-deletion behavior
+  in the integration environment. A Kafka acknowledgement proves neither
+  consumer processing nor correct balance/history handling.
+
+Migration: 20261102000000_user_deleted_outbox must run before the updated
+service. Normal local and cloud databases have not been migrated.
+
+Checks on 2 November 2026 passed: Prisma generation/validation, build, 90 unit
+tests, focused event-test type checking, lifecycle-script syntax and isolated
+lifecycle integration (real User HTTP/PostgreSQL, fake Kafka publisher).
+The migration applied only to the temporary test database, then removed.
+The separate onboarding suite stopped at preflight because the full app
+container was not running; no onboarding assertions ran. See README's deletion
+section for coverage. Live Kafka/Credit and cloud acceptance remain unverified.
+No Credit, infrastructure, frontend or Admin files were changed.

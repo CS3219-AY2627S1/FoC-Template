@@ -181,8 +181,8 @@ export function AdminSuppliersPage() {
               {rows.map((supplier) => (
                 <tr key={supplier.id}>
                   <td className={styles.name}>{supplier.name}</td>
-                  <td>{supplier.categories.map((category) => category.name).join(', ') || '—'}</td>
-                  <td>
+                  <td data-label="Categories">{supplier.categories.map((category) => category.name).join(', ') || '—'}</td>
+                  <td data-label="Location">
                     {[supplier.building, supplier.floor ? `Level ${supplier.floor}` : null]
                       .filter(Boolean)
                       .join(' · ') || '—'}
@@ -190,8 +190,8 @@ export function AdminSuppliersPage() {
                       <span className={styles.sub}>{supplier.locationDescription}</span>
                     ) : null}
                   </td>
-                  <td className={styles.mono}>{formatHours(supplier)}</td>
-                  <td>
+                  <td className={styles.mono} data-label="Hours">{formatHours(supplier)}</td>
+                  <td data-label="Status">
                     <span className={styles[supplier.status]}>{supplier.status}</span>
                   </td>
                   <td>

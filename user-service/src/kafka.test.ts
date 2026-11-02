@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { LoggingUserEventPublisher } from "./events";
 import {
   buildUserVerifiedEnvelope,
+  buildUserDeletedEnvelope,
   KafkaUserEventPublisher,
   type MessageProducer,
 } from "./kafka";
@@ -74,6 +75,26 @@ describe("KafkaUserEventPublisher", () => {
     assert.equal(payload.data.userId, USER_A);
     assert.equal(payload.data.email, "a@u.nus.edu");
     assert.ok(typeof payload.eventId === "string" && payload.eventId.length > 0);
+  });
+
+  it("sends only the deleted UUID with stable outbox metadata on the same user-status topic", async () => {
+    const fake = recordingProducer();
+    const publisher = new KafkaUserEventPublisher(fake.producer);
+    // Even if a caller accidentally passes extra profile fields, never emit them.
+    const input = { userId: USER_A, email: "private@u.nus.edu", passwordHash: "private" };
+    const expected = {
+      eventId: "deleted-event-1", type: "UserDeleted", occurredAt: "2026-11-02T00:00:00.000Z",
+      data: { userId: USER_A },
+    };
+    assert.deepEqual(buildUserDeletedEnvelope(input, {
+      eventId: expected.eventId, occurredAt: expected.occurredAt,
+    }), expected);
+    await publisher.publishUserVerified({ userId: USER_A, email: "private@u.nus.edu" });
+    await publisher.publishUserDeleted(input, expected.eventId, expected.occurredAt);
+    assert.equal(fake.connects(), 1);
+    assert.equal(fake.sent[1].topic, "foc.user.status");
+    assert.equal(fake.sent[1].messages[0].key, USER_A);
+    assert.deepEqual(JSON.parse(fake.sent[1].messages[0].value), expected);
   });
 });
 

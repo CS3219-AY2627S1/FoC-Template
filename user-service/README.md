@@ -285,6 +285,8 @@ The `UserVerified` event is saved atomically in `UserVerifiedOutbox` after both 
 
 The wire format remains compatible with the currently merged Credit consumer: `{ eventId, type: "UserVerified", occurredAt, data: { userId, email } }` on `foc.user.status`, keyed by user ID. Align the central contract with the team before changing that envelope. Local Compose tests do not prove the complete Kafka-to-Credit flow; that still needs the team's integration environment.
 
+The `UserDeleted` event uses the same configured topic and UUID key; its contract and Credit handoff are described under [account deletion](#account-deletion-f5). The checked-in Credit consumer currently ignores every type except `UserVerified`. Deletion handling is not integrated, and publication of either event is not proof that Credit processed it.
+
 ### Change password from the profile
 
 ```http
@@ -474,7 +476,7 @@ See [API_CONTRACT_UPDATES.txt](API_CONTRACT_UPDATES.txt) for exact edits to the 
 - Add authenticated `POST /api/v1/user/request-telegram-verification`, no body, response `202 { telegramBotUrl, expiresAt }`; errors include `401`, `429`, and `503`.
 - Keep `POST /api/v1/user/verify-telegram` authenticated with `{ otp }`, response `{ status, nextSteps }`. Keep the existing password recovery and profile password endpoints.
 - Update the friendship rows and add `GET /api/v1/user/friends/requests` as described in section 13 of the contract edit guide. Clients discover recipient request IDs through that list; request actions use `requestId`, while removal uses `friendUserId`. These are manual shared-contract edits; this checkout has not edited the Google Docs contract.
-- Infrastructure and Credit Service owners: run the normal migration Job with the new image, then test that Credit grants 20 credits only after both verification steps. The event format is unchanged; delivery now retries from the database.
+- Infrastructure and Credit Service owners: apply the required migrations with the updated User image, including the new `UserDeletedOutbox` migration before enabling deletion publication. Test that Credit grants 20 credits only after both verification steps. The `UserVerified` format is unchanged; the proposed additional `UserDeleted` contract and Credit balance/history/tombstone decisions are in section 15 of the contract edit guide. Normal local and cloud databases have not been migrated for this change.
 - Infrastructure owner: rebuild the User image and configure `EMAIL_PROVIDER=ses`, `SES_FROM_EMAIL`, `AWS_REGION=ap-southeast-1` and the deployed `FRONTEND_BASE_URL`. Supply approved workload AWS access with `ses:SendEmail` scoped to the sender identity, not a developer's expiring local credentials. Configure bot secrets and one poller per bot as well. SES is still sandboxed: verify demo recipients in the same account/region. Do not enable development email logging in production.
 - User-side Admin search/role/status endpoints, Admin's bearer-header forwarding, friendships, reports and suspension appeals are implemented; see the integration sections. Generic `/me/escalate` and Created-account verification help still need an agreed API. Deployed-environment verification, frontend integration, controlled lockout-warning inbox delivery and the complete frontend/Order/Credit/Admin journey remain unproven.
 
@@ -497,7 +499,32 @@ Content-Type: application/json
 
 Returns `202 { message, scheduledDeletionAt }`. The deadline is six calendar months later, clamping month-end dates when necessary. All current sessions, outstanding reset links and verification challenges are revoked immediately. The last active administrator cannot schedule deletion (`409 LAST_ADMIN`).
 
-Correct-password login before the deadline cancels deletion and creates a new session; old sessions remain revoked. Login and authorization reject an account whose deadline has passed, even if the cleanup worker has not run yet. The worker runs every `USER_DELETION_SWEEP_INTERVAL_SECONDS` (default 3600), removes up to 100 expired accounts per run, and uses database locks to coordinate with login and other workers. User-owned sessions, OTPs, challenges, verification outbox rows and friendships in either participant role are removed through foreign-key cascades. A minimal audit trail stores UUIDs/action/reason, not profile fields. Other services retain their own records; no unagreed cross-service deletion event is invented here.
+Correct-password login before the deadline cancels deletion and creates a new session; old sessions remain revoked. Login and authorization reject an account whose deadline has passed, even if the cleanup worker has not run yet. The worker runs every `USER_DELETION_SWEEP_INTERVAL_SECONDS` (default 3600), removes up to 100 expired accounts per run, and uses database locks to coordinate with login and other workers. User-owned sessions, OTPs, challenges, `UserVerifiedOutbox` rows and friendships in either participant role are removed through foreign-key cascades. A minimal audit trail stores UUIDs/action/reason, not profile fields.
+
+### UserDeleted transactional outbox
+
+`UserDeleted` signals **final physical account removal**, not a deletion request or the arrival of its deadline. Scheduling deletion and cancelling it through login queue no deletion event. HTTP routes, request bodies and responses remain unchanged.
+
+The cleanup transaction inserts a `UserDeletedOutbox` row and deletion audit record, and deletes `User` together. Any failure rolls back all three operations. This is the ninth schema model. Its `userId` is a unique UUID with **no User foreign key**, so the row survives account deletion; the existing verification outbox still cascades. The row's UUID `id` is `eventId`, its `createdAt` is the deletion event time, and nullable `publishedAt` tracks publication.
+
+The proposed shared-document event contract is:
+
+```json
+{
+  "eventId": "<outbox-row-uuid>",
+  "type": "UserDeleted",
+  "occurredAt": "<deletion-event-time>",
+  "data": { "userId": "<deleted-user-uuid>" }
+}
+```
+
+Publish on the same configured `foc.user.status` topic, keyed by user UUID. The payload contains only the user UUID, with no email, name, Telegram details or other profile PII; UUIDs still require appropriate handling. With Kafka configured, the dispatcher retries pending events every five seconds and saves `publishedAt` only after acknowledgement. Kafka being disabled or unavailable leaves rows pending. Retries preserve `eventId`, `userId` and `occurredAt`. An acknowledgement followed by a crash or failed marker write can cause duplicate delivery: consumers must deduplicate by `eventId`. Delivery is at least once and eventual when Kafka and dispatch recover; it is not synchronous with account removal or proof of downstream processing.
+
+There is no ordering guarantee against an already in-flight `UserVerified` across replicas, even with the same Kafka key. Credit should retain a deletion tombstone keyed by user UUID and ignore late verification to avoid recreating a deleted account or regranting credits. The Credit owner must implement deletion consumption and agree balance handling and transaction-history retention rules. Its checked-in consumer currently ignores `UserDeleted`; Credit integration and cloud delivery are unverified. Section 15 of [the contract edit guide](API_CONTRACT_UPDATES.txt) proposes the shared Google Doc addition; that document has not been edited here.
+
+A new Prisma migration, `20261102000000_user_deleted_outbox`, is required before running the updated service. Normal local and cloud databases have not been migrated.
+
+Checks on 2 November 2026 passed: Prisma generation/validation, TypeScript build, 90 unit tests, focused event-test type checking, lifecycle-script syntax and the isolated lifecycle integration test. The integration test used real User HTTP/PostgreSQL and a fake Kafka publisher. It proved cancellation, concurrent cleanup, surviving event storage, stable retry metadata, acknowledgement marking, last-admin protection and atomic rollback after a forced SQL deletion failure. The migration ran only in its temporary database, which was removed. The separate onboarding suite stopped at preflight because the full app container was not running; its assertions did not run. No real email/Telegram messages were sent, no cloud deployment occurred, and live Kafka-to-Credit handling remains unverified.
 
 ## First-admin bootstrap (deployment only)
 

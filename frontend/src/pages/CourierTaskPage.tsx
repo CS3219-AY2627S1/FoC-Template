@@ -17,6 +17,7 @@
 
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ReportUser } from '../components/moderation/ReportUser';
 import { StatusStepper } from '../components/order/StatusStepper';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
@@ -352,6 +353,9 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
               <ContactButton task={task} variant="secondary" />
             </section>
           ) : null}
+
+          {/* In the main column, not the status panel, which mobile hides. */}
+          <ReportUser userId={task.requesterId} role="requester" />
         </div>
 
         <aside className={styles.statusPanel}>
