@@ -130,7 +130,7 @@ export function AdminUsersPage() {
     // TODO(credit): there is no endpoint. Credit NFR2.1 refers to
     // "Admin-initiated credit adjustments (Admin F5)", but the Admin
     // requirements stop at F3 and Admin NFR3.1 forbids Admin from calling
-    // Credit directly. Recorded in docs/open-items.md.
+    // Credit directly.
     closeAdjust();
   }
 

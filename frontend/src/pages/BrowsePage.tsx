@@ -209,7 +209,7 @@ export function BrowsePage() {
             coordinates - there is no geocoding endpoint and the pool takes
             latitude and longitude only - so the workable answer is a pick
             from the supplier catalogue, which carries coordinates on every
-            row. Recorded in section 3a of docs/open-items.md.
+            row.
           */}
           <button
             type="button"

@@ -12,6 +12,7 @@ import { useAuth } from '../../auth/AuthProvider';
 import { Icon } from '../ui/Icon';
 import { RatingPrompt } from '../rating/RatingPrompt';
 import { useCreditBalance } from '../../lib/credit';
+import { initials } from '../../lib/format';
 import { orderReference } from '../../lib/orders';
 import styles from './AppShell.module.css';
 
@@ -36,16 +37,6 @@ const MENU_LINKS = [
   { to: '/profile', label: 'Profile' },
   { to: '/account-status', label: 'Account status' },
 ];
-
-/**
- * TODO(user-service): the contract's GET /api/v1/user/me returns a name, but
- * sign-up never collects one, so initials fall back to the email address.
- * Recorded in docs/open-items.md.
- */
-function initialsFor(email: string | undefined): string {
-  if (!email) return '?';
-  return email.slice(0, 2).toUpperCase();
-}
 
 /**
  * Routes whose mockups replace the app nav with a back-and-title bar on
@@ -107,9 +98,8 @@ export function AppShell() {
 
         {/*
           On an order page the mockup replaces the mode tabs with a trail.
-          TODO(ui): it reads "My requests / Request #1042" even when the order
-          is one you are delivering, where it should lead back to My
-          deliveries. Nothing identifies which side you are on yet.
+          /orders is always the requester's side and /deliveries the courier's
+          (each page redirects the other party), so the URL decides the trail.
         */}
         {requestReference !== undefined ? (
           <nav className={styles.trail} aria-label="Breadcrumb">
@@ -159,7 +149,7 @@ export function AppShell() {
           </button>
           <Link to="/profile" className={styles.profile} aria-label="Profile">
             <span className={styles.avatar} aria-hidden="true">
-              {initialsFor(user?.email)}
+              {initials(user?.name)}
             </span>
             <span className={styles.chevron} aria-hidden="true">
               <Icon name="chevronDown" size={16} />

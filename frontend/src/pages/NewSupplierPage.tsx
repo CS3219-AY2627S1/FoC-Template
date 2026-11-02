@@ -47,7 +47,7 @@ export function NewSupplierPage() {
   const [submitted, setSubmitted] = useState(false);
 
   // Offer the categories already in use, so the free-text field is a last
-  // resort rather than the only option (see the typo risk in open-items).
+  // resort rather than the only option, and a typo does not start a new one.
   useEffect(() => {
     let cancelled = false;
     fetchSuppliers({ pageSize: 100 })
@@ -316,7 +316,7 @@ export function NewSupplierPage() {
 
         {/*
           Nobody is going to type coordinates. This is the pragmatic answer
-          until a map picker exists; see the note in docs/open-items.md.
+          until a map picker exists.
         */}
         <Button type="button" variant="secondary" onClick={useMyLocation} loading={locating}>
           Use my current location

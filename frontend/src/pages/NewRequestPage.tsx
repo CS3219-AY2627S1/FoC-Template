@@ -197,7 +197,7 @@ export function NewRequestPage() {
             F1.6.1 intend. It reads oddly today because the seeded rows are all
             shops: a drop-off like LT19 foyer belongs in the catalogue as
             Supplier F1.1's Type Facility, which the service does not
-            implement. See docs/open-items.md.
+            implement.
           */}
           <SelectField
             label="Delivery location"

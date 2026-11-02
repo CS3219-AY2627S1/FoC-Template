@@ -85,10 +85,8 @@ export async function suspendUser(userId: string): Promise<void> {
 }
 
 /**
- * Admin F1.3. Logged (F1.3.2).
- *
- * TODO(admin): the contract does not say what status a reinstated account
- * returns to; the page reloads the list rather than guessing.
+ * Admin F1.3. Logged (F1.3.2). The account returns to Verified, or to Created
+ * if it never finished verifying; the page reloads the list to show which.
  */
 export async function reinstateUser(userId: string): Promise<void> {
   await api.post(`/admin/users/${encodeURIComponent(userId)}/reinstate`);

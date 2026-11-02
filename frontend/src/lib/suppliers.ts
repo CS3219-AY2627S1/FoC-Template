@@ -69,7 +69,7 @@ export interface SupplierPage {
    * Inferred, not returned. The endpoint sends a bare array with no total, so
    * a full page is taken to mean another may follow. A catalogue whose size
    * is an exact multiple of the page size therefore shows one empty page at
-   * the end. Recorded in docs/open-items.md as an ask on the service.
+   * the end. A total from the service would fix that.
    */
   hasMore: boolean;
 }
@@ -124,6 +124,24 @@ export async function createSupplier(supplier: NewSupplier): Promise<Supplier> {
 export async function fetchSuppliersForAdmin(status?: Supplier['status']): Promise<Supplier[]> {
   const query = status === undefined ? '' : `?status=${status}`;
   return api.get<Supplier[]>(`/supplier/admin${query}`);
+}
+
+/** One entry of the Supplier Service's change log. */
+export interface SupplierAction {
+  id: number;
+  supplierId: number;
+  /** As it was at the time, so a deleted supplier still has a name. */
+  supplierName: string;
+  action: 'created' | 'edited' | 'approved' | 'rejected' | 'pending' | 'deleted';
+  actorUserId: string;
+  /** For an edit, the fields changed, comma-separated. */
+  detail: string | null;
+  createdAt: string;
+}
+
+/** Admin only: the latest 100 supplier changes, newest first. */
+export async function fetchSupplierActivity(): Promise<SupplierAction[]> {
+  return api.get<SupplierAction[]>('/supplier/admin/activity');
 }
 
 export async function setSupplierStatus(

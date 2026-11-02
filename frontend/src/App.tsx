@@ -19,6 +19,8 @@ import { NewRequestPage } from './pages/NewRequestPage';
 import { OrderDetailPage } from './pages/OrderDetailPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
+import { AdminEscalationsPage } from './pages/AdminEscalationsPage';
+import { AdminRatingsPage } from './pages/AdminRatingsPage';
 import { AdminSuppliersPage } from './pages/AdminSuppliersPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { AdminLayout } from './components/layout/AdminLayout';
@@ -75,12 +77,9 @@ export function App() {
           <Route element={<AdminLayout />}>
             <Route path="/admin" element={<AdminDashboardPage />} />
             <Route path="/admin/suppliers" element={<AdminSuppliersPage />} />
-            <Route
-              path="/admin/escalations"
-              element={<PagePlaceholder title="Escalation review" requirements="UI FR18" />}
-            />
+            <Route path="/admin/escalations" element={<AdminEscalationsPage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
-            <Route path="/admin/ratings" element={<PagePlaceholder title="Rating lookup" requirements="UI FR19" />} />
+            <Route path="/admin/ratings" element={<AdminRatingsPage />} />
           </Route>
         ) : null}
       </Route>
@@ -99,10 +98,8 @@ export function App() {
             <Route path="/requests/new" element={<NewRequestPage />} />
             <Route path="/orders/:orderId" element={<OrderDetailPage />} />
             {/*
-              The courier's view of an order.
-              TODO(order-service): once GET /api/v1/orders/{orderId} is wired up,
-              the order carries both parties and the app can route by who is
-              signed in rather than by URL.
+              The courier's view of an order. Each page sends the other party
+              to their own page, so the URL always matches who is looking.
             */}
             <Route path="/deliveries/:orderId" element={<CourierTaskPage />} />
             <Route path="/suppliers" element={<SuppliersPage />} />

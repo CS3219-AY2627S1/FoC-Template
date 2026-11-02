@@ -8,14 +8,25 @@
  * escalations and suspended users) and FR15.1.2 (links into each section,
  * which the rail provides).
  *
- * Only the supplier card has a service behind it. Escalations and suspended
- * users need the Admin Service, and the recent activity feed has no source
- * anywhere, so all three say so rather than showing invented figures.
+ * Escalation count and supplier activity added with Claude Code (Claude Opus
+ * 5.5) on 2026-11-02.
+ *
+ * Suspended users are not counted: the Admin user list has no status filter,
+ * so counting would mean reading every page of users. The activity feed
+ * covers supplier changes only, the one service that logs them for admins.
  */
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchSuppliersForAdmin, type Supplier } from '../lib/suppliers';
+import { fetchAdminUser } from '../lib/adminUsers';
+import { fetchConflicts, isOpen } from '../lib/conflicts';
+import { formatElapsed, formatWhen } from '../lib/format';
+import {
+  fetchSupplierActivity,
+  fetchSuppliersForAdmin,
+  type Supplier,
+  type SupplierAction,
+} from '../lib/suppliers';
 import styles from './AdminDashboardPage.module.css';
 
 type PendingState =
@@ -23,12 +34,36 @@ type PendingState =
   | { kind: 'ready'; count: number; oldest: Date | null }
   | { kind: 'failed' };
 
+type EscalationState =
+  | { kind: 'loading' }
+  | { kind: 'ready'; count: number; soonest: Date | null }
+  | { kind: 'failed' };
+
+type ActivityState =
+  | { kind: 'loading' }
+  | { kind: 'ready'; actions: SupplierAction[]; names: Record<string, string> }
+  | { kind: 'failed' };
+
+/** How many supplier changes the dashboard lists. */
+const ACTIVITY_SHOWN = 8;
+
+const ACTION_VERBS: Record<SupplierAction['action'], string> = {
+  created: 'submitted',
+  edited: 'edited',
+  approved: 'approved',
+  rejected: 'rejected',
+  pending: 'moved back to pending',
+  deleted: 'deleted',
+};
+
 function daysSince(date: Date): number {
   return Math.floor((Date.now() - date.getTime()) / 86_400_000);
 }
 
 export function AdminDashboardPage() {
   const [pending, setPending] = useState<PendingState>({ kind: 'loading' });
+  const [escalations, setEscalations] = useState<EscalationState>({ kind: 'loading' });
+  const [activity, setActivity] = useState<ActivityState>({ kind: 'loading' });
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +83,38 @@ export function AdminDashboardPage() {
       })
       .catch(() => {
         if (!cancelled) setPending({ kind: 'failed' });
+      });
+
+    fetchConflicts()
+      .then((rows) => {
+        if (cancelled) return;
+        const open = rows.filter((row) => isOpen(row.status));
+        const deadlines = open.map((row) => new Date(row.resolutionDeadline).getTime());
+        setEscalations({
+          kind: 'ready',
+          count: open.length,
+          soonest: deadlines.length > 0 ? new Date(Math.min(...deadlines)) : null,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setEscalations({ kind: 'failed' });
+      });
+
+    fetchSupplierActivity()
+      .then(async (rows) => {
+        const actions = rows.slice(0, ACTIVITY_SHOWN);
+        // One lookup per person, for the names in the shown entries only.
+        const ids = [...new Set(actions.map((action) => action.actorUserId))];
+        const found = await Promise.all(
+          ids.map(async (id) => {
+            const person = await fetchAdminUser(id).catch(() => null);
+            return [id, person?.name ?? 'Deleted account'] as const;
+          }),
+        );
+        if (!cancelled) setActivity({ kind: 'ready', actions, names: Object.fromEntries(found) });
+      })
+      .catch(() => {
+        if (!cancelled) setActivity({ kind: 'failed' });
       });
 
     return () => {
@@ -97,15 +164,24 @@ export function AdminDashboardPage() {
         </section>
 
         <section className={styles.card}>
-          <div className={styles.soonHead}>
-            <h2 className={styles.cardTitle}>Pending escalations</h2>
-            <span className={styles.soonTag}>No service</span>
-          </div>
-          <p className={styles.metricMuted}>&mdash;</p>
-          <p className={styles.cardNote}>
-            The Admin Service has no endpoint to create or list a case, so nothing can be counted
-            yet.
-          </p>
+          <h2 className={styles.cardTitle}>Open escalations</h2>
+          {escalations.kind === 'loading' ? (
+            <p className={styles.metricMuted}>&mdash;</p>
+          ) : escalations.kind === 'failed' ? (
+            <>
+              <p className={styles.metricMuted}>&mdash;</p>
+              <p className={styles.cardNote}>Admin Service unreachable</p>
+            </>
+          ) : (
+            <>
+              <p className={styles.metric}>{escalations.count}</p>
+              <p className={styles.cardNote}>
+                {escalations.soonest === null
+                  ? 'Nothing waiting'
+                  : `Next deadline ${formatWhen(escalations.soonest)}`}
+              </p>
+            </>
+          )}
           <Link to="/admin/escalations" className={styles.secondaryAction}>
             Review queue
           </Link>
@@ -114,11 +190,12 @@ export function AdminDashboardPage() {
         <section className={styles.card}>
           <div className={styles.soonHead}>
             <h2 className={styles.cardTitle}>Suspended users</h2>
-            <span className={styles.soonTag}>No service</span>
+            <span className={styles.soonTag}>Not counted</span>
           </div>
           <p className={styles.metricMuted}>&mdash;</p>
           <p className={styles.cardNote}>
-            Needs the Admin Service user list, which the User Service does not back yet.
+            The user list has no status filter, so suspended accounts cannot be counted without
+            reading every user.
           </p>
           <Link to="/admin/users" className={styles.secondaryAction}>
             User management
@@ -127,21 +204,29 @@ export function AdminDashboardPage() {
       </div>
 
       <section className={styles.activity}>
-        <div className={styles.soonHead}>
-          <h2 className={styles.cardTitle}>Recent activity</h2>
-          <span className={styles.soonTag}>No source</span>
-        </div>
-        {/*
-          The mockup lists escalations submitted, suppliers submitted, credit
-          adjustments and suspensions in one feed. Nothing publishes such a
-          feed: Admin NFR2.1 logs privileged actions, but that is an audit log
-          nobody exposes, and it would not carry submissions by other people.
-          Recorded in docs/open-items.md.
-        */}
+        <h2 className={styles.cardTitle}>Supplier activity</h2>
+        {activity.kind === 'loading' ? <p className={styles.activityBody}>Loading</p> : null}
+        {activity.kind === 'failed' ? (
+          <p className={styles.activityBody}>Supplier Service unreachable</p>
+        ) : null}
+        {activity.kind === 'ready' && activity.actions.length === 0 ? (
+          <p className={styles.activityBody}>No supplier changes yet.</p>
+        ) : null}
+        {activity.kind === 'ready' && activity.actions.length > 0 ? (
+          <ul className={styles.feed}>
+            {activity.actions.map((action) => (
+              <li key={action.id} className={styles.feedItem}>
+                <span>
+                  {activity.names[action.actorUserId]} {ACTION_VERBS[action.action]}{' '}
+                  <span className={styles.feedSubject}>{action.supplierName}</span>
+                </span>
+                <span className={styles.feedWhen}>{formatElapsed(new Date(action.createdAt))}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <p className={styles.activityBody}>
-          A single feed of submissions, escalations, credit adjustments and suspensions. No
-          service publishes one. The closest thing that exists is the audit log Admin NFR2.1
-          requires, which is not exposed and would not cover activity by other users.
+          Supplier changes only. Escalations, credit adjustments and suspensions have no shared feed.
         </p>
       </section>
     </div>

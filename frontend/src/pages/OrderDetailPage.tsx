@@ -12,8 +12,10 @@
  */
 
 import { useCallback, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, Navigate, useParams } from 'react-router-dom';
+import { useAuth } from '../auth/AuthProvider';
 import { ReportUser } from '../components/moderation/ReportUser';
+import { PickupDetail } from '../components/order/PickupDetail';
 import { StatusStepper } from '../components/order/StatusStepper';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
@@ -36,6 +38,7 @@ export function OrderDetailPage() {
   const { orderId = '' } = useParams();
   // Re-read every few seconds, so the courier's progress shows up here.
   const { order, loadError, setOrder } = useLiveOrder(orderId);
+  const { user } = useAuth();
 
   if (loadError) {
     return (
@@ -52,6 +55,12 @@ export function OrderDetailPage() {
         <p className={styles.actionNote}>Loading the request…</p>
       </div>
     );
+  }
+
+  // This is the requester's page. The courier on the order gets their own,
+  // whichever link brought them here.
+  if (user !== null && order.courierId?.toLowerCase() === user.userId.toLowerCase()) {
+    return <Navigate to={`/deliveries/${order.id}`} replace />;
   }
 
   return <OrderDetail order={order} onChange={setOrder} />;
@@ -151,9 +160,7 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
             <div className={styles.detailBlock}>
               <h2 className={styles.detailLabel}>Pickup</h2>
               <p className={styles.detailValue}>{order.pickup.name}</p>
-              {/* TODO(order-service): the supplier's location description is
-                  not on the order; it would need a Supplier lookup by id.
-              {order.pickupDetail ? <p className={styles.detailNote}>{order.pickupDetail}</p> : null} */}
+              <PickupDetail supplierId={order.pickup.id} className={styles.detailNote} />
             </div>
 
             <div className={styles.detailBlock}>
