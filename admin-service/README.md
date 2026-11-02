@@ -222,7 +222,7 @@ Order consumes two flat events on `foc.admin.events`. The Kafka key is the order
 { "eventId": "<uuid>", "eventType": "admin.review.started", "schemaVersion": 1, "occurredAt": "<ISO-8601 UTC>", "orderId": "<id>", "caseId": "<id>" }
 ```
 
-`admin.case.resolved` uses the same fields. `schemaVersion` is `1`. `eventId` is the idempotency key.
+`admin.case.resolved` uses the same fields plus `faultParty` (`requester`, `courier`, or `no-fault`), copied from the stored verdict. Manual resolve sends the admin's choice; auto-resolve sends the AI verdict. `schemaVersion` is `1`. `eventId` is the idempotency key.
 
 The other events still use the wrapped envelope `{ eventId, eventType, version, timestamp, payload }`.
 
@@ -230,7 +230,7 @@ The other events still use the wrapped envelope `{ eventId, eventType, version, 
 |---|---|---|
 | `ConflictCaseCreated` | `admin.conflict-case-created` | After intake commit |
 | `admin.review.started` | `foc.admin.events` | After an admin claims a case |
-| `admin.case.resolved` | `foc.admin.events` | After resolve (manual or auto). Order completes the order; this message has no credit or rating fields |
+| `admin.case.resolved` | `foc.admin.events` | After resolve (manual or auto). Includes `faultParty`. Order completes the order |
 | `UserPromoted` | `admin.user.promoted` | After User Service accepts promote |
 | `UserDemoted` | `admin.user.demoted` | After demote |
 | `UserSuspended` | `admin.user.suspended` | After suspend |

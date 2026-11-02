@@ -57,7 +57,7 @@ async def _send(topic: str, event: dict, key: str) -> None:
     await _producer.send_and_wait(topic, value=event, key=key.encode())
 
 
-def _order_event(event_type: str, order_id: str, case_id: str) -> dict:
+def _order_event(event_type: str, order_id: str, case_id: str, **fields: str) -> dict:
     # Flat message on foc.admin.events. Order reads eventId, eventType, orderId, and caseId.
     return {
         "eventId": str(uuid.uuid4()),
@@ -66,6 +66,7 @@ def _order_event(event_type: str, order_id: str, case_id: str) -> dict:
         "occurredAt": datetime.now(timezone.utc).isoformat(),
         "orderId": order_id,
         "caseId": case_id,
+        **fields,
     }
 
 
@@ -92,9 +93,10 @@ async def publish_order_under_review(order_id: str, case_id: str) -> None:
     await _send(settings.kafka_topic_admin_events, event, order_id)
  
  
-async def publish_conflict_resolved(order_id: str, case_id: str) -> None:
-    # Admin resolves the case. Order applies this only while the order is ESCALATED or UNDER_REVIEW.
-    event = _order_event("admin.case.resolved", order_id, case_id)
+async def publish_conflict_resolved(order_id: str, case_id: str, fault_party: str) -> None:
+    # Admin resolves the case. faultParty is the stored verdict (requester, courier, or no-fault).
+    # Order applies this only while the order is ESCALATED or UNDER_REVIEW.
+    event = _order_event("admin.case.resolved", order_id, case_id, faultParty=fault_party)
     await _send(settings.kafka_topic_admin_events, event, order_id)
 
 
