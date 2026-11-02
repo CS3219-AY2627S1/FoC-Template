@@ -72,12 +72,14 @@ class DeliveryPointServiceTest {
         assertThrows(ApiException.class, () -> service.catalogue(0, 101));
 
         UserDeliveryPointEntity usage = association(1L, 4);
+        usage.setNickname("Studio");
         when(associations.findByUserIdOrderByUseCountDescLastUsedAtDesc(user.userId(), PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(usage)));
         when(points.findActiveByIdIn(List.of(1L))).thenReturn(List.of(seed));
         PageResponse<DeliveryPointResponse> mine = service.myLocations(user, 0, 20);
         assertEquals(1, mine.content().size());
         assertEquals(4, mine.content().getFirst().useCount());
+        assertEquals("Studio", mine.content().getFirst().nickname());
         assertEquals(now, mine.content().getFirst().lastUsedAt());
         assertTrue(service.myLocations(user, 0, 0).content().isEmpty());
     }
@@ -199,6 +201,7 @@ class DeliveryPointServiceTest {
     void seedEditAlwaysForksEvenForSoleUser() {
         DeliveryPointEntity seed = seed(1L, "com1");
         UserDeliveryPointEntity association = association(1L, 3);
+        association.setNickname("Desk");
         when(associations.existsByUserIdAndDeliveryPointId(user.userId(), 1L)).thenReturn(true);
         when(points.lockById(1L)).thenReturn(Optional.of(seed));
         when(associations.countByDeliveryPointId(1L)).thenReturn(1L);
@@ -210,16 +213,18 @@ class DeliveryPointServiceTest {
         });
 
         DeliveryPointResponse response = service.update(user, 1L, new UpdateDeliveryPointRequest(
-                "My COM1", null, null, null, null));
+                "My COM1", null, null, null, null, null));
 
         assertEquals(99L, response.id());
         assertEquals("My COM1", response.name());
+        assertEquals("Desk", response.nickname());
         assertNull(response.code());
         verify(associations).delete(association);
         ArgumentCaptor<UserDeliveryPointEntity> moved = ArgumentCaptor.forClass(UserDeliveryPointEntity.class);
         verify(associations).save(moved.capture());
         assertEquals(99L, moved.getValue().getDeliveryPointId());
         assertEquals(3, moved.getValue().getUseCount());
+        assertEquals("Desk", moved.getValue().getNickname());
     }
 
     @Test
@@ -236,11 +241,13 @@ class DeliveryPointServiceTest {
             return created;
         });
 
+        association.setNickname("Home");
         DeliveryPointResponse response = service.update(user, 20L, new UpdateDeliveryPointRequest(
-                null, "Tower", " ", null, null));
+                null, "Tower", " ", null, null, null));
         assertEquals(21L, response.id());
         assertEquals("Tower", response.building());
         assertEquals("Lobby", response.description());
+        assertEquals("Home", response.nickname());
     }
 
     @Test
@@ -253,7 +260,7 @@ class DeliveryPointServiceTest {
         when(associations.findByUserIdAndDeliveryPointId(user.userId(), 20L)).thenReturn(Optional.of(association));
 
         DeliveryPointResponse response = service.update(user, 20L, new UpdateDeliveryPointRequest(
-                "Renamed", null, null, 1.295, 103.77));
+                "Renamed", null, null, 1.295, 103.77, null));
 
         assertEquals(20L, response.id());
         assertEquals("Renamed", response.name());
@@ -261,8 +268,25 @@ class DeliveryPointServiceTest {
     }
 
     @Test
+    void nicknameOnlyPatchDoesNotCow() {
+        DeliveryPointEntity seed = seed(1L, "com1");
+        UserDeliveryPointEntity association = association(1L, 2);
+        when(associations.existsByUserIdAndDeliveryPointId(user.userId(), 1L)).thenReturn(true);
+        when(points.lockById(1L)).thenReturn(Optional.of(seed));
+        when(associations.findByUserIdAndDeliveryPointId(user.userId(), 1L)).thenReturn(Optional.of(association));
+
+        DeliveryPointResponse response = service.update(user, 1L, new UpdateDeliveryPointRequest(
+                null, null, null, null, null, "  Tutorial  "));
+
+        assertEquals(1L, response.id());
+        assertEquals("Tutorial", response.nickname());
+        assertEquals("Tutorial", association.getNickname());
+        verify(points, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
     void updateRejectsMissingAssociationAndInactivePoint() {
-        UpdateDeliveryPointRequest patch = new UpdateDeliveryPointRequest("x", null, null, null, null);
+        UpdateDeliveryPointRequest patch = new UpdateDeliveryPointRequest("x", null, null, null, null, null);
         when(associations.existsByUserIdAndDeliveryPointId(user.userId(), 20L)).thenReturn(false);
         assertThrows(ApiException.class, () -> service.update(user, 20L, patch));
 
@@ -276,7 +300,7 @@ class DeliveryPointServiceTest {
     @Test
     void updateRejectsOutOfBoundsCoordinates() {
         DeliveryPointEntity fork = seed(21L, null);
-        UpdateDeliveryPointRequest patch = new UpdateDeliveryPointRequest(null, null, null, 1.0, 103.77);
+        UpdateDeliveryPointRequest patch = new UpdateDeliveryPointRequest(null, null, null, 1.0, 103.77, null);
         when(associations.existsByUserIdAndDeliveryPointId(user.userId(), 21L)).thenReturn(true);
         when(points.lockById(21L)).thenReturn(Optional.of(fork));
         assertThrows(ApiException.class, () -> service.update(user, 21L, patch));

@@ -73,6 +73,7 @@ public class DeliveryPointService {
                 .filter(row -> byId.containsKey(row.getDeliveryPointId()))
                 .map(row -> DeliveryPointResponse.from(
                         byId.get(row.getDeliveryPointId()),
+                        row.getNickname(),
                         row.getUseCount(),
                         row.getLastUsedAt()))
                 .toList();
@@ -86,6 +87,21 @@ public class DeliveryPointService {
         if (!locked.isActive()) {
             throw ApiException.badRequest("Delivery point is inactive");
         }
+        UserDeliveryPointEntity mine = associations.findByUserIdAndDeliveryPointId(actor.userId(), id)
+                .orElseThrow(() -> ApiException.notFound(POINT_NOT_FOUND));
+
+        boolean placeChanged = request.name() != null
+                || request.building() != null
+                || request.description() != null
+                || request.latitude() != null
+                || request.longitude() != null;
+        if (request.nickname() != null) {
+            mine.setNickname(normalizeNickname(request.nickname()));
+        }
+        if (!placeChanged) {
+            return DeliveryPointResponse.from(locked, mine.getNickname(), mine.getUseCount(), mine.getLastUsedAt());
+        }
+
         String name = firstNonBlank(request.name(), locked.getName());
         String building = firstNonBlank(request.building(), locked.getBuilding());
         String description = firstNonBlank(request.description(), locked.getDescription());
@@ -94,9 +110,6 @@ public class DeliveryPointService {
         requireInsideBounds(latitude, longitude);
 
         long associationCount = associations.countByDeliveryPointId(id);
-        UserDeliveryPointEntity mine = associations.findByUserIdAndDeliveryPointId(actor.userId(), id)
-                .orElseThrow(() -> ApiException.notFound(POINT_NOT_FOUND));
-
         if (locked.isSeed() || associationCount > 1) {
             DeliveryPointEntity fork = new DeliveryPointEntity();
             fork.setName(name);
@@ -112,10 +125,11 @@ public class DeliveryPointService {
             moved.setUserId(actor.userId());
             moved.setDeliveryPointId(fork.getId());
             moved.setUseCount(mine.getUseCount());
+            moved.setNickname(mine.getNickname());
             moved.setLastUsedAt(mine.getLastUsedAt());
             moved.setCreatedAt(mine.getCreatedAt());
             associations.save(moved);
-            return DeliveryPointResponse.from(fork, moved.getUseCount(), moved.getLastUsedAt());
+            return DeliveryPointResponse.from(fork, moved.getNickname(), moved.getUseCount(), moved.getLastUsedAt());
         }
 
         locked.setName(name);
@@ -123,7 +137,7 @@ public class DeliveryPointService {
         locked.setDescription(description);
         locked.setLatitude(latitude);
         locked.setLongitude(longitude);
-        return DeliveryPointResponse.from(locked, mine.getUseCount(), mine.getLastUsedAt());
+        return DeliveryPointResponse.from(locked, mine.getNickname(), mine.getUseCount(), mine.getLastUsedAt());
     }
 
     @Transactional
@@ -237,5 +251,13 @@ public class DeliveryPointService {
             return fallback;
         }
         return candidate.trim();
+    }
+
+    /** Blank clears; otherwise trimmed. Caller passes null to leave unchanged. */
+    private static String normalizeNickname(String nickname) {
+        if (nickname == null || nickname.isBlank()) {
+            return null;
+        }
+        return nickname.trim();
     }
 }

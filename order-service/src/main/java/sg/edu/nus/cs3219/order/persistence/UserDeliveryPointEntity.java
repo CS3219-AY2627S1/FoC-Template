@@ -24,6 +24,9 @@ public class UserDeliveryPointEntity {
     @Column(name = "use_count", nullable = false)
     private int useCount = 1;
 
+    @Column(length = 80)
+    private String nickname;
+
     @Column(name = "last_used_at", nullable = false)
     private Instant lastUsedAt;
 
@@ -52,6 +55,14 @@ public class UserDeliveryPointEntity {
 
     public void setUseCount(int useCount) {
         this.useCount = useCount;
+    }
+
+    public String getNickname() {
+        return nickname;
+    }
+
+    public void setNickname(String nickname) {
+        this.nickname = nickname;
     }
 
     public Instant getLastUsedAt() {

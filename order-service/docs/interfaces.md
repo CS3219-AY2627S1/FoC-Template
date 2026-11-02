@@ -21,8 +21,8 @@ Errors use `{ "error": "...", "code": "<HTTP status name>" }`.
 | --- | --- | --- | --- |
 | POST | `/` | requester | Create. Body: `itemDescription` (1–500), `credits` (integer ≥ 1), `expiryTime`, `deliveryTime`, `fromLocation` (Supplier id), optional `deliveryPointId`, or inline `dropoffName` / `dropoffBuilding` / `dropoffDescription` / `dropoffLat` / `dropoffLng` |
 | GET | `/delivery-points` | any permitted user | Active seed catalogue. `page`/`size` max **100** |
-| GET | `/delivery-points/my-locations` | requester | This user's used dropoffs, `use_count` then `last_used_at`. `page`/`size` max **100** |
-| PATCH | `/delivery-points/{id}` | associated user | Edit + COW; returns effective id |
+| GET | `/delivery-points/my-locations` | requester | This user's used dropoffs (`nickname`, usage). Sort `use_count` then `last_used_at`. `page`/`size` max **100** |
+| PATCH | `/delivery-points/{id}` | associated user | Optional place fields (COW rules) and/or `nickname` (association only; `""` clears). Returns effective id |
 | DELETE | `/delivery-points/{id}` | associated user | Unassociate; soft-inactive last fork |
 | GET | `/{orderId}` | requester or assigned courier | One order. Anyone else gets 404 |
 | POST | `/{orderId}/accept` | courier, not the requester | CREATED → ACCEPTED. The requester gets 409 |

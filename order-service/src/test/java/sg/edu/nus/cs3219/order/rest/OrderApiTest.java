@@ -120,7 +120,7 @@ class OrderApiTest {
         when(deliveryPoints.catalogue(0, 20)).thenReturn(PageResponse.empty(0, 20));
         when(deliveryPoints.myLocations(any(), eq(0), eq(20))).thenReturn(PageResponse.empty(0, 20));
         when(deliveryPoints.update(any(), eq(1L), any())).thenReturn(
-                new DeliveryPointResponse(1L, null, "COM1", "COM1", "Lobby", 1.29, 103.77, 2, Instant.parse("2026-10-02T04:00:00Z")));
+                new DeliveryPointResponse(1L, null, "COM1", "COM1", "Lobby", 1.29, 103.77, "Home", 2, Instant.parse("2026-10-02T04:00:00Z")));
 
         mvc.perform(signed(post("/api/v1/orders"))
                         .contentType(MediaType.APPLICATION_JSON)

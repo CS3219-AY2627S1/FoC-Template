@@ -64,12 +64,14 @@ class DeliveryPointPersistenceTest {
         row.setUserId("u1");
         row.setDeliveryPointId(4L);
         row.setUseCount(2);
+        row.setNickname("Home");
         row.setLastUsedAt(now);
         row.setCreatedAt(now);
 
         assertEquals("u1", row.getUserId());
         assertEquals(4L, row.getDeliveryPointId());
         assertEquals(2, row.getUseCount());
+        assertEquals("Home", row.getNickname());
         assertEquals(now, row.getLastUsedAt());
         assertEquals(now, row.getCreatedAt());
     }

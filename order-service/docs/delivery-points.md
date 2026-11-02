@@ -1,6 +1,6 @@
 # Delivery points (design)
 
-Status: **implemented** (see Flyway `V6`, `DeliveryPointService`, create/list/PATCH/DELETE). Scope is Order Service unless noted.
+Status: **implemented** (see Flyway `V6`/`V7`, `DeliveryPointService`, create/list/PATCH/DELETE + nickname). Scope is Order Service unless noted.
 
 Pickup (`from`) stays with Supplier Service (approved catalogue). Dropoff (`to`) is owned by Order’s database: a seeded campus catalogue, plus per-user associations built only when a dropoff is used on a successful order.
 
@@ -75,12 +75,13 @@ user_delivery_point
   user_id            VARCHAR(320) NOT NULL
   delivery_point_id  BIGINT NOT NULL
   use_count          INTEGER NOT NULL DEFAULT 1
+  nickname           VARCHAR(80)                -- optional per-user label; not used as create key
   last_used_at       TIMESTAMPTZ NOT NULL
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
   PRIMARY KEY (user_id, delivery_point_id)
 ```
 
-**Associations only on successful order use** — no bookmark/save API. Insert with `use_count = 1`, `last_used_at = now()`, or bump both on repeat use.
+**Associations only on successful order use** — no bookmark/save API. Insert with `use_count = 1`, `last_used_at = now()`, or bump both on repeat use. Optional `nickname` is owner-only display (my-locations / PATCH); create and search still use numeric `deliveryPointId`. Courier order snapshot keeps place name/building/description, not the nickname.
 
 ## Indexes (≈ 60k users)
 
@@ -127,11 +128,13 @@ Caller must be associated. PATCH lat/lng must pass the NUS box. Response returns
 
 **Edit** — single transaction:
 
-1. Lock row; refcount associations.
-2. If target has `code IS NOT NULL` (seed) → **always** fork (never mutate campus rows), even if count = 1.
-3. Else if count = 1 and association is caller → **`UPDATE` fork in place** (allowed because orders snapshot; no append-only requirement).
-4. Else → insert fork (`code` null, patched fields), **move this user’s association** and **copy `use_count` / `last_used_at`**. Other users keep the original.
-5. Commit (or roll back the whole edit).
+1. Lock row; load association.
+2. If `nickname` is present in the body → update association only (`""` clears). Nickname-only PATCH does **not** COW.
+3. If any place field is present (`name` / `building` / `description` / lat / lng):
+   - Seed (`code` set) → **always** fork (never mutate campus rows), even if count = 1.
+   - Else if count = 1 and association is caller → **`UPDATE` fork in place**.
+   - Else → insert fork (`code` null), **move association** and **copy `use_count` / `last_used_at` / `nickname`**.
+4. Commit (or roll back the whole edit). Response returns the effective id + nickname.
 
 **Delete (soft — active / inactive)** — single transaction:
 
@@ -188,7 +191,7 @@ Align with Supplier’s list caps: **`page` (1-based like Supplier, or document 
 | --- | --- | --- |
 | `GET` | `/api/v1/orders/delivery-points` | Active seed catalogue (`code IS NOT NULL`), paginated |
 | `GET` | `/api/v1/orders/delivery-points/my-locations` | This user’s used places, `use_count DESC`, `last_used_at DESC`, paginated |
-| `PATCH` | `/api/v1/orders/delivery-points/{id}` | Edit + COW; usage copied on fork |
+| `PATCH` | `/api/v1/orders/delivery-points/{id}` | Place edit + COW; optional `nickname` on association (no COW) |
 | `DELETE` | `/api/v1/orders/delivery-points/{id}` | Unassociate; if last user on a fork, set `active = false` |
 | `POST` | `/api/v1/orders` | Pickup → Supplier; dropoff → allowed id and/or full inline fields; geofence; associate only on success |
 
@@ -213,5 +216,6 @@ Auth: `X-User-Id` + `X-Permitted-Action`.
 3. List catalogue + `my-locations` (sort + page/size cap 100).
 4. Create: `fromLocation` Supplier; optional `deliveryPointId` + inline dropoff fields; seed∪mine or full inline in-bounds; no snap; associate/bump only on success.
 5. PATCH/DELETE/create-usage in one DB transaction each (lock + COW/move or in-place; soft inactive); seed always COW; PATCH returns effective id.
-6. Bruno + unit tests (geofence, forbidden foreign id, COW usage copy, delete vs order snapshot).
-7. Update `schema.md`, `interfaces.md`, create sequence; then update load-test dropoff ids away from Supplier `toLocation: "4"`.
+6. Optional `user_delivery_point.nickname` (V7): PATCH association-only without COW; copy on place fork; expose on my-locations; not on courier snapshot / create key.
+7. Bruno + unit tests (geofence, forbidden foreign id, COW usage/nickname copy, nickname-only PATCH, delete vs order snapshot).
+8. Update `schema.md`, `interfaces.md`, create sequence; then update load-test dropoff ids away from Supplier `toLocation: "4"`.

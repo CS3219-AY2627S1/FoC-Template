@@ -12,6 +12,7 @@ public record DeliveryPointResponse(
         String description,
         double latitude,
         double longitude,
+        String nickname,
         Integer useCount,
         Instant lastUsedAt
 ) {
@@ -25,11 +26,17 @@ public record DeliveryPointResponse(
                 point.getLatitude(),
                 point.getLongitude(),
                 null,
+                null,
                 null
         );
     }
 
-    public static DeliveryPointResponse from(DeliveryPointEntity point, int useCount, Instant lastUsedAt) {
+    public static DeliveryPointResponse from(
+            DeliveryPointEntity point,
+            String nickname,
+            int useCount,
+            Instant lastUsedAt
+    ) {
         return new DeliveryPointResponse(
                 point.getId(),
                 point.getCode(),
@@ -38,6 +45,7 @@ public record DeliveryPointResponse(
                 point.getDescription(),
                 point.getLatitude(),
                 point.getLongitude(),
+                nickname,
                 useCount,
                 lastUsedAt
         );
