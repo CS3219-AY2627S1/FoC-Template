@@ -38,7 +38,7 @@ Only a requester cancel of a CREATED order returns credits, and that HTTP releas
 
 ![Requester escalation](seq-escalate.png)
 
-The admin call is synchronous and is still a local stub. It must succeed before the status becomes ESCALATED. A missed delivery deadline is different: the sweeper escalates without this HTTP call and publishes `admin.escalation.opened`.
+The admin call is synchronous HTTP to `POST /api/v1/admin/conflicts`. It must succeed before the status becomes ESCALATED. A missed delivery deadline uses the same Admin call from the sweeper, then commits ESCALATED.
 
 ## Deadlines
 

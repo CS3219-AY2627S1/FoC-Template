@@ -15,8 +15,8 @@ One row per errand.
 | requester_telegram_handle | VARCHAR(64) | Optional header value |
 | courier_id | VARCHAR(320) | Set on accept, cleared when the order returns to CREATED |
 | courier_telegram_handle | VARCHAR(64) | Same lifecycle as `courier_id` |
-| requester_rating | DOUBLE PRECISION | Snapshot at create. The rating client is a stub and returns 5.0 |
-| courier_rating | DOUBLE PRECISION | Snapshot at accept |
+| requester_rating | DOUBLE PRECISION | Snapshot at create from Rating Service (`GET /api/v1/rating/{userId}`). Null when the user has no ratings yet |
+| courier_rating | DOUBLE PRECISION | Snapshot at accept from Rating Service. Null when the courier has no ratings yet |
 | item_description | VARCHAR(500) | Required |
 | amount | INTEGER | Reward in credits. Check constraint `amount >= 1` |
 | status | VARCHAR(32) | `OrderStatus` name |

@@ -98,7 +98,7 @@ public class OrderCommandService {
         String requesterTelegram = users.telegramHandle(requester.userId());
         Place pickup = suppliers.requirePlace(request.fromLocation(), requester);
         Place dropoff = suppliers.requirePlace(request.toLocation(), requester);
-        double requesterRating = ratings.ratingFor(requester.userId(), requester);
+        Double requesterRating = ratings.ratingFor(requester.userId(), requester);
 
         UUID id = UUID.randomUUID();
         credits.reserve(id, requester.userId(), request.credits(), requester);
@@ -144,7 +144,7 @@ public class OrderCommandService {
                 throw ApiException.conflict("You cannot accept your own order");
             }
         });
-        double courierRating = ratings.ratingFor(courier.userId(), courier);
+        Double courierRating = ratings.ratingFor(courier.userId(), courier);
         String courierTelegram = users.telegramHandle(courier.userId());
         Instant now = clock.instant();
         Instant collectionDeadline = now.plus(properties.getDeadlines().getCollectionWindow());

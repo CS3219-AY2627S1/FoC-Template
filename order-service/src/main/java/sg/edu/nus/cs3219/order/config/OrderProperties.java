@@ -187,7 +187,7 @@ public class OrderProperties {
         private String userBaseUrl = "http://user-service:8080";
         private String creditBaseUrl = "http://credit-service:8080";
         private String supplierBaseUrl = "http://supplier-service:8080";
-        private String ratingBaseUrl = "http://rating-service:8080";
+        private String ratingBaseUrl = "http://rating-service:8085";
         private String adminBaseUrl = "http://admin-service:8080";
 
         public Duration getTimeout() {

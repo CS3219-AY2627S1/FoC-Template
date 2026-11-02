@@ -17,7 +17,7 @@ Downstream calls, as a share of that traffic:
 | Supplier | Order checks both locations on create. Search checks the pickup location again. |
 | Credit | Order reserves 1 credit on create. Acknowledge publishes `credit.reservation.release`. The credit consumer has to be running for that second call to land. |
 | Admin | Escalate calls `POST /api/v1/admin/conflicts`. About 1 in 20 closes. |
-| Rating | Still the in-process stub, which returns 5.0. Deliver and acknowledge publish `rating.permission.granted` on `foc.rating.commands`. Nothing in this repo consumes that topic. |
+| Rating | Order reads `GET /api/v1/rating/{userId}` on create and accept. Deliver and acknowledge publish `rating.permission.granted` on `foc.rating.commands` for Rating Service to grant the modal. |
 | MinIO / S3 | Collect and deliver store the PNG. |
 
 Default duration is 10 minutes. A requester holds at most 3 orders so create rate follows how fast couriers finish. Accept collisions return 409 and count as normal contention. Suppliers `2` and `4` are the seeded approved locations.

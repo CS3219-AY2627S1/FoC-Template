@@ -37,7 +37,7 @@ class OrderPropertiesTest {
         properties.getClients().setUserBaseUrl("http://user-service:8080");
         properties.getClients().setCreditBaseUrl("http://credit-service:8080");
         properties.getClients().setSupplierBaseUrl("http://supplier-service:8080");
-        properties.getClients().setRatingBaseUrl("http://rating-service:8080");
+        properties.getClients().setRatingBaseUrl("http://rating-service:8085");
         properties.getClients().setAdminBaseUrl("http://admin-service:8080");
         properties.getKafka().setReplicas(1);
         properties.getApi().setBasePath("/configured");
@@ -59,7 +59,7 @@ class OrderPropertiesTest {
         assertTrue(properties.getClients().getUserBaseUrl().contains("8080"));
         assertTrue(properties.getClients().getCreditBaseUrl().contains("8080"));
         assertTrue(properties.getClients().getSupplierBaseUrl().contains("8080"));
-        assertTrue(properties.getClients().getRatingBaseUrl().contains("8080"));
+        assertTrue(properties.getClients().getRatingBaseUrl().contains("8085"));
         assertTrue(properties.getClients().getAdminBaseUrl().contains("8080"));
         assertEquals(1, properties.getKafka().getReplicas());
         assertNotNull(new ClockConfig().clock());
