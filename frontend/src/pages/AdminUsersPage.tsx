@@ -145,6 +145,14 @@ export function AdminUsersPage() {
     <div className={styles.page}>
       <header className={styles.header}>
         <h1 className={styles.title}>Users</h1>
+      </header>
+
+      {/* Shares reloadKey with the table: an action in either changes both. */}
+      <ModerationQueues myUserId={me?.userId ?? null} reloadKey={reloadKey} onChanged={reload} />
+
+      {/* The search filters this table only, so it sits with it, below the queues. */}
+      <div className={`${styles.header} ${styles.sectionHeader}`}>
+        <h2 className={styles.sectionTitle}>All users</h2>
 
         <label className={styles.search}>
           <Icon name="search" size={16} />
@@ -161,12 +169,7 @@ export function AdminUsersPage() {
         <p className={styles.totals}>
           {users === null ? 'Loading' : `${users.length} on this page`}
         </p>
-      </header>
-
-      {/* Shares reloadKey with the table: an action in either changes both. */}
-      <ModerationQueues myUserId={me?.userId ?? null} reloadKey={reloadKey} onChanged={reload} />
-
-      <h2 className={styles.sectionTitle}>All users</h2>
+      </div>
 
       {loadError ? <Alert variant="danger">{loadError}</Alert> : null}
       {actionError ? <Alert variant="danger">{actionError}</Alert> : null}
@@ -202,10 +205,12 @@ export function AdminUsersPage() {
                       </span>
                       <span className={styles.email}>{user.email}</span>
                     </td>
-                    <td>
+                    <td data-label="Status">
                       <span className={styles[user.status.toLowerCase()]}>{user.status}</span>
                     </td>
-                    <td className={styles.credits}>{user.credits ?? '—'}</td>
+                    <td className={styles.credits} data-label="Credits">
+                      {user.credits ?? '—'}
+                    </td>
                     <td>
                       <div className={styles.actions}>
                         <Button variant="secondary" onClick={() => setAdjusting(user)}>
@@ -263,11 +268,6 @@ export function AdminUsersPage() {
           </Button>
         </div>
       ) : null}
-
-      <p className={styles.note}>
-        Adjusting credits is inert: no contract has an endpoint for it. There is also no way to
-        demote an admin, because the contract has no demote endpoint.
-      </p>
 
       {/* NFR9.1.1: suspension and promotion both ask first. */}
       <ConfirmDialog

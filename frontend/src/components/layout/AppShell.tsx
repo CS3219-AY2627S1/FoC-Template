@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthProvider';
 import { Icon } from '../ui/Icon';
 import { RatingPrompt } from '../rating/RatingPrompt';
@@ -57,10 +57,16 @@ const OWN_MOBILE_HEADER_ROUTES = ['/requests/new'];
 export function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
-  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
   const isAdmin = user?.isAdmin === true;
   const tabs = isAdmin ? [...MODE_TABS, ADMIN_TAB] : MODE_TABS;
   const menuLinks = isAdmin ? [...MENU_LINKS, ADMIN_TAB] : MENU_LINKS;
+
+  async function handleSignOut() {
+    await signOut();
+    navigate('/login', { replace: true });
+  }
 
   // Close the mobile menu whenever the route changes.
   useEffect(() => setMenuOpen(false), [location.pathname]);
@@ -159,6 +165,10 @@ export function AppShell() {
               <Icon name="chevronDown" size={16} />
             </span>
           </Link>
+          {/* Below 768px this moves into the hamburger menu, to keep the bar short. */}
+          <button type="button" className={styles.signOut} onClick={() => void handleSignOut()}>
+            Log out
+          </button>
         </div>
       </header>
 
@@ -175,6 +185,9 @@ export function AppShell() {
               {link.label}
             </NavLink>
           ))}
+          <button type="button" className={styles.menuLink} onClick={() => void handleSignOut()}>
+            Log out
+          </button>
         </nav>
       ) : null}
 

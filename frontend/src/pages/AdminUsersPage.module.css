@@ -23,8 +23,12 @@
   font-weight: var(--font-weight-bold);
 }
 
+.sectionHeader {
+  margin-top: var(--space-2);
+}
+
 .sectionTitle {
-  margin: var(--space-2) 0 0;
+  margin: 0;
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-bold);
 }
@@ -228,5 +232,65 @@
 
   .search {
     width: 100%;
+  }
+
+  /*
+   * Each row becomes a stacked card instead of a table wider than the screen,
+   * so every action is reachable without scrolling sideways. The header row
+   * is replaced by each cell's data-label.
+   */
+  .tableWrap {
+    overflow-x: visible;
+  }
+
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
+    width: 100%;
+  }
+
+  .table {
+    min-width: 0;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table tr {
+    padding: var(--space-3) var(--space-4);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .table tbody tr:first-child {
+    border-top: none;
+  }
+
+  .table td {
+    padding: var(--space-1) 0;
+    border-top: none;
+  }
+
+  /* The label takes a fixed left column, so a value that wraps stays aligned. */
+  .table td[data-label] {
+    position: relative;
+    padding-left: 96px;
+  }
+
+  .table td[data-label]::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 0;
+    font-size: var(--font-size-xs);
+    line-height: 1.5rem;
+    color: var(--color-text-subtle);
+  }
+
+  .actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    padding-top: var(--space-2);
   }
 }
