@@ -78,7 +78,7 @@ Every published payload has `eventId`, `eventType`, `schemaVersion` (1), `occurr
 | foc.credit.commands | credit.reservation.release | Acknowledge or unacknowledge. `reason` is `ACKNOWLEDGED` or `UNACKNOWLEDGED`, and the payload includes `courierId` and `amount` |
 | foc.rating.commands | rating.permission.granted | Deliver: courier rates requester. Acknowledge or unacknowledge: requester rates courier. Fields: `raterId`, `raterRole`, `rateeId`, `rateeRole` |
 | foc.admin.events | OrderUnderReview | Consumed. ESCALATED → UNDER_REVIEW when `payload.caseId` is present |
-| foc.admin.events | ConflictResolved | Consumed. ESCALATED or UNDER_REVIEW → COMPLETED, and photos are deleted |
+| foc.admin.events | ConflictResolved | Consumed. ESCALATED or UNDER_REVIEW → COMPLETED, and photos are deleted. The message also carries `faultParty`; Order does not read it |
 
 `order.status.changed` has no consumer in this service. A duplicate `eventId`, a missing field, or a non-UUID order id is ignored and is not stored. A readable event for an unknown order is stored in `processed_events` and does not change a status. A known order stores the event, copies `caseId`, and changes status only when the current status allows that event. A failure while applying a readable event is retried.
 
