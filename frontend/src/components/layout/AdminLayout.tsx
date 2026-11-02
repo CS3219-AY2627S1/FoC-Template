@@ -11,8 +11,11 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Link, NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthProvider';
+import { Icon } from '../ui/Icon';
+import { useAdminCountsVersion } from '../../lib/adminCounts';
+import { fetchConflicts, isOpen } from '../../lib/conflicts';
 import { fetchSuppliersForAdmin } from '../../lib/suppliers';
 import styles from './AdminLayout.module.css';
 
@@ -25,10 +28,22 @@ const SECTIONS = [
 ];
 
 export function AdminLayout() {
-  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
   const [pendingSuppliers, setPendingSuppliers] = useState<number | null>(null);
+  const [openEscalations, setOpenEscalations] = useState<number | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const location = useLocation();
 
-  // The one count that has a service behind it.
+  // Close the mobile menu whenever the route changes.
+  useEffect(() => setMenuOpen(false), [location.pathname]);
+
+  const countsVersion = useAdminCountsVersion();
+
+  // A count is left off when its service fails, rather than shown as zero,
+  // which would read as "nothing waiting". Read again after an action that
+  // changes one, and on every move between admin pages, which also catches a
+  // case that resolved itself at its deadline.
   useEffect(() => {
     let cancelled = false;
     fetchSuppliersForAdmin('pending')
@@ -38,15 +53,37 @@ export function AdminLayout() {
       .catch(() => {
         if (!cancelled) setPendingSuppliers(null);
       });
+    fetchConflicts()
+      .then((rows) => {
+        if (!cancelled) setOpenEscalations(rows.filter((row) => isOpen(row.status)).length);
+      })
+      .catch(() => {
+        if (!cancelled) setOpenEscalations(null);
+      });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [countsVersion, location.pathname]);
+
+  async function handleSignOut() {
+    await signOut();
+    navigate('/login', { replace: true });
+  }
 
   return (
     <div className={styles.shell}>
       <nav className={styles.rail} aria-label="Admin sections">
         <div className={styles.brand}>
+          <button
+            type="button"
+            className={styles.hamburger}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            aria-controls="admin-menu"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <Icon name={menuOpen ? 'close' : 'menu'} />
+          </button>
           {/* Back to the app, as the logo does in AppShell. */}
           <Link to="/browse" className={styles.logo} aria-label="Back to FoC">
             FoC
@@ -54,34 +91,38 @@ export function AdminLayout() {
           <span className={styles.adminTag}>Admin</span>
         </div>
 
-        <ul className={styles.sections}>
-          {SECTIONS.map((section) => (
-            <li key={section.to}>
-              <NavLink
-                to={section.to}
-                end={section.end}
-                className={({ isActive }) =>
-                  isActive ? `${styles.section} ${styles.sectionActive}` : styles.section
-                }
-              >
-                {section.label}
-                {/*
-                  TODO(admin): only the supplier count has a source. The
-                  escalation count needs the Admin Service, which does not
-                  exist; a badge is left off rather than shown as zero, which
-                  would read as "nothing waiting".
-                */}
-                {section.to === '/admin/suppliers' && pendingSuppliers !== null ? (
-                  <span className={styles.count}>{pendingSuppliers}</span>
-                ) : null}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
+        {/* Always shown on desktop; on a phone, only while the menu is open. */}
+        <div id="admin-menu" className={menuOpen ? `${styles.menu} ${styles.menuOpen}` : styles.menu}>
+          <ul className={styles.sections}>
+            {SECTIONS.map((section) => (
+              <li key={section.to}>
+                <NavLink
+                  to={section.to}
+                  end={section.end}
+                  className={({ isActive }) =>
+                    isActive ? `${styles.section} ${styles.sectionActive}` : styles.section
+                  }
+                >
+                  {section.label}
+                  {section.to === '/admin/suppliers' && pendingSuppliers !== null ? (
+                    <span className={styles.count}>{pendingSuppliers}</span>
+                  ) : null}
+                  {section.to === '/admin/escalations' && openEscalations !== null ? (
+                    <span className={styles.count}>{openEscalations}</span>
+                  ) : null}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
 
-        <div className={styles.signedIn}>
-          <p className={styles.signedInLabel}>Signed in as</p>
-          <p className={styles.signedInEmail}>{user?.email ?? 'unknown'}</p>
+          <div className={styles.signedIn}>
+            <p className={styles.signedInLabel}>Signed in as</p>
+            <p className={styles.signedInEmail}>{user?.email ?? 'unknown'}</p>
+          </div>
+
+          <button type="button" className={styles.signOut} onClick={() => void handleSignOut()}>
+            Log out
+          </button>
         </div>
       </nav>
 

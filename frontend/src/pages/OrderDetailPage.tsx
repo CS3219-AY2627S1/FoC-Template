@@ -12,7 +12,11 @@
  */
 
 import { useCallback, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, Navigate, useParams } from 'react-router-dom';
+import { useAuth } from '../auth/AuthProvider';
+import { ReportUser } from '../components/moderation/ReportUser';
+import { PickupDetail } from '../components/order/PickupDetail';
+import { ReportIssueDialog } from '../components/order/ReportIssueDialog';
 import { StatusStepper } from '../components/order/StatusStepper';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
@@ -22,6 +26,7 @@ import { errorMessage } from '../lib/api';
 import { refreshCreditBalance } from '../lib/credit';
 import { formatWhen } from '../lib/format';
 import { acknowledgeOrder, cancelOrder, type Order } from '../lib/orders';
+import { expectNewRating } from '../lib/rating';
 import { useLiveOrder } from '../lib/useLiveOrder';
 import { formatDeadline, useCountdown } from '../lib/useCountdown';
 import styles from './OrderDetailPage.module.css';
@@ -34,6 +39,7 @@ export function OrderDetailPage() {
   const { orderId = '' } = useParams();
   // Re-read every few seconds, so the courier's progress shows up here.
   const { order, loadError, setOrder } = useLiveOrder(orderId);
+  const { user } = useAuth();
 
   if (loadError) {
     return (
@@ -52,6 +58,12 @@ export function OrderDetailPage() {
     );
   }
 
+  // This is the requester's page. The courier on the order gets their own,
+  // whichever link brought them here.
+  if (user !== null && order.courierId?.toLowerCase() === user.userId.toLowerCase()) {
+    return <Navigate to={`/deliveries/${order.id}`} replace />;
+  }
+
   return <OrderDetail order={order} onChange={setOrder} />;
 }
 
@@ -59,12 +71,23 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [reportingIssue, setReportingIssue] = useState(false);
 
   const secondsLeft = useCountdown(order.acceptanceExpiry.getTime());
   const showExpiry = order.status === 'Created' && secondsLeft > 0;
   const canCancel = order.status === 'Created';
   // Order F2.6: the requester acknowledges from Collected or Delivered.
   const canAcknowledge = order.status === 'Collected' || order.status === 'Delivered';
+  // Escalating has the same window as acknowledging: Order refuses it once
+  // the acknowledgement deadline has passed.
+  const canEscalate =
+    canAcknowledge &&
+    (order.acknowledgementDeadline === null || order.acknowledgementDeadline.getTime() > Date.now());
+  const withAdmins = order.status === 'Escalated' || order.status === 'Under review';
+  const adminNote =
+    order.status === 'Escalated'
+      ? 'A problem was reported. An admin will look at it soon.'
+      : 'An admin is reviewing the problem with this order.';
 
   const postedTime = clockTime(order.requestedAt);
 
@@ -85,6 +108,12 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
     [order.id, onChange],
   );
 
+  async function acknowledge() {
+    await run(acknowledgeOrder);
+    // Acknowledging lets the requester rate the courier (Order F2.6.3).
+    expectNewRating();
+  }
+
   async function confirmCancel() {
     await run(cancelOrder);
     setConfirmingCancel(false);
@@ -97,9 +126,16 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
       Cancel request
     </Button>
   ) : canAcknowledge ? (
-    <Button fullWidth loading={busy} onClick={() => run(acknowledgeOrder)}>
-      Acknowledge receipt
-    </Button>
+    <>
+      <Button fullWidth loading={busy} onClick={acknowledge}>
+        Acknowledge receipt
+      </Button>
+      {canEscalate ? (
+        <Button variant="ghost" fullWidth disabled={busy} onClick={() => setReportingIssue(true)}>
+          Report a problem
+        </Button>
+      ) : null}
+    </>
   ) : null;
 
   return (
@@ -143,9 +179,7 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
             <div className={styles.detailBlock}>
               <h2 className={styles.detailLabel}>Pickup</h2>
               <p className={styles.detailValue}>{order.pickup.name}</p>
-              {/* TODO(order-service): the supplier's location description is
-                  not on the order; it would need a Supplier lookup by id.
-              {order.pickupDetail ? <p className={styles.detailNote}>{order.pickupDetail}</p> : null} */}
+              <PickupDetail supplierId={order.pickup.id} className={styles.detailNote} />
             </div>
 
             <div className={styles.detailBlock}>
@@ -197,6 +231,9 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
             </div>
           </section>
           */}
+
+          {/* In the main column, not the status panel, which mobile hides. */}
+          {order.courierId !== null ? <ReportUser userId={order.courierId} role="courier" /> : null}
         </div>
 
         <aside className={styles.statusPanel}>
@@ -226,6 +263,8 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
                   : `Acknowledging releases the ${order.credits} credits to the courier.`}
               </p>
             </div>
+          ) : withAdmins ? (
+            <p className={styles.actionNote}>{adminNote}</p>
           ) : (
             <p className={styles.actionNote}>
               No action is available in the {order.status} state.
@@ -234,7 +273,24 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
         </aside>
       </div>
 
-      {actions ? <div className={styles.mobileActions}>{actions}</div> : null}
+      {actions ? (
+        <div className={styles.mobileActions}>{actions}</div>
+      ) : withAdmins ? (
+        // The status panel is hidden on mobile, so the note goes in the bar.
+        <div className={styles.mobileActions}>
+          <p className={styles.actionNote}>{adminNote}</p>
+        </div>
+      ) : null}
+
+      <ReportIssueDialog
+        open={reportingIssue}
+        order={order}
+        onClose={() => setReportingIssue(false)}
+        onEscalated={(escalated) => {
+          setReportingIssue(false);
+          onChange(escalated);
+        }}
+      />
 
       <ConfirmDialog
         open={confirmingCancel}

@@ -7,6 +7,7 @@ public final class KafkaTopics {
     public static final String ADMIN_COMMANDS = "foc.admin.commands";
     public static final String ORDER_STATUS = "foc.order.status";
     public static final String ADMIN_EVENTS = "foc.admin.events";
+    public static final String USER_STATUS = "foc.user.status";
 
     private KafkaTopics() {
     }

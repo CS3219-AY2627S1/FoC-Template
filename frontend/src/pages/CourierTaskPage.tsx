@@ -16,16 +16,19 @@
  */
 
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { useAuth } from '../auth/AuthProvider';
+import { ReportUser } from '../components/moderation/ReportUser';
+import { PickupDetail } from '../components/order/PickupDetail';
 import { StatusStepper } from '../components/order/StatusStepper';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/Dialog';
-import { Icon } from '../components/ui/Icon';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { errorMessage } from '../lib/api';
 import { refreshCreditBalance } from '../lib/credit';
 import { formatWhen } from '../lib/format';
+import { expectNewRating } from '../lib/rating';
 import {
   PHOTO_ACCEPT,
   PHOTO_MAX_BYTES,
@@ -114,6 +117,7 @@ export function CourierTaskPage() {
   // Re-read every few seconds: the requester may acknowledge straight from
   // Collected (Order F2.6.1), and this page must not keep offering delivery.
   const { order: task, loadError, setOrder: setTask } = useLiveOrder(orderId);
+  const { user } = useAuth();
 
   if (loadError) {
     return (
@@ -130,6 +134,11 @@ export function CourierTaskPage() {
         <p className={styles.actionNote}>Loading the task…</p>
       </div>
     );
+  }
+
+  // A requester opening their own order here gets the requester's page.
+  if (user !== null && task.requesterId.toLowerCase() === user.userId.toLowerCase()) {
+    return <Navigate to={`/orders/${task.id}`} replace />;
   }
 
   return <CourierTask task={task} onChange={setTask} />;
@@ -194,7 +203,13 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
     setUploading(true);
     setFailure(null);
     try {
-      onChange(accepted ? await collectOrder(task.id, photo) : await deliverOrder(task.id, photo));
+      if (accepted) {
+        onChange(await collectOrder(task.id, photo));
+      } else {
+        onChange(await deliverOrder(task.id, photo));
+        // Delivery lets the courier rate the requester (Order F2.4.4).
+        expectNewRating();
+      }
     } catch (error) {
       setFailure(errorMessage(error, 'Could not upload the photo. Try again.'));
     } finally {
@@ -276,28 +291,34 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
               <div className={styles.detailBlock}>
                 <h2 className={styles.detailLabel}>Pickup</h2>
                 <p className={styles.detailValue}>{task.pickup.name}</p>
-                {/* TODO(order-service): the supplier's location description and
-                    a walking time are not on the order.
-                <p className={styles.detailNote}>{task.pickupDetail} · {task.pickupWalkMinutes} min walk</p> */}
+                <PickupDetail supplierId={task.pickup.id} className={styles.detailNote} />
               </div>
 
-              <div className={styles.detailBlock}>
-                <h2 className={styles.detailLabel}>Requester</h2>
-                <p className={styles.detailValue}>
-                  {/* TODO(order-service): the requester's name - orders carry ids only.
-                  {task.requesterName} &middot;{' '} */}
-                  {task.requesterRating !== null ? (
-                    <span className={styles.rating}>
-                      <Icon name="star" size={13} filled />
-                      {task.requesterRating.toFixed(1)}
-                    </span>
-                  ) : (
-                    'New requester'
-                  )}
-                </p>
-                {/* TODO(order-service): no endpoint counts a user's errands.
-                <p className={styles.detailNote}>{task.requesterOrderCount} errands requested</p> */}
-              </div>
+              {task.requesterTelegramHandle !== null ? (
+                <div className={styles.detailBlock}>
+                  <h2 className={styles.detailLabel}>Requester</h2>
+                  <p className={styles.detailValue}>
+                    {/* TODO(order-service): the requester's name - orders carry ids only.
+                    {task.requesterName} &middot;{' '} */}
+                    @{task.requesterTelegramHandle}
+                    {/*
+                      TODO(order-service): the requester's rating, hidden for now.
+                      Order Service has no Rating client yet: its stub stores 5.0
+                      on every order, so the figure would be wrong. Restore once
+                      Order reads GET /api/v1/rating/{userId}.
+                    {task.requesterRating !== null ? (
+                      <span className={styles.rating}>
+                        <Icon name="star" size={13} filled />
+                        {task.requesterRating.toFixed(1)}
+                      </span>
+                    ) : (
+                      'New requester'
+                    )} */}
+                  </p>
+                  {/* TODO(order-service): no endpoint counts a user's errands.
+                  <p className={styles.detailNote}>{task.requesterOrderCount} errands requested</p> */}
+                </div>
+              ) : null}
 
               <div className={styles.detailBlockWide}>
                 <h2 className={styles.detailLabel}>Collect</h2>
@@ -338,6 +359,9 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
               <ContactButton task={task} variant="secondary" />
             </section>
           ) : null}
+
+          {/* In the main column, not the status panel, which mobile hides. */}
+          <ReportUser userId={task.requesterId} role="requester" />
         </div>
 
         <aside className={styles.statusPanel}>
@@ -357,9 +381,8 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
             {releaseButton}
             {delivered ? (
               <>
-                {/* TODO(rating): the courier may rate the requester from
-                    Delivered, but the Rating Service does not exist yet.
-                <Button fullWidth>Rate {requesterName}</Button> */}
+                {/* Rating the requester needs no button: the rating prompt
+                    opens by itself once Order grants it after delivery. */}
                 <ContactButton task={task} variant="secondary" />
               </>
             ) : null}

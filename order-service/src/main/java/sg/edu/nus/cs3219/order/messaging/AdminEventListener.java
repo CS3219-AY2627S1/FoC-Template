@@ -32,10 +32,11 @@ public class AdminEventListener {
             String eventType = adminEvent(text(node, "eventType"));
             String orderId = firstText(body, node, "orderId");
             String caseId = firstText(body, node, "caseId");
+            String faultParty = firstText(body, node, "faultParty");
             if (orderId == null) {
                 return;
             }
-            commands.applyAdminEvent(eventId, eventType, UUID.fromString(orderId), caseId);
+            commands.applyAdminEvent(eventId, eventType, UUID.fromString(orderId), caseId, faultParty);
         } catch (IllegalArgumentException exception) {
             log.warn("Admin event was ignored because the order id was not a UUID");
         } catch (RuntimeException exception) {

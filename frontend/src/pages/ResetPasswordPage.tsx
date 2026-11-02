@@ -23,11 +23,9 @@ export function ResetPasswordPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // The link in the email carries the token (User F2.1.1).
+  // The link in the email carries the token only (User F2.1.1), never the
+  // address, so the page does not name the account.
   const token = searchParams.get('token');
-  // TODO(user-service): the address should come from validating the token, not
-  // from the query string, so it cannot be spoofed in the URL.
-  const email = searchParams.get('email');
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -62,7 +60,6 @@ export function ResetPasswordPage() {
     <form className={styles.form} onSubmit={handleSubmit} noValidate>
       <header className={styles.header}>
         <h1 className={styles.title}>Set a new password</h1>
-        {email ? <p className={styles.subtitle}>For {email}</p> : null}
       </header>
 
       {token === null ? (

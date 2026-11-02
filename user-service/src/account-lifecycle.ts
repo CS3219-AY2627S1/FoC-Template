@@ -67,7 +67,10 @@ export async function deleteExpiredAccounts(options: { now?: Date; limit?: numbe
       await transaction.userAuditLog.create({ data: {
         targetUserId: user.id, action: "ACCOUNT_DELETED", reason: "Six-month deletion period ended",
       } });
+      await transaction.userDeletedOutbox.create({ data: { userId: user.id, createdAt: now } });
       // User-owned sessions, OTPs, challenges and outbox rows cascade in PostgreSQL.
+      // The independent deletion outbox survives. If deletion fails, this whole
+      // transaction rolls back, including its notification and audit entry.
       await transaction.user.delete({ where: { id: user.id } });
       deleted += 1;
     }

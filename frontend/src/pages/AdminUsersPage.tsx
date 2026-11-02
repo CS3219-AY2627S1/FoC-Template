@@ -12,10 +12,14 @@
  * Reads and acts through the Admin Service (GET /api/v1/admin/users and the
  * promote, suspend and reinstate endpoints). Adjusting credits is still inert:
  * no contract has an endpoint for it.
+ *
+ * The open reports and appeals queues sit above the table
+ * (components/admin/ModerationQueues).
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
+import { ModerationQueues } from '../components/admin/ModerationQueues';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog, Dialog } from '../components/ui/Dialog';
@@ -24,8 +28,8 @@ import { Icon } from '../components/ui/Icon';
 import { TextField } from '../components/ui/TextField';
 import { TextAreaField } from '../components/ui/Inputs';
 import { errorMessage } from '../lib/api';
+import { useAdminUserSearch } from '../lib/useAdminUserSearch';
 import {
-  fetchAdminUsers,
   promoteUser,
   reinstateUser,
   suspendUser,
@@ -39,18 +43,11 @@ type Pending =
   | { kind: 'promote'; user: AdminUser }
   | null;
 
-/** Wait for typing to pause before searching, so each key is not a request. */
-const SEARCH_DELAY_MS = 300;
-
 export function AdminUsersPage() {
   const { user: me } = useAuth();
 
   const [query, setQuery] = useState('');
-  const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [users, setUsers] = useState<AdminUser[] | null>(null);
-  const [hasMore, setHasMore] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -61,34 +58,13 @@ export function AdminUsersPage() {
   const [reason, setReason] = useState('');
 
   // Admin F1: search runs on the service, so it covers every user, not just
-  // the page on screen.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(query);
-      setPage(1);
-    }, SEARCH_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [query]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoadError(null);
-    fetchAdminUsers(search, page)
-      .then((result) => {
-        if (cancelled) return;
-        setUsers(result.items);
-        setHasMore(result.hasMore);
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setUsers([]);
-        setHasMore(false);
-        setLoadError(errorMessage(error, 'Could not reach the Admin Service. Start it and reload.'));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [search, page, reloadKey]);
+  // the page on screen. Rows on screen narrow as you type meanwhile.
+  const { users, hasMore, loadError, search } = useAdminUserSearch(
+    query,
+    page,
+    reloadKey,
+    'Could not reach the Admin Service. Start it and reload.',
+  );
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
 
@@ -126,7 +102,7 @@ export function AdminUsersPage() {
     // TODO(credit): there is no endpoint. Credit NFR2.1 refers to
     // "Admin-initiated credit adjustments (Admin F5)", but the Admin
     // requirements stop at F3 and Admin NFR3.1 forbids Admin from calling
-    // Credit directly. Recorded in docs/open-items.md.
+    // Credit directly.
     closeAdjust();
   }
 
@@ -141,6 +117,14 @@ export function AdminUsersPage() {
     <div className={styles.page}>
       <header className={styles.header}>
         <h1 className={styles.title}>Users</h1>
+      </header>
+
+      {/* Shares reloadKey with the table: an action in either changes both. */}
+      <ModerationQueues myUserId={me?.userId ?? null} reloadKey={reloadKey} onChanged={reload} />
+
+      {/* The search filters this table only, so it sits with it, below the queues. */}
+      <div className={`${styles.header} ${styles.sectionHeader}`}>
+        <h2 className={styles.sectionTitle}>All users</h2>
 
         <label className={styles.search}>
           <Icon name="search" size={16} />
@@ -149,7 +133,10 @@ export function AdminUsersPage() {
             type="search"
             placeholder="Search by name or email"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setPage(1);
+            }}
           />
         </label>
 
@@ -157,7 +144,7 @@ export function AdminUsersPage() {
         <p className={styles.totals}>
           {users === null ? 'Loading' : `${users.length} on this page`}
         </p>
-      </header>
+      </div>
 
       {loadError ? <Alert variant="danger">{loadError}</Alert> : null}
       {actionError ? <Alert variant="danger">{actionError}</Alert> : null}
@@ -193,10 +180,12 @@ export function AdminUsersPage() {
                       </span>
                       <span className={styles.email}>{user.email}</span>
                     </td>
-                    <td>
+                    <td data-label="Status">
                       <span className={styles[user.status.toLowerCase()]}>{user.status}</span>
                     </td>
-                    <td className={styles.credits}>{user.credits ?? '—'}</td>
+                    <td className={styles.credits} data-label="Credits">
+                      {user.credits ?? '—'}
+                    </td>
                     <td>
                       <div className={styles.actions}>
                         <Button variant="secondary" onClick={() => setAdjusting(user)}>
@@ -255,11 +244,6 @@ export function AdminUsersPage() {
         </div>
       ) : null}
 
-      <p className={styles.note}>
-        Adjusting credits is inert: no contract has an endpoint for it. There is also no way to
-        demote an admin, because the contract has no demote endpoint.
-      </p>
-
       {/* NFR9.1.1: suspension and promotion both ask first. */}
       <ConfirmDialog
         open={pending !== null}
@@ -274,10 +258,14 @@ export function AdminUsersPage() {
           pending === null ? null : pending.kind === 'suspend' ? (
             <>
               {pending.user.name} is blocked from logging in and from every action, within a
-              minute (Admin F1.2.1). Orders already in progress are not cancelled.
+              minute (Admin F1.2.1). Orders already in progress are not cancelled. Every open
+              report about them is closed.
             </>
           ) : pending.kind === 'reinstate' ? (
-            <>{pending.user.name} can log in and act again, within a minute.</>
+            <>
+              {pending.user.name} can log in and act again, within a minute. Their open appeal,
+              if any, is closed.
+            </>
           ) : (
             <>
               {pending.user.name} gains the whole admin area, including suspending other people

@@ -7,10 +7,12 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthProvider';
 import { Icon } from '../ui/Icon';
+import { RatingPrompt } from '../rating/RatingPrompt';
 import { useCreditBalance } from '../../lib/credit';
+import { initials } from '../../lib/format';
 import { orderReference } from '../../lib/orders';
 import styles from './AppShell.module.css';
 
@@ -37,16 +39,6 @@ const MENU_LINKS = [
 ];
 
 /**
- * TODO(user-service): the contract's GET /api/v1/user/me returns a name, but
- * sign-up never collects one, so initials fall back to the email address.
- * Recorded in docs/open-items.md.
- */
-function initialsFor(email: string | undefined): string {
-  if (!email) return '?';
-  return email.slice(0, 2).toUpperCase();
-}
-
-/**
  * Routes whose mockups replace the app nav with a back-and-title bar on
  * mobile. Same idea as AuthLayout's per-route lists: the mockups are not
  * uniform, so the exceptions are named in one place.
@@ -56,10 +48,16 @@ const OWN_MOBILE_HEADER_ROUTES = ['/requests/new'];
 export function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
-  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
   const isAdmin = user?.isAdmin === true;
   const tabs = isAdmin ? [...MODE_TABS, ADMIN_TAB] : MODE_TABS;
   const menuLinks = isAdmin ? [...MENU_LINKS, ADMIN_TAB] : MENU_LINKS;
+
+  async function handleSignOut() {
+    await signOut();
+    navigate('/login', { replace: true });
+  }
 
   // Close the mobile menu whenever the route changes.
   useEffect(() => setMenuOpen(false), [location.pathname]);
@@ -100,9 +98,8 @@ export function AppShell() {
 
         {/*
           On an order page the mockup replaces the mode tabs with a trail.
-          TODO(ui): it reads "My requests / Request #1042" even when the order
-          is one you are delivering, where it should lead back to My
-          deliveries. Nothing identifies which side you are on yet.
+          /orders is always the requester's side and /deliveries the courier's
+          (each page redirects the other party), so the URL decides the trail.
         */}
         {requestReference !== undefined ? (
           <nav className={styles.trail} aria-label="Breadcrumb">
@@ -152,12 +149,16 @@ export function AppShell() {
           </button>
           <Link to="/profile" className={styles.profile} aria-label="Profile">
             <span className={styles.avatar} aria-hidden="true">
-              {initialsFor(user?.email)}
+              {initials(user?.name)}
             </span>
             <span className={styles.chevron} aria-hidden="true">
               <Icon name="chevronDown" size={16} />
             </span>
           </Link>
+          {/* Below 768px this moves into the hamburger menu, to keep the bar short. */}
+          <button type="button" className={styles.signOut} onClick={() => void handleSignOut()}>
+            Log out
+          </button>
         </div>
       </header>
 
@@ -174,12 +175,19 @@ export function AppShell() {
               {link.label}
             </NavLink>
           ))}
+          <button type="button" className={styles.menuLink} onClick={() => void handleSignOut()}>
+            Log out
+          </button>
         </nav>
       ) : null}
 
       <main className={styles.main}>
         <Outlet />
       </main>
+
+      {/* UI FR14.1.1: opens by itself when a rating is owed, on any page. */}
+      <RatingPrompt />
+
     </div>
   );
 }

@@ -17,6 +17,7 @@ import { Link } from 'react-router-dom';
 import { Checkbox } from '../components/ui/Checkbox';
 import { Chip } from '../components/ui/Chip';
 import { Icon } from '../components/ui/Icon';
+import { byMatch, matchRank } from '../lib/search';
 import { fetchSuppliers, formatHours, isOpenAt, type Supplier } from '../lib/suppliers';
 import styles from './SuppliersPage.module.css';
 
@@ -112,7 +113,7 @@ export function SuppliersPage() {
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
 
-    return supplierPage
+    const sorted = supplierPage
       .filter((supplier) => {
         if (needle.length > 0) {
           const haystack = [supplier.name, supplier.building, supplier.locationDescription]
@@ -129,6 +130,12 @@ export function SuppliersPage() {
         if (sort === 'opensFirst') return a.startingTime.localeCompare(b.startingTime);
         return a.name.localeCompare(b.name);
       });
+
+    // While searching, closer name matches come first ("Sta" puts Starbucks
+    // above Pasta Station); the chosen sort orders equally close ones.
+    return byMatch(sorted, needle, (supplier, search) =>
+      matchRank(search, supplier.name, [supplier.building, supplier.locationDescription]),
+    );
   }, [supplierPage, query, openOnly, sort]);
 
   function toggleCategory(name: string) {

@@ -1,6 +1,6 @@
 # Sequence diagrams
 
-Each diagram is the interaction as the service implements it. The state diagram is [order-state.png](order-state.png). Table shapes are in [schema.md](schema.md). Routes, headers, and event fields are in [interfaces.md](interfaces.md).
+Each diagram is the interaction as the service implements it. The state diagram is [order-state.png](order-state.png). Table shapes are in [schema.md](schema.md). Routes, headers, and event fields are in [interfaces.md](interfaces.md). Planned dropoff catalogue (Order-owned delivery points) is in [delivery-points.md](delivery-points.md).
 
 Status changes commit the order row, `order_log`, the requester alert, and the Kafka outbox together. The broker publish happens afterward, on the sweeper. Credit reserve, credit release on requester cancel, supplier lookup, and requester escalation are synchronous and finish before that commit.
 
@@ -38,7 +38,7 @@ Only a requester cancel of a CREATED order returns credits, and that HTTP releas
 
 ![Requester escalation](seq-escalate.png)
 
-The admin call is synchronous and is still a local stub. It must succeed before the status becomes ESCALATED. A missed delivery deadline is different: the sweeper escalates without this HTTP call and publishes `admin.escalation.opened`.
+The admin call is synchronous HTTP to `POST /api/v1/admin/conflicts`. It must succeed before the status becomes ESCALATED. A missed delivery deadline uses the same Admin call from the sweeper, then commits ESCALATED.
 
 ## Deadlines
 
@@ -50,7 +50,7 @@ Each due order is handled on its own. One failure is logged and the sweep contin
 
 ![Admin events](seq-admin.png)
 
-`processed_events` makes a repeated `eventId` a no-op. An unknown order id is recorded and does not change a status. Review can start only from ESCALATED. Resolution from ESCALATED or UNDER_REVIEW completes the order and deletes its photos. `caseId` is stored even when the current status does not allow the transition.
+`processed_events` makes a repeated `eventId` a no-op. An unknown order id is recorded and does not change a status. Review can start only from ESCALATED. Resolution from ESCALATED or UNDER_REVIEW requires a known `faultParty`; then completes the order (and puts `faultParty` on `order.status.changed`), deletes photos, and fans out credit/rating: `courier` → return reservation + requester may rate courier; `requester` / `no-fault` → release to courier (same as acknowledge) + both may rate. `caseId` is stored even when the current status does not allow the transition.
 
 ## Reads
 

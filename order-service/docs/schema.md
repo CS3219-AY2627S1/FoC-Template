@@ -15,8 +15,8 @@ One row per errand.
 | requester_telegram_handle | VARCHAR(64) | Optional header value |
 | courier_id | VARCHAR(320) | Set on accept, cleared when the order returns to CREATED |
 | courier_telegram_handle | VARCHAR(64) | Same lifecycle as `courier_id` |
-| requester_rating | DOUBLE PRECISION | Snapshot at create. The rating client is a stub and returns 5.0 |
-| courier_rating | DOUBLE PRECISION | Snapshot at accept |
+| requester_rating | DOUBLE PRECISION | Snapshot at create from Rating Service (`GET /api/v1/rating/{userId}`). Null when the user has no ratings yet |
+| courier_rating | DOUBLE PRECISION | Snapshot at accept from Rating Service. Null when the courier has no ratings yet |
 | item_description | VARCHAR(500) | Required |
 | amount | INTEGER | Reward in credits. Check constraint `amount >= 1` |
 | status | VARCHAR(32) | `OrderStatus` name |
@@ -29,9 +29,11 @@ One row per errand.
 | pickup_location_id | VARCHAR(64) | Supplier id, stored as text |
 | pickup_name | VARCHAR(200) | Name returned by Supplier Service |
 | pickup_lat, pickup_lng | DOUBLE PRECISION | Used for proximity ranking |
-| dropoff_location_id | VARCHAR(64) | Supplier id |
-| dropoff_name | VARCHAR(200) | |
-| dropoff_lat, dropoff_lng | DOUBLE PRECISION | |
+| dropoff_location_id | VARCHAR(64) | Order `delivery_point.id` as text |
+| dropoff_name | VARCHAR(200) | Snapshot |
+| dropoff_building | VARCHAR(200) | Snapshot |
+| dropoff_description | VARCHAR(500) | Snapshot |
+| dropoff_lat, dropoff_lng | DOUBLE PRECISION | Snapshot |
 | collection_photo_ref | VARCHAR(500) | Storage key, not a public URL |
 | delivery_photo_ref | VARCHAR(500) | Storage key |
 | dispute_photo_ref | VARCHAR(500) | Optional escalation photo |
@@ -46,6 +48,8 @@ Indexes:
 - `orders_requester_id_request_time_idx` on `(requester_id, request_time DESC)`
 
 `V4` renamed `requester_email` and `courier_email` to `requester_id` and `courier_id`. The column type stayed `VARCHAR`.
+
+`V6` adds `delivery_point`, `user_delivery_point`, and order dropoff `building` / `description` snapshot columns. `V7` adds optional `user_delivery_point.nickname`. `UserDeleted` on `foc.user.status` deletes that user’s associations and soft-inactivates orphan forks (see [delivery-points.md](delivery-points.md)).
 
 ## order_log
 

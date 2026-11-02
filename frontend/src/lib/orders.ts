@@ -315,6 +315,26 @@ export async function acknowledgeOrder(orderId: string): Promise<Order> {
   );
 }
 
+/** Order's limit on the dispute description (EscalateRequest). */
+export const DISPUTE_TEXT_MAX_LENGTH = 2000;
+
+/**
+ * The requester escalates from Collected or Delivered, before the
+ * acknowledgement deadline. Order opens an Admin case with the description
+ * and the order's photos, plus this one if given, and the order becomes
+ * Escalated. 409 once it is too late or the status no longer allows it.
+ */
+export async function escalateOrder(orderId: string, disputeText: string, photo: File | null): Promise<Order> {
+  const path = `/orders/${encodeURIComponent(orderId)}/escalate`;
+  if (photo === null) {
+    return toOrder(await api.post<OrderResponse>(path, { disputeText }));
+  }
+  const form = new FormData();
+  form.append('disputeText', disputeText);
+  form.append('photo', photo);
+  return toOrder(await api.post<OrderResponse>(path, form));
+}
+
 /**
  * UI FR9.1.1 partitions the order lists into Active and History. Order F2's
  * lifecycle decides which side a status falls on: anything still capable of

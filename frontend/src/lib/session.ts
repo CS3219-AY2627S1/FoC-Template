@@ -16,7 +16,7 @@
  * The alternative is an HttpOnly cookie set by the User Service. It cannot be
  * read by script, and the browser attaches it to ordinary page navigations,
  * which is what nginx would need in order to refuse to serve /admin at all to a
- * non-admin (see "rung four" in docs/open-items.md, and Admin F2.2.1).
+ * non-admin (Admin F2.2.1).
  *
  * If the team takes the cookie route, the changes are: this file becomes a
  * no-op, `src/lib/api.ts` stops setting the Authorization header, and the User

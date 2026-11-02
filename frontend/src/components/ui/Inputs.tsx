@@ -97,7 +97,7 @@ interface DateTimeFieldProps extends SharedProps {
  * shows the browser's own format instead, which cannot be restyled. The
  * trade is deliberate: on a phone this opens the platform picker, which is far
  * better than anything hand-rolled, and it is keyboard and screen-reader
- * correct for free. Recorded in docs/open-items.md.
+ * correct for free.
  */
 export function DateTimeField({ label, hint, error, success, value, min, onChange }: DateTimeFieldProps) {
   const id = useId();

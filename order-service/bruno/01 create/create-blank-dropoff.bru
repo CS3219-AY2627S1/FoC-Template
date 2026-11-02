@@ -23,14 +23,17 @@ body:json {
     "expiryTime": "{{acceptanceExpiry}}",
     "deliveryTime": "{{deliveryDeadline}}",
     "fromLocation": "2",
-    "toLocation": ""
+    "dropoffName": "",
+    "dropoffBuilding": "Building",
+    "dropoffDescription": "Lobby",
+    "dropoffLat": 1.294197,
+    "dropoffLng": 103.784419
   }
 }
 
 tests {
   test("status is 400", function() {
     expect(res.getStatus()).to.equal(400);
-    expect(res.getBody().error).to.include("toLocation");
+    expect(res.getBody().error).to.include("dropoffName");
   });
 }
-

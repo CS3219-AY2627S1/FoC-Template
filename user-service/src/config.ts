@@ -22,7 +22,7 @@ if (nodeEnv === "production" && otpSecret === "local-development-secret-change-m
 
 // Kafka (foc.user.status producer). The Helm chart injects these when the
 // service's `kafka.user` is set; locally/in tests they are usually absent, so
-// `enabled` is false and verification events remain in the database outbox.
+// `enabled` is false and verification/deletion events remain in their outboxes.
 const kafkaBrokers = (process.env.KAFKA_BROKERS ?? "")
   .split(",")
   .map((broker) => broker.trim())
@@ -47,6 +47,10 @@ export const config = {
   sessionTtlHours: positiveInteger("SESSION_TTL_HOURS", 24),
   loginMaxAttempts: positiveInteger("LOGIN_MAX_ATTEMPTS", 5),
   passwordScryptCost: positiveInteger("PASSWORD_SCRYPT_COST", 16384),
+  admin: {
+    baseUrl: process.env.ADMIN_SERVICE_BASE_URL ?? "",
+    timeoutMs: Math.min(30_000, positiveInteger("ADMIN_REQUEST_TIMEOUT_MS", 5000)),
+  },
   telegram: {
     botToken: telegramBotToken,
     botUsername: telegramBotUsername,

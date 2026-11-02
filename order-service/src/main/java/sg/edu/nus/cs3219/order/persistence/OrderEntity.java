@@ -83,6 +83,12 @@ public class OrderEntity {
     @Column(name = "dropoff_name", nullable = false)
     private String dropoffName;
 
+    @Column(name = "dropoff_building", nullable = false)
+    private String dropoffBuilding;
+
+    @Column(name = "dropoff_description", nullable = false)
+    private String dropoffDescription;
+
     @Column(name = "dropoff_lat", nullable = false)
     private double dropoffLat;
 
@@ -298,6 +304,22 @@ public class OrderEntity {
 
     public void setDropoffName(String dropoffName) {
         this.dropoffName = dropoffName;
+    }
+
+    public String getDropoffBuilding() {
+        return dropoffBuilding;
+    }
+
+    public void setDropoffBuilding(String dropoffBuilding) {
+        this.dropoffBuilding = dropoffBuilding;
+    }
+
+    public String getDropoffDescription() {
+        return dropoffDescription;
+    }
+
+    public void setDropoffDescription(String dropoffDescription) {
+        this.dropoffDescription = dropoffDescription;
     }
 
     public double getDropoffLat() {

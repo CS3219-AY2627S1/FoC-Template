@@ -19,16 +19,18 @@ import java.util.List;
 import java.util.UUID;
 
 @Component
-public class HttpClients implements CreditClient, SupplierClient, UserClient, AdminClient {
+public class HttpClients implements CreditClient, SupplierClient, UserClient, AdminClient, RatingClient {
 
     private static final String NOT_APPROVED = "That location is not an approved supplier";
     private static final String USER_FAILED = "User service could not complete the request";
     private static final String ADMIN_FAILED = "Admin service could not complete the request";
+    private static final String RATING_FAILED = "Rating service could not complete the request";
 
     private final RestClient credits;
     private final RestClient suppliers;
     private final RestClient users;
     private final RestClient admins;
+    private final RestClient ratings;
 
     public HttpClients(OrderProperties properties) {
         Duration timeout = properties.getClients().getTimeout();
@@ -36,6 +38,7 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
         this.suppliers = client(properties.getClients().getSupplierBaseUrl(), timeout);
         this.users = client(properties.getClients().getUserBaseUrl(), timeout);
         this.admins = client(properties.getClients().getAdminBaseUrl(), timeout);
+        this.ratings = client(properties.getClients().getRatingBaseUrl(), timeout);
     }
 
     @Override
@@ -104,6 +107,29 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
             throw ApiException.unavailable(ADMIN_FAILED);
         } catch (ResourceAccessException exception) {
             throw ApiException.unavailable("Admin service did not respond in time");
+        }
+    }
+
+    @Override
+    public Double ratingFor(String userId, UserAccount caller) {
+        try {
+            RatingResponse response = ratings.get()
+                    .uri("/api/v1/rating/{userId}", userId)
+                    .headers(headers -> identify(headers, caller))
+                    .retrieve()
+                    .body(RatingResponse.class);
+            if (response == null) {
+                throw ApiException.unavailable(RATING_FAILED);
+            }
+            return response.average();
+        } catch (RestClientResponseException exception) {
+            int status = exception.getStatusCode().value();
+            if (status == 400) {
+                throw ApiException.badRequest("A valid user id is required");
+            }
+            throw ApiException.unavailable(RATING_FAILED);
+        } catch (ResourceAccessException exception) {
+            throw ApiException.unavailable("Rating service did not respond in time");
         }
     }
 
@@ -194,5 +220,8 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
     }
 
     private record TelegramResponse(String userId, String telegramHandle) {
+    }
+
+    private record RatingResponse(String userId, Double average, Integer count) {
     }
 }

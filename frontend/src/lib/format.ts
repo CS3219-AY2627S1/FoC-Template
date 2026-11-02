@@ -32,6 +32,14 @@ export function formatElapsed(since: Date, now: Date = new Date()): string {
   return `${Math.floor(hours / 24)} d ago`;
 }
 
+/** First letters of the first and last words of a name, e.g. "BL" for Bob Lim. */
+export function initials(name: string | undefined): string {
+  const words = name?.trim().split(/\s+/).filter(Boolean) ?? [];
+  if (words.length === 0) return '?';
+  const last = words.length > 1 ? words[words.length - 1][0] : '';
+  return (words[0][0] + last).toUpperCase();
+}
+
 export function formatRating(rating: number): string {
   return rating.toFixed(1);
 }

@@ -48,6 +48,8 @@
 
 .body {
   overflow-y: auto;
+  /* A narrow scroll area inside the panel; the full-width bar crowds the fields. */
+  scrollbar-width: thin;
 }
 
 .consequence {

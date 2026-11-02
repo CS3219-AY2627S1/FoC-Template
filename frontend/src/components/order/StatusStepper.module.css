@@ -12,6 +12,23 @@
   list-style: none;
 }
 
+/* The step's own colour, used only while it is the current step. */
+.toneCreated {
+  --step-colour: var(--color-accent);
+}
+
+.toneAccepted {
+  --step-colour: var(--color-warning);
+}
+
+.toneCollected {
+  --step-colour: var(--color-info);
+}
+
+.toneDelivered {
+  --step-colour: var(--color-success);
+}
+
 .step {
   position: relative;
   display: grid;
@@ -67,8 +84,8 @@
 }
 
 .current .marker {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
+  background: var(--step-colour);
+  border-color: var(--step-colour);
 }
 
 .detail {
@@ -84,7 +101,7 @@
 
 /*
  * Mobile: the same five steps become a tab strip across the top, with the
- * current one underlined in the accent colour.
+ * current one underlined in its own colour.
  */
 @media (max-width: 767px) {
   /*
@@ -106,14 +123,14 @@
     text-align: center;
   }
 
-  /* Steps already passed keep a light segment; the current one takes accent. */
+  /* Steps already passed keep a light segment; the current one its colour. */
   .reached {
     border-bottom-color: var(--color-text);
   }
 
   .current {
-    border-bottom-color: var(--color-accent);
-    color: var(--color-accent);
+    border-bottom-color: var(--step-colour);
+    color: var(--step-colour);
   }
 
   /* No circles in the tab strip, so no connector either. */
