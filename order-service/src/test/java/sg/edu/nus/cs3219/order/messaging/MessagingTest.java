@@ -175,12 +175,13 @@ class MessagingTest {
         listener.onMessage("""
                 {"eventId":"del-2","type":"UserDeleted","occurredAt":"2026-11-02T00:00:00Z","data":{}}
                 """);
-        verify(deliveryPoints, org.mockito.Mockito.times(1)).applyUserDeleted(any(), any());
+        verify(deliveryPoints, times(1)).applyUserDeleted(any(), any());
 
         doThrow(new IllegalStateException("retry")).when(deliveryPoints).applyUserDeleted("del-3", userId);
-        assertThrows(IllegalStateException.class, () -> listener.onMessage("""
+        String retryPayload = """
                 {"eventId":"del-3","type":"UserDeleted","occurredAt":"2026-11-02T00:00:00Z","data":{"userId":"%s"}}
-                """.formatted(userId)));
+                """.formatted(userId);
+        assertThrows(IllegalStateException.class, () -> listener.onMessage(retryPayload));
     }
 
     @Test

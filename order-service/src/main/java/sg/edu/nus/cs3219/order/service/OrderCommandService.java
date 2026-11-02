@@ -40,6 +40,19 @@ import java.util.UUID;
 public class OrderCommandService {
 
     private static final String ORDER_NOT_FOUND = "Order not found";
+    private static final String ROLE_COURIER = "COURIER";
+    private static final String ROLE_REQUESTER = "REQUESTER";
+    private static final String REASON_CASE_RESOLVED = "CASE_RESOLVED";
+
+    private record StatusExtras(boolean notifyRequester, String faultParty) {
+        static StatusExtras notifyOnly(boolean notifyRequester) {
+            return new StatusExtras(notifyRequester, null);
+        }
+
+        static StatusExtras withFault(String faultParty) {
+            return new StatusExtras(true, faultParty);
+        }
+    }
 
     private final OrderRepository orders;
     private final AlertRepository alerts;
@@ -220,7 +233,7 @@ public class OrderCommandService {
         outbox.append(
                 order.getId(),
                 KafkaTopics.RATING,
-                messages.ratingPermission(order, courier.userId(), "COURIER", order.getRequesterId(), "REQUESTER", now),
+                messages.ratingPermission(order, courier.userId(), ROLE_COURIER, order.getRequesterId(), ROLE_REQUESTER, now),
                 now
         );
         return order;
@@ -335,13 +348,13 @@ public class OrderCommandService {
         Instant now = clock.instant();
         order.setCaseId(caseId);
         if ("admin.review.started".equals(eventType) && OrderStateMachine.canReview(order.snapshot())) {
-            transition(order, OrderStatus.UNDER_REVIEW, true, now, OrderAction.REVIEW_STARTED, null, null);
+            transition(order, OrderStatus.UNDER_REVIEW, true, now, OrderAction.REVIEW_STARTED, null);
             return;
         }
         if (resolving) {
             deletePhotos(order);
             order.setSettledAt(now);
-            transition(order, OrderStatus.COMPLETED, true, now, OrderAction.CASE_RESOLVED, null, faultParty);
+            transition(order, OrderStatus.COMPLETED, now, OrderAction.CASE_RESOLVED, null, StatusExtras.withFault(faultParty));
             settleResolvedCase(order, faultParty, now);
         }
     }
@@ -368,15 +381,15 @@ public class OrderCommandService {
         // no-fault = inconclusive / neither party clearly wrong → treat like a completed
         // delivery: pay the courier (same release path as acknowledge).
         if ("courier".equals(faultParty)) {
-            outbox.append(order.getId(), KafkaTopics.CREDIT, messages.creditReturn(order, "CASE_RESOLVED", now), now);
+            outbox.append(order.getId(), KafkaTopics.CREDIT, messages.creditReturn(order, REASON_CASE_RESOLVED, now), now);
             allowRequesterRatesCourier(order, now);
             return;
         }
         if (order.getCourierId() == null) {
-            outbox.append(order.getId(), KafkaTopics.CREDIT, messages.creditReturn(order, "CASE_RESOLVED", now), now);
+            outbox.append(order.getId(), KafkaTopics.CREDIT, messages.creditReturn(order, REASON_CASE_RESOLVED, now), now);
             return;
         }
-        releaseAndAllowRequesterRating(order, "CASE_RESOLVED", now);
+        releaseAndAllowRequesterRating(order, REASON_CASE_RESOLVED, now);
         allowCourierRatesRequester(order, now);
     }
 
@@ -392,7 +405,7 @@ public class OrderCommandService {
         outbox.append(
                 order.getId(),
                 KafkaTopics.RATING,
-                messages.ratingPermission(order, order.getRequesterId(), "REQUESTER", order.getCourierId(), "COURIER", now),
+                messages.ratingPermission(order, order.getRequesterId(), ROLE_REQUESTER, order.getCourierId(), ROLE_COURIER, now),
                 now
         );
     }
@@ -404,7 +417,7 @@ public class OrderCommandService {
         outbox.append(
                 order.getId(),
                 KafkaTopics.RATING,
-                messages.ratingPermission(order, order.getCourierId(), "COURIER", order.getRequesterId(), "REQUESTER", now),
+                messages.ratingPermission(order, order.getCourierId(), ROLE_COURIER, order.getRequesterId(), ROLE_REQUESTER, now),
                 now
         );
     }
@@ -417,22 +430,21 @@ public class OrderCommandService {
             OrderAction action,
             String actorId
     ) {
-        transition(order, to, notifyRequester, now, action, actorId, null);
+        transition(order, to, now, action, actorId, StatusExtras.notifyOnly(notifyRequester));
     }
 
     private void transition(
             OrderEntity order,
             OrderStatus to,
-            boolean notifyRequester,
             Instant now,
             OrderAction action,
             String actorId,
-            String faultParty
+            StatusExtras extras
     ) {
         OrderStatus from = order.getStatus();
         order.setStatus(to);
         order.setUpdatedAt(now);
-        publishStatus(order, from, to, notifyRequester, now, action, actorId, faultParty);
+        publishStatus(order, from, to, now, action, actorId, extras);
     }
 
     private void publishStatus(
@@ -444,18 +456,17 @@ public class OrderCommandService {
             OrderAction action,
             String actorId
     ) {
-        publishStatus(order, from, to, notifyRequester, now, action, actorId, null);
+        publishStatus(order, from, to, now, action, actorId, StatusExtras.notifyOnly(notifyRequester));
     }
 
     private void publishStatus(
             OrderEntity order,
             OrderStatus from,
             OrderStatus to,
-            boolean notifyRequester,
             Instant now,
             OrderAction action,
             String actorId,
-            String faultParty
+            StatusExtras extras
     ) {
         orderLog.append(order.getId(), action, from, to, actorId, now);
         AlertEntity alert = new AlertEntity();
@@ -464,13 +475,13 @@ public class OrderCommandService {
         alert.setRequesterId(order.getRequesterId());
         alert.setFromStatus(from == null ? null : from.name());
         alert.setToStatus(to.name());
-        alert.setNotifyRequester(notifyRequester);
+        alert.setNotifyRequester(extras.notifyRequester());
         alert.setCreatedAt(now);
         alerts.save(alert);
         outbox.append(
                 order.getId(),
                 KafkaTopics.ORDER_STATUS,
-                messages.statusChanged(order, from, to, notifyRequester, faultParty, now),
+                messages.statusChanged(order, from, to, extras.notifyRequester(), extras.faultParty(), now),
                 now
         );
     }

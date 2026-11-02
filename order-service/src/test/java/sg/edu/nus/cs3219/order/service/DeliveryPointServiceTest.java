@@ -286,7 +286,7 @@ class DeliveryPointServiceTest {
         assertEquals(1L, response.id());
         assertEquals("Tutorial", response.nickname());
         assertEquals("Tutorial", association.getNickname());
-        verify(points, org.mockito.Mockito.never()).save(any());
+        verify(points, never()).save(any());
     }
 
     @Test
