@@ -14,13 +14,14 @@ Downstream calls, as a share of that traffic:
 | Service | When |
 | --- | --- |
 | User | Order looks up the Telegram handle on create and on accept. |
-| Supplier | Order checks both locations on create. Search checks the pickup location again. |
+| Supplier | Order validates **pickup only** (`fromLocation`) on create. Search re-checks that pickup id. |
+| Order DB | Dropoff is Order-owned: create sends `deliveryPointId` (seeded campus catalogue from Flyway `V6`). |
 | Credit | Order reserves 1 credit on create. Acknowledge publishes `credit.reservation.release`. The credit consumer has to be running for that second call to land. |
 | Admin | Escalate calls `POST /api/v1/admin/conflicts`. About 1 in 20 closes. |
 | Rating | Order reads `GET /api/v1/rating/{userId}` on create and accept. Deliver and acknowledge publish `rating.permission.granted` on `foc.rating.commands` for Rating Service to grant the modal. |
 | MinIO / S3 | Collect and deliver store the PNG. |
 
-Default duration is 10 minutes. A requester holds at most 3 orders so create rate follows how fast couriers finish. Accept collisions return 409 and count as normal contention. Suppliers `2` and `4` are the seeded approved locations.
+Default duration is 10 minutes. A requester holds at most 3 orders so create rate follows how fast couriers finish. Accept collisions return 409 and count as normal contention. Defaults: Supplier pickup id `2` (approved), Order delivery-point id `1` (seeded `kent-ridge-mrt`).
 
 ## Setup, then load
 
@@ -72,7 +73,7 @@ psql "$USER_DATABASE_URL" -v ON_ERROR_STOP=1 -f load-test/data/users.sql
 psql "$CREDIT_DATABASE_URL" -v ON_ERROR_STOP=1 -f load-test/data/credits.sql
 ```
 
-6. Confirm suppliers `2` and `4` exist and are approved in Supplier.
+6. Confirm Supplier pickup id `2` is approved, and Order has migrated delivery points (seed id `1` exists).
 7. Hit Order inside the cluster (public gateway URL with identity headers only if your gateway forwards them; otherwise a cluster-internal URL from the EC2 network, or `kubectl port-forward svc/order 8083:8083`):
 
 ```bash
@@ -93,4 +94,5 @@ Use the same `VUS` and `REQUESTER_SHARE` for seed and k6. Re-running the seed re
 | `DURATION` | `10m` | k6 |
 | `THINK_SECONDS` | `1` | k6 |
 | `ESCALATE_EVERY` | `20` | k6 |
-| `PICKUP_ID` / `DROPOFF_ID` | `2` / `4` | k6 |
+| `PICKUP_ID` | `2` | k6 — Supplier approved place id (`fromLocation`) |
+| `DROPOFF_ID` | `1` | k6 — Order `delivery_point.id` (`deliveryPointId`) |
