@@ -30,7 +30,29 @@ class ReportResolutionStoreIntegrationTest {
     Command command(String key) { return new Command(key,"report","order","requester","courier","admin",1,"Reviewed evidence"); }
     Compensation compensation(String key) { return new Compensation(UUID.randomUUID().toString(),key,"report","order","requester","courier","admin",2); }
 
+    @Test void courierReportResolvesAndCompensatesUsingActualRequesterInsteadOfSubmitter() {
+        reports.save(new Report("report", "courier", ReportCategory.ERRAND, "Requester issue", "order", "courier",
+                ReportStatus.READY_FOR_REVIEW, now, null, null, null, null, List.of(), List.of(), null, null, "requester"));
+        assertEquals("BINDING_MISMATCH", store.resolve(new Command("wrong-owner", "report", "order", "courier",
+                "courier", "admin", 1, "Wrong owner")).code());
+        assertEquals("APPLIED", store.resolve(command("errand")).outcome());
+        Report resolved = reports.findById("report").orElseThrow();
+        assertEquals("requester", resolved.requesterId());
+        assertEquals("courier", resolved.reporterId());
+        assertEquals("Reviewed evidence", sg.edu.nus.foc.reporting.api.ReportResponse.from(resolved, "courier", false).resolutionNote());
+        assertNull(sg.edu.nus.foc.reporting.api.ReportResponse.from(resolved, "requester", false).resolutionNote());
+        assertEquals("REVERSED", store.compensate(compensation("errand")).code());
+        Report restored = reports.findById("report").orElseThrow();
+        assertEquals(ReportStatus.AWAITING_COURIER_RESPONSE, restored.status());
+        assertEquals(ReportCategory.ERRAND, restored.category());
+        assertEquals("requester", restored.requesterId());
+        assertEquals(now.plusSeconds(86400), restored.responseDeadlineAt());
+        assertNull(restored.resolutionNote());
+    }
+
     @Test void resolutionIsAtomicIdempotentPrivateAndMayBeEarly() throws Exception {
+        // Existing stored reports predate the separate actual-requester field.
+        db.collection("reports").document("report").update("requesterId", com.google.cloud.firestore.FieldValue.delete()).get();
         var c=command("one"); var result=store.resolve(c);
         assertEquals("APPLIED",result.outcome()); assertEquals(result,store.resolve(c));
         var saved=reports.findById("report").orElseThrow();

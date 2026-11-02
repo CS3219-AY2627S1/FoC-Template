@@ -1,5 +1,12 @@
 # Current Developer Profile
 
+## Effective confirmation - 2026-11-01
+
+- Developer: Yao Xiang.
+- Branch: hfix/report-service.
+- Scope: user-approved CHANGE-170 Report/Order feedback hotfix and CHANGE-171 courier Errand reports, companion frontend and shared bad-attitude penalty policy (2 points).
+- Authority: explicit confirmation in this chat; earlier Vincent profile below is historical for another workstream.
+
 ## Effective current profile - Vincent, 2026-10-26
 
 - Name: Vincent (Developer 2).

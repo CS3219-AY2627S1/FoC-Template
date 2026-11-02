@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AdminFilterActions, AdminFilterForm, AdminHeading, AdminLoadState, AdminPagination, CopyId, adminDate } from "@/components/admin/admin-ui"
@@ -43,7 +44,7 @@ function ReportList() {
   const result = useReportResource(load, enabled)
   const root = "/admin/reports"
   return <>
-    <AdminFilterForm onSubmit={event => { event.preventDefault(); changeFilters({ ...query, orderId: orderId.trim() }) }}>
+    <AdminFilterForm hasToggle onSubmit={event => { event.preventDefault(); changeFilters({ ...query, orderId: orderId.trim() }) }}>
       <div className="flex min-w-0 flex-col gap-2"><Label htmlFor="report-status">Status</Label>
         <StatusSelect id="report-status" aria-label="Report status" className="w-full" value={query.status || "all"}
           onChange={event => changeFilters({ ...query, status: event.target.value === "all" ? "" : event.target.value })}>
@@ -53,6 +54,12 @@ function ReportList() {
       <div className="flex min-w-0 flex-col gap-2"><Label htmlFor="report-order-id">Order ID</Label>
         <Input className="h-10 min-w-0" id="report-order-id" maxLength={128} value={orderId} onChange={event => setOrderId(event.target.value)} placeholder="Enter an exact Order ID" />
       </div>
+      <Label className="col-span-2 flex h-10 w-fit cursor-pointer items-center gap-2 rounded-lg border px-2.5 text-sm font-normal sm:col-span-1">
+        <Switch checked={query.status === "READY_FOR_REVIEW"} onCheckedChange={checked => changeFilters({
+          ...query, status: checked ? "READY_FOR_REVIEW" : "",
+        })} />
+        Ready for review
+      </Label>
       <AdminFilterActions>
         <Button className="h-10" type="submit">Search</Button>
         <Button className="h-10" type="button" variant="outline" onClick={() => { setOrderId(""); changeFilters({ orderId: "", status: "" }) }}>Clear</Button>
@@ -122,7 +129,7 @@ function ReportOrderSummary({ order }: { order: AdminOrder }) {
       ["Overdue", order.isOverdue == null ? "Not available" : order.isOverdue ? (order.overduePenaltyWaived ? "Yes — penalty waived" : "Yes") : "No"],
     ]} />
   </>
-  return <Link href={"/admin/orders/" + encodeURIComponent(order.id)} aria-label={"Open order " + order.id + " details"}
+  return <Link href={"/admin/orders?orderId=" + encodeURIComponent(order.id)} aria-label={"Open order " + order.id + " in Orders"}
     className="block min-w-0 px-5 py-6 transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:px-8">{content}</Link>
 }
 function ReportCase({ id }: { id: string }) {
@@ -135,7 +142,11 @@ function ReportCase({ id }: { id: string }) {
   const root = "/admin/reports"
   const order = report.order ? { ...report.order, requesterName: displayName("users", report.order.requesterId, report.order.requesterName), courierName: displayName("users", report.order.courierId, report.order.courierName), pickupSupplierName: displayName("suppliers", report.order.pickupSupplierId, report.order.pickupSupplierName), deliverySupplierName: displayName("suppliers", report.order.deliverySupplierId, report.order.deliverySupplierName) } : null
   const creditContext = report.violationCategory === "CREDITS"
-  const submitterName = report.requesterId === order?.requesterId ? order.requesterName : report.requesterId === order?.courierId ? order.courierName : null
+  const errandContext = report.reporterId === report.courierId
+  const respondentId = report.respondentId ?? (errandContext ? report.requesterId : report.courierId)
+  const respondentName = respondentId === order?.requesterId ? order.requesterName : order?.courierName
+  const submitterContext = creditContext || errandContext
+  const submitterName = report.reporterId === order?.requesterId ? order.requesterName : report.reporterId === order?.courierId ? order.courierName : null
   return <>
     <Link href={root} className={buttonVariants({ variant: "outline" })}>Back to reports</Link>
     {error && <p role="status" className="text-sm text-muted-foreground">Could not refresh. Showing the last available case.</p>}
@@ -147,18 +158,18 @@ function ReportCase({ id }: { id: string }) {
           ["Status", <Badge key="status" variant="outline">{REPORT_STATUSES[report.status]}</Badge>],
           ["Violation category", REPORT_CATEGORIES[report.violationCategory]],
           ["Submitted", adminDate(report.createdAt)],
-          ["Courier response", creditContext ? "Not required for credit issues." : report.courierResponseSubmittedAt ? "Submitted " + adminDate(report.courierResponseSubmittedAt)
+          ["Response", creditContext ? "Not required for credit issues." : report.courierResponseSubmittedAt ? "Submitted " + adminDate(report.courierResponseSubmittedAt)
             : report.status === "AWAITING_COURIER_RESPONSE" ? "Awaiting response" : "No response submitted."],
         ]} />
       </ReportSection>
-      <ReportSection title={creditContext ? "Submitter account" : "Requester account"}>
-        <SummaryFields rows={[[creditContext ? "Submitter name" : "Requester name", <Participant key="requester" id={report.requesterId} name={submitterName ?? null} />],
-          [creditContext ? "Submitter ID" : "Requester ID", <CopyId key="requester-id" id={report.requesterId} />],
+      <ReportSection title={submitterContext ? "Submitter account" : "Requester account"}>
+        <SummaryFields rows={[[submitterContext ? "Submitter name" : "Requester name", <Participant key="requester" id={report.reporterId} name={submitterName ?? null} />],
+          [submitterContext ? "Submitter ID" : "Requester ID", <CopyId key="requester-id" id={report.reporterId} />],
           ["Explanation", report.requesterExplanation], ["Attachments", <Evidence key="requester-evidence" files={report.requesterAttachments} />]]} />
       </ReportSection>
-      {!creditContext && <ReportSection title="Courier account">
-        <SummaryFields rows={[["Courier name", report.courierId ? <Participant key="courier" id={report.courierId} name={order?.courierName ?? null} /> : "Unassigned"],
-          ["Courier ID", report.courierId ? <CopyId key="courier-id" id={report.courierId} /> : "Unassigned"],
+      {!creditContext && respondentId && <ReportSection title={errandContext ? "Requester account" : "Courier account"}>
+        <SummaryFields rows={[[errandContext ? "Requester name" : "Courier name", <Participant key="respondent" id={respondentId} name={respondentName ?? null} />],
+          [errandContext ? "Requester ID" : "Courier ID", <CopyId key="respondent-id" id={respondentId} />],
           ["Explanation", report.courierExplanation || "No response submitted."], ["Attachments", <Evidence key="courier-evidence" files={report.courierAttachments} />]]} />
       </ReportSection>}
       {report.status === "RESOLVED" && <ReportSection title="Resolution"><SummaryFields rows={[
@@ -179,7 +190,7 @@ function ResolveReportDialog({ report, onClose, onDone }: { report: DeliveryRepo
     try { const saved = JSON.parse(savedResolution(storageKey) ?? "null"); return saved?.commandId && typeof saved.reply === "string" ? saved : null } catch { return null }
   })
   const [note, setNote] = useState(attempt?.reply ?? ""); const [busy, setBusy] = useState(false)
-  const [pending, setPending] = useState(false); const [final, setFinal] = useState(false)
+  const [pending, setPending] = useState(Boolean(attempt && report.order && report.violationCategory !== "CREDITS")); const [final, setFinal] = useState(false)
   const locked = useRef(false); const [error, setError] = useState<string | null>(null)
   const succeeded = useRef(false)
   const complete = useCallback(() => {
@@ -194,7 +205,18 @@ function ResolveReportDialog({ report, onClose, onDone }: { report: DeliveryRepo
       if (result.status === "SUCCEEDED") complete()
       else if (result.status === "COMPENSATED" || result.status === "REJECTED") { setPending(false); setFinal(true); setError("The resolution did not complete. You can start a new request.") }
       else if (result.status === "RECONCILIATION_REQUIRED") { setPending(false); setError("This resolution needs operator review. The order remains on hold.") }
-    } catch { if (!signal.aborted) setError("Could not check the resolution yet. Your request has been kept.") }
+    } catch (cause) {
+      if (signal.aborted) return
+      if (cause instanceof ApiError && cause.status === 404) {
+        setPending(false)
+        setError("The resolution has not been confirmed. Retry your saved request to continue safely.")
+      } else if (cause instanceof ApiError && (cause.status === 401 || cause.status === 403)) {
+        setPending(false)
+        setError("Sign in with an administrator account to continue checking this resolution.")
+      } else {
+        setError("Could not check the resolution yet. Your request has been kept and will be checked again.")
+      }
+    }
   }, [api, attempt, complete])
   useVisiblePolling(poll, pending && !!attempt && !!report.order && report.violationCategory !== "CREDITS", 5000)
   async function submit(event: React.FormEvent) {
@@ -210,14 +232,20 @@ function ResolveReportDialog({ report, onClose, onDone }: { report: DeliveryRepo
       else { setPending(true); setError("Resolution is being checked. The order stays on hold until confirmation.") }
     }
     catch (cause) {
-      if (cause instanceof ApiError && cause.status === 409 && report.order && report.violationCategory !== "CREDITS") setPending(true)
-      setError(cause instanceof Error ? cause.message : "Could not resolve report.")
+      const canCheck = Boolean(report.order && report.violationCategory !== "CREDITS")
+      const uncertain = cause instanceof ApiError && (cause.status === 0 || cause.status === 409 || cause.status >= 500)
+      if (canCheck && uncertain) {
+        setPending(true)
+        setError("We could not confirm the resolution yet. We are checking your saved request; please do not submit a new one.")
+      } else {
+        setError(cause instanceof Error ? cause.message : "Could not resolve the report. Please try again.")
+      }
     }
     finally { locked.current = false; setBusy(false) }
   }
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose() }}><DialogContent className="sm:max-w-lg"><form onSubmit={submit} className="space-y-4">
     <DialogHeader><DialogTitle>Resolve report</DialogTitle><DialogDescription>Your reply is only visible to the submitter. Reviewing admins can also view it. Resolving the case releases this report’s completion hold. Order and penalty actions remain separate.</DialogDescription></DialogHeader>
-    {report.status === "AWAITING_COURIER_RESPONSE" && <p role="alert" className="rounded-md border p-3 text-sm">The courier has not responded and their response deadline has not passed. Are you sure you want to resolve this report?</p>}
+    {report.status === "AWAITING_COURIER_RESPONSE" && <p role="alert" className="rounded-md border p-3 text-sm">The other participant has not responded and their response deadline has not passed. Are you sure you want to resolve this report?</p>}
     <Label htmlFor="resolution-note">Admin reply</Label><Textarea id="resolution-note" maxLength={2000} required value={note} onChange={event => setNote(event.target.value)} disabled={busy || !!attempt} />
     {error && <p role="status" className="text-sm text-muted-foreground">{error}</p>}<DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>Back</Button>
       {final ? <Button type="button" onClick={() => { clearResolution(storageKey); setAttempt(null); setFinal(false); setError(null) }}>Start new request</Button>

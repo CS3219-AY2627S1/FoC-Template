@@ -53,6 +53,53 @@ class OrderCompletionHoldControllerTest {
     @MockitoBean
     private JwtDecoder decoder;
 
+    @Test void courierModeUsesVerifiedIdentityAndCannotUseRequesterMode() throws Exception {
+        when(queries.assignedActiveTo("courier", 1, 20)).thenReturn(
+                new sg.edu.nus.foc.order.domain.repository.OrderPage(java.util.List.of(), 0, 20, 0, 0));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/orders/mine/active")
+                .with(user("courier").roles("COURIER")).param("mode", "courier").param("userId", "other"))
+                .andExpect(status().isOk());
+        verify(queries).assignedActiveTo("courier", 1, 20);
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/orders/mine/active")
+                .with(user("courier").roles("COURIER"))).andExpect(status().isForbidden());
+        mvc.perform(put(PATH).with(user("courier").roles("REQUESTER")).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"requireAssignedCourier\":true,\"reporterRole\":\"COURIER\"}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(put(PATH).with(user("courier").roles("COURIER")).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"requireAssignedCourier\":true,\"reporterRole\":\"ADMIN\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test void participantModeUsesCallerAndRejectsAdminOnlyAccess() throws Exception {
+        for (String role : new String[] {"REQUESTER", "COURIER"}) {
+            when(queries.participantActive("participant", 1, 20)).thenReturn(
+                    new sg.edu.nus.foc.order.domain.repository.OrderPage(java.util.List.of(), 0, 20, 0, 0));
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/orders/mine/active")
+                    .with(user("participant").roles(role)).param("mode", "participant").param("userId", "stranger"))
+                    .andExpect(status().isOk());
+        }
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/orders/mine/active")
+                .with(user("admin").roles("ADMIN")).param("mode", "participant"))
+                .andExpect(status().isForbidden());
+        Order order = Order.open("owner", "books", "p", "d", 5, 30, Instant.now(), Instant.now().plusSeconds(3600));
+        order.accept("courier", 0, Instant.now());
+        when(holds.placeActive("order-1", "report-1", "courier", true, null, "PARTICIPANT")).thenReturn(order);
+        mvc.perform(put(PATH).with(user("courier").roles("COURIER")).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"requireAssignedCourier\":true,\"reporterRole\":\"PARTICIPANT\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.requesterId").value("owner"));
+    }
+
+    @Test void courierHoldReturnsActualRequesterAndForwardsCourierScope() throws Exception {
+        Order order = Order.open("owner", "books", "p", "d", 5, 30, Instant.now(), Instant.now().plusSeconds(3600));
+        order.accept("courier", 0, Instant.now());
+        order.placeCourierReportHold("courier");
+        when(holds.placeActive("order-1", "report-1", "courier", true, null, "COURIER")).thenReturn(order);
+        mvc.perform(put(PATH).with(user("courier").roles("COURIER")).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"requireAssignedCourier\":true,\"reporterRole\":\"COURIER\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.requesterId").value("owner"))
+                .andExpect(jsonPath("$.courierId").value("courier"));
+    }
+
     @Test
     void requiresAuthenticationAndRequesterRole() throws Exception {
         mvc.perform(put(PATH).contentType(MediaType.APPLICATION_JSON).content("{\"requireAssignedCourier\":false}"))

@@ -98,3 +98,9 @@ ADR-050 — Deferred monotonic Order penalty (CHANGE-146), approved Yao Xiang202
 - [ADR-062: Credit report context and courier reminders](ADR-062-credit-report-context-and-response-reminders.md) - approved completed-order association and scoped count, CHANGE-168.
 
 - [ADR-063: Unlinked credit reports and independent Order history](ADR-063-unlinked-credit-reports-and-independent-order-history.md) - supersedes the credit association/picker parts of ADR-062; keeps the courier reminder, CHANGE-169.
+
+- [ADR-064: Courier Errand reports](ADR-064-courier-errand-reports.md) - ERRAND, assigned-courier scope, direct review and distinct submitter/requester; CHANGE-171.
+
+- [ADR-065 ? Unified Order reports and opposite-party responses](ADR-065-unified-order-report-responses.md): supersedes separate courier Errand submissions; preserves actual participant saga bindings.
+
+- [ADR-066 ? Separate Order/Errand categories with opposite-party replies](ADR-066-separate-order-errand-with-responses.md): user-directed supersession of ADR-065 unified submissions; preserves holds/saga.

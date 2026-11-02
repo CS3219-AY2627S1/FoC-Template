@@ -29,6 +29,46 @@ class FirestoreReportRepositoryIntegrationTest {
     @AfterAll static void close() throws Exception { firestore.close(); }
     @BeforeEach void reset() { FirestoreEmulator.clear(DATABASE); repository = new FirestoreReportRepository(firestore); }
 
+    @Test void courierSubmissionRoundTripsActualOwnerAndDoesNotAppearAgainstItself() throws Exception {
+        Report errand = new Report("errand", "courier", ReportCategory.ERRAND, "Requester issue", "order", "courier",
+                ReportStatus.READY_FOR_REVIEW, Instant.parse("2026-11-01T10:00:00Z"), null, null, null, null, List.of(), List.of(), null, null, "owner");
+        repository.save(errand);
+        assertEquals(errand, repository.findById("errand").orElseThrow());
+        assertEquals(1, repository.findByReporterId("courier", 1, 20).totalItems());
+        assertEquals(0, repository.findByRespondentId("courier", 1, 20).totalItems());
+        Report legacy = report("legacy", Instant.now(), List.of());
+        repository.save(legacy);
+        firestore.collection("reports").document("legacy").update("requesterId", com.google.cloud.firestore.FieldValue.delete()).get();
+        assertEquals(legacy.reporterId(), repository.findById("legacy").orElseThrow().requesterId());
+    }
+
+    @Test void upgradeNotifiesRequesterOnceAndAllowsTheirEvidenceWithoutChangingResolvedHistory() {
+        Instant now = Instant.parse("2026-11-02T10:00:00Z");
+        Report legacy = new Report("legacy-errand", "courier", ReportCategory.ERRAND, "Nothing at pickup", "o", "courier",
+                ReportStatus.READY_FOR_REVIEW, now.minusSeconds(86400), null, null, null, null, List.of(), List.of(), null, null, "owner");
+        repository.save(legacy);
+        Report resolved = new Report("resolved-errand", "courier", ReportCategory.ERRAND, "Old", "old", "courier",
+                ReportStatus.RESOLVED, now.minusSeconds(86400), null, null, null, now, List.of(), List.of(), null, null, "owner");
+        repository.save(resolved);
+        ReportDeadlineScheduler scheduler = new ReportDeadlineScheduler(repository, java.time.Clock.fixed(now, java.time.ZoneOffset.UTC));
+        scheduler.reconcileDue();
+        Report upgraded = repository.findById(legacy.id()).orElseThrow();
+        assertEquals(ReportCategory.ERRAND, upgraded.category());
+        assertEquals(now.plusSeconds(86400), upgraded.responseDeadlineAt());
+        scheduler.reconcileDue();
+        assertEquals(upgraded, repository.findById(legacy.id()).orElseThrow());
+        assertEquals(resolved, repository.findById(resolved.id()).orElseThrow());
+        assertEquals(1, repository.countAwaitingResponse("owner", now));
+        assertEquals(0, repository.countAwaitingResponse("courier", now));
+        assertEquals(2, repository.findByRespondentId("owner", 1, 20).totalItems());
+        assertEquals(0, repository.findByRespondentId("courier", 1, 20).totalItems());
+        Attachment evidence = new Attachment("a", "reports/r/response/a", "pickup.webp", "image/webp", 4, now);
+        Report response = repository.update(upgraded.id(), current -> current.respond("owner", "Moved to counter", now, List.of(evidence))).orElseThrow();
+        assertEquals(ReportStatus.READY_FOR_REVIEW, response.status());
+        assertEquals(List.of(evidence), response.responseAttachments());
+        assertEquals(0, repository.countAwaitingResponse("owner", now));
+    }
+
     @Test void roundTripsMetadataAndListsNewestBeforePaginating() {
         Attachment attachment = new Attachment("a1", "reports/r1/a1", "receipt.png", "image/png", 8, Instant.parse("2026-10-13T01:00:00Z"));
         Report first = report("r1", Instant.parse("2026-10-13T01:00:00Z"), List.of(attachment));
@@ -49,8 +89,8 @@ class FirestoreReportRepositoryIntegrationTest {
         assertEquals(ReportStatus.RESOLVED, resolved.status()); assertEquals(resolvedAt, resolved.resolvedAt());
         assertEquals(resolved, repository.update(open.id(), item -> item.resolved(Instant.parse("2026-10-13T05:00:00Z"))).orElseThrow());
         assertEquals(1, repository.findByReporterId("reporter", 1, 20).totalItems());
-        assertEquals(1, repository.findByCourierId("courier", 1, 20).totalItems());
-        assertEquals(0, repository.findByCourierId("other", 1, 20).totalItems());
+        assertEquals(1, repository.findByRespondentId("courier", 1, 20).totalItems());
+        assertEquals(0, repository.findByRespondentId("other", 1, 20).totalItems());
         assertTrue(repository.findById("a/b").isEmpty()); assertTrue(repository.findById(null).isEmpty());
         assertTrue(repository.update("missing", item -> item).isEmpty()); assertTrue(repository.update("a/b", item -> item).isEmpty());
     }
@@ -123,7 +163,7 @@ class FirestoreReportRepositoryIntegrationTest {
         repository.save(first);
         var conflict = assertThrows(sg.edu.nus.foc.reporting.error.ConflictException.class,
                 () -> repository.saveNewLinked(report("duplicate", now, List.of())));
-        assertTrue(conflict.getMessage().contains("already has an active report"));
+        assertTrue(conflict.getMessage().contains("This order has an active report. Please resolve it before proceeding."));
         repository.update(first.id(), current -> current.resolved(now));
         try (var pool = java.util.concurrent.Executors.newFixedThreadPool(2)) {
             var jobs = List.of("one", "two").stream().map(id -> pool.submit(() -> {

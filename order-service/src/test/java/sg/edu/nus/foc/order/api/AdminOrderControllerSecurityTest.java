@@ -31,6 +31,20 @@ class AdminOrderControllerSecurityTest {
     @MockitoBean private sg.edu.nus.foc.order.application.AdminApplyPenaltyService penalties;
     @MockitoBean private sg.edu.nus.foc.order.application.OrderCompletionHoldService reviewHolds;
     @Test
+    void actionEligibilityFilterIsOptionalAndRemainsAdminOnly() throws Exception {
+        when(queries.allOrders(null, null, null, null, true, 0, 20))
+                .thenReturn(new OrderPage(List.of(), 0, 20, 0, 0));
+        mockMvc.perform(get("/api/orders").param("actionEligibleOnly", "true")
+                .with(user("admin").roles("ADMIN"))).andExpect(status().isOk());
+        verify(queries).allOrders(null, null, null, null, true, 0, 20);
+        mockMvc.perform(get("/api/orders").param("actionEligibleOnly", "true")
+                .with(user("courier").roles("COURIER"))).andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/orders").param("actionEligibleOnly", "true"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/orders").param("actionEligibleOnly", "invalid")
+                .with(user("admin").roles("ADMIN"))).andExpect(status().isBadRequest());
+    }
+    @Test
     void bindsCreationInstantsAndExactIdWithoutWeakeningAdminAuthorization() throws Exception {
         java.time.Instant from = java.time.Instant.parse("2026-10-15T16:00:00Z");
         java.time.Instant before = from.plusSeconds(86400);

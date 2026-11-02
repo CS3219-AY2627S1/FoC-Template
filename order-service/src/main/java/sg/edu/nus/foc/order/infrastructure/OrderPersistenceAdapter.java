@@ -86,6 +86,32 @@ public class OrderPersistenceAdapter implements OrderRepository {
     }
 
     @Override
+    public Optional<Order> getActiveCourierReportHoldUpdate(String id, String courierId) {
+        Optional<Order> locked = repository.findActiveAssignedOrderForUpdate(id, courierId, REPORTABLE_STATUSES);
+        if (locked.isPresent() && commands != null) commands.guard(id);
+        return locked;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public OrderPage findActiveAssignedTo(String courierId, int page, int size) {
+        return toOrderPage(repository.findActiveAssignedOrders(courierId, REPORTABLE_STATUSES, pageRequest(page, size)));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public OrderPage findActiveInvolving(String participantId, int page, int size) {
+        return toOrderPage(repository.findActiveParticipantOrders(participantId, REPORTABLE_STATUSES, pageRequest(page, size)));
+    }
+
+    @Override
+    public Optional<Order> getActiveParticipantReportHoldUpdate(String id, String participantId) {
+        Optional<Order> locked = repository.findActiveParticipantOrderForUpdate(id, participantId, REPORTABLE_STATUSES);
+        if (locked.isPresent() && commands != null) commands.guard(id);
+        return locked;
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public OrderPage findCreditHistoryInvolving(String userId, OrderStatus status, int page, int size) {
         return toOrderPage(repository.findCreditHistoryInvolving(userId, status, pageRequest(page, size)));
@@ -195,8 +221,16 @@ public class OrderPersistenceAdapter implements OrderRepository {
 
     @Override
     public OrderPage findAllOrders(OrderStatus status, String orderId, Instant createdFrom, Instant createdBefore, int page, int size) {
+        return findAllOrders(status, orderId, createdFrom, createdBefore, false, page, size);
+    }
+
+    @Override
+    public OrderPage findAllOrders(OrderStatus status, String orderId, Instant createdFrom, Instant createdBefore,
+                                   boolean actionEligibleOnly, int page, int size) {
         Specification<Order> filter = (root, query, criteria) -> {
             List<Predicate> predicates = new ArrayList<>();
+            if (actionEligibleOnly) predicates.add(root.get("status").in(
+                    ACTIVE_STATUSES.stream().map(OrderStatus::valueOf).toList()));
             if (status != null) predicates.add(criteria.equal(root.get("status"), status));
             if (orderId != null) predicates.add(criteria.equal(root.get("id"), orderId));
             if (createdFrom != null) predicates.add(criteria.greaterThanOrEqualTo(root.get("createdAt"), createdFrom));

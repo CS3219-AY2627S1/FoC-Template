@@ -20,8 +20,9 @@ public interface ReportRepository {
         return findAll(page, size);
     }
     PageResult<Report> findByReporterId(String reporterId, int page, int size);
-    PageResult<Report> findByCourierId(String courierId, int page, int size);
+    PageResult<Report> findByRespondentId(String courierId, int page, int size);
     Optional<Report> update(String id, UnaryOperator<Report> operation);
+    default java.util.List<String> unresolvedErrandIds() { return java.util.List.of(); }
     default java.util.List<String> dueResponseIds(Instant now) { return java.util.List.of(); }
     default long countAwaitingResponse(String courierId, Instant now) { return 0; }
 }

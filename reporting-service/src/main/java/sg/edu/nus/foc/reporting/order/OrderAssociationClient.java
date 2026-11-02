@@ -8,7 +8,11 @@
 package sg.edu.nus.foc.reporting.order;
 
 public interface OrderAssociationClient {
+    default AssociatedOrder placeReportHold(String orderId, String reportId, boolean requireAssignedCourier,
+                                    String bearerToken) {
+        return placeReportHold(orderId, reportId, requireAssignedCourier, bearerToken, "REQUESTER");
+    }
     AssociatedOrder placeReportHold(String orderId, String reportId, boolean requireAssignedCourier,
-                                    String bearerToken);
+                                    String bearerToken, String reporterRole);
     void releaseReportHold(String orderId, String reportId, String bearerToken);
 }

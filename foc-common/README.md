@@ -12,8 +12,8 @@ amounts and serialized event reasons remain unchanged. The shared query API is:
 | Static method | Result |
 | --- | --- |
 | `getSuccessfulDeliveryReward()` | `SUCCESSFUL_DELIVERY` policy, amount1 |
-| `getCourierPenaltyCases()` | Immutable wrong-location, damage and theft list; excludes accepted cancellation, overdue delivery and successful delivery |
-| `getFullPenaltyPolicy()` | Immutable list of all six active policies in declaration order |
+| `getCourierPenaltyCases()` | Immutable wrong-location, damage, theft and bad-attitude list; excludes automatic outcomes and retired unresponsiveness |
+| `getFullPenaltyPolicy()` | Immutable list of all seven active policies in declaration order |
 
 For example, `PenaltySystemPolicy.getSuccessfulDeliveryReward().getPenaltyAmount()`
 returns1. Order completion and penalty event direction use the reward helper.
@@ -29,6 +29,7 @@ events. The methods do not publish, mutate user scores or enforce suspension.
 | WRONG_LOCATION_DELIVERY | 4 | Admin cancellation addition |
 | ITEM_MISHANDLING_OR_DAMAGE | 4 | Admin cancellation addition |
 | DELIBERATE_ITEM_RETENTION_OR_THEFT | 10 | Admin cancellation addition; suspension enforcement belongs to User Service |
+| COURIER_BAD_ATTITUDE | 2 | Admin-confirmed misconduct; existing deferred final-outcome addition |
 | COURIER_UNRESPONSIVE (retired) | 3 | Historical compatibility only; no new selection |
 
 Direction stays in the existing event type; the enum does not apply scores.

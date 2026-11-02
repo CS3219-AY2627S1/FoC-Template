@@ -36,14 +36,14 @@ public class HttpOrderAssociationClient implements OrderAssociationClient {
     }
     HttpOrderAssociationClient(RestClient client) { this.client = client; }
     @Override public AssociatedOrder placeReportHold(String orderId, String reportId,
-                                                      boolean requireAssignedCourier, String bearerToken) {
+                                                      boolean requireAssignedCourier, String bearerToken, String reporterRole) {
         try {
             String id = UriUtils.encodePathSegment(orderId, StandardCharsets.UTF_8);
             String report = UriUtils.encodePathSegment(reportId, StandardCharsets.UTF_8);
             AssociatedOrder result = client.put()
                     .uri(URI.create("/api/orders/mine/active/" + id + "/report-holds/" + report))
                     .header(HttpHeaders.AUTHORIZATION, bearerToken)
-                    .body(new PlaceReportHoldRequest(requireAssignedCourier))
+                    .body(new PlaceReportHoldRequest(requireAssignedCourier, reporterRole))
                     .retrieve().body(AssociatedOrder.class);
             if (result == null || !orderId.equals(result.id()) || result.requesterId() == null
                     || result.status() == null || !reportId.equals(result.reportId())
@@ -54,8 +54,9 @@ public class HttpOrderAssociationClient implements OrderAssociationClient {
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) throw new NotFoundException("The selected order is unavailable for reporting.");
             if (e.getStatusCode().isSameCodeAs(HttpStatus.CONFLICT)) {
-                if (e.getResponseBodyAsString().contains("This order already has an active report.")) {
-                    throw new ConflictException("This order already has an active report. Please resolve it before submitting another report.");
+                if (e.getResponseBodyAsString().contains("This order already has an active report.")
+                        || e.getResponseBodyAsString().contains("This order has an active report.")) {
+                    throw new ConflictException("This order has an active report. Please resolve it before proceeding.");
                 }
                 throw new ConflictException("The selected order cannot accept this report.");
             }
@@ -80,5 +81,5 @@ public class HttpOrderAssociationClient implements OrderAssociationClient {
         } catch (RestClientException e) { throw new DependencyUnavailableException("Order Service is unavailable.", e); }
     }
 
-    private record PlaceReportHoldRequest(boolean requireAssignedCourier) { }
+    private record PlaceReportHoldRequest(boolean requireAssignedCourier, String reporterRole) { }
 }

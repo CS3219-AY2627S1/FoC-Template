@@ -15,6 +15,17 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.*;
 
 class HttpOrderAssociationClientTest {
+    @Test void courierHoldSendsCourierScopeWithTheOriginalBearerToken() {
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://orders");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("http://orders/api/orders/mine/active/order/report-holds/errand"))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer courier"))
+                .andExpect(content().json("{\"requireAssignedCourier\":true,\"reporterRole\":\"COURIER\"}"))
+                .andRespond(withSuccess("{\"id\":\"order\",\"requesterId\":\"owner\",\"courierId\":\"courier\",\"status\":\"ACCEPTED\",\"reportId\":\"errand\",\"isCompletionHold\":true}", MediaType.APPLICATION_JSON));
+        assertEquals("owner", new HttpOrderAssociationClient(builder.build())
+                .placeReportHold("order", "errand", true, "Bearer courier", "COURIER").requesterId());
+        server.verify();
+    }
     @Test void placesTheAtomicActiveOrderHoldAndForwardsAuthorization() {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://orders");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -32,12 +43,16 @@ class HttpOrderAssociationClientTest {
 
 
     @Test void duplicateReportMessageIsPreservedWithoutMislabelingOtherConflicts() {
-        var builder = RestClient.builder().baseUrl("http://orders");
-        var server = MockRestServiceServer.bindTo(builder).build();
-        server.expect(anything()).andRespond(withStatus(org.springframework.http.HttpStatus.CONFLICT)
-                .contentType(MediaType.APPLICATION_JSON).body("{\"message\":\"This order already has an active report.\"}"));
-        var failure = assertThrows(ConflictException.class, () -> new HttpOrderAssociationClient(builder.build()).placeReportHold("id", "r", true, "Bearer x"));
-        assertTrue(failure.getMessage().contains("Please resolve it"));
+        for (String message : java.util.List.of("This order already has an active report.",
+                "This order has an active report. Please resolve it before proceeding.")) {
+            var builder = RestClient.builder().baseUrl("http://orders");
+            var server = MockRestServiceServer.bindTo(builder).build();
+            server.expect(anything()).andRespond(withStatus(org.springframework.http.HttpStatus.CONFLICT)
+                    .contentType(MediaType.APPLICATION_JSON).body("{\"message\":\"" + message + "\"}"));
+            var failure = assertThrows(ConflictException.class, () -> new HttpOrderAssociationClient(builder.build()).placeReportHold("id", "r", true, "Bearer x"));
+            assertEquals("This order has an active report. Please resolve it before proceeding.", failure.getMessage());
+            server.verify();
+        }
     }
 
     @Test void releasesTheAdminReportHold() {

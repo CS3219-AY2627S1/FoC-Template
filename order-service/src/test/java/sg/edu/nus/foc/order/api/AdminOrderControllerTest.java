@@ -43,7 +43,7 @@ class AdminOrderControllerTest {
         when(queries.allOrders(null, 1, 25))
                 .thenReturn(new OrderPage(List.of(order), 1, 25, 26, 2));
 
-        OrderPageResponse response = controller.listOrders(null, PageRequest.of(1, 25), null, null, null);
+        OrderPageResponse response = controller.listOrders(null, PageRequest.of(1, 25), null, null, null, false);
 
         verify(queries).allOrders(null, 1, 25);
         assertEquals(2, response.getPage());
@@ -58,7 +58,7 @@ class AdminOrderControllerTest {
         when(queries.allOrders(OrderStatus.DELIVERED, 0, 10))
                 .thenReturn(new OrderPage(List.of(), 0, 10, 0, 0));
 
-        OrderPageResponse response = controller.listOrders(OrderStatus.DELIVERED, PageRequest.of(0, 10), null, null, null);
+        OrderPageResponse response = controller.listOrders(OrderStatus.DELIVERED, PageRequest.of(0, 10), null, null, null, false);
 
         verify(queries).allOrders(OrderStatus.DELIVERED, 0, 10);
         assertNotNull(response);
@@ -69,7 +69,7 @@ class AdminOrderControllerTest {
     void endpointRequiresTheAdminAuthority() throws NoSuchMethodException {
         PreAuthorize authorization = AnnotatedElementUtils.findMergedAnnotation(
                 AdminOrderController.class.getMethod(
-                        "listOrders", OrderStatus.class, org.springframework.data.domain.Pageable.class, String.class, Instant.class, Instant.class),
+                        "listOrders", OrderStatus.class, org.springframework.data.domain.Pageable.class, String.class, Instant.class, Instant.class, boolean.class),
                 PreAuthorize.class);
 
         assertNotNull(authorization);

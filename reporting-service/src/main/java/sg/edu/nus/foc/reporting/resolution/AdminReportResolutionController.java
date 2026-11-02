@@ -52,10 +52,13 @@ public class AdminReportResolutionController {
             return ResponseEntity.ok(sg.edu.nus.foc.reporting.api.ReportResponse.from(reports.findById(reportId).orElseThrow(), null, true));
         }
         try {
-            return orders.post().uri("/api/orders/admin/{order}/reports/{report}/resolve", report.orderId(), reportId)
+            ResponseEntity<JsonNode> response = orders.post().uri("/api/orders/admin/{order}/reports/{report}/resolve", report.orderId(), reportId)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwt.getTokenValue())
                     .body(Map.of("commandId", request.commandId(), "reply", request.reply().strip()))
                     .retrieve().toEntity(JsonNode.class);
+            // This response has a newly serialized body. Never forward another hop's
+            // Content-Length, Transfer-Encoding, Connection or security headers.
+            return ResponseEntity.status(response.getStatusCode()).body(response.getBody());
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode().value()==409) throw new ConflictException("Resolution was rejected or compensated. Check the Order command before trying a new request.");
             if (e.getStatusCode().value()==403) throw new ForbiddenException("Order Service rejected administrator access.");

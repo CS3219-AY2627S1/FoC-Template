@@ -10,8 +10,11 @@ package sg.edu.nus.foc.reporting.api;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import io.swagger.v3.oas.annotations.media.Schema;
 import sg.edu.nus.foc.reporting.report.ReportCategory;
 
-public record CreateReportRequest(@NotNull ReportCategory category,
+public record CreateReportRequest(@NotNull @Schema(
+        description = "ORDER: requester's active order; the assigned courier responds. ERRAND: courier's active assignment; the requester responds. Both have a 24-hour response window. GENERAL: unlinked. Retired categories remain readable.",
+        allowableValues = {"ORDER", "ERRAND", "GENERAL"}) ReportCategory category,
                                   @NotBlank @Size(max = 2000) String description,
                                   String orderId) { }

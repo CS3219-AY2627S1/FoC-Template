@@ -58,6 +58,21 @@ class OrderCompensationJournalTest {
         verify(jdbc).update(contains("final_stage_status='FULLY_COMPENSATED'"), eq("FAILED"), eq("FORBIDDEN"), anyString(), eq("K"));
         verifyNoInteractions(events);
     }
+
+    @Test void definitelyUnsentBusinessRejectionPreservesTheActionableMessage() {
+        row.put("possible_effect", false);
+        String message = "This order has an active report. It must be resolved before you can cancel or abort the order.";
+        journal.abandon(claim, "ORDER_ON_HOLD", message);
+        verify(jdbc).update(contains("final_stage_status='FULLY_COMPENSATED'"), eq("FAILED"),
+                eq("ORDER_ON_HOLD"), eq(message), eq("K"));
+        verifyNoInteractions(events);
+    }
+
+    @Test void aBusinessErrorAfterPossibleCreditEffectStillRequiresCompensation() {
+        journal.abandon(claim, "ORDER_ON_HOLD", "Resolve the report first.");
+        verify(jdbc).update(contains("insert into order_event_outbox"), anyString(), eq("K"), anyString());
+        verify(events).publishEvent(any(OrderOutboxDispatchRequested.class));
+    }
     @Test void finalizationCannotProceedWhenCreditSuccessIsNotConfirmed() {
         assertThrows(OrderProblem.class, () -> journal.localSucceeded(claim));
         row.put("credit_step_status", "SUCCESS"); row.put("compensation_id", compensation);

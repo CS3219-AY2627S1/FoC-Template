@@ -1,5 +1,7 @@
 # Shared penalty policy library
 
+Effective CHANGE-170 (2026-11-01), approved Yao Xiang: COURIER_BAD_ATTITUDE adds 2 points and belongs to the selectable report subset and full active list. Seven active policies; four report cases. Preserve all older values and the retired unresponsive compatibility constant. No new score consumer or topic is implied.
+
 CHANGE-134, approved2026-10-16: add COURIER_UNRESPONSIVE(3). Full policy now7;
 report subset includes this case while still excluding the original3 automatic
 outcomes. Order admin cancellation can select any addition and emits only its

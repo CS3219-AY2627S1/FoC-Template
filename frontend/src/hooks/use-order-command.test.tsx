@@ -15,6 +15,20 @@ describe("durable Order UI intent", () => {
     m.read.mockResolvedValue(null); m.write.mockResolvedValue(undefined); m.remove.mockResolvedValue(undefined)
     m.api.mockImplementation(async (path: string) => path.endsWith("capabilities") ? { enabled: true } : { items: [] })
   })
+  it.each([
+    ["ORDER_ON_HOLD", "This order has an active report. Please resolve it before proceeding."],
+    ["COMPLETION_ON_HOLD", "This order has an ongoing report. You can complete it after the report is resolved."],
+  ])("explains %s when an older saved rejection contains generic text", async (reason, explanation) => {
+    const rejected = vi.fn()
+    const hook = renderHook(() => useOrderCommand("abort:order", vi.fn(), rejected))
+    await waitFor(() => expect(hook.result.current.ready).toBe(true))
+    m.api.mockResolvedValue({ commandId: "K", status: "COMPLETED", outcome: "REJECTED", reason,
+      message: "Request could not be completed because its details or order state are no longer valid." })
+    await act(() => hook.result.current.run("ABORT", "/api/orders/order/abort", { commandId: "K" }))
+    expect(rejected).toHaveBeenCalledWith(explanation)
+    expect(m.remove).toHaveBeenCalledWith("user-a", "abort:order")
+    expect(hook.result.current.pending).toBe(false)
+  })
   it("keeps the action pending through compensation and clears only after confirmed terminal rejection", async () => {
     const rejected = vi.fn();
     const hook = renderHook(() => useOrderCommand("create", vi.fn(), rejected));

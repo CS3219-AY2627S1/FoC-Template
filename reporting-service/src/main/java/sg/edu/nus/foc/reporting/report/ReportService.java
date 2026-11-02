@@ -44,6 +44,9 @@ public class ReportService {
 
     public Report submit(String reporterId, String bearerToken, ReportCategory category,
                          String description, String requestedOrderId, List<MultipartFile> photos) {
+        if (category != ReportCategory.ORDER && category != ReportCategory.ERRAND && category != ReportCategory.GENERAL) {
+            throw new BadRequestException("Choose Order, Errand or General for a new report.", "category");
+        }
         String orderId = normalize(requestedOrderId);
         if (category.requiresOrder() && orderId == null) {
             throw new BadRequestException("An active order is required for this category.", "orderId");
@@ -58,8 +61,9 @@ public class ReportService {
         try {
             List<Attachment> attachments = upload(reportId, "submission", validated, uploadAttempts);
             AssociatedOrder associated = orderId == null ? null
-                    : orders.placeReportHold(orderId, reportId, true, bearerToken);
-            if (associated != null) validateHold(associated, reporterId, reportId);
+                    : orders.placeReportHold(orderId, reportId, true, bearerToken,
+                            category == ReportCategory.ERRAND ? "COURIER" : "REQUESTER");
+            if (associated != null) validateHold(associated, reporterId, reportId, category);
 
             Instant createdAt = clock.instant();
             String courierId = associated == null ? null : normalize(associated.courierId());
@@ -68,7 +72,8 @@ public class ReportService {
                     associated == null ? null : associated.id(), courierId,
                     awaitingCourier ? ReportStatus.AWAITING_COURIER_RESPONSE : ReportStatus.READY_FOR_REVIEW,
                     createdAt, awaitingCourier ? createdAt.plus(RESPONSE_WINDOW) : null,
-                    null, null, null, attachments, List.of());
+                    null, null, null, attachments, List.of(), null, null,
+                    associated == null ? null : associated.requesterId());
             return repository.saveNewLinked(report);
         } catch (RuntimeException failure) {
             cleanup(uploadAttempts);
@@ -89,15 +94,17 @@ public class ReportService {
     }
 
     public PageResult<Report> listMine(String callerId, String view, int page, int size) {
+        if (deadlines != null) deadlines.reconcileDue();
         PageResult<Report> result = switch (view) {
             case "submitted" -> repository.findByReporterId(callerId, page, size);
-            case "against-me" -> repository.findByCourierId(callerId, page, size);
+            case "against-me" -> repository.findByRespondentId(callerId, page, size);
             default -> throw new BadRequestException("View must be submitted or against-me.", "view");
         };
         return reconcile(result);
     }
 
     public long awaitingResponseCount(String callerId) {
+        if (deadlines != null) deadlines.reconcileDue();
         return repository.countAwaitingResponse(callerId, clock.instant());
     }
 
@@ -174,8 +181,9 @@ public class ReportService {
         });
     }
 
-    private static void validateHold(AssociatedOrder order, String reporterId, String reportId) {
-        if (order == null || !reporterId.equals(order.requesterId())
+    private static void validateHold(AssociatedOrder order, String reporterId, String reportId, ReportCategory category) {
+        if (order == null || order.requesterId() == null
+                || !reporterId.equals(category == ReportCategory.ERRAND ? order.courierId() : order.requesterId())
                 || !reportId.equals(order.reportId()) || !order.isCompletionHold()
                 || !REPORTABLE_STATUSES.contains(order.status())) {
             throw new DependencyUnavailableException("Order Service returned an invalid report hold.");

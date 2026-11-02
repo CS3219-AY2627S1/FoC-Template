@@ -105,7 +105,7 @@ function SidebarNavigation({
       {(adminMode ? ADMIN_NAV_ITEMS : SIDEBAR_NAV_ITEMS).map((item) => (
         <Link
           key={item.href}
-          href={item.href}
+          href={item.href === "/reporting" && reportResponseCount > 0 ? "/reporting?tab=against-me" : item.href}
           onClick={onNavigate}
           aria-current={isActive(item.href) ? "page" : undefined}
           className={cn(

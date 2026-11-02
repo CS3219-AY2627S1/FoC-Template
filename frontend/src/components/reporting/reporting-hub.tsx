@@ -8,6 +8,7 @@
 "use client"
 
 import { useCallback, useRef, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { LoaderCircleIcon } from "lucide-react"
 
 import { RequireAuth } from "@/components/require-auth"
@@ -24,7 +25,7 @@ import { useApi } from "@/hooks/use-api"
 import { ORDER_POLL_INTERVAL_MS, useVisiblePolling } from "@/hooks/use-visible-polling"
 import { ApiError } from "@/lib/api"
 import {
-  REPORT_CATEGORIES,
+  REPORT_CATEGORY_LABELS,
   REPORT_STATUS_LABELS,
   type ReportCategory,
   type ReportPage,
@@ -43,9 +44,12 @@ export function ReportingHub({ initialTab, initialCategory, initialOrderId }: {
 }) {
   const api = useApi()
   const { user, loading: authLoading } = useAuth()
-  const [tab, setTab] = useState(initialTab)
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const requestedTab = searchParams.get("tab")
+  const tab: ReportingTab = requestedTab === "submitted" || requestedTab === "against-me" || requestedTab === "create" ? requestedTab : initialTab
   const [page, setPage] = useState(1)
-  const [reports, setReports] = useState<ReportPage | null>(null)
+  const [reports, setReports] = useState<{ tab: ReportingTab; page: number; data: ReportPage } | null>(null)
   const [listError, setListError] = useState("")
 
   const loadReports = useCallback(async (signal: AbortSignal) => {
@@ -53,7 +57,7 @@ export function ReportingHub({ initialTab, initialCategory, initialOrderId }: {
     try {
       const view = tab === "submitted" ? "submitted" : "against-me"
       const result = await api<ReportPage>(`/api/reports/mine?view=${view}&page=${page}&size=20`, { signal })
-      setReports(result)
+      setReports({ tab, page, data: result })
       setListError("")
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError")) {
@@ -65,7 +69,9 @@ export function ReportingHub({ initialTab, initialCategory, initialOrderId }: {
   const refresh = useVisiblePolling(loadReports, !!user && !authLoading && tab !== "create", ORDER_POLL_INTERVAL_MS)
 
   function selectTab(next: ReportingTab) {
-    setTab(next)
+    const query = new URLSearchParams(searchParams.toString())
+    query.set("tab", next)
+    router.replace(`/reporting?${query}`, { scroll: false })
     setPage(1)
     setReports(null)
     setListError("")
@@ -75,7 +81,7 @@ export function ReportingHub({ initialTab, initialCategory, initialOrderId }: {
     <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:py-10">
       <div className="mb-6 space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Reporting</h1>
-        <p className="text-muted-foreground">Order and Courier reports require your accepted, in-progress, picked-up or delivered order. Credits and General reports do not require an order.</p>
+        <p className="text-muted-foreground">Choose Order for an active request you created, Errand for an active task assigned to you, or General for other issues. The other participant has 24 hours to reply.</p>
       </div>
 
       <div role="tablist" aria-label="Reporting sections" className="mb-6 grid grid-cols-3 gap-1 rounded-xl border bg-muted/40 p-1">
@@ -91,7 +97,7 @@ export function ReportingHub({ initialTab, initialCategory, initialOrderId }: {
           onSubmitted={() => selectTab("submitted")}
         />}
         {tab !== "create" && <ReportList
-          data={reports}
+          data={reports?.tab === tab && reports.page === page ? reports.data : null}
           error={listError}
           againstMe={tab === "against-me"}
           onPage={setPage}
@@ -121,7 +127,7 @@ function ReportList({ data, error, againstMe, onPage, onResponded }: {
 }) {
   if (!data && !error) return <p className="py-12 text-center text-sm text-muted-foreground" aria-live="polite">Loading reports…</p>
   if (error && !data) return <Alert variant="destructive"><AlertTitle>Could not load reports</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>
-  if (!data?.items.length) return <Card><CardHeader><CardTitle>No reports here</CardTitle><CardDescription>{againstMe ? "No reports currently target you as the assigned courier." : "You have not submitted any reports."}</CardDescription></CardHeader></Card>
+  if (!data?.items.length) return <Card><CardHeader><CardTitle>No reports here</CardTitle><CardDescription>{againstMe ? "No reports currently need your response as an order participant." : "You have not submitted any reports."}</CardDescription></CardHeader></Card>
 
   return <div className="space-y-4">
     {error && <Alert variant="destructive"><AlertTitle>Refresh failed</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
@@ -139,7 +145,7 @@ function ReportCard({ report, againstMe, onResponded }: { report: ReportResponse
     <CardHeader className="gap-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <CardTitle>{REPORT_CATEGORIES[report.category]} report</CardTitle>
+          <CardTitle>{REPORT_CATEGORY_LABELS[report.category]} report</CardTitle>
           <CardDescription>Submitted {formatDate(report.createdAt)} · Reference {report.id}</CardDescription>
         </div>
         <Badge variant={report.status === "RESOLVED" ? "secondary" : "outline"}>{REPORT_STATUS_LABELS[report.status]}</Badge>
@@ -149,21 +155,21 @@ function ReportCard({ report, againstMe, onResponded }: { report: ReportResponse
       <p className="whitespace-pre-wrap text-sm">{report.description}</p>
       {report.orderId && <p className="text-sm text-muted-foreground">Order: {report.orderId}</p>}
       {!againstMe && report.resolutionNote && <div className="rounded-lg border p-3"><p className="text-sm font-medium">Admin reply</p><p className="whitespace-pre-wrap text-sm">{report.resolutionNote}</p></div>}
-      {report.responseDeadlineAt && report.status === "AWAITING_COURIER_RESPONSE" && <p className="text-sm font-medium">Courier response due by {formatDate(report.responseDeadlineAt)}</p>}
-      {report.courierResponse && <div className="rounded-lg border bg-muted/30 p-3">
-        <p className="mb-1 text-sm font-medium">Courier response</p>
-        <p className="whitespace-pre-wrap text-sm">{report.courierResponse}</p>
+      {report.responseDeadlineAt && report.status === "AWAITING_COURIER_RESPONSE" && <p className="text-sm font-medium">Response due by {formatDate(report.responseDeadlineAt)}</p>}
+      {(report.responseExplanation ?? report.courierResponse) && <div className="rounded-lg border bg-muted/30 p-3">
+        <p className="mb-1 text-sm font-medium">Response</p>
+        <p className="whitespace-pre-wrap text-sm">{report.responseExplanation ?? report.courierResponse}</p>
         {report.respondedAt && <p className="mt-2 text-xs text-muted-foreground">Responded {formatDate(report.respondedAt)}</p>}
         {report.responseAttachments.length > 0 && <p className="mt-2 text-xs text-muted-foreground">Evidence: {report.responseAttachments.map(item => item.filename).join(", ")}</p>}
       </div>}
       {report.attachments.length > 0 && <p className="text-xs text-muted-foreground">Reporter evidence: {report.attachments.map(item => item.filename).join(", ")}</p>}
-      {againstMe && report.status === "AWAITING_COURIER_RESPONSE" && !report.respondedAt && <CourierResponseForm reportId={report.id} onResponded={onResponded} />}
-      {againstMe && report.status === "READY_FOR_REVIEW" && !report.respondedAt && <Alert><AlertTitle>Response window closed</AlertTitle><AlertDescription>This report is ready for administrator review and can no longer receive a courier response.</AlertDescription></Alert>}
+      {againstMe && report.status === "AWAITING_COURIER_RESPONSE" && !report.respondedAt && <ParticipantResponseForm reportId={report.id} onResponded={onResponded} />}
+      {againstMe && report.status === "READY_FOR_REVIEW" && !report.respondedAt && <Alert><AlertTitle>Response window closed</AlertTitle><AlertDescription>This report is ready for administrator review and can no longer receive a response.</AlertDescription></Alert>}
     </CardContent>
   </Card>
 }
 
-function CourierResponseForm({ reportId, onResponded }: { reportId: string; onResponded: () => void }) {
+function ParticipantResponseForm({ reportId, onResponded }: { reportId: string; onResponded: () => void }) {
   const api = useApi()
   const inputRef = useRef<HTMLInputElement>(null)
   const [explanation, setExplanation] = useState("")

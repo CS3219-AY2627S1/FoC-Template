@@ -12,6 +12,8 @@ import sg.edu.nus.foc.order.domain.OrderCompletionHold;
 import sg.edu.nus.foc.order.domain.OrderProblem;
 import sg.edu.nus.foc.order.domain.repository.OrderCompletionHoldRepository;
 import sg.edu.nus.foc.order.domain.repository.OrderRepository;
+import sg.edu.nus.foc.order.security.Role;
+import sg.edu.nus.foc.order.security.VerifiedOrderCaller;
 
 @Service
 @RequiredArgsConstructor
@@ -45,19 +47,46 @@ public class OrderCompletionHoldService {
         return saved;
     }
 
-    /** Reporting contract: active/requester scope is part of the locked SQL lookup. */
+    /** Requester default retained for existing Reporting clients. */
     @Transactional
     public Order placeActive(String orderId, String reportId, String requesterId,
                              boolean requireAssignedCourier, String authorization) {
+        return placeActive(orderId, reportId, requesterId, requireAssignedCourier, authorization, "REQUESTER");
+    }
+
+    @Transactional
+    public Order placeActive(String orderId, String reportId, String reporterId,
+                             boolean requireAssignedCourier, String authorization, String reporterRole) {
         if (reportId == null || reportId.isBlank() || reportId.length() > 128 || !reportId.equals(reportId.strip())) {
             throw new OrderProblem("VALIDATION_ERROR", "A report ID of 1 through 128 characters is required.");
         }
-        String actor = users.verifyRequester(requesterId, authorization);
-        Order order = orders.getActiveForReportHoldUpdate(orderId, actor)
-                .orElseThrow(() -> OrderProblem.notFound("Active order not found."));
+        if (!"REQUESTER".equals(reporterRole) && !"COURIER".equals(reporterRole) && !"PARTICIPANT".equals(reporterRole)) {
+            throw new OrderProblem("VALIDATION_ERROR", "Reporter role must be REQUESTER, COURIER or PARTICIPANT.");
+        }
+        boolean participant = "PARTICIPANT".equals(reporterRole);
+        Order order;
+        boolean courierReport;
+        String actor;
+        if (participant) {
+            order = orders.getActiveParticipantReportHoldUpdate(orderId, reporterId)
+                    .orElseThrow(() -> OrderProblem.notFound("Active order not found."));
+            courierReport = reporterId.equals(order.getCourierId());
+            actor = courierReport ? VerifiedOrderCaller.identityFor(Role.COURIER, reporterId)
+                    .orElseGet(() -> users.verifyCourier(reporterId, authorization))
+                    : users.verifyRequester(reporterId, authorization);
+        } else {
+            courierReport = "COURIER".equals(reporterRole);
+            // Reporting an existing assignment requires identity/role, not eligibility for a new task.
+            actor = courierReport ? VerifiedOrderCaller.identityFor(Role.COURIER, reporterId)
+                    .orElseGet(() -> users.verifyCourier(reporterId, authorization))
+                    : users.verifyRequester(reporterId, authorization);
+            order = (courierReport ? orders.getActiveCourierReportHoldUpdate(orderId, actor)
+                    : orders.getActiveForReportHoldUpdate(orderId, actor))
+                    .orElseThrow(() -> OrderProblem.notFound("Active order not found."));
+        }
         Optional<OrderCompletionHold> previous = holds.findByReportId(reportId);
         if (previous.isPresent()) {
-            previous.get().requireBinding(orderId, actor);
+            previous.get().requireBinding(orderId, order.getRequesterId());
             if (previous.get().getReleasedAt() != null) throw OrderProblem.conflict("This report hold has already been released.");
         }
         if (requireAssignedCourier && order.getCourierId() == null) {
@@ -65,10 +94,11 @@ public class OrderCompletionHoldService {
         }
         if (previous.isPresent()) return order;
         if (holds.hasActiveForOrder(orderId)) {
-            throw OrderProblem.conflict("This order already has an active report. Please resolve it before submitting another report.");
+            throw OrderProblem.conflict("This order has an active report. Please resolve it before proceeding.");
         }
-        order.placeCompletionHold(actor);
-        holds.save(new OrderCompletionHold(reportId, orderId, actor, Instant.now()));
+        if (courierReport) order.placeCourierReportHold(actor);
+        else order.placeCompletionHold(actor);
+        holds.save(new OrderCompletionHold(reportId, orderId, order.getRequesterId(), Instant.now()));
         Order saved = orders.save(order);
         audit.action("PLACE_COMPLETION_HOLD", orderId, actor, reportId, "accepted");
         return saved;

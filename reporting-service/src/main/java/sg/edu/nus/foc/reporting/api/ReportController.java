@@ -101,7 +101,7 @@ public class ReportController {
                 result.size(), result.totalItems(), result.totalPages());
     }
 
-    @Operation(summary = "Count the authenticated courier's unanswered reports within the response deadline")
+    @Operation(summary = "Count the authenticated participant's unanswered reports within the response deadline")
     @GetMapping("/mine/response-count")
     @ApiResponse(responseCode = "200", description = "Number of reports the caller can still respond to; expired deadlines are excluded")
     @ApiResponse(responseCode = "401", description = "Authentication required")
@@ -147,10 +147,10 @@ public class ReportController {
     }
 
 
-    @Operation(summary = "Submit the reported courier's response")
-    @ApiResponse(responseCode = "200", description = "Courier response saved and report ready for review")
+    @Operation(summary = "Submit the other order participant's response")
+    @ApiResponse(responseCode = "200", description = "Participant response saved and report ready for review")
     @ApiResponse(responseCode = "400", description = "Invalid response or photos")
-    @ApiResponse(responseCode = "403", description = "Caller is not the reported courier")
+    @ApiResponse(responseCode = "403", description = "Caller is not the complaint respondent")
     @ApiResponse(responseCode = "404", description = "Report not found")
     @ApiResponse(responseCode = "409", description = "Response already submitted or deadline passed")
     @PostMapping(value = "/{id}/response", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

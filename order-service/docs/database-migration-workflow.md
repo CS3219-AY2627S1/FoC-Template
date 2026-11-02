@@ -1,5 +1,9 @@
 # Order Service Database Migration Workflow
 
+## V19 handoff - courier bad-attitude policy (CHANGE-170, 2026-11-01)
+
+V19__allow_courier_bad_attitude_penalty.sql extends the two deferred-penalty CHECK constraints on orders and order_courier_attempts to allow COURIER_BAD_ATTITUDE. It preserves old policy values, null/audit invariants, all rows and immutable V1-V18. Real PostgreSQL first reproduced the V18 rejection, then verified new policy persistence, completion and attempt archival with V19. Existing clean and older-schema upgrade preservation checks pass with latest version 19. Normal Flyway startup applies this migration before Hibernate validation; no cloud or user application database was manually changed. Deploy the matching Order/common binary before using the new policy.
+
 ## V18 handoff — Report resolution saga (CHANGE-162, 2026-10-29)
 
 Additive V18__report_resolution_saga.sql creates independent order_report_resolutions journal and order_report_resolution_results inbox, including report/order foreign keys, one active command per report, generation/state checks and a SQL due-work index. Existing V1–V17 remain immutable; no placement snapshots, Report records or guessed outcomes are backfilled. Existing outbox schema is reused. Feature remains default-disabled.

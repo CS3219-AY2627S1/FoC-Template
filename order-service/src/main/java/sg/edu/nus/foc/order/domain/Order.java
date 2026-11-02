@@ -323,6 +323,17 @@ public class Order {
         completionHold = true;
     }
 
+    public void placeCourierReportHold(String actor) {
+        if (courierId == null || !courierId.equals(actor)) {
+            throw OrderProblem.forbidden("Only the assigned courier may report this errand.");
+        }
+        if (status != OrderStatus.ACCEPTED && status != OrderStatus.IN_PROGRESS
+                && status != OrderStatus.PICKED_UP && status != OrderStatus.DELIVERED) {
+            throw OrderProblem.conflict("Only an active assigned errand can be reported.");
+        }
+        completionHold = true;
+    }
+
     public void validateCompletionHoldPlacement(String actor) {
         if (!requesterId.equals(actor)) {
             throw OrderProblem.forbidden("Only the requester may place a report hold on their order.");
@@ -342,7 +353,7 @@ public class Order {
     private void requireFundingOutcomeAllowed() {
         if (completionHold) {
             throw new OrderProblem("ORDER_ON_HOLD",
-                    "This order has an ongoing report. Credit actions are paused until the report is resolved.");
+                    "This order has an active report. Please resolve it before proceeding.");
         }
     }
 
@@ -405,12 +416,13 @@ public class Order {
     }
 
     public void validateOpenCancellation(String actor, long expectedVersion) {
+        // Report placement changes the version; explain its hold only to its owner.
+        if (requesterId.equals(actor)) requireFundingOutcomeAllowed();
         requireVersion(expectedVersion);
         requireStatus(OrderStatus.OPEN);
         if (!requesterId.equals(actor)) {
             throw OrderProblem.forbidden("Only the requester may cancel.");
         }
-        requireFundingOutcomeAllowed();
     }
 
     public void reopenAfterAcceptedCancellation(String actor, long expectedVersion, Instant now) {
@@ -433,12 +445,12 @@ public class Order {
     }
 
     public void validateAcceptedCancellation(String actor, long expectedVersion) {
+        if (courierId != null && courierId.equals(actor)) requireFundingOutcomeAllowed();
         requireVersion(expectedVersion);
         requireStatus(OrderStatus.ACCEPTED);
         if (courierId == null || !courierId.equals(actor)) {
             throw OrderProblem.forbidden("Only the assigned courier may cancel an accepted order.");
         }
-        requireFundingOutcomeAllowed();
     }
 
     public void expire(long expectedVersion, Instant now) {

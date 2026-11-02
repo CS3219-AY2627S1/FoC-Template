@@ -21,6 +21,8 @@ public enum PenaltySystemPolicy {
     // D1 additionally requires permanent suspension; this enum does not enforce it.
     DELIBERATE_ITEM_RETENTION_OR_THEFT(10),
 
+    COURIER_BAD_ATTITUDE(2),
+
     // Read compatibility only: existing persisted penalties and pending events must remain readable.
     @Deprecated
     COURIER_UNRESPONSIVE(3);

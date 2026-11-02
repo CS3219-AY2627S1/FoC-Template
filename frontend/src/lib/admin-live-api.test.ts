@@ -4,6 +4,16 @@ import { ApiError } from "@/lib/api"
 import { createAdminApi } from "@/lib/admin-api"
 
 describe("Live Admin API adapter", () => {
+  it("filters action eligibility in the server query even with an exact ID", async () => {
+    const request = vi.fn().mockResolvedValue({ items: [], page: 2, totalItems: 0, totalPages: 0 })
+    const api = createAdminApi(request)
+    await api.orders({ page: 2, status: "ACCEPTED", orderId: " order/1 ", actionEligibleOnly: true })
+    const path = request.mock.calls[0][0]
+    expect(path).toMatch(/^\/api\/orders\?/)
+    expect(Object.fromEntries(new URLSearchParams(path.split("?")[1]))).toEqual({
+      page: "2", size: "20", status: "ACCEPTED", orderId: "order/1", actionEligibleOnly: "true",
+    })
+  })
   it("combines calendar bounds, status and exact ID on the server before pagination", async () => {
     const request = vi.fn().mockResolvedValue({ items: [], totalItems: 0 })
     const api = createAdminApi(request)

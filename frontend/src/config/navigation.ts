@@ -17,7 +17,6 @@ import {
   FlagIcon,
   CircleUserRound,
   ClipboardListIcon,
-  LayoutDashboardIcon,
   PlusIcon,
   SearchIcon,
   StoreIcon,
@@ -54,12 +53,6 @@ export const NAV_ITEMS: NavItem[] = [
 // These items are specific to the authenticated sidebar.
 export const SIDEBAR_NAV_ITEMS: NavItem[] = [
   {
-    href: "/",
-    label: "Dashboard",
-    description: "See an overview of your activity.",
-    icon: LayoutDashboardIcon,
-  },
-  {
     href: "/errands",
     label: "Browse Errands",
     description: "Find errands available for delivery.",
@@ -80,7 +73,7 @@ export const SIDEBAR_NAV_ITEMS: NavItem[] = [
   {
     href: "/reporting",
     label: "Report an Issue",
-    description: "Report an order, courier, credits, or another issue.",
+    description: "Report an order or a general issue.",
     icon: TriangleAlertIcon,
   },
   ...NAV_ITEMS,

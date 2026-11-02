@@ -47,10 +47,13 @@ public class ReportResolutionStore {
             journal.put("decision", json.writeValueAsString(result));
             journal.put("fenced", false); journal.put("applied", apply);
             if (apply) {
-                journal.put("preimage", snapshot.getData());
+                Report current = FirestoreReportRepository.fromDocument(snapshot).reconcile(clock.instant());
+                var preimage = new HashMap<String, Object>(snapshot.getData());
+                preimage.putAll(FirestoreReportRepository.toDocument(current));
+                journal.put("preimage", preimage);
                 long revision = revision(snapshot) + 1;
                 journal.put("resultingRevision", revision);
-                var report = FirestoreReportRepository.fromDocument(snapshot).resolved(clock.instant());
+                var report = current.resolved(clock.instant());
                 var document = FirestoreReportRepository.toDocument(report);
                 document.put("resolutionNote", c.reply()); document.put("resolvedBy", c.adminId());
                 document.put("revision", revision);
@@ -143,7 +146,9 @@ public class ReportResolutionStore {
         return db.collection("reports").document(id);
     }
     private static boolean matches(DocumentSnapshot r, String order, String requester, String courier) {
-        return Objects.equals(order, r.getString("orderId")) && Objects.equals(requester, r.getString("reporterId"))
+        String actualRequester = r.getString("requesterId");
+        if (actualRequester == null && !"ERRAND".equals(r.getString("category"))) actualRequester = r.getString("reporterId");
+        return Objects.equals(order, r.getString("orderId")) && Objects.equals(requester, actualRequester)
                 && Objects.equals(courier, r.getString("courierId"));
     }
     private static void requireBinding(DocumentSnapshot operation, String binding) {
