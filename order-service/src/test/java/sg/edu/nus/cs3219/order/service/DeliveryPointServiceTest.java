@@ -14,6 +14,8 @@ import sg.edu.nus.cs3219.order.domain.PreparedDropoff;
 import sg.edu.nus.cs3219.order.domain.ResolvedDropoff;
 import sg.edu.nus.cs3219.order.persistence.DeliveryPointEntity;
 import sg.edu.nus.cs3219.order.persistence.DeliveryPointRepository;
+import sg.edu.nus.cs3219.order.persistence.ProcessedEventEntity;
+import sg.edu.nus.cs3219.order.persistence.ProcessedEventRepository;
 import sg.edu.nus.cs3219.order.persistence.UserDeliveryPointEntity;
 import sg.edu.nus.cs3219.order.persistence.UserDeliveryPointRepository;
 import sg.edu.nus.cs3219.order.rest.ApiException;
@@ -34,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -45,6 +48,7 @@ class DeliveryPointServiceTest {
 
     @Mock private DeliveryPointRepository points;
     @Mock private UserDeliveryPointRepository associations;
+    @Mock private ProcessedEventRepository processedEvents;
 
     private DeliveryPointService service;
 
@@ -53,6 +57,7 @@ class DeliveryPointServiceTest {
         service = new DeliveryPointService(
                 points,
                 associations,
+                processedEvents,
                 new OrderProperties(),
                 Clock.fixed(now, ZoneOffset.UTC)
         );
@@ -337,6 +342,44 @@ class DeliveryPointServiceTest {
     void deleteRequiresAssociation() {
         when(associations.existsByUserIdAndDeliveryPointId(user.userId(), 3L)).thenReturn(false);
         assertThrows(ApiException.class, () -> service.delete(user, 3L));
+    }
+
+    @Test
+    void userDeletedRemovesAssociationsAndInactivatesOrphanForks() {
+        DeliveryPointEntity seed = seed(1L, "com1");
+        DeliveryPointEntity fork = seed(20L, null);
+        DeliveryPointEntity shared = seed(21L, null);
+        UserDeliveryPointEntity seedUse = association(1L, 2);
+        UserDeliveryPointEntity forkUse = association(20L, 1);
+        UserDeliveryPointEntity sharedUse = association(21L, 1);
+        when(processedEvents.existsById("del-1")).thenReturn(false);
+        when(associations.findByUserId(user.userId())).thenReturn(List.of(seedUse, forkUse, sharedUse));
+        when(points.lockById(1L)).thenReturn(Optional.of(seed));
+        when(points.lockById(20L)).thenReturn(Optional.of(fork));
+        when(points.lockById(21L)).thenReturn(Optional.of(shared));
+        when(associations.countByDeliveryPointId(20L)).thenReturn(0L);
+        when(associations.countByDeliveryPointId(21L)).thenReturn(1L);
+
+        service.applyUserDeleted("del-1", user.userId());
+
+        ArgumentCaptor<ProcessedEventEntity> processed = ArgumentCaptor.forClass(ProcessedEventEntity.class);
+        verify(processedEvents).save(processed.capture());
+        assertEquals("del-1", processed.getValue().getEventId());
+        verify(associations).deleteAll(List.of(seedUse, forkUse, sharedUse));
+        assertTrue(seed.isActive());
+        assertFalse(fork.isActive());
+        assertTrue(shared.isActive());
+    }
+
+    @Test
+    void userDeletedIsIdempotentAndIgnoresBlankIds() {
+        when(processedEvents.existsById("del-2")).thenReturn(true);
+        service.applyUserDeleted("del-2", user.userId());
+        verify(associations, never()).findByUserId(any());
+
+        service.applyUserDeleted(" ", user.userId());
+        service.applyUserDeleted("del-3", " ");
+        verify(processedEvents, never()).save(any());
     }
 
     private static DeliveryPointEntity seed(long id, String code) {

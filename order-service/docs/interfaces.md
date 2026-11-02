@@ -83,8 +83,9 @@ Every published payload has `eventId`, `eventType`, `schemaVersion` (1), `occurr
 | foc.rating.commands | rating.permission.granted | Deliver: courier rates requester. Acknowledge or unacknowledge: requester rates courier. Fields: `raterId`, `raterRole`, `rateeId`, `rateeRole` |
 | foc.admin.events | OrderUnderReview | Consumed. ESCALATED → UNDER_REVIEW when `payload.caseId` is present |
 | foc.admin.events | ConflictResolved | Consumed. ESCALATED or UNDER_REVIEW → COMPLETED, and photos are deleted |
+| foc.user.status | UserDeleted | Consumed. Deletes that user’s `user_delivery_point` rows; soft-inactivates orphan forks. Envelope uses `type` + `data.userId` (not `eventType`) |
 
-`order.status.changed` has no consumer in this service. A duplicate `eventId`, a missing field, or a non-UUID order id is ignored and is not stored. A readable event for an unknown order is stored in `processed_events` and does not change a status. A known order stores the event, copies `caseId`, and changes status only when the current status allows that event. A failure while applying a readable event is retried.
+`order.status.changed` has no consumer in this service. A duplicate `eventId`, a missing field, or a non-UUID order id is ignored and is not stored. A readable event for an unknown order is stored in `processed_events` and does not change a status. A known order stores the event, copies `caseId`, and changes status only when the current status allows that event. `UserDeleted` is also deduped by `eventId` in `processed_events`. A failure while applying a readable event is retried.
 
 The outbox row is committed with the order change. The deadline sweeper publishes at most 50 unpublished rows per pass, waits up to 5 seconds for each send, and sets `published_at` only after the broker accepts it. A Kafka failure is logged and retried on the next sweep.
 

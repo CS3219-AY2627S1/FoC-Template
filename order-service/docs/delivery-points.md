@@ -1,6 +1,6 @@
 # Delivery points (design)
 
-Status: **implemented** (see Flyway `V6`/`V7`, `DeliveryPointService`, create/list/PATCH/DELETE + nickname). Scope is Order Service unless noted.
+Status: **implemented** (see Flyway `V6`/`V7`, `DeliveryPointService`, create/list/PATCH/DELETE + nickname + `UserDeleted` association cleanup). Scope is Order Service unless noted.
 
 Pickup (`from`) stays with Supplier Service (approved catalogue). Dropoff (`to`) is owned by Order’s database: a seeded campus catalogue, plus per-user associations built only when a dropoff is used on a successful order.
 
@@ -147,10 +147,26 @@ No hard-delete of `delivery_point` rows from the user API.
 
 Inactive forks stay in the DB so old `dropoff_location_id` values still resolve if we ever join; create and lists reject `active = false`. User can place a new order with the same inline fields later (new row + new usage).
 
+### Account deletion (`UserDeleted`)
+
+User publishes final physical removal on `foc.user.status` (not schedule/cancel):
+
+```json
+{ "eventId": "<uuid>", "type": "UserDeleted", "occurredAt": "<ISO-8601>", "data": { "userId": "<uuid>" } }
+```
+
+Order consumes it (dedupe `eventId` in `processed_events`) and applies the same soft-delete rules in bulk:
+
+1. Delete all `user_delivery_point` rows for `data.userId` (nicknames / usage go with them).
+2. For each distinct place id that was linked: if it is a **fork** with **zero associations left** → `active = false`.
+3. Never flip seed catalogue `active`. Never hard-delete `delivery_point`. Never rewrite order dropoff snapshots.
+
+At-least-once: duplicate `eventId` is a no-op. Malformed / non-`UserDeleted` messages are ignored.
+
 ### What delete loses vs what orders keep
 
 - **Kept on past orders:** snapshotted dropoff fields on the order row (extend snapshot to **name, building, description, lat, lng** so courier-visible detail survives even if the point is inactive).
-- **Removed from my-locations:** association + that user’s `use_count` / `last_used_at` for that link.
+- **Removed from my-locations:** association + that user’s `use_count` / `last_used_at` / `nickname` for that link (also on `UserDeleted`).
 - **Not destroyed:** fork row becomes inactive; seed catalogue unchanged.
 
 ## Search / pool by dropoff
@@ -169,6 +185,7 @@ COW is for **shared / seed integrity**, not for order history (snapshot handles 
 | --- | --- |
 | `PATCH` edit | lock + count + (in-place `UPDATE` **or** insert fork + move association + copy usage) |
 | `DELETE` | lock + delete association + optional `active = false` |
+| `UserDeleted` | delete all associations for user + soft-inactive orphan forks |
 | `POST` create order (success path) | order insert + dropoff resolve/insert + usage upsert (`INSERT … ON CONFLICT DO UPDATE`) |
 | Inline new place on create | new `delivery_point` + `user_delivery_point` + order row together |
 
@@ -219,3 +236,4 @@ Auth: `X-User-Id` + `X-Permitted-Action`.
 6. Optional `user_delivery_point.nickname` (V7): PATCH association-only without COW; copy on place fork; expose on my-locations; not on courier snapshot / create key.
 7. Bruno + unit tests (geofence, forbidden foreign id, COW usage/nickname copy, nickname-only PATCH, delete vs order snapshot).
 8. Update `schema.md`, `interfaces.md`, create sequence; then update load-test dropoff ids away from Supplier `toLocation: "4"`.
+9. Consume `foc.user.status` `UserDeleted`: purge that user’s associations; soft-inactive orphan forks; leave seed + order snapshots.

@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 public interface UserDeliveryPointRepository extends JpaRepository<UserDeliveryPointEntity, UserDeliveryPointId> {
@@ -19,6 +20,8 @@ public interface UserDeliveryPointRepository extends JpaRepository<UserDeliveryP
     boolean existsByUserIdAndDeliveryPointId(String userId, Long deliveryPointId);
 
     Page<UserDeliveryPointEntity> findByUserIdOrderByUseCountDescLastUsedAtDesc(String userId, Pageable pageable);
+
+    List<UserDeliveryPointEntity> findByUserId(String userId);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """

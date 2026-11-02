@@ -10,6 +10,8 @@ import sg.edu.nus.cs3219.order.domain.PreparedDropoff;
 import sg.edu.nus.cs3219.order.domain.ResolvedDropoff;
 import sg.edu.nus.cs3219.order.persistence.DeliveryPointEntity;
 import sg.edu.nus.cs3219.order.persistence.DeliveryPointRepository;
+import sg.edu.nus.cs3219.order.persistence.ProcessedEventEntity;
+import sg.edu.nus.cs3219.order.persistence.ProcessedEventRepository;
 import sg.edu.nus.cs3219.order.persistence.UserDeliveryPointEntity;
 import sg.edu.nus.cs3219.order.persistence.UserDeliveryPointRepository;
 import sg.edu.nus.cs3219.order.rest.ApiException;
@@ -19,8 +21,10 @@ import sg.edu.nus.cs3219.order.rest.PageResponse;
 import sg.edu.nus.cs3219.order.rest.UpdateDeliveryPointRequest;
 
 import java.time.Clock;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -31,17 +35,20 @@ public class DeliveryPointService {
 
     private final DeliveryPointRepository points;
     private final UserDeliveryPointRepository associations;
+    private final ProcessedEventRepository processedEvents;
     private final OrderProperties properties;
     private final Clock clock;
 
     public DeliveryPointService(
             DeliveryPointRepository points,
             UserDeliveryPointRepository associations,
+            ProcessedEventRepository processedEvents,
             OrderProperties properties,
             Clock clock
     ) {
         this.points = points;
         this.associations = associations;
+        this.processedEvents = processedEvents;
         this.properties = properties;
         this.clock = clock;
     }
@@ -147,6 +154,33 @@ public class DeliveryPointService {
         associations.findByUserIdAndDeliveryPointId(actor.userId(), id).ifPresent(associations::delete);
         if (!locked.isSeed() && associations.countByDeliveryPointId(id) == 0) {
             locked.setActive(false);
+        }
+    }
+
+    @Transactional
+    public void applyUserDeleted(String eventId, String userId) {
+        if (eventId == null || eventId.isBlank() || userId == null || userId.isBlank()) {
+            return;
+        }
+        if (processedEvents.existsById(eventId)) {
+            return;
+        }
+        ProcessedEventEntity processed = new ProcessedEventEntity();
+        processed.setEventId(eventId);
+        processed.setProcessedAt(clock.instant());
+        processedEvents.save(processed);
+
+        List<UserDeliveryPointEntity> rows = associations.findByUserId(userId);
+        Set<Long> pointIds = rows.stream()
+                .map(UserDeliveryPointEntity::getDeliveryPointId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        associations.deleteAll(rows);
+        for (Long pointId : pointIds) {
+            points.lockById(pointId).ifPresent(point -> {
+                if (!point.isSeed() && associations.countByDeliveryPointId(pointId) == 0) {
+                    point.setActive(false);
+                }
+            });
         }
     }
 

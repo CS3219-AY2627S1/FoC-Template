@@ -49,7 +49,7 @@ Indexes:
 
 `V4` renamed `requester_email` and `courier_email` to `requester_id` and `courier_id`. The column type stayed `VARCHAR`.
 
-`V6` adds `delivery_point`, `user_delivery_point`, and order dropoff `building` / `description` snapshot columns. `V7` adds optional `user_delivery_point.nickname`. See [delivery-points.md](delivery-points.md).
+`V6` adds `delivery_point`, `user_delivery_point`, and order dropoff `building` / `description` snapshot columns. `V7` adds optional `user_delivery_point.nickname`. `UserDeleted` on `foc.user.status` deletes that user’s associations and soft-inactivates orphan forks (see [delivery-points.md](delivery-points.md)).
 
 ## order_log
 

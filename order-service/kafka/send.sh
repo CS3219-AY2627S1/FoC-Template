@@ -2,10 +2,11 @@
 # Send a default message.
 #   bash /defaults/send.sh admin.review.started
 #   bash /defaults/send.sh admin.case.resolved <order-uuid>
+#   bash /defaults/send.sh UserDeleted <user-uuid>
 set -euo pipefail
 
 name="${1:-admin.review.started}"
-order_id="${2:-00000000-0000-0000-0000-000000000000}"
+id="${2:-00000000-0000-0000-0000-000000000000}"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 file="${here}/messages/${name}.json"
 
@@ -15,6 +16,7 @@ case "$name" in
   credit.reservation.return|credit.reservation.release) topic="foc.credit.commands" ;;
   rating.permission.granted) topic="foc.rating.commands" ;;
   admin.escalation.opened) topic="foc.admin.commands" ;;
+  UserDeleted) topic="foc.user.status" ;;
   *)
     echo "Unknown message: $name" >&2
     echo "Defaults:" >&2
@@ -30,7 +32,7 @@ fi
 
 event_id="$(cat /proc/sys/kernel/random/uuid)"
 tr -d '\r\n' < "$file" \
-  | sed -e "s/00000000-0000-0000-0000-000000000000/${order_id}/g" -e "s/EVENT_ID/${event_id}/g" \
-  | sed "s/^/${order_id}:/" \
+  | sed -e "s/00000000-0000-0000-0000-000000000000/${id}/g" -e "s/EVENT_ID/${event_id}/g" \
+  | sed "s/^/${id}:/" \
   | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server kafka:29092 --topic "$topic" --property parse.key=true --property key.separator=:
-echo "Sent $name to $topic for order $order_id"
+echo "Sent $name to $topic for key $id"

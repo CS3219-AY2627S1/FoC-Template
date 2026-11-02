@@ -10,6 +10,7 @@ import sg.edu.nus.cs3219.order.domain.OrderStatus;
 import sg.edu.nus.cs3219.order.persistence.OrderEntity;
 import sg.edu.nus.cs3219.order.persistence.OutboxEntity;
 import sg.edu.nus.cs3219.order.persistence.OutboxRepository;
+import sg.edu.nus.cs3219.order.service.DeliveryPointService;
 import sg.edu.nus.cs3219.order.service.OrderCommandService;
 
 import java.time.Clock;
@@ -151,6 +152,32 @@ class MessagingTest {
     }
 
     @Test
+    void userStatusListenerAppliesUserDeletedAndIgnoresOtherTypes() {
+        DeliveryPointService deliveryPoints = mock(DeliveryPointService.class);
+        UserStatusEventListener listener = new UserStatusEventListener(mapper, deliveryPoints);
+        String userId = "11111111-1111-1111-1111-111111111111";
+
+        listener.onMessage("""
+                {"eventId":"del-1","type":"UserDeleted","occurredAt":"2026-11-02T00:00:00Z","data":{"userId":"%s"}}
+                """.formatted(userId));
+        verify(deliveryPoints).applyUserDeleted("del-1", userId);
+
+        listener.onMessage("""
+                {"eventId":"v1","type":"UserVerified","occurredAt":"2026-11-02T00:00:00Z","data":{"userId":"%s"}}
+                """.formatted(userId));
+        listener.onMessage("{");
+        listener.onMessage("""
+                {"eventId":"del-2","type":"UserDeleted","occurredAt":"2026-11-02T00:00:00Z","data":{}}
+                """);
+        verify(deliveryPoints, org.mockito.Mockito.times(1)).applyUserDeleted(any(), any());
+
+        doThrow(new IllegalStateException("retry")).when(deliveryPoints).applyUserDeleted("del-3", userId);
+        assertThrows(IllegalStateException.class, () -> listener.onMessage("""
+                {"eventId":"del-3","type":"UserDeleted","occurredAt":"2026-11-02T00:00:00Z","data":{"userId":"%s"}}
+                """.formatted(userId)));
+    }
+
+    @Test
     void topicBeansUseTheConfiguredPartitions() {
         OrderProperties properties = new OrderProperties();
         properties.getKafka().setPartitions(3);
@@ -162,6 +189,7 @@ class MessagingTest {
         assertEquals(KafkaTopics.ORDER_STATUS, config.orderStatusTopic(properties).name());
         assertEquals(3, config.adminEventTopic(properties).numPartitions());
         assertEquals(KafkaTopics.ADMIN_EVENTS, config.adminEventTopic(properties).name());
+        assertEquals(KafkaTopics.USER_STATUS, config.userStatusTopic(properties).name());
     }
 
     private OrderEntity order() {
