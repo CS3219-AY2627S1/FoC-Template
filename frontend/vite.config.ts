@@ -17,14 +17,25 @@ const BADGES_SERVICE = 'http://localhost:4006';
  * token. The dev server asks User Service the same way nginx and the gateway
  * do, then copies those headers onto the proxied request.
  */
+/** The dev-server request. `tsc` here only loads Vite's types, not Node's `http` types. */
+interface DevRequest {
+  url?: string;
+  headers: Record<string, string | string[] | undefined>;
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 function devGatewayHeaders(userService: string): Plugin {
   return {
     name: 'dev-gateway-headers',
     configureServer(server) {
       server.middlewares.use(async (req, _res, next) => {
-        const url = req.url ?? '';
+        const request = req as DevRequest;
+        const url = request.url ?? '';
         const needsIdentity = url.startsWith('/api/v1/admin') || url.startsWith('/api/v1/supplier');
-        const authorization = req.headers.authorization;
+        const authorization = headerValue(request.headers.authorization);
         if (!needsIdentity || !authorization) {
           next();
           return;
@@ -38,9 +49,9 @@ function devGatewayHeaders(userService: string): Plugin {
           const isAdmin = response.headers.get('x-is-admin');
           const permitted = response.headers.get('x-permitted-action');
           if (userId && isAdmin && permitted) {
-            req.headers['x-user-id'] = userId;
-            req.headers['x-is-admin'] = isAdmin;
-            req.headers['x-permitted-action'] = permitted;
+            request.headers['x-user-id'] = userId;
+            request.headers['x-is-admin'] = isAdmin;
+            request.headers['x-permitted-action'] = permitted;
           }
         } catch {
           // Leave the headers unset. The target service reports the failure.
