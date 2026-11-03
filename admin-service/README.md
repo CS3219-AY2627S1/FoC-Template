@@ -50,7 +50,7 @@ admin-service/
 │   │   └── scheduler.py          # job registration / cancel (APScheduler)
 │   └── jobs/
 │       └── conflict_jobs.py      # AI eval, reminder, auto-resolve (own DB session)
-├── alembic/                      # migrations through 0004_user_reports_and_appeals
+├── alembic/                      # migrations through 0005_appeal_rejection_reason
 ├── tests/
 ├── mock_user_service.py          # local stub for User Service
 ├── docker-compose.yml            # Postgres, mock User Service, app (Kafka is Order's)
@@ -84,7 +84,7 @@ admin-service/
 |---|---|---|
 | Admin UI / admin user | Gateway sets `x-user-id`, `x-is-admin=true`, and `x-permitted-action=true` (role `ADMIN`, account active, email and Telegram verified). Search and role/status changes also forward that caller's `Authorization` bearer to User Service | **404** (never 403) |
 | Order Service (intake) | No auth. `POST /api/v1/admin/conflicts` is open | — |
-| User Service (report and appeal intake) | No auth. `POST /api/v1/admin/reports` and `POST /api/v1/admin/appeals` are open. Call them from User Service, not from the browser | — |
+| User Service (report and appeal intake, latest appeal) | No auth. `POST /api/v1/admin/reports`, `POST /api/v1/admin/appeals`, and `GET /api/v1/admin/appeals/latest` are open. Call them from User Service, not from the browser. The public gateway must not expose `/latest` | — |
 
 A missing user id, a non-admin, and an admin who is not permitted all get the same **404**.
 
@@ -100,7 +100,7 @@ Health (no auth): `GET /health` → `{ "status": "ok" }`.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/v1/admin/users?search=&page=1` | Relays to User Service search |
+| GET | `/api/v1/admin/users?search=&page=1&status=` | Relays to User Service `GET /api/v1/user/search`. `status` is optional: `Created`, `Verified`, or `Suspended`. Omitted means every user. An unknown value is **422**. `total` is whatever User Service returns for that filter |
 | POST | `/api/v1/admin/users/{user_id}/promote` | Relays role=`admin`; audits; Kafka `UserPromoted` |
 | POST | `/api/v1/admin/users/{user_id}/demote` | Cannot demote self; role=`user`; `UserDemoted` |
 | POST | `/api/v1/admin/users/{user_id}/suspend` | Relays status=`suspended`; closes open reports against that user as `actioned`; `UserSuspended` |
@@ -153,9 +153,12 @@ Returns **201**. While that user has an open appeal, a retry returns the same ro
 
 | Method | Path | Notes |
 |---|---|---|
+| GET | `/api/v1/admin/appeals/latest?userId=` | **No auth.** That user's latest appeal, or JSON `null`. Empty or oversized `userId` is **422**. Registered before `/{appeal_id}` |
 | GET | `/api/v1/admin/appeals?status=` | `open`, `rejected`, or `reinstated` |
 | GET | `/api/v1/admin/appeals/{appeal_id}` | Detail |
-| POST | `/api/v1/admin/appeals/{appeal_id}/reject` | `open` → `rejected`. The suspension stays. **409** if it is not open |
+| POST | `/api/v1/admin/appeals/{appeal_id}/reject` | `open` → `rejected`. Body `{ "reason": "..." }`, trimmed, 1–4000 characters. Blank or missing is **422**. The reason is stored as `rejectionReason` and on the `reject_appeal` audit `detail`. The suspension stays. **409** if it is not open. After commit, Admin calls User Service `POST /api/v1/user/{userId}/appeal-rejected` with the same reason and the admin's `Authorization` header (2s). A failure there does not undo the rejection |
+
+An appeal response includes `rejectionReason` (`null` while the appeal is open).
 
 ### Conflicts — `/api/v1/admin/conflicts`
 
@@ -342,9 +345,10 @@ calls send `x-user-id`, `x-is-admin`, and `x-permitted-action`.
 - A failed Kafka publish is only logged. The database commits first, and if
   Kafka is down the API still succeeds. There is no outbox to retry that event
   later.
-- User reports and suspension appeals are stored here. User Service does not
-  call `POST /api/v1/admin/reports` or `POST /api/v1/admin/appeals` yet, and
-  the frontend has no report form, appeal form, or admin queue for them.
+- User Service search does not yet apply `status`, so the forwarded filter is
+  ignored until that service does. `POST /api/v1/user/{userId}/appeal-rejected`
+  is called after a reject; User Service does not implement it yet, and the
+  stored rejection still stands when that call fails.
 - First admin. Promote requires an existing admin, so this service cannot create
   the first one. The mock treats any `admin-*` bearer token as an admin. There
   is no bootstrap or seed for a real first admin account.
