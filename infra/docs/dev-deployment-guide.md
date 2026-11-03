@@ -158,13 +158,18 @@ The NUS organisation denies `AssumeRoleForPodIdentity`,
 - The account is in the **SES sandbox**: every recipient must be a verified
   identity, at most 200 emails a day. Request production access to lift both.
 
-### Sizing
+### Sizing and autoscaling
 
-- 2 × `t4g.large` Spot (arm64): one node fits only 29 pods (one VPC IP each),
-  and a steady dev runs ~39.
-- `foc-dev` quota: `limits.cpu: 12`. The steady state needs ~7.4 (7 services,
-  their Linkerd proxies, Kafka broker and entity operator); the rest covers
-  migrate Jobs and rollouts.
+- Nodes: `default` group, 2 × `t4g.large` Spot (29 pods each). Cluster
+  Autoscaler adds `burst` nodes (4 vCPU, 0–5) for Pending pods and removes them
+  after 10 idle minutes.
+- Pods: HPA at 70% CPU on order (2–16), user and rating (1–6), supplier and
+  credit (1–4). admin and badges stay at 1.
+- The `foc-dev` quota fits every HPA at its max; raise both together.
+- RDS `db.t4g.micro` (~80–90 connections) is the ceiling: resize it before a
+  full-size load test.
+- Watch: `kubectl -n foc-dev get hpa` · `kubectl top pods -n foc-dev` ·
+  `kubectl get nodes -L eks.amazonaws.com/nodegroup`.
 
 ## 3. Mistakes and lessons
 

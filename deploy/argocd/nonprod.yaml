@@ -93,6 +93,34 @@ spec:
       limit: 10
       backoff: { duration: 10s, factor: 2, maxDuration: 5m }
 ---
+# Adds nodes for Pending pods, removes idle ones.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-autoscaler
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: foc-platform
+  source:
+    repoURL: https://github.com/junngithub/AY2627S1-CS3219-P15.git
+    targetRevision: main
+    path: deploy/charts/cluster-autoscaler
+    helm:
+      valueFiles:
+        - ../../values/clusters/nonprod/cluster-autoscaler.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff: { duration: 10s, factor: 2, maxDuration: 5m }
+---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

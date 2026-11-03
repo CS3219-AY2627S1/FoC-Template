@@ -6,7 +6,9 @@ metadata:
   labels:
     {{- include "foc-service.labels" . | nindent 4 }}
 spec:
+  {{- if not .Values.autoscaling.enabled }} {{/* else the HPA owns it */}}
   replicas: {{ .Values.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "foc-service.selectorLabels" . | nindent 6 }}

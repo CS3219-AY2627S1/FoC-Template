@@ -130,11 +130,51 @@ resource "aws_eks_node_group" "default" {
     max_unavailable = 1
   }
 
+  lifecycle {
+    # Cluster Autoscaler owns it.
+    ignore_changes = [scaling_config[0].desired_size]
+  }
+
+  depends_on = [aws_iam_role_policy_attachment.node]
+}
+
+# Load capacity, 0 nodes when idle; Cluster Autoscaler adds and removes them.
+resource "aws_eks_node_group" "burst" {
+  count = var.eks_enabled ? 1 : 0
+
+  cluster_name    = aws_eks_cluster.this[0].name
+  node_group_name = "burst"
+  node_role_arn   = aws_iam_role.node.arn
+  subnet_ids      = [for s in aws_subnet.private : s.id]
+
+  ami_type       = "AL2023_ARM_64_STANDARD"
+  capacity_type  = "SPOT"
+  instance_types = var.burst_instance_types
+
+  launch_template {
+    id      = aws_launch_template.node.id
+    version = aws_launch_template.node.latest_version
+  }
+
+  scaling_config {
+    min_size     = 0
+    desired_size = 0
+    max_size     = var.burst_node_max
+  }
+
+  update_config {
+    max_unavailable = 1
+  }
+
+  lifecycle {
+    ignore_changes = [scaling_config[0].desired_size]
+  }
+
   depends_on = [aws_iam_role_policy_attachment.node]
 }
 
 resource "aws_eks_addon" "this" {
-  for_each = var.eks_enabled ? toset(["vpc-cni", "kube-proxy", "coredns"]) : toset([])
+  for_each = var.eks_enabled ? toset(["vpc-cni", "kube-proxy", "coredns", "metrics-server"]) : toset([])
 
   cluster_name                = aws_eks_cluster.this[0].name
   addon_name                  = each.value

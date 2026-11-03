@@ -37,6 +37,38 @@ data "aws_iam_policy_document" "node_workloads" {
     resources = [for tg in aws_lb_target_group.gateway : tg.arn]
   }
 
+  # Cluster Autoscaler: resize only this cluster's node groups.
+  statement {
+    sid = "ClusterAutoscalerDescribe"
+    actions = [
+      "autoscaling:DescribeAutoScalingGroups",
+      "autoscaling:DescribeAutoScalingInstances",
+      "autoscaling:DescribeLaunchConfigurations",
+      "autoscaling:DescribeScalingActivities",
+      "autoscaling:DescribeTags",
+      "ec2:DescribeImages",
+      "ec2:DescribeInstanceTypes",
+      "ec2:DescribeLaunchTemplateVersions",
+      "ec2:GetInstanceTypesFromInstanceRequirements",
+    ]
+    resources = ["*"] # Describe* has no resource-level permissions
+  }
+  statement {
+    sid       = "ClusterAutoscalerNodegroups"
+    actions   = ["eks:DescribeNodegroup"]
+    resources = ["arn:aws:eks:${var.region}:${data.aws_caller_identity.current.account_id}:nodegroup/${var.cluster_name}/*/*"]
+  }
+  statement {
+    sid       = "ClusterAutoscalerResize"
+    actions   = ["autoscaling:SetDesiredCapacity", "autoscaling:TerminateInstanceInAutoScalingGroup"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/k8s.io/cluster-autoscaler/${var.cluster_name}"
+      values   = ["owned"]
+    }
+  }
+
   # External Secrets: each env's secrets (secrets.tf) and the RDS admin login.
   statement {
     sid     = "ExternalSecretsRead"

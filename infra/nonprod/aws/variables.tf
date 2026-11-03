@@ -54,6 +54,18 @@ variable "node_count" {
   default     = { min = 2, desired = 2, max = 3 }
 }
 
+variable "burst_instance_types" {
+  description = "Spot pools for the burst node group (eks.tf), all arm64 with 4 vCPU / 16 GiB."
+  type        = list(string)
+  default     = ["m7g.xlarge", "m6g.xlarge", "t4g.xlarge"]
+}
+
+variable "burst_node_max" {
+  description = "Most burst nodes Cluster Autoscaler may add (mind the Spot vCPU quota)."
+  type        = number
+  default     = 5
+}
+
 variable "databases" {
   description = "Services that get their own Postgres database and login (ADR-0010). Same as infra/local/aws."
   type        = list(string)
