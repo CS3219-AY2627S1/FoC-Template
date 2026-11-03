@@ -29,7 +29,7 @@ import { errorMessage } from '../lib/api';
 import { deliveryPointDetail } from '../lib/deliveryPoints';
 import { refreshCreditBalance } from '../lib/credit';
 import { formatWhen } from '../lib/format';
-import { acknowledgeOrder, cancelOrder, type Order } from '../lib/orders';
+import { acknowledgeOrder, cancelOrder, creditOutcome, type Order } from '../lib/orders';
 import { expectNewRating } from '../lib/rating';
 import { useLiveOrder } from '../lib/useLiveOrder';
 import { formatDeadline, useCountdown } from '../lib/useCountdown';
@@ -166,6 +166,10 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
             <h1 className={styles.title}>{order.item}</h1>
             <p className={styles.posted}>
               Posted {postedTime} &middot; reward <strong>{order.credits} credits</strong>
+              {/* Where the credits went, when not the usual way: returned, or by Admin's verdict. */}
+              {creditOutcome(order, 'requester').note !== null ? (
+                <> &middot; {creditOutcome(order, 'requester').note}</>
+              ) : null}
             </p>
           </header>
 
@@ -225,23 +229,9 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
           </section>
 
           {/*
-            TODO(order-service): Order F2.3.3 and F2.4.3 photos. The order
-            records whether each was uploaded, but no endpoint serves the
-            image, so this section is commented out.
-
-          <section className={styles.photoCard}>
-            <h2 className={styles.sectionTitle}>Photo evidence</h2>
-            <div className={styles.photoGrid}>
-              <div className={styles.photoSlot}>
-                {beforePhotoUrl ? <img src={beforePhotoUrl} alt="Taken at collection" />
-                  : <span>Before &mdash; pending collection</span>}
-              </div>
-              <div className={styles.photoSlot}>
-                {afterPhotoUrl ? <img src={afterPhotoUrl} alt="Taken at delivery" />
-                  : <span>After &mdash; pending delivery</span>}
-              </div>
-            </div>
-          </section>
+            No photos here by design (2026-11-03): the requester does not see the
+            courier's collection and delivery photos (UI FR7.4 dropped); they
+            exist as evidence for Admin's review of a dispute.
           */}
 
           {/* In the main column, not the status panel, which mobile hides. */}

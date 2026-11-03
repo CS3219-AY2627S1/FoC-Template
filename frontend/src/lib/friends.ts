@@ -157,6 +157,13 @@ function subscribeFriends(listener: () => void): () => void {
   };
 }
 
+/** For a list of orders: a lookup from user id to name, for people who are friends. */
+export function useFriendNames(): (userId: string | null) => string | null {
+  const friends = useSyncExternalStore(subscribeFriends, () => knownFriends);
+  return (userId) =>
+    userId === null ? null : (friends.find((f) => f.id.toLowerCase() === userId.toLowerCase())?.name ?? null);
+}
+
 /** The person's name if they are the signed-in user's friend, else null. */
 export function useFriendName(userId: string | null): string | null {
   const friends = useSyncExternalStore(subscribeFriends, () => knownFriends);

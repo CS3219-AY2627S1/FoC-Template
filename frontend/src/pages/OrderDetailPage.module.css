@@ -45,7 +45,6 @@
 }
 
 .detailsCard,
-.photoCard,
 .statusPanel {
   padding: var(--space-4) var(--space-5);
   background: var(--color-surface);
@@ -92,39 +91,6 @@
 .contact {
   width: fit-content;
   font-size: var(--font-size-sm);
-}
-
-.photoCard {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.photoGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4);
-}
-
-.photoSlot {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  aspect-ratio: 16 / 9;
-  max-width: 100%;
-  padding: var(--space-3);
-  border: 1px dashed var(--color-border-strong);
-  border-radius: var(--radius-md);
-  color: var(--color-text-subtle);
-  font-size: var(--font-size-sm);
-  text-align: center;
-}
-
-.photoSlot img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: var(--radius-sm);
 }
 
 .statusPanel {
@@ -239,20 +205,6 @@
     grid-template-columns: 1fr;
     gap: var(--space-3);
     padding: var(--space-4);
-  }
-
-  .photoCard {
-    padding: 0;
-    background: transparent;
-    border: none;
-  }
-
-  .photoCard .sectionTitle {
-    display: none;
-  }
-
-  .photoSlot {
-    aspect-ratio: 4 / 3;
   }
 
   .mobileActions {

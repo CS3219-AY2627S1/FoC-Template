@@ -38,6 +38,7 @@ import {
   PHOTO_MAX_BYTES,
   cancelOrder,
   collectOrder,
+  creditOutcome,
   deliverOrder,
   type Order,
 } from '../lib/orders';
@@ -254,6 +255,8 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
    * collected and delivered. The order carries deadlines only, not when each
    * step happened, so the subtitle says where you are instead.
    */
+  // Where the credits go for the courier; differs from task.credits only on a disputed order.
+  const payout = creditOutcome(task, 'courier');
   const subtitle = delivered
     ? `Delivered to ${task.dropoff.name}`
     : collected
@@ -342,22 +345,6 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
             </section>
           ) : null}
 
-          {/*
-            TODO(order-service): photo evidence. Uploading works (the buttons
-            below), but no endpoint serves the images back, so viewing them is
-            commented out.
-
-          {collected || delivered ? (
-            <section className={styles.photoCard}>
-              <h2 className={styles.sectionTitle}>Photo evidence</h2>
-              <div className={styles.photoGrid}>
-                <PhotoSlot label="Before photo" url={beforePhotoUrl} caption="At collection" />
-                <PhotoSlot label="After photo" url={afterPhotoUrl} caption="At handover" />
-              </div>
-            </section>
-          ) : null}
-          */}
-
           {collected ? <DeliveryWindow task={task} /> : null}
 
           {collected || delivered ? (
@@ -384,12 +371,23 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
 
           <StatusStepper status={task.status} />
 
-          <p className={styles.earnings}>
-            <span>You&apos;ll earn</span>
-            <strong>
-              +{task.credits} <span className={styles.earningsUnit}>credits</span>
-            </strong>
-          </p>
+          {/* A disputed order pays out by Admin's verdict, not the usual way. */}
+          {task.disputed ? (
+            <p className={styles.earnings}>
+              <span>{payout.note}</span>
+              <strong>
+                {payout.amount === null ? '—' : `+${payout.amount}`}{' '}
+                <span className={styles.earningsUnit}>credits</span>
+              </strong>
+            </p>
+          ) : (
+            <p className={styles.earnings}>
+              <span>You&apos;ll earn</span>
+              <strong>
+                +{task.credits} <span className={styles.earningsUnit}>credits</span>
+              </strong>
+            </p>
+          )}
 
           <div className={styles.actions}>
             {uploadButton}

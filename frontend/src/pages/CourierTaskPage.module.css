@@ -88,7 +88,6 @@
 .deadline,
 .awaiting,
 .detailsCard,
-.photoCard,
 .personCard,
 .statusPanel {
   padding: var(--space-4) var(--space-5);
@@ -195,59 +194,6 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-}
-
-.photoCard {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.photoGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4);
-}
-
-.photo {
-  margin: 0;
-  min-width: 0;
-}
-
-.photoFilled,
-.photoEmpty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  aspect-ratio: 4 / 3;
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  color: var(--color-text-subtle);
-  font-size: var(--font-size-sm);
-  text-align: center;
-}
-
-/* A taken photo reads as a filled frame; a missing one stays dashed. */
-.photoFilled {
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
-}
-
-.photoEmpty {
-  border: 1px dashed var(--color-border-strong);
-}
-
-.photoFilled img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: var(--radius-sm);
-}
-
-.photoCaption {
-  margin: var(--space-2) 0 0;
-  font-size: var(--font-size-xs);
-  color: var(--color-text-subtle);
 }
 
 /* When the button would squeeze the text, it drops below and fills the row. */
@@ -422,14 +368,9 @@
   }
 
   .detailsCard,
-  .photoGrid {
-    grid-template-columns: 1fr;
-  }
-
   .detailsCard,
   .deadline,
   .awaiting,
-  .photoCard,
   .personCard {
     padding: var(--space-4);
   }

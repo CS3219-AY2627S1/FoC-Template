@@ -74,7 +74,11 @@ interface OrderResponse {
   deliveryPhotoRef: string | null;
   disputePhotoRef: string | null;
   disputeText: string | null;
+  /** Admin's verdict on an escalated order; null before it, or for orders resolved before Order stored it. */
+  faultParty?: FaultParty | null;
 }
+
+export type FaultParty = 'requester' | 'courier' | 'no-fault';
 
 /** order-service's PageResponse. */
 interface PageResponse<T> {
@@ -133,13 +137,10 @@ export interface Order {
   /** Set at collection to the delivery deadline plus one day. */
   acknowledgementDeadline: Date | null;
 
-  /*
-   * TODO(order-service): photos can be uploaded but not viewed. The response
-   * carries opaque references and no endpoint serves the image, so the pages
-   * only know whether each photo exists.
-   */
-  hasCollectionPhoto: boolean;
-  hasDeliveryPhoto: boolean;
+  /** True once the order has been escalated: the requester's dispute text, or Admin's verdict. */
+  disputed: boolean;
+  /** Admin's verdict, which decides where the credits went (Order F2.16). */
+  faultParty: FaultParty | null;
 }
 
 /** The label for one of order-service's status names; null for one this frontend does not know. */
@@ -186,9 +187,55 @@ function toOrder(response: OrderResponse): Order {
     acknowledgementDeadline: response.acknowledgementDeadline
       ? new Date(response.acknowledgementDeadline)
       : null,
-    hasCollectionPhoto: response.collectionPhotoRef !== null,
-    hasDeliveryPhoto: response.deliveryPhotoRef !== null,
+    disputed:
+      response.disputeText !== null ||
+      (response.faultParty ?? null) !== null ||
+      response.status === 'ESCALATED' ||
+      response.status === 'UNDER_REVIEW',
+    faultParty: response.faultParty ?? null,
   };
+}
+
+/**
+ * What the order meant for this person's credits, for the lists and order
+ * pages. A normal order: the requester paid, the courier earned. A disputed
+ * one depends on Admin's verdict (Order F2.16): courier at fault refunds the
+ * requester and pays the courier nothing; requester at fault or no fault pays
+ * the courier as usual. An expired or cancelled request returns the credits.
+ * `note` is null for a normal order; `returned` is true when the credits did
+ * not change hands for this person, so the amount is shown crossed out.
+ */
+export function creditOutcome(
+  order: Order,
+  viewer: 'requester' | 'courier',
+): { amount: number | null; note: string | null; returned: boolean } {
+  // Nobody accepted it, or it was cancelled before collection: the reserve went back (Order F2.8, F2.10).
+  if (order.status === 'Expired' || order.status === 'Cancelled') {
+    return { amount: order.credits, note: `Returned · ${order.status.toLowerCase()}`, returned: true };
+  }
+  if (!order.disputed) return { amount: order.credits, note: null, returned: false };
+  if (order.faultParty === null) {
+    // Still with Admin, or resolved before Order kept the verdict.
+    const open = order.status === 'Escalated' || order.status === 'Under review';
+    return {
+      amount: open ? order.credits : null,
+      note: open ? 'On hold, with admin' : 'Decided by admin',
+      returned: false,
+    };
+  }
+  if (order.faultParty === 'courier') {
+    return viewer === 'requester'
+      ? { amount: order.credits, note: 'Refunded · courier at fault', returned: true }
+      : { amount: 0, note: 'Not paid · you were at fault', returned: true };
+  }
+  const reason = order.faultParty === 'requester' ? 'requester at fault' : 'no one at fault';
+  return viewer === 'requester'
+    ? {
+        amount: order.credits,
+        note: `Paid · ${order.faultParty === 'requester' ? 'you were at fault' : reason}`,
+        returned: false,
+      }
+    : { amount: order.credits, note: `Earned · ${reason}`, returned: false };
 }
 
 export interface OrderPage {
