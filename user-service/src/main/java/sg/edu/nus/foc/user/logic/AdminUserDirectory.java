@@ -1,5 +1,6 @@
 package sg.edu.nus.foc.user.logic;
 
+import java.time.Instant;
 import java.util.regex.Pattern;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -13,8 +14,12 @@ import sg.edu.nus.foc.user.model.User;
 @Service
 public class AdminUserDirectory {
     private final MongoTemplate mongo;
+    private final UserLifecycleStore lifecycle;
 
-    public AdminUserDirectory(MongoTemplate mongo) { this.mongo = mongo; }
+    public AdminUserDirectory(MongoTemplate mongo, UserLifecycleStore lifecycle) { 
+        this.mongo = mongo; 
+        this.lifecycle = lifecycle;
+    }
 
     public AdminUserPage search(int page, int size, String searchBy, String q) {
         if (page < 1 || size < 1 || size > 100)
@@ -23,6 +28,8 @@ public class AdminUserDirectory {
             throw invalid("searchBy must be id or name.");
         String value = q == null ? "" : q.strip();
         if (value.length() > 128) throw invalid("q must not exceed 128 characters.");
+
+        lifecycle.clearAllExpiredSuspensions(Instant.now());
 
         Query filter = new Query();
         if (!value.isEmpty()) {

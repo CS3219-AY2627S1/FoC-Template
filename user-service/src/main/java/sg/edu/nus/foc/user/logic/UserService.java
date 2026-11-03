@@ -55,38 +55,33 @@ public class UserService {
     }
 
     public List<User> fetchAllUsers() {
+        // Refreshes all users 
+        lifecycle.clearAllExpiredSuspensions(Instant.now());
+
         return userRepository.findAll();
     }
 
     public User getUserByUserId(String userId) {
-        User user = userRepository
+        // Refresh to ensure status is up to date
+        lifecycle.clearExpiredSuspension(userId, Instant.now());
+
+        return userRepository
                 .findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "User not found"
                 ));
-        // Refresh to ensure status is up to date
-        return refreshSuspensionStatus(user);
 
-    }
-
-    public User getProfileInfo(String userId) {
-        User user = userRepository
-                .findByUserId(userId)
-                .orElseThrow(() ->
-                        new RuntimeException("User not found"));
-        // Refresh to ensure status is up to date
-        return refreshSuspensionStatus(user);          
     }
 
     public UserRoleContext getRoleContext(String userId) {
+        // Refresh to ensure status is up to date
+        lifecycle.clearExpiredSuspension(userId, Instant.now());
+
         User user = userRepository
                 .findByUserId(userId)
                 .orElseThrow(() ->
                         new RuntimeException("User not found"));
-
-        // Refresh to ensure status is up to date
-        user = refreshSuspensionStatus(user);
 
         String userIdToSend = user.getUserId();
         List<String> rolesToSend;
@@ -106,15 +101,13 @@ public class UserService {
     }
 
     public CourierEligibility getCourierEligibility(String userId) {
+        Instant now = Instant.now();
+        lifecycle.clearExpiredSuspension(userId, now);
+
         User user = userRepository
                 .findByUserId(userId)
                 .orElseThrow(() ->
                         new RuntimeException("User not found"));
-
-        Instant now = Instant.now();
-
-        // Refresh to ensure status is up to date
-        user = refreshSuspensionStatus(user);
 
         return new CourierEligibility(verifyCourier(user) &&
                 !(user.getPenalty() >= 10
@@ -124,34 +117,30 @@ public class UserService {
     }
 
     public RequesterEligibility getRequesterEligibility(String userId) {
+        lifecycle.clearExpiredSuspension(userId, Instant.now());
+
         User user = userRepository
                 .findByUserId(userId)
                 .orElseThrow(() ->
                         new RuntimeException("User not found"));
-        
-        // Refresh to ensure status is up to date
-        user = refreshSuspensionStatus(user);
 
         return new RequesterEligibility(verifyRequester(user));
     }
 
     public AdminEligibility getAdminEligibility(String userId) {
+        lifecycle.clearExpiredSuspension(userId, Instant.now());
+
         User user = userRepository
                 .findByUserId(userId)
                 .orElseThrow(() ->
                         new RuntimeException("User not found"));
-        
-        // Refresh to ensure status is up to date
-        user = refreshSuspensionStatus(user);
 
         return new AdminEligibility(verifyAdmin(user));
     }
 
     public UserSummary getUserSummary(String userId) {
+        // Already refreshes
         User user = getUserByUserId(userId);
-
-        // Refresh to ensure status is up to date
-        user = refreshSuspensionStatus(user);
 
         return new UserSummary(
             user.getUsername(),
@@ -271,14 +260,14 @@ public class UserService {
     }
 
     public void deactivateUser(String token, String userId) {
+        // Refresh to ensure status is up to date
+        lifecycle.clearExpiredSuspension(userId, Instant.now());
+        
         User user = userRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "User not found"
                     ));
-
-        // Refresh to ensure status is up to date
-        user = refreshSuspensionStatus(user);
 
         // Already deactivated.
         if (user.getStatus() == AccountStatus.DEACTIVATED) {
@@ -344,13 +333,13 @@ public class UserService {
     // Adds admin role to user
     // Doesn't change role list if already admin
     public User promoteUser(String userId) {
+        // Refresh to ensure status is up to date
+        lifecycle.clearExpiredSuspension(userId, Instant.now());
+
         User user = userRepository
                 .findByUserId(userId)
                 .orElseThrow(() ->
                         new RuntimeException("User not found"));
-
-        // Refresh to ensure status is up to date
-        user = refreshSuspensionStatus(user);
 
         List<String> roles = user.getRoles();
         if (!roles.contains("admin")) {
@@ -365,13 +354,13 @@ public class UserService {
     // Removes admin role from user
     // Doesn't change role list if already not admin
     public User demoteUser(String userId) {
+        // Refresh to ensure status is up to date
+        lifecycle.clearExpiredSuspension(userId, Instant.now());
+
         User user = userRepository
                 .findByUserId(userId)
                 .orElseThrow(() ->
                         new RuntimeException("User not found"));
-
-        // Refresh to ensure status is up to date
-        user = refreshSuspensionStatus(user);
 
         // Checks if it is the last admin
         // Throws error if it is
@@ -400,6 +389,7 @@ public class UserService {
     // Single method to update a user's penalty
     // Accepts negative and positive penalty.
     public User adjustPenalty(String userId, int penaltyChange) {
+        // Already refreshes suspension
         User user = getUserByUserId(userId);
         Instant now = Instant.now();
 
@@ -416,9 +406,6 @@ public class UserService {
             }
 
             // Suspension has expired.
-            List<String> updatedRoles = new ArrayList<>(user.getRoles());
-            updatedRoles.add("courier");
-            user.setRoles(updatedRoles);
             user.setIsCourierSuspended(false);
             user.setSuspensionEndDate(null);
         }
@@ -431,9 +418,6 @@ public class UserService {
         user.setPenalty(newPenalty);
 
         if (newPenalty >= MAX_PENALTY) {
-            List<String> updatedRoles = new ArrayList<>(user.getRoles());
-            updatedRoles.remove("courier");
-            user.setRoles(updatedRoles);
             user.setIsCourierSuspended(true);
             user.setSuspensionEndDate(createSuspensionEndDate(1));
         }
@@ -450,9 +434,6 @@ public class UserService {
 
         user.setPenalty(MAX_PENALTY);
 
-        List<String> updatedRoles = new ArrayList<>(user.getRoles());
-        updatedRoles.remove("courier");
-        user.setRoles(updatedRoles);
         user.setIsCourierSuspended(true);
         user.setSuspensionEndDate(createSuspensionEndDate(1));
 
@@ -468,42 +449,8 @@ public class UserService {
 
         user.setPenalty(MAX_PENALTY);
 
-        List<String> roles = user.getRoles();
-        roles.remove("courier");
-        user.setRoles(roles);
         user.setIsCourierSuspended(true);
         user.setIsPermanentlySuspended(true);
-
-        return lifecycle.saveActive(user);
-    }
-
-    private User refreshSuspensionStatus(User user) {
-        // Inactive accounts must remain readable, but must not be modified
-        // by the courier suspension refresh operation.
-        if (user.getStatus() != AccountStatus.ACTIVE) {
-            return user;
-        }
-        
-        Instant now = Instant.now();
-
-        if (Boolean.TRUE.equals(user.getIsCourierSuspended())
-                && !user.getIsPermanentlySuspended()
-                && user.getSuspensionEndDate() != null
-                && !now.isBefore(user.getSuspensionEndDate())) {
-
-            user.setIsCourierSuspended(false);
-            user.setSuspensionEndDate(null);
-
-            List<String> updatedRoles = new ArrayList<>(
-                    user.getRoles() != null ? user.getRoles() : List.of()
-            );
-
-            if (!updatedRoles.contains("courier")) {
-                updatedRoles.add("courier");
-            }
-
-            user.setRoles(updatedRoles);
-        }
 
         return lifecycle.saveActive(user);
     }

@@ -16,6 +16,7 @@ class AdminUserDirectoryTest {
     private static final MongoDBContainer DATABASE = new MongoDBContainer("mongo:7.0.43");
     private static MongoClient client;
     private static MongoTemplate mongo;
+    private static UserLifecycleStore lifecycle;
     private AdminUserDirectory directory;
 
     @BeforeAll static void database() {
@@ -29,7 +30,8 @@ class AdminUserDirectoryTest {
     }
     @BeforeEach void reset() {
         mongo.dropCollection(User.class);
-        directory = new AdminUserDirectory(mongo);
+        lifecycle = new UserLifecycleStore(mongo);
+        directory = new AdminUserDirectory(mongo, lifecycle);
     }
 
     @Test void initialPageIsBoundedAndIncludesAllStatusesWithStableTieOrdering() {
