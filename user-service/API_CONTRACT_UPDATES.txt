@@ -264,22 +264,28 @@ onboarding, and Order create/accept with the Telegram lookup. Check ordinary
 users cannot call admin operations and public requests cannot reach the private
 lookup. Local service tests do not prove the complete deployed journey.
 
-11. ADMIN USER MANAGEMENT - ADD THREE ROWS (22 OCTOBER 2026)
+11. ADMIN USER MANAGEMENT - FOUR ROWS (UPDATED 4 NOVEMBER 2026)
 ------------------------------------------------------------
-All three require Authorization: Bearer <real-admin-session-token>. Admin must
+All four require Authorization: Bearer <real-admin-session-token>. Admin must
 forward this header on its outbound calls. UUID-only / x-is-admin headers are
 not administrator credentials. Invalid/non-admin callers
 get 404; each mutation rechecks current actor/session state inside its transaction.
 
 Method: GET
 Endpoint: /api/v1/user/search
-Body / Params: ?q=&page= ; admin bearer header
+Body / Params: ?q=&page=&status=Created|Verified|Suspended ; status optional;
+admin bearer header
 Purpose: Search account name/email case-insensitively or exact UUID. q max 100
 characters, page 1-100000 (default 1), page size 20. Returns 200
 { items: [{ id, name, email, role, status }], page, total }. role is admin/user;
 status is Created/Verified/Suspended. Stable ordering, expired deletion records
 excluded, Cache-Control: no-store. Passwords/tokens/private Telegram IDs omitted.
-Malformed query: 400 INVALID_QUERY or INVALID_PAGE.
+Optional status accepts exactly Created, Verified or Suspended; missing means
+all statuses. Empty, wrong-case, repeated, nested or other values return
+400 INVALID_STATUS. ACTIVE with both verification timestamps is Verified;
+ACTIVE missing either is Created; SUSPENDED is always Suspended. Combine this
+filter with q; total counts matching rows before the unchanged pagination.
+Malformed q/page: 400 INVALID_QUERY or INVALID_PAGE.
 
 Method: POST
 Endpoint: /api/v1/user/{userId}/role
@@ -300,13 +306,29 @@ timestamps and password lockout are preserved. Actual changes revoke sessions
 and reset links; suspension additionally revokes OTP/Telegram challenges. No
 extra credit event/grant is produced. Last available admin cannot be suspended.
 
+Method: POST
+Endpoint: /api/v1/user/{userId}/appeal-rejected
+Body / Params: { reason }; UUID path parameter; real eligible admin bearer header
+Purpose: Notify the target of Admin's already-committed appeal rejection.
+Trim reason to 1-4000 characters; invalid/non-string: 400 INVALID_REASON.
+Malformed UUID: 400 INVALID_USER_ID; missing or deletion-expired target:
+404 USER_NOT_FOUND. Recheck current eligible actor/session and target under
+database locks, then send outside the transaction via SES or development logger.
+Email includes the reason and invitation to appeal again. Returns 200
+{ message: "Appeal rejection notification sent" }; email failure returns
+503 EMAIL_DELIVERY_FAILED (or EMAIL_NOT_CONFIGURED if disabled), without undoing
+Admin's committed rejection. No User
+state mutation, session creation, durable email queue or idempotency guarantee;
+retries may duplicate email. A 200 is not proof of inbox delivery.
+
 Mutation errors: 400 INVALID_USER_ID / INVALID_ROLE / INVALID_STATUS /
 SELF_DEMOTION_FORBIDDEN; 404 USER_NOT_FOUND or hidden caller denial;
 409 LAST_ADMIN / USER_NOT_ELIGIBLE / USER_PENDING_DELETION.
 
 These use the requested admin-authorized paths, not new unauthenticated internal
 APIs. User stores its transactional audit; Admin still owns its own audit/events
-after 200. This is not a distributed transaction. Admin relay forwarding is
+after role/status changes return 200. Rejection notification does not add a User
+mutation/audit transaction. This is not a distributed transaction. Admin relay forwarding is
 implemented; frontend items/id/role mapping still needs updating. No shared
 contract file, Admin/frontend source or deployed mesh setting is edited here.
 See the README's Admin integration instructions and deployment acceptance checklist.
@@ -329,6 +351,17 @@ return 401 INVALID_CREDENTIALS with the same generic message, including when
 sending fails. With the correct password and before the deletion deadline, a
 suspended account returns 403 ACCOUNT_SUSPENDED even when lockedAt is set:
 suspension is checked before lockout. No session is issued and no lock cleared.
+Only after a correct suspended password, call private unauthenticated
+GET /api/v1/admin/appeals/latest?userId=<UUID> via ADMIN_SERVICE_BASE_URL,
+outside database locks. Validate the response and its matching user UUID.
+If the latest appeal is rejected with a valid nonblank reason (1-4000 characters),
+keep 403 ACCOUNT_SUSPENDED and set error to:
+"Your appeal was rejected. Reason: <reason>. You may submit another appeal."
+Replace <reason> with that reason. Otherwise (including null, other status, missing/
+invalid reason, mismatch, lookup failure or unconfigured Admin), retain the
+existing generic suspension message. Wrong passwords stay generic 401 and never
+call Admin. The bounded lookup contract and required network handoff are in
+section 14; no login request or successful response fields change.
 Appeals still reject locked accounts with generic 401; password reset must clear
 the lock before an appeal can proceed. This is the approved exception to the backlog's
 generic-login-error rule, enabling the separate public suspension appeal route.
@@ -495,13 +528,28 @@ valid credentials forwards only { userId, message } to private Admin
 POST /api/v1/admin/internal/appeals; no password or bearer token is forwarded by either
 intake call. No session is created, no deletion cancelled, and no reinstatement
 performed. Returns 201 with the validated, identity-matched, allowlisted record:
-{ id, userId, message, status, createdAt, closedAt, closedByAdminId }.
+{ id, userId, message, status, createdAt, closedAt, closedByAdminId, rejectionReason }.
 status: open | rejected | reinstated. closedAt/closedByAdminId are required but may be null.
+rejectionReason is nullable; Admin supplies null for open appeals. Reports do
+not gain this field. This extends the response allowlist; intake bodies stay unchanged.
 
-Both responses are strictly validated against camelCase fields and matched to
+Method: GET (PRIVATE USER-TO-ADMIN LOOKUP; ADMIN-OWNED)
+Endpoint: /api/v1/admin/appeals/latest
+Body / Params: ?userId=<UUID>; no application authentication or forwarded credentials
+Purpose: Return 200 with the latest appeal record in the exact camelCase shape
+above, including nullable rejectionReason, or JSON null when none exists.
+User validates the record and same user UUID before using a rejected reason
+in the suspended-login error (section 12). Use ADMIN_SERVICE_BASE_URL and the
+configured timeout (default 5000 ms, maximum 30000), reject redirects and bound
+the response to 32 KiB; no automatic retry. Lookup errors fall back to the
+generic suspended-login message, rather than changing it to an intake 502/503.
+Call outside database locks. This path stays /api/v1/admin/appeals/latest,
+not /internal; the two existing /internal intake POSTs do not move.
+
+Report/appeal intake responses are strictly validated against camelCase fields and matched to
 the submitted user UUIDs; only allowlisted fields are returned. There is no
 legacy snake_case fallback. Request payloads are unchanged.
-Both routes set Cache-Control: no-store. Admin owns persistence and review.
+Both intake routes set Cache-Control: no-store. Admin owns persistence and review.
 Admin keeps one OPEN appeal per user and one OPEN report per ordered
 reporter/target pair; a retry returns the original record and original text.
 This is not a lifetime submission limit; closure allows a later submission.
@@ -516,12 +564,13 @@ normalized email hashes, including unknown emails, with 10 attempts per
 and is not distributed across replicas. Ingress rate limiting is still needed.
 
 ADMIN_SERVICE_BASE_URL defaults to empty: eligible submissions return
-503 ADMIN_NOT_CONFIGURED, while other account APIs remain usable. A configured
+503 ADMIN_NOT_CONFIGURED; suspended login retains its generic message. A configured
 value must be an HTTP(S) origin without credentials, non-root path, query or
 fragment. .env.example uses http://localhost:8084 and User local Compose defaults
 to http://host.docker.internal:8084. No real .env was edited. The request timeout
 ADMIN_REQUEST_TIMEOUT_MS defaults to 5000 and is capped at 30000 ms. The client
 rejects redirects, bounds responses to 32 KiB and performs no automatic retry.
+Intake errors:
 Network/timeout errors or Admin 429/5xx: 503 ADMIN_UNAVAILABLE.
 Invalid/oversized/malformed response: 502 ADMIN_INVALID_RESPONSE.
 Other rejected upstream status: 502 ADMIN_REQUEST_REJECTED.
@@ -530,16 +579,24 @@ Errors are sanitized, without logging raw upstream errors or payloads. A failed
 response can follow persistence; a manual retry uses open-record deduplication.
 
 HANDOFF ONLY - USER SERVICE PR; NO INFRASTRUCTURE/ADMIN/FRONTEND EDITS
-Gateway (done): POST /api/v1/user/appeals is an exact public route; POST
+Repository gateway configuration: POST /api/v1/user/appeals is an exact public route; POST
 /api/v1/user/reports keeps bearer protection. Still open: ingress rate limiting
 for appeal credential attempts.
-Infrastructure (done): ADMIN_SERVICE_BASE_URL=http://admin:8084 is set for
-User, and Admin's mesh policy admits User only on the two intake routes.
-Gateway/mesh (done): intake lives under /api/v1/admin/internal, which the
+Repository service configuration: ADMIN_SERVICE_BASE_URL=http://admin:8084 is set
+for User, and Admin's mesh policy restricts the two intake paths to User.
+Repository gateway configuration: intake lives under /api/v1/admin/internal, which the
 gateway blocks as a prefix (trailing slashes and sub-paths included). Admin's
-GET queues/detail and review routes stay on the authenticated routes. Admin
-intake has no application authentication and trusts User; it must stay
-unreachable from clients.
+other GET queues/detail and review routes stay authenticated.
+REQUIRED PRIVATE-POLICY HANDOFF (PENDING): block exact public
+GET /api/v1/admin/appeals/latest and trailing-slash redirect variants; admit only
+User to latest lookup in Admin's mesh policy. Current gateway values route latest
+through the protected generic /api/v1/admin prefix without an explicit block.
+Admin's mesh defaults to gateway access, with User-only /internal intake paths
+but no latest-lookup User allow. Local frontend nginx also forwards the Admin
+prefix and needs exposure review. Intake/latest have no application authentication
+and must be unreachable from clients. Source values do not prove live enforcement;
+verify User allow and public/other-caller deny after rollout. No infrastructure
+changes are made here. Existing intake paths and base URL remain unchanged.
 Frontend owner: add appeal/report forms and login 403 ACCOUNT_SUSPENDED handling;
 friendship UI is separate owner work. No such source changes are made here.
 

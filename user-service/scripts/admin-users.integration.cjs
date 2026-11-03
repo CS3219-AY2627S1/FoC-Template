@@ -27,9 +27,16 @@ test("real admin user endpoints and mesh-protected lookup contract in isolated P
     const { createApp } = require("../dist/app");
     const { changeUser } = require("../dist/admin-users");
     const { hashPassword, hashSessionToken } = require("../dist/security");
+    const { AppError } = require("../dist/errors");
     const password = "AdminRoutesTest1";
     const passwordHash = await hashPassword(password, 1024);
-    await new Promise((resolve) => { server = createApp().listen(0, "127.0.0.1", resolve); });
+    const rejectionEmails = []; let emailFailure = false;
+    const emailSender = { sendVerificationOtp: async () => {}, sendPasswordResetLink: async () => {}, sendAccountLocked: async () => {},
+      sendAppealRejected: async (email, reason) => {
+        if (emailFailure) throw new AppError(503, "EMAIL_DELIVERY_FAILED", "Unable to send email right now. Please try again.");
+        rejectionEmails.push({ email, reason });
+      } };
+    await new Promise((resolve) => { server = createApp(undefined, emailSender).listen(0, "127.0.0.1", resolve); });
     const base = `http://127.0.0.1:${server.address().port}/api/v1/user`;
     async function request(endpoint, method = "GET", body, token, extra = {}) {
       const r = await fetch(base + endpoint, { method, headers: { "content-type": "application/json",
@@ -57,7 +64,7 @@ test("real admin user endpoints and mesh-protected lookup contract in isolated P
     const missing = randomUUID();
     const spoof = { "x-user-id": a.id, "x-is-admin": "true", "x-permitted-action": "true" };
     for (const [endpoint, method, body] of [["/search", "GET"], [`/${target.id}/role`, "POST", { role: "admin" }],
-      [`/${target.id}/status`, "POST", { status: "suspended" }]]) {
+      [`/${target.id}/status`, "POST", { status: "suspended" }], [`/${target.id}/appeal-rejected`, "POST", { reason: "Review completed" }]]) {
       for (const token of [undefined, normalToken, "invalid-session"]) assert.equal((await request(endpoint, method, body, token, spoof)).status, 404);
     }
     for (const endpoint of ["/search?page=0", "/search?page=1.5", "/search?page=100001", "/search?q=a&q=b", "/search?q=" + "a".repeat(101)]) {
@@ -75,6 +82,57 @@ test("real admin user endpoints and mesh-protected lookup contract in isolated P
     assert.equal(new Set([...page1.items, ...page2.items].map((x) => x.id)).size, 22);
     for (const x of page1.items) assert.deepEqual(Object.keys(x).sort(), ["email", "id", "name", "role", "status"]);
     console.log("PASS: real bearer admin authorization, spoofed-header denial, bounded search and stable safe pagination");
+
+    const statusFixtures = await Promise.all([
+      user({ name: "Status Filter Match" }),
+      user({ name: "Status Filter Match", emailVerifiedAt: null }),
+      user({ name: "Status Filter Match", telegramVerifiedAt: null }),
+      user({ name: "Status Filter Match", emailVerifiedAt: null, telegramVerifiedAt: null }),
+      user({ name: "Status Filter Match", accessStatus: "SUSPENDED" }),
+      user({ name: "Status Filter Match", accessStatus: "SUSPENDED", emailVerifiedAt: null, telegramVerifiedAt: null }),
+      user({ name: "Status Filter Match", accessStatus: "SUSPENDED", scheduledDeletionAt: new Date(Date.now() - 1000) }),
+    ]);
+    assert.equal((await request("/search?q=Status%20Filter", "GET", undefined, tokenA)).body.total, 6);
+    for (const [status, expected] of [["Verified", 1], ["Created", 3], ["Suspended", 2]]) {
+      const filtered = await request(`/search?q=Status%20Filter&status=${status}`, "GET", undefined, tokenA);
+      assert.equal(filtered.status, 200); assert.equal(filtered.body.total, expected);
+      assert.ok(filtered.body.items.every((u) => u.status === status));
+      assert.ok(!filtered.body.items.some((u) => u.id === statusFixtures[6].id));
+    }
+    // Dashboard counts use status without a text query.
+    assert.equal((await request("/search?status=Suspended", "GET", undefined, tokenA)).body.total, 2);
+    for (let i = 0; i < 22; i++) await user({ name: "Filtered Suspended Pages", accessStatus: "SUSPENDED" });
+    await user({ name: "Filtered Suspended Pages" });
+    const filteredPage1 = (await request("/search?q=Filtered%20Suspended&status=Suspended&page=1", "GET", undefined, tokenA)).body;
+    const filteredPage2 = (await request("/search?q=Filtered%20Suspended&status=Suspended&page=2", "GET", undefined, tokenA)).body;
+    assert.equal(filteredPage1.total, 22); assert.equal(filteredPage2.total, 22);
+    assert.equal(filteredPage1.items.length, 20); assert.equal(filteredPage2.items.length, 2);
+    assert.equal(new Set([...filteredPage1.items, ...filteredPage2.items].map((u) => u.id)).size, 22);
+    for (const query of ["status=", "status=suspended", "status=Unknown", "status=Created&status=Suspended", "status[x]=Created"]) {
+      const invalid = await request("/search?" + query, "GET", undefined, tokenA);
+      assert.equal(invalid.status, 400); assert.equal(invalid.body.code, "INVALID_STATUS");
+    }
+    console.log("PASS: status search matches account classification, combines with q/page and counts filtered rows including the dashboard's suspended total");
+
+    const noticeTarget = await user({ accessStatus: "SUSPENDED" });
+    const unchangedTarget = await prisma.user.findUniqueOrThrow({ where: { id: noticeTarget.id } });
+    const sessionsBeforeNotice = await prisma.authSession.count();
+    const notified = await request(`/${noticeTarget.id}/appeal-rejected`, "POST", { reason: " Reviewed and rejected ", email: "forged@example.com" }, tokenA);
+    assert.equal(notified.status, 200); assert.equal(notified.cache, "no-store");
+    assert.deepEqual(rejectionEmails, [{ email: noticeTarget.email, reason: "Reviewed and rejected" }]);
+    assert.deepEqual(await prisma.user.findUniqueOrThrow({ where: { id: noticeTarget.id } }), unchangedTarget);
+    assert.equal(await prisma.authSession.count(), sessionsBeforeNotice);
+    assert.equal((await request("/bad-uuid/appeal-rejected", "POST", { reason: "test" }, tokenA)).body.code, "INVALID_USER_ID");
+    for (const id of [missing, statusFixtures[6].id]) assert.equal((await request(`/${id}/appeal-rejected`, "POST", { reason: "test" }, tokenA)).status, 404);
+    for (const reason of [undefined, "", "   ", "x".repeat(4001), ["reason"]]) {
+      assert.equal((await request(`/${noticeTarget.id}/appeal-rejected`, "POST", { reason }, tokenA)).body.code, "INVALID_REASON");
+    }
+    assert.equal(rejectionEmails.length, 1);
+    emailFailure = true;
+    assert.equal((await request(`/${noticeTarget.id}/appeal-rejected`, "POST", { reason: "test" }, tokenA)).status, 503);
+    emailFailure = false;
+    assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: noticeTarget.id } })).accessStatus, "SUSPENDED");
+    console.log("PASS: appeal-rejected requires a real admin, validates target/reason, emails stored address after locks release and changes no account/session state");
 
     assert.equal((await request("/bad-uuid/role", "POST", { role: "admin" }, tokenA)).status, 400);
     assert.equal((await request(`/${missing}/role`, "POST", { role: "admin" }, tokenA)).status, 404);
