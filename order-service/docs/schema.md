@@ -39,6 +39,7 @@ One row per errand.
 | dispute_photo_ref | VARCHAR(500) | Optional escalation photo |
 | dispute_text | VARCHAR(2000) | Requester comment on a manual escalation |
 | case_id | VARCHAR(64) | Copied from an admin Kafka event |
+| fault_party | VARCHAR(16) | Set on admin resolve: `requester` \| `courier` \| `no-fault`. Exposed on REST as `faultParty` |
 | created_at, updated_at | TIMESTAMPTZ | `updated_at` changes on every successful transition |
 
 Indexes:
@@ -49,7 +50,7 @@ Indexes:
 
 `V4` renamed `requester_email` and `courier_email` to `requester_id` and `courier_id`. The column type stayed `VARCHAR`.
 
-`V6` adds `delivery_point`, `user_delivery_point`, and order dropoff `building` / `description` snapshot columns. `V7` adds optional `user_delivery_point.nickname`. `UserDeleted` on `foc.user.status` deletes that user’s associations and soft-inactivates orphan forks (see [delivery-points.md](delivery-points.md)).
+`V6` adds `delivery_point`, `user_delivery_point`, and order dropoff `building` / `description` snapshot columns. `V7` adds optional `user_delivery_point.nickname`. `V8` adds `orders.fault_party`. `UserDeleted` on `foc.user.status` deletes that user’s associations and soft-inactivates orphan forks (see [delivery-points.md](delivery-points.md)).
 
 ## order_log
 

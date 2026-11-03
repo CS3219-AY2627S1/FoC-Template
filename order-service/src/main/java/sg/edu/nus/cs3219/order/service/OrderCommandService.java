@@ -354,6 +354,7 @@ public class OrderCommandService {
         if (resolving) {
             deletePhotos(order);
             order.setSettledAt(now);
+            order.setFaultParty(faultParty);
             transition(order, OrderStatus.COMPLETED, now, OrderAction.CASE_RESOLVED, null, StatusExtras.withFault(faultParty));
             settleResolvedCase(order, faultParty, now);
         }

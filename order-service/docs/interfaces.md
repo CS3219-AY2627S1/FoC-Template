@@ -42,7 +42,7 @@ Errors use `{ "error": "...", "code": "<HTTP status name>" }`.
 
 `page` and `size` default to 0 and 20. `page < 0`, `size < 0`, or `size > 1000` returns 400 `Page size must be between 0 and 1000`. `size = 0` returns an empty page and does not query.
 
-List responses are `{ "content", "page", "size", "totalElements" }`. An order body matches `OrderResponse`: identities, ratings, description, amount, status, the five timestamps the API exposes (`requestTime`, `acceptanceExpiry`, `deliveryDeadline`, `collectionDeadline`, `acknowledgementDeadline`), both places, photo refs, and `disputeText`. `settledAt` and `caseId` stay in the database.
+List responses are `{ "content", "page", "size", "totalElements" }`. An order body matches `OrderResponse`: identities, ratings, description, amount, status, the five timestamps the API exposes (`requestTime`, `acceptanceExpiry`, `deliveryDeadline`, `collectionDeadline`, `acknowledgementDeadline`), both places, photo refs, `disputeText`, and `faultParty` (`requester` \| `courier` \| `no-fault` after admin resolve; otherwise null). `settledAt` and `caseId` stay in the database.
 
 ### Reads
 
