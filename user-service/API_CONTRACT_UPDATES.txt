@@ -398,10 +398,18 @@ deletion. A sender or unrelated caller receives 404; incompatible state is 409.
 
 Method: GET
 Endpoint: /api/v1/user/friends
-Body / Params: ?page=1&pageSize=20 ; bearer header
+Body / Params: ?page=1&pageSize=20&q=<optional-name-substring> ; bearer header
 Purpose: List accepted friends in either direction. Returns 200
 { items: [{ id, name }], page, pageSize, total }. Suspended peers and peers with
 deletion requested/scheduled are excluded, as they are from the request list.
+Optional q (4 November 2026): a single string, at most 100 JavaScript UTF-16
+code units before trimming. Missing, empty or whitespace-only means no filter.
+Otherwise match the trimmed value as a case-insensitive literal substring of
+the friend's name; escape SQL LIKE %, _ and backslash so they match literally.
+Non-string, repeated, nested or overlength q returns 400 INVALID_PAGINATION.
+total counts filtered visible friends before pagination. Pagination, ordering
+and id/name-only items are unchanged. q does not filter /friends/requests.
+No schema or migration change; see src/openapi.ts for the OpenAPI definition.
 
 Method: DELETE
 Endpoint: /api/v1/user/friends/{friendUserId}
