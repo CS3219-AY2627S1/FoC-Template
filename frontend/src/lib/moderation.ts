@@ -7,8 +7,9 @@
  *
  * Users file reports and appeals through the User Service, which checks who
  * they are and forwards to the Admin Service. The browser never calls the
- * Admin Service's intake endpoints (POST /admin/reports, POST /admin/appeals)
- * itself; admins only list and close.
+ * Admin Service's intake endpoints (POST /admin/internal/reports and
+ * /admin/internal/appeals, which the gateway blocks) itself; admins only list
+ * and close.
  */
 
 import { api } from './api';

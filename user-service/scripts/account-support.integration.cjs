@@ -39,13 +39,13 @@ test("suspended login, reports and appeals with isolated User PostgreSQL and an 
       if (mode === "malformed") { res.writeHead(201); res.end("{}"); return; }
       const common = { id: randomUUID(), status: "open", createdAt: new Date().toISOString(), closedAt: null, closedByAdminId: null };
       let record;
-      if (req.url === "/api/v1/admin/reports") {
+      if (req.url === "/api/v1/admin/internal/reports") {
         const key = body.reporterUserId + ":" + body.reportedUserId;
         if (!reports.has(key)) reports.set(key, { ...common, reporterUserId: body.reporterUserId,
           reportedUserId: body.reportedUserId, comment: body.comment });
         record = reports.get(key);
       } else {
-        assert.equal(req.url, "/api/v1/admin/appeals");
+        assert.equal(req.url, "/api/v1/admin/internal/appeals");
         if (!appeals.has(body.userId)) appeals.set(body.userId, { ...common, userId: body.userId, message: body.message });
         record = appeals.get(body.userId);
       }

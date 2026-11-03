@@ -78,7 +78,7 @@ class HttpClientsTest {
                     status = 500;
                     yield "{\"error\":\"nope\",\"code\":\"INTERNAL_ERROR\"}".getBytes(StandardCharsets.UTF_8);
                 }
-                case "/api/v1/admin/conflicts" -> {
+                case "/api/v1/admin/internal/conflicts" -> {
                     if (requestBody.contains("\"comment\":\"\"")) {
                         status = 422;
                         yield "{\"detail\":\"rejected\"}".getBytes(StandardCharsets.UTF_8);
@@ -173,7 +173,7 @@ class HttpClientsTest {
     void callsAdmin() {
         UUID orderId = UUID.randomUUID();
         clients.openConflict(orderId, "ada-id", "wrong item", java.util.List.of("a.png"));
-        assertEquals("/api/v1/admin/conflicts", lastPath.get());
+        assertEquals("/api/v1/admin/internal/conflicts", lastPath.get());
         assertTrue(lastBody.get().contains("\"orderId\":\"" + orderId + "\""));
         assertTrue(lastBody.get().contains("\"reporterUserId\":\"ada-id\""));
         assertTrue(lastBody.get().contains("\"comment\":\"wrong item\""));

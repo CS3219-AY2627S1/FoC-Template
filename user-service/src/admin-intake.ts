@@ -73,7 +73,7 @@ export class HttpAdminIntake implements AdminIntake {
   }
 
   async report(input: ReportInput): Promise<ReportRecord> {
-    const row = await this.post("/api/v1/admin/reports", input);
+    const row = await this.post("/api/v1/admin/internal/reports", input);
     if (row.reporterUserId !== input.reporterUserId || row.reportedUserId !== input.reportedUserId
       || !isText(row.comment, 4000) || typeof row.status !== "string" || !["open", "dismissed", "actioned"].includes(row.status)) throw invalidResponse();
     // Keep Admin's stored text on idempotent retries, but don't forward unknown fields.
@@ -83,7 +83,7 @@ export class HttpAdminIntake implements AdminIntake {
   }
 
   async appeal(input: AppealInput): Promise<AppealRecord> {
-    const row = await this.post("/api/v1/admin/appeals", input);
+    const row = await this.post("/api/v1/admin/internal/appeals", input);
     if (row.userId !== input.userId || !isText(row.message, 4000)
       || typeof row.status !== "string" || !["open", "rejected", "reinstated"].includes(row.status)) throw invalidResponse();
     return { id: row.id, userId: row.userId, message: row.message, status: row.status, createdAt: row.createdAt,

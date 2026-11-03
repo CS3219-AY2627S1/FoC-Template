@@ -1,6 +1,13 @@
 image:
   tag: "7aaf9d5f1beb52bfb3af2eb4e2565484ffda46dc" # git SHA, set by deploy/push-dev.sh
-replicas: 1
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 16
+  targetCPUUtilization: 70
+resources:
+  requests: { cpu: 500m, memory: 512Mi }
+  limits: { cpu: "2", memory: 1Gi }
 env:
   # Photos in S3 instead of the pod's disk; the node role may write to this
   # bucket only (infra/nonprod/aws/photos.tf, node-permissions.tf). No keys:
@@ -9,6 +16,3 @@ env:
   ORDER_PHOTOS_BUCKET: foc-dev-order-photos-474265880628
   ORDER_PHOTOS_REGION: ap-southeast-1
   ORDER_PHOTOS_PATH_STYLE: "false"
-# Shared with user, which checks it on the Telegram lookup.
-externalSecrets:
-  order-user-lookup: [ORDER_USER_LOOKUP_TOKEN]

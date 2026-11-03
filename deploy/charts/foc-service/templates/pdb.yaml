@@ -1,0 +1,14 @@
+{{- if .Values.autoscaling.enabled }}
+# maxUnavailable so a single replica can still move off a node.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "foc-service.name" . }}
+  labels:
+    {{- include "foc-service.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "foc-service.selectorLabels" . | nindent 6 }}
+{{- end }}

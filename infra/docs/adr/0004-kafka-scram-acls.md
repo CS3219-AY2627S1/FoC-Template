@@ -22,14 +22,16 @@ publishing to it could transfer money.
   |---|---|---|
   | `user` | `foc.user.status` | |
   | `credit` | | `foc.user.status`, `foc.credit.commands` |
-  | `order` | `foc.order.status`, `foc.credit.commands`, `foc.rating.commands`, `foc.admin.commands` | `foc.admin.events` |
+  | `order` | `foc.order.status`, `foc.credit.commands`, `foc.rating.commands` | `foc.admin.events`, `foc.user.status` |
   | `rating` | `foc.user.rating` | `foc.rating.commands` |
-  | `admin` | `foc.admin.events` | `foc.admin.commands` |
+  | `admin` | `foc.admin.events` | |
+  | `badges` | | `foc.order.status`, `foc.user.rating`, `foc.admin.events` |
 
 - Consumers also get `Read` on their own consumer group (`<service>-*`).
-- `supplier` and `badges` use no topics, so they get no `KafkaUser`.
-- `foc.order.status` and `foc.user.rating` have no consumer yet. A future
-  consumer is added by granting `Read` in its `KafkaUser`.
+- `supplier` uses no topics, so it gets no `KafkaUser`.
+- `foc.admin.commands` stays in the catalog but nobody writes or reads it:
+  order opens escalations over HTTP (`POST /api/v1/admin/internal/conflicts`).
+  A future producer or consumer is added by granting it in its `KafkaUser`.
 
 ## Consequences
 

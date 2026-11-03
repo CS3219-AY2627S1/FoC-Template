@@ -42,7 +42,7 @@ describe("private Admin intake HTTP client", () => {
     let calls = 0;
     const client = new HttpAdminIntake("http://admin:8084", 5000, async (url, options) => {
       calls++;
-      assert.equal(String(url), "http://admin:8084/api/v1/admin/reports");
+      assert.equal(String(url), "http://admin:8084/api/v1/admin/internal/reports");
       assert.equal(options?.method, "POST"); assert.equal(options?.redirect, "error");
       assert.deepEqual(JSON.parse(options?.body as string), input);
       assert.equal(new Headers(options?.headers).get("authorization"), null);
@@ -55,7 +55,7 @@ describe("private Admin intake HTTP client", () => {
     const appeal = { id: randomUUID(), userId: input.reporterUserId, message: "Stored appeal", status: "open",
       createdAt: stored.createdAt, closedAt: null, closedByAdminId: null };
     const client = new HttpAdminIntake("http://admin:8084", 5000, async (url, options) => {
-      assert.equal(String(url), "http://admin:8084/api/v1/admin/appeals");
+      assert.equal(String(url), "http://admin:8084/api/v1/admin/internal/appeals");
       assert.deepEqual(JSON.parse(options?.body as string), { userId: input.reporterUserId, message: "New appeal" });
       return new Response(JSON.stringify(appeal), { status: 201 });
     });

@@ -3,11 +3,12 @@
 # calls /api/v1/... on its own origin, which CloudFront sends to the gateway.
 name: frontend-dev
 
-# Manual only for now: the NUS AWS account denies GitHub OIDC, so the AWS
-# login step fails. Publish from a laptop (infra/docs/cloud-dev.md, step 8).
-# In an account without that limit, restore:
-#   push: { branches: [main], paths: [frontend/**, .github/workflows/frontend-dev.yml] }
+# On every merge to main that changes the frontend; deploy/push-frontend-dev.sh
+# is the laptop fallback.
 on:
+  push:
+    branches: [main]
+    paths: [frontend/**, .github/workflows/frontend-dev.yml]
   workflow_dispatch:
 
 permissions:
