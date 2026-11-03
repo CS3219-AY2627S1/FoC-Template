@@ -56,11 +56,23 @@ class ReportDetail(CamelModel):
     closed_by_admin_id: str | None
 
 
+class RejectAppealRequest(BaseModel):
+    """Shown to the suspended user. Required when an appeal is rejected."""
+
+    reason: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, value: str) -> str:
+        return _stripped(value)
+
+
 class AppealDetail(CamelModel):
     id: uuid.UUID
     user_id: str
     message: str
     status: AppealStatus
+    rejection_reason: str | None = None
     created_at: datetime
     closed_at: datetime | None
     closed_by_admin_id: str | None

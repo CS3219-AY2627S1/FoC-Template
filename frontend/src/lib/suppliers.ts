@@ -28,6 +28,8 @@ export interface Supplier {
   startingTime: string;
   closingTime: string;
   status: 'pending' | 'approved' | 'rejected';
+  /** Set when an admin rejects the listing. Cleared again on approve. */
+  rejectionReason?: string | null;
   categories: { id: number; name: string }[];
 }
 
@@ -144,11 +146,13 @@ export async function fetchSupplierActivity(): Promise<SupplierAction[]> {
   return api.get<SupplierAction[]>('/supplier/admin/activity');
 }
 
+/** Rejection requires a reason. Approving clears any reason stored earlier. */
 export async function setSupplierStatus(
   id: number,
   status: Supplier['status'],
+  reason?: string,
 ): Promise<Supplier> {
-  return api.patch<Supplier>(`/supplier/${id}/status`, { status });
+  return api.patch<Supplier>(`/supplier/${id}/status`, reason === undefined ? { status } : { status, reason });
 }
 
 /**

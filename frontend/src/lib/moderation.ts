@@ -34,6 +34,7 @@ export interface SuspensionAppeal {
   message: string;
   /** Reinstated: the user was reinstated, which closes their open appeal. */
   status: 'open' | 'rejected' | 'reinstated';
+  rejectionReason: string | null;
   createdAt: string;
   closedAt: string | null;
   closedByAdminId: string | null;
@@ -53,9 +54,9 @@ export async function dismissReport(reportId: string): Promise<void> {
   await api.post(`/admin/reports/${encodeURIComponent(reportId)}/dismiss`);
 }
 
-/** Leaves the suspension in place. 409 if the appeal was already closed. */
-export async function rejectAppeal(appealId: string): Promise<void> {
-  await api.post(`/admin/appeals/${encodeURIComponent(appealId)}/reject`);
+/** Leaves the suspension in place. The reason is stored and passed to User Service. 409 if already closed. */
+export async function rejectAppeal(appealId: string, reason: string): Promise<void> {
+  await api.post(`/admin/appeals/${encodeURIComponent(appealId)}/reject`, { reason });
 }
 
 /**

@@ -14,7 +14,8 @@
 import { useEffect, useState } from 'react';
 import { Alert } from '../ui/Alert';
 import { Button } from '../ui/Button';
-import { ConfirmDialog } from '../ui/Dialog';
+import { ConfirmDialog, Dialog } from '../ui/Dialog';
+import { TextAreaField } from '../ui/Inputs';
 import { ApiError, errorMessage } from '../../lib/api';
 import { fetchAdminUser, reinstateUser, suspendUser, type AdminUser } from '../../lib/adminUsers';
 import { formatElapsed } from '../../lib/format';
@@ -52,6 +53,7 @@ export function ModerationQueues({ myUserId, reloadKey, onChanged }: ModerationQ
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending>(null);
+  const [rejectReason, setRejectReason] = useState('');
   const [working, setWorking] = useState(false);
 
   useEffect(() => {
@@ -89,14 +91,13 @@ export function ModerationQueues({ myUserId, reloadKey, onChanged }: ModerationQ
   }
 
   async function confirmPending() {
-    if (pending === null) return;
+    if (pending === null || pending.kind === 'reject') return;
 
     setWorking(true);
     setActionError(null);
     try {
       if (pending.kind === 'dismiss') await dismissReport(pending.report.id);
       if (pending.kind === 'suspend') await suspendUser(pending.report.reportedUserId);
-      if (pending.kind === 'reject') await rejectAppeal(pending.appeal.id);
       if (pending.kind === 'reinstate') await reinstateUser(pending.appeal.userId);
     } catch (error) {
       // 409: another admin closed it first. The reload below shows the queue
@@ -113,7 +114,30 @@ export function ModerationQueues({ myUserId, reloadKey, onChanged }: ModerationQ
     }
   }
 
-  const dialog = describe(pending, nameOf);
+  async function confirmReject() {
+    if (pending?.kind !== 'reject' || rejectReason.trim() === '') return;
+
+    setWorking(true);
+    setActionError(null);
+    try {
+      await rejectAppeal(pending.appeal.id, rejectReason.trim());
+    } catch (error) {
+      setActionError(
+        error instanceof ApiError && error.status === 409
+          ? 'Someone else already closed that one. The queue has been refreshed.'
+          : errorMessage(error, 'Could not reach the Admin Service, so nothing changed.'),
+      );
+    } finally {
+      setWorking(false);
+      setPending(null);
+      setRejectReason('');
+      onChanged();
+    }
+  }
+
+  const confirming = pending !== null && pending.kind !== 'reject';
+  const rejecting = pending?.kind === 'reject' ? pending.appeal : null;
+  const dialog = describe(pending !== null && pending.kind !== 'reject' ? pending : null, nameOf);
 
   return (
     <section className={styles.queues} aria-label="Reports and appeals">
@@ -200,7 +224,10 @@ export function ModerationQueues({ myUserId, reloadKey, onChanged }: ModerationQ
                   <div className={styles.actions}>
                     <Button
                       variant="secondary"
-                      onClick={() => setPending({ kind: 'reject', appeal })}
+                      onClick={() => {
+                        setRejectReason('');
+                        setPending({ kind: 'reject', appeal });
+                      }}
                     >
                       Reject
                     </Button>
@@ -219,7 +246,7 @@ export function ModerationQueues({ myUserId, reloadKey, onChanged }: ModerationQ
 
       {/* NFR9.1.1: every action here asks first. */}
       <ConfirmDialog
-        open={pending !== null}
+        open={confirming}
         title={dialog.title}
         consequence={dialog.consequence}
         confirmLabel={dialog.confirmLabel}
@@ -228,11 +255,48 @@ export function ModerationQueues({ myUserId, reloadKey, onChanged }: ModerationQ
         onConfirm={confirmPending}
         onCancel={() => setPending(null)}
       />
+
+      <Dialog
+        open={rejecting !== null}
+        title="Reject this appeal?"
+        onClose={() => {
+          if (!working) setPending(null);
+        }}
+        footer={
+          <>
+            <Button variant="secondary" disabled={working} onClick={() => setPending(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={rejectReason.trim() === '' || rejectReason.trim().length > 4000}
+              loading={working}
+              onClick={() => void confirmReject()}
+            >
+              Reject
+            </Button>
+          </>
+        }
+      >
+        <div className={styles.rejectBody}>
+          <p className={styles.rejectCopy}>
+            {rejecting ? `${nameOf(rejecting.userId)} stays suspended.` : ''} The reason is stored
+            on the appeal. They can send another appeal later.
+          </p>
+          <TextAreaField
+            label="Reason"
+            rows={4}
+            maxLength={4000}
+            value={rejectReason}
+            onChange={(event) => setRejectReason(event.target.value)}
+          />
+        </div>
+      </Dialog>
     </section>
   );
 }
 
-function describe(pending: Pending, nameOf: (userId: string) => string) {
+function describe(pending: Exclude<Pending, { kind: 'reject' }>, nameOf: (userId: string) => string) {
   if (pending === null) return { title: '', consequence: null, confirmLabel: '' };
   switch (pending.kind) {
     case 'dismiss':
@@ -246,12 +310,6 @@ function describe(pending: Pending, nameOf: (userId: string) => string) {
         title: 'Suspend this account?',
         consequence: `${nameOf(pending.report.reportedUserId)} is blocked from logging in and from every action, within a minute. Every open report about them is closed. They can send an appeal from the login page.`,
         confirmLabel: 'Suspend',
-      };
-    case 'reject':
-      return {
-        title: 'Reject this appeal?',
-        consequence: `${nameOf(pending.appeal.userId)} stays suspended. They can send another appeal later.`,
-        confirmLabel: 'Reject',
       };
     case 'reinstate':
       return {

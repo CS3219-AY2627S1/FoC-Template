@@ -271,6 +271,7 @@ def test_appeal_reject_leaves_it_closed_and_reinstate_closes_the_open_one(api, m
     opened = client.post("/api/v1/admin/appeals", json={"userId": "u-2", "message": "first"})
     assert opened.status_code == 201
     assert opened.json()["userId"] == "u-2"
+    assert opened.json()["rejectionReason"] is None
     assert "user_id" not in opened.json()
     appeal_id = opened.json()["id"]
 
@@ -281,10 +282,28 @@ def test_appeal_reject_leaves_it_closed_and_reinstate_closes_the_open_one(api, m
     unknown = client.get("/api/v1/admin/appeals?status=nope", headers=ADMIN)
     assert unknown.status_code == 422
 
-    rejected = client.post(f"/api/v1/admin/appeals/{appeal_id}/reject", headers=ADMIN)
+    blank = client.post(f"/api/v1/admin/appeals/{appeal_id}/reject", json={"reason": "  "}, headers=ADMIN)
+    assert blank.status_code == 422
+    missing = client.post(f"/api/v1/admin/appeals/{appeal_id}/reject", headers=ADMIN)
+    assert missing.status_code == 422
+
+    async def quiet(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(users, "notify_appeal_rejected", quiet)
+    rejected = client.post(
+        f"/api/v1/admin/appeals/{appeal_id}/reject", json={"reason": "  Repeated abuse  "}, headers=ADMIN,
+    )
     assert rejected.status_code == 200
     assert rejected.json()["status"] == "rejected"
+    assert rejected.json()["rejectionReason"] == "Repeated abuse"
     assert [row.action for row in session.audits] == ["reject_appeal"]
+    assert session.audits[0].detail == "Repeated abuse"
+
+    latest = client.get("/api/v1/admin/appeals/latest", params={"userId": "u-2"})
+    assert latest.status_code == 200
+    assert latest.json()["rejectionReason"] == "Repeated abuse"
+    assert client.get("/api/v1/admin/appeals/latest", params={"userId": "nobody"}).json() is None
 
     fresh = client.post("/api/v1/admin/appeals", json={"userId": "u-2", "message": "again"})
     assert fresh.status_code == 201
