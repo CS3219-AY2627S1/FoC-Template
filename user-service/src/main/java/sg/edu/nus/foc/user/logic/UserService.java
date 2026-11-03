@@ -88,14 +88,20 @@ public class UserService {
         // Refresh to ensure status is up to date
         user = refreshSuspensionStatus(user);
 
-        if (verifyDeactivated(user)) {
-            throw new RuntimeException("User is deactivated");
+        String userIdToSend = user.getUserId();
+        List<String> rolesToSend;
+        boolean isCourierSuspended;
+        if (verifyActive(user)) {
+            rolesToSend = user.getRoles() != null
+                    ? user.getRoles()
+                    : List.of();
+            isCourierSuspended = user.getIsCourierSuspended();
+        } else {
+            // Hide user info if they are deactivated
+            rolesToSend = List.of();
+            isCourierSuspended = false;
         }
 
-        String userIdToSend = user.getUserId();
-        List<String> rolesToSend = user.getRoles();
-        boolean isCourierSuspended = user.getIsCourierSuspended();
-        
         return new UserRoleContext(userIdToSend, rolesToSend, isCourierSuspended);
     }
 
@@ -555,15 +561,15 @@ public class UserService {
                 .toInstant();
     }
 
-    private boolean verifyDeactivated(String userId) {
+    private boolean verifyActive(String userId) {
         User user = userRepository
                 .findByUserId(userId)
                 .orElseThrow(() ->
                         new RuntimeException("User not found"));
-        return user.getStatus() == AccountStatus.DEACTIVATED || user.getStatus() == AccountStatus.DEACTIVATED;
+        return user.getStatus() != AccountStatus.ACTIVE;
     }
 
-    private boolean verifyDeactivated(User user) {
-        return user.getStatus() == AccountStatus.DEACTIVATED || user.getStatus() == AccountStatus.DEACTIVATED;
+    private boolean verifyActive(User user) {
+        return user.getStatus() == AccountStatus.ACTIVE;
     }
 }
