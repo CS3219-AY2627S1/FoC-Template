@@ -59,6 +59,61 @@
   box-shadow: 0 12px 32px rgb(0 0 0 / 0.45);
 }
 
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.clearAll {
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-accent);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.clearAll:hover {
+  background: var(--color-surface-raised);
+}
+
+/* The row's link and its clear button side by side; a button cannot sit inside a link. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.row > .item {
+  flex: 1;
+  min-width: 0;
+}
+
+.clearOne {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-subtle);
+  cursor: pointer;
+}
+
+.clearOne:hover {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
 .title {
   margin: 0;
   padding: var(--space-1) var(--space-2);

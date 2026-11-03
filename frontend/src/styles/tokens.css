@@ -51,6 +51,21 @@
   --color-disabled-bg: #2a2725;
   --color-disabled-text: #7d746e;
 
+  /*
+   * Extra initials-bubble colours (lib/avatar.ts), alongside the accent, info,
+   * warning and success pairs above. Same lightness as those, so letters read
+   * equally well on each.
+   */
+  --color-avatar-violet: #a98be8;
+  --color-avatar-violet-bg: #231a33;
+  --color-avatar-teal: #4fc1b5;
+  --color-avatar-teal-bg: #102b29;
+  --color-avatar-pink: #e07bb0;
+  --color-avatar-pink-bg: #301828;
+  /* Also the Acknowledged order status (StatusBadge, StatusStepper). */
+  --color-lime: #a8c95a;
+  --color-lime-bg: #222b12;
+
   /* Type */
   --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-size-xs: 0.75rem;

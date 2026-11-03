@@ -261,26 +261,7 @@
   font-weight: var(--font-weight-semibold);
 }
 
-.toneAccent {
-  background: var(--color-danger-bg);
-  color: var(--color-accent);
-}
-
-.toneInfo {
-  background: var(--color-info-bg);
-  color: var(--color-info);
-}
-
-.toneWarning {
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
-}
-
-.toneSuccess {
-  background: var(--color-success-bg);
-  color: var(--color-success);
-}
-
+/* Each person's colours come from lib/avatar.ts; a pending request shows grey. */
 .toneMuted {
   background: var(--color-disabled-bg);
   color: var(--color-text-muted);

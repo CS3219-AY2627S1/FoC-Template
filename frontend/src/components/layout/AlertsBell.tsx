@@ -12,7 +12,15 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { markAlertsSeen, readAlertsSeen, useOrderAlerts } from '../../lib/alerts';
+import {
+  clearAlert,
+  clearAllAlerts,
+  isCleared,
+  markAlertsSeen,
+  readAlertsSeen,
+  readClearedAlerts,
+  useOrderAlerts,
+} from '../../lib/alerts';
 import { formatElapsed } from '../../lib/format';
 import { orderReference } from '../../lib/orders';
 import { Icon } from '../ui/Icon';
@@ -20,17 +28,29 @@ import { StatusBadge } from '../ui/StatusBadge';
 import styles from './AlertsBell.module.css';
 
 export function AlertsBell({ userId }: { userId: string }) {
-  const alerts = useOrderAlerts();
+  const allAlerts = useOrderAlerts();
   const [open, setOpen] = useState(false);
   const [seen, setSeen] = useState(() => readAlertsSeen(userId));
+  const [cleared, setCleared] = useState(() => readClearedAlerts(userId));
   const wrapper = useRef<HTMLDivElement>(null);
   const location = useLocation();
 
+  // Cleared rows are gone from the menu and never light the dot.
+  const alerts = allAlerts.filter((alert) => !isCleared(alert, cleared));
   const newest = alerts.reduce((latest, alert) => Math.max(latest, alert.createdAt.getTime()), 0);
   const hasUnread = newest > seen;
 
   // Re-read when the account changes, so one user's "seen" is never another's.
-  useEffect(() => setSeen(readAlertsSeen(userId)), [userId]);
+  useEffect(() => {
+    setSeen(readAlertsSeen(userId));
+    setCleared(readClearedAlerts(userId));
+  }, [userId]);
+
+  function clearAll() {
+    // Up to the newest one shown, so an update arriving later still appears.
+    const latest = allAlerts.reduce((max, alert) => Math.max(max, alert.createdAt.getTime()), 0);
+    setCleared(clearAllAlerts(userId, latest));
+  }
 
   // Close on navigation, a click outside, or Escape.
   useEffect(() => setOpen(false), [location.pathname]);
@@ -77,16 +97,24 @@ export function AlertsBell({ userId }: { userId: string }) {
 
       {open ? (
         <div id="alerts-menu" className={styles.menu}>
-          <h2 className={styles.title}>Updates on your requests</h2>
+          <div className={styles.head}>
+            <h2 className={styles.title}>Updates on your requests</h2>
+            {alerts.length > 0 ? (
+              <button type="button" className={styles.clearAll} onClick={clearAll}>
+                Clear all
+              </button>
+            ) : null}
+          </div>
           {alerts.length === 0 ? (
             <p className={styles.empty}>
-              Nothing yet. When a courier accepts, collects or delivers one of your requests, it shows
-              up here.
+              {allAlerts.length > 0
+                ? 'All cleared. New updates on your requests show up here.'
+                : 'Nothing yet. When a courier accepts, collects or delivers one of your requests, it shows up here.'}
             </p>
           ) : (
             <ul className={styles.list}>
               {alerts.map((alert) => (
-                <li key={alert.id}>
+                <li key={alert.id} className={styles.row}>
                   <Link to={`/orders/${alert.orderId}`} className={styles.item}>
                     {alert.createdAt.getTime() > seen ? (
                       <span className={styles.itemDot} aria-label="New" />
@@ -99,6 +127,14 @@ export function AlertsBell({ userId }: { userId: string }) {
                     </span>
                     {alert.status !== null ? <StatusBadge status={alert.status} /> : null}
                   </Link>
+                  <button
+                    type="button"
+                    className={styles.clearOne}
+                    aria-label={`Clear update for request #${orderReference(alert.orderId)}`}
+                    onClick={() => setCleared(clearAlert(userId, alert.id))}
+                  >
+                    <Icon name="close" size={14} />
+                  </button>
                 </li>
               ))}
             </ul>

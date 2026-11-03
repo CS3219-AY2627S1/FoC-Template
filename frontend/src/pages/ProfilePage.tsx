@@ -31,6 +31,7 @@ import { PasswordRules } from '../components/ui/PasswordRules';
 import { TextField } from '../components/ui/TextField';
 import { TextAreaField } from '../components/ui/Inputs';
 import { errorMessage } from '../lib/api';
+import { avatarColours } from '../lib/avatar';
 import {
   deleteDeliveryPoint,
   deliveryPointLabel,
@@ -85,7 +86,7 @@ export function ProfilePage() {
         <div className={styles.column}>
           <section className={styles.card}>
             <div className={styles.identity}>
-              <span className={styles.avatar} aria-hidden="true">
+              <span className={styles.avatar} style={avatarColours(user.userId)} aria-hidden="true">
                 {initials(user.name)}
               </span>
               <div className={styles.identityText}>

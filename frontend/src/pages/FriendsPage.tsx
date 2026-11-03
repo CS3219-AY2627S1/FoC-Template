@@ -20,6 +20,7 @@ import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/Dialog';
 import { errorMessage } from '../lib/api';
+import { avatarColours } from '../lib/avatar';
 import { formatElapsed, initials } from '../lib/format';
 import { Icon } from '../components/ui/Icon';
 import { byMatch, matchRank } from '../lib/search';
@@ -385,18 +386,14 @@ function Pager({
   );
 }
 
-const TONES = [styles.toneAccent, styles.toneInfo, styles.toneWarning, styles.toneSuccess];
-
-/** A colour per person, the same every visit, so a face is easier to find again. */
-function toneFor(id: string): string {
-  let sum = 0;
-  for (const char of id) sum = (sum + char.charCodeAt(0)) % 997;
-  return TONES[sum % TONES.length];
-}
-
+/** A colour per person (lib/avatar.ts), the same one they have everywhere; grey while a request waits. */
 function Avatar({ person, muted = false }: { person: FriendSummary; muted?: boolean }) {
   return (
-    <span className={`${styles.avatar} ${muted ? styles.toneMuted : toneFor(person.id)}`} aria-hidden="true">
+    <span
+      className={muted ? `${styles.avatar} ${styles.toneMuted}` : styles.avatar}
+      style={muted ? undefined : avatarColours(person.id)}
+      aria-hidden="true"
+    >
       {initials(person.name)}
     </span>
   );

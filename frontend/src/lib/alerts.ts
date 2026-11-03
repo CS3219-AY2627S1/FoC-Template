@@ -134,3 +134,62 @@ export function markAlertsSeen(userId: string, at: number): void {
     // Storage blocked: the dot may come back after a reload, which is harmless.
   }
 }
+
+/*
+ * What the user has cleared from the menu, per user, in this browser only:
+ * Order cannot delete alerts. "Clear all" keeps one time (everything up to it
+ * is hidden); clearing one row keeps that alert's id, capped at the latest
+ * 200 since the menu only ever shows the latest 20.
+ */
+const CLEARED_KEY = 'foc.alerts.cleared';
+const MAX_CLEARED_IDS = 200;
+
+export interface ClearedAlerts {
+  /** Alerts at or before this time (ms) are hidden. */
+  before: number;
+  ids: string[];
+}
+
+function readAllCleared(): Record<string, ClearedAlerts> {
+  try {
+    return JSON.parse(window.localStorage.getItem(CLEARED_KEY) ?? '{}') as Record<string, ClearedAlerts>;
+  } catch {
+    return {};
+  }
+}
+
+function writeCleared(userId: string, cleared: ClearedAlerts): void {
+  try {
+    const all = readAllCleared();
+    all[userId] = cleared;
+    window.localStorage.setItem(CLEARED_KEY, JSON.stringify(all));
+  } catch {
+    // Storage blocked: cleared rows come back after a reload, which is harmless.
+  }
+}
+
+export function readClearedAlerts(userId: string): ClearedAlerts {
+  const cleared = readAllCleared()[userId];
+  return {
+    before: typeof cleared?.before === 'number' ? cleared.before : 0,
+    ids: Array.isArray(cleared?.ids) ? cleared.ids : [],
+  };
+}
+
+/** Hides every alert up to `at`; the per-row list is no longer needed. */
+export function clearAllAlerts(userId: string, at: number): ClearedAlerts {
+  const cleared = { before: at, ids: [] };
+  writeCleared(userId, cleared);
+  return cleared;
+}
+
+export function clearAlert(userId: string, alertId: string): ClearedAlerts {
+  const current = readClearedAlerts(userId);
+  const cleared = { before: current.before, ids: [...current.ids, alertId].slice(-MAX_CLEARED_IDS) };
+  writeCleared(userId, cleared);
+  return cleared;
+}
+
+export function isCleared(alert: OrderAlert, cleared: ClearedAlerts): boolean {
+  return alert.createdAt.getTime() <= cleared.before || cleared.ids.includes(alert.id);
+}

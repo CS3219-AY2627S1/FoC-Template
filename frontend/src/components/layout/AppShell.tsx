@@ -11,6 +11,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { useAuth } from '../../auth/AuthProvider';
 import { Icon } from '../ui/Icon';
 import { RatingPrompt } from '../rating/RatingPrompt';
+import { avatarColours } from '../../lib/avatar';
 import { useCreditBalance } from '../../lib/credit';
 import { refreshIncomingCount, useIncomingFriendRequestCount } from '../../lib/friends';
 import { initials } from '../../lib/format';
@@ -178,13 +179,17 @@ export function AppShell() {
           </Link>
           {user !== null ? <AlertsBell userId={user.userId} /> : null}
           <Link to="/profile" className={styles.profile} aria-label="Profile">
-            <span className={styles.avatar} aria-hidden="true">
+            <span
+              className={styles.avatar}
+              style={user !== null ? avatarColours(user.userId) : undefined}
+              aria-hidden="true"
+            >
               {initials(user?.name)}
             </span>
           </Link>
           {/* Below 768px this moves into the hamburger menu, to keep the bar short. */}
           <button type="button" className={styles.signOut} onClick={() => void handleSignOut()}>
-            Log out
+            <span className={styles.signOutPill}>Log out</span>
           </button>
         </div>
       </header>
@@ -204,7 +209,7 @@ export function AppShell() {
           ))}
           <button
             type="button"
-            className={`${styles.menuLink} ${styles.menuSignOut}`}
+            className={styles.menuLink}
             onClick={() => void handleSignOut()}
           >
             Log out

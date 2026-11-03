@@ -150,15 +150,20 @@
   text-decoration: none;
 }
 
-/* Desktop only (the mobile menu has its own), so a slim pill rather than a full touch target. */
+/*
+ * Desktop only (the mobile menu has its own). The button is a full-height
+ * touch target, so hovering anywhere over it lights the pill; the slim pill
+ * inside is only the drawing. A 32px button left the rows above and below it,
+ * and its rounded corners, to the bar, so the pill came and went.
+ */
 .signOut {
-  min-height: 32px;
-  padding: 0 var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target);
+  padding: 0;
   /* Into the bar's right padding, so the pill sits nearer the edge than the bare text did. */
   margin-right: calc(-1 * var(--space-3));
-  /* Transparent until hover, so the darker border appearing does not shift the layout. */
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
+  border: none;
   background: transparent;
   color: var(--color-text-muted);
   font: inherit;
@@ -167,24 +172,45 @@
   white-space: nowrap;
 }
 
-/* A solid accent pill on hover, so leaving reads as a deliberate action. */
-.signOut:hover,
+.signOutPill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  /* Transparent until hover, so the darker border appearing does not shift the layout. */
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+}
+
 .signOut:focus-visible {
+  outline: none;
+}
+
+/* A solid accent pill on hover, so leaving reads as a deliberate action. */
+.signOut:hover .signOutPill,
+.signOut:focus-visible .signOutPill {
   background: var(--color-accent);
   border-color: color-mix(in srgb, var(--color-accent) 60%, #000);
   color: var(--color-accent-contrast);
+}
+
+.signOut:focus-visible .signOutPill {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .creditsShort {
   display: none;
 }
 
+/* The colours here are the fallback; the bubble takes the user's own (lib/avatar.ts). */
 .avatar {
   width: 32px;
   height: 32px;
-  background: var(--color-surface-raised);
-  color: var(--color-text);
+  background: var(--color-danger-bg);
+  color: var(--color-accent);
   font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
 }
 
 .avatar:hover {
@@ -301,10 +327,10 @@
     color: var(--color-text);
   }
 
-  /* Log out turns accent while touched or focused, like the desktop pill. */
-  .menuSignOut:hover,
-  .menuSignOut:active,
-  .menuSignOut:focus-visible {
+  /* Every row turns accent while touched or focused, like Log out's desktop pill. */
+  .menuLink:hover,
+  .menuLink:active,
+  .menuLink:focus-visible {
     background: var(--color-accent);
     color: var(--color-accent-contrast);
   }

@@ -17,7 +17,7 @@ import styles from './StatusStepper.module.css';
 /*
  * Each step has its own colour while it is the current one, from the order
  * mockups: Created accent, Accepted amber, Collected blue, Delivered green,
- * and Acknowledged amber like Accepted. The label always names the step, so
+ * and Acknowledged lime. The label always names the step, so
  * colour is never the only signal (UI NFR8).
  */
 const STEPS: { status: OrderStatus; long: string; short: string; tone: string }[] = [
@@ -25,7 +25,7 @@ const STEPS: { status: OrderStatus; long: string; short: string; tone: string }[
   { status: 'Accepted', long: 'Accepted', short: 'Accepted', tone: 'toneAccepted' },
   { status: 'Collected', long: 'Collected', short: 'Collected', tone: 'toneCollected' },
   { status: 'Delivered', long: 'Delivered', short: 'Delivered', tone: 'toneDelivered' },
-  { status: 'Acknowledged', long: 'Acknowledged', short: "Ack'd", tone: 'toneAccepted' },
+  { status: 'Acknowledged', long: 'Acknowledged', short: "Ack'd", tone: 'toneAcknowledged' },
 ];
 
 const BRANCH_STATES: OrderStatus[] = [
