@@ -30,6 +30,14 @@ export function parseFriendPage(page: unknown, pageSize: unknown): Page {
   return { page: integer(page, 1, 100_000), pageSize: integer(pageSize, 20, 100) };
 }
 
+export function parseFriendQuery(value: unknown): string {
+  if (value === undefined) return "";
+  if (typeof value !== "string" || value.length > 100) {
+    throw new AppError(400, "INVALID_PAGINATION", "q must be a string of at most 100 characters");
+  }
+  return value.trim();
+}
+
 export function parseRequestDirection(value: unknown): "incoming" | "outgoing" {
   if (value === undefined) return "incoming";
   if (value !== "incoming" && value !== "outgoing") {
@@ -143,12 +151,17 @@ export async function removeFriend(actor: Actor, friendIdInput: unknown): Promis
   });
 }
 
-export async function listFriends(actor: Actor, page: Page) {
+export async function listFriends(actor: Actor, page: Page, q = "") {
   return prisma.$transaction(async (transaction) => {
     await assertActor(transaction, actor);
+    // Prisma contains uses LIKE; user-supplied %, _ and backslashes are literal
+    // search characters, not wildcards. Filter the OTHER account in both roles.
+    const peer = { ...availableWhere, ...(q ? { name: {
+      contains: q.replace(/[\\%_]/g, "\\$&"), mode: "insensitive" as const,
+    } } : {}) };
     const where: Prisma.FriendshipWhereInput = { status: "ACCEPTED", OR: [
-      { senderId: actor.userId, recipient: availableWhere },
-      { recipientId: actor.userId, sender: availableWhere },
+      { senderId: actor.userId, recipient: peer },
+      { recipientId: actor.userId, sender: peer },
     ] };
     const [total, rows] = await Promise.all([
       transaction.friendship.count({ where }),
