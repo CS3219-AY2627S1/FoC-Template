@@ -1,6 +1,3 @@
-# No badges-service image that runs in the cloud yet: run the connectivity stub
-# under this name (same as local). CI pushes foc/connectivity-stub.
 image:
-  name: foc/connectivity-stub
-  tag: "0.2.0"
+  tag: "0703ca180e5ee917ef6fed608915f599710437d8" # git SHA, set by deploy/push-dev.sh
 replicas: 1

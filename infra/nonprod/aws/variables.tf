@@ -69,7 +69,7 @@ variable "burst_node_max" {
 variable "databases" {
   description = "Services that get their own Postgres database and login (ADR-0010). Same as infra/local/aws."
   type        = list(string)
-  default     = ["user", "supplier", "credit", "order", "admin"]
+  default     = ["user", "supplier", "credit", "order", "admin", "rating", "badges"]
 }
 
 variable "gateway_target_port" {
