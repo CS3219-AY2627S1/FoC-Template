@@ -32,7 +32,6 @@ beforeEach(() => {
   mocks.getIdToken.mockResolvedValue("fresh-token")
   mocks.signOut.mockResolvedValue(undefined)
   vi.stubGlobal("fetch", vi.fn())
-  vi.stubGlobal("confirm", vi.fn().mockReturnValue(true))
 })
 
 afterEach(() => {
@@ -48,11 +47,22 @@ it("renders the delete-account button", () => {
   ).toBeInTheDocument()
 })
 
-it("does not delete the account when confirmation is cancelled", async () => {
-  vi.mocked(window.confirm).mockReturnValue(false)
-
+it("opens the confirmation dialog when the delete button is clicked", () => {
   render(<DeleteAccountButton onError={mocks.onError} />)
+
   fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
+
+  expect(screen.getByRole("alertdialog")).toBeInTheDocument()
+  expect(
+    screen.getByText("Are you sure you want to permanently delete your account? This action cannot be undone.")
+  ).toBeInTheDocument()
+})
+
+it("does not delete the account when confirmation is cancelled", () => {
+  render(<DeleteAccountButton onError={mocks.onError} />)
+
+  fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
+  fireEvent.click(screen.getByRole("button", { name: "Keep account" }))
 
   expect(fetch).not.toHaveBeenCalled()
   expect(mocks.getIdToken).not.toHaveBeenCalled()
@@ -65,7 +75,9 @@ it("deletes the account, signs out and redirects on success", async () => {
   )
 
   render(<DeleteAccountButton onError={mocks.onError} />)
+
   fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
+  fireEvent.click(screen.getByRole("button", { name: "Yes, delete account" }))
 
   await waitFor(() => {
     expect(fetch).toHaveBeenCalledWith("/api/users/me", {
@@ -82,7 +94,7 @@ it("deletes the account, signs out and redirects on success", async () => {
   expect(mocks.onError).not.toHaveBeenCalled()
 })
 
-it("displays the server error and does not sign out when deletion fails", async () => {
+it("displays the server error and keeps the dialog open when deletion fails", async () => {
   vi.mocked(fetch).mockResolvedValueOnce(
     new Response(
       JSON.stringify({ detail: "Cannot disable user with active orders" }),
@@ -94,7 +106,9 @@ it("displays the server error and does not sign out when deletion fails", async 
   )
 
   render(<DeleteAccountButton onError={mocks.onError} />)
+
   fireEvent.click(screen.getByRole("button", { name: "Delete account" }))
+  fireEvent.click(screen.getByRole("button", { name: "Yes, delete account" }))
 
   await waitFor(() => {
     expect(mocks.onError).toHaveBeenCalledWith(
@@ -104,4 +118,5 @@ it("displays the server error and does not sign out when deletion fails", async 
 
   expect(mocks.signOut).not.toHaveBeenCalled()
   expect(mocks.replace).not.toHaveBeenCalled()
+  expect(screen.getByRole("alertdialog")).toBeInTheDocument()
 })

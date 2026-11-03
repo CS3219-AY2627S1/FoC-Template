@@ -6,6 +6,17 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from "@/components/providers/auth-provider"
 import { useConfig } from "@/components/providers/config-provider"
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 interface DeleteAccountButtonProps {
     onError: (message: string) => void;
@@ -21,12 +32,6 @@ export default function DeleteAccountButton({
   const [deleting, setDeleting] = useState(false);
 
   async function handleDelete() {
-    const confirmed = window.confirm(
-      'Are you sure you want to permanently delete your account? This action cannot be undone.'
-    );
-
-    if (!confirmed) return;
-
     setDeleting(true);
 
     try {
@@ -57,7 +62,6 @@ export default function DeleteAccountButton({
           // Keep the generic fallback if the error body cannot be parsed.
         }
 
-        console.log("Setting error to:", message);
         onError(message);
         return
       }
@@ -71,7 +75,6 @@ export default function DeleteAccountButton({
           ? err.message
           : "Unexpected error occurred.";
       
-      console.log("Catch block setting error:", message);
       onError(message);
     } finally {
       setDeleting(false);
@@ -79,17 +82,47 @@ export default function DeleteAccountButton({
   }
 
   return (
-    <div>
-      <Button
-        type="button"
-        variant="destructive"
-        className="w-fit"
-        onClick={handleDelete}
-        disabled={deleting}
+    <AlertDialog>
+      <AlertDialogTrigger
+        render={
+          <Button
+            type="button"
+            variant="destructive"
+            className="w-fit"
+            disabled={deleting}
+          />
+        }
       >
-        {deleting ? 'Deleting account...' : 'Delete account'}
-      </Button>
-    </div>
+        Delete account
+      </AlertDialogTrigger>
+
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to permanently delete your account?
+            This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deleting}>
+            Keep account
+          </AlertDialogCancel>
+
+          <AlertDialogAction
+            variant="destructive"
+            disabled={deleting}
+            onClick={(event) => {
+              event.preventDefault();
+              void handleDelete();
+            }}
+          >
+            {deleting ? "Deleting account..." : "Yes, delete account"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
