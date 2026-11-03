@@ -35,7 +35,8 @@ public record OrderResponse(
         String collectionPhotoRef,
         String deliveryPhotoRef,
         String disputePhotoRef,
-        String disputeText
+        String disputeText,
+        String faultParty
 ) {
     public static OrderResponse from(OrderEntity order) {
         return new OrderResponse(
@@ -67,7 +68,8 @@ public record OrderResponse(
                 order.getCollectionPhotoRef(),
                 order.getDeliveryPhotoRef(),
                 order.getDisputePhotoRef(),
-                order.getDisputeText()
+                order.getDisputeText(),
+                order.getFaultParty()
         );
     }
 }

@@ -141,6 +141,7 @@ class OrderCommandServiceTest {
         assertEquals("Cool Spot", response.dropoffName());
         assertEquals("Building", response.dropoffBuilding());
         assertEquals("Lobby", response.dropoffDescription());
+        assertNull(response.faultParty());
         verify(credits).reserve(created.getId(), "11111111-1111-1111-1111-111111111111", 8, requester);
         verify(deliveryPoints).recordSuccessfulUse(requester.userId(), 4L);
         verify(alerts).save(any(AlertEntity.class));
@@ -506,6 +507,8 @@ class OrderCommandServiceTest {
         service.applyAdminEvent("event-6", "admin.case.resolved", id, "case-3", "courier");
         assertEquals(OrderStatus.COMPLETED, review.getStatus());
         assertEquals(now, review.getSettledAt());
+        assertEquals("courier", review.getFaultParty());
+        assertEquals("courier", OrderResponse.from(review).faultParty());
         assertNull(review.getDeliveryPhotoRef());
 
         ArgumentCaptor<ProcessedEventEntity> processed = ArgumentCaptor.forClass(ProcessedEventEntity.class);
@@ -549,6 +552,7 @@ class OrderCommandServiceTest {
         service.applyAdminEvent("event-7", "admin.case.resolved", id, "case-4", "requester");
 
         assertEquals(OrderStatus.COMPLETED, review.getStatus());
+        assertEquals("requester", review.getFaultParty());
         ArgumentCaptor<OutboxEntity> outbox = ArgumentCaptor.forClass(OutboxEntity.class);
         verify(outboxRepository, org.mockito.Mockito.atLeastOnce()).save(outbox.capture());
         assertTrue(outbox.getAllValues().stream().anyMatch(row ->
