@@ -35,3 +35,4 @@ mesh: # who may call admin (ADR-0012)
     - { path: /api/v1/admin/internal/conflicts, callers: [order] } # escalations
     - { path: /api/v1/admin/internal/reports, callers: [user] } # user reports
     - { path: /api/v1/admin/internal/appeals, callers: [user] } # suspension appeals
+    - { path: /api/v1/admin/appeals/latest, callers: [user] } # appeal lookup at login

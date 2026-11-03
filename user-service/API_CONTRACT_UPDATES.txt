@@ -587,16 +587,12 @@ for User, and Admin's mesh policy restricts the two intake paths to User.
 Repository gateway configuration: intake lives under /api/v1/admin/internal, which the
 gateway blocks as a prefix (trailing slashes and sub-paths included). Admin's
 other GET queues/detail and review routes stay authenticated.
-REQUIRED PRIVATE-POLICY HANDOFF (PENDING): block exact public
-GET /api/v1/admin/appeals/latest and trailing-slash redirect variants; admit only
-User to latest lookup in Admin's mesh policy. Current gateway values route latest
-through the protected generic /api/v1/admin prefix without an explicit block.
-Admin's mesh defaults to gateway access, with User-only /internal intake paths
-but no latest-lookup User allow. Local frontend nginx also forwards the Admin
-prefix and needs exposure review. Intake/latest have no application authentication
-and must be unreachable from clients. Source values do not prove live enforcement;
-verify User allow and public/other-caller deny after rollout. No infrastructure
-changes are made here. Existing intake paths and base URL remain unchanged.
+Latest lookup: the gateway blocks /api/v1/admin/appeals/latest as a prefix
+(exact, trailing slash and sub-paths answer 404), Admin's mesh policy admits only
+User on that prefix, and local frontend nginx returns 404 for it. Intake/latest
+have no application authentication and must be unreachable from clients. Source
+values do not prove live enforcement; verify User allow and public/other-caller
+deny after rollout. Existing intake paths and base URL remain unchanged.
 Frontend owner: add appeal/report forms and login 403 ACCOUNT_SUSPENDED handling;
 friendship UI is separate owner work. No such source changes are made here.
 
