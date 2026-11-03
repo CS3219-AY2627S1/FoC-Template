@@ -1,10 +1,10 @@
 image:
-  tag: "4c74b5a3a18d7213738e49bc32563b6087ba6f16" # git SHA, set by deploy/push-dev.sh
+  tag: "b945b74b04e08ab97301412532ce48a1ce671a7b" # git SHA, set by deploy/push-dev.sh
 autoscaling:
   enabled: true
   minReplicas: 1
   maxReplicas: 6
   targetCPUUtilization: 70
 resources:
-  requests: { cpu: 250m }
-  limits: { cpu: "1" }
+  requests: {cpu: 250m}
+  limits: {cpu: "1"}
