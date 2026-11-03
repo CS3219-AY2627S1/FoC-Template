@@ -88,9 +88,15 @@ public class UserService {
         // Refresh to ensure status is up to date
         user = refreshSuspensionStatus(user);
 
-        return new UserRoleContext(user.getUserId(),
-                user.getStatus() == AccountStatus.ACTIVE && user.getRoles() != null
-                        ? List.copyOf(user.getRoles()) : List.of());
+        if (verifyDeactivated(user)) {
+            throw new RuntimeException("User is deactivated");
+        }
+
+        String userIdToSend = user.getUserId();
+        List<String> rolesToSend = user.getRoles();
+        boolean isCourierSuspended = user.getIsCourierSuspended();
+        
+        return new UserRoleContext(userIdToSend, rolesToSend, isCourierSuspended);
     }
 
     public CourierEligibility getCourierEligibility(String userId) {
@@ -547,5 +553,17 @@ public class UserService {
        return ZonedDateTime.now(ZoneId.of("Asia/Singapore"))
                 .plusMonths(months)
                 .toInstant();
+    }
+
+    private boolean verifyDeactivated(String userId) {
+        User user = userRepository
+                .findByUserId(userId)
+                .orElseThrow(() ->
+                        new RuntimeException("User not found"));
+        return user.getStatus() == AccountStatus.DEACTIVATED || user.getStatus() == AccountStatus.DEACTIVATED;
+    }
+
+    private boolean verifyDeactivated(User user) {
+        return user.getStatus() == AccountStatus.DEACTIVATED || user.getStatus() == AccountStatus.DEACTIVATED;
     }
 }
