@@ -110,6 +110,18 @@
   vertical-align: middle;
 }
 
+.rejectBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.rejectCopy {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
 .empty {
   margin: 0;
   padding: var(--space-4);

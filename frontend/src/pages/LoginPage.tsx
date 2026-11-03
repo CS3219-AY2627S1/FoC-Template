@@ -43,6 +43,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [suspended, setSuspended] = useState(false);
+  const [suspensionNotice, setSuspensionNotice] = useState<string | null>(null);
 
   const canSubmit = email.trim().length > 0 && password.length > 0;
 
@@ -59,6 +60,7 @@ export function LoginPage() {
       // Only sent after a correct password, so it reveals nothing to someone
       // guessing at addresses. The user can appeal from here.
       if (failure instanceof ApiError && failure.code === 'ACCOUNT_SUSPENDED') {
+        setSuspensionNotice(failure.message);
         setSuspended(true);
         return;
       }
@@ -77,7 +79,14 @@ export function LoginPage() {
   }
 
   if (suspended) {
-    return <AppealForm email={email.trim()} password={password} onDone={leaveAppeal} />;
+    return (
+      <AppealForm
+        email={email.trim()}
+        password={password}
+        notice={suspensionNotice}
+        onDone={leaveAppeal}
+      />
+    );
   }
 
   return (
@@ -136,11 +145,13 @@ interface AppealFormProps {
   email: string;
   /** Held in memory only, for this one request; the page clears it on onDone. */
   password: string;
+  /** The 403 text. Once User Service includes a rejection reason, it appears here. */
+  notice: string | null;
   onDone: () => void;
 }
 
 /** A suspended user asks an admin to reinstate them. */
-function AppealForm({ email, password, onDone }: AppealFormProps) {
+function AppealForm({ email, password, notice, onDone }: AppealFormProps) {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -188,9 +199,11 @@ function AppealForm({ email, password, onDone }: AppealFormProps) {
         <h1 className={styles.title}>Your account is suspended</h1>
       </header>
 
+      {notice ? <Alert variant="warning">{notice}</Alert> : null}
+
       <p className={styles.note}>
-        An admin suspended this account, so you cannot log in. If you think that was a mistake,
-        explain why below. One appeal is reviewed at a time.
+        You cannot log in while this account is suspended. If you think that was a mistake, explain
+        why below. One appeal is reviewed at a time.
       </p>
 
       {failure ? <Alert variant="danger">{failure}</Alert> : null}

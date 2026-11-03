@@ -1,13 +1,19 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import AdminDep, CurrentAdmin
 from app.database import get_db
 from app.models.moderation import AppealStatus, ReportStatus, SuspensionAppeal, UserReport
-from app.schemas.moderation import AppealDetail, CreateAppealRequest, CreateReportRequest, ReportDetail
+from app.schemas.moderation import (
+    AppealDetail,
+    CreateAppealRequest,
+    CreateReportRequest,
+    RejectAppealRequest,
+    ReportDetail,
+)
 from app.services.moderation import CloseOutcome, create_appeal, create_report, dismiss_report, reject_appeal
 
 reports = APIRouter(prefix="/api/v1/admin/reports", tags=["admin-reports"])
@@ -90,6 +96,24 @@ async def list_appeals(
     return (await db.execute(query)).scalars().all()
 
 
+@appeals.get("/latest", response_model=AppealDetail | None)
+async def latest_appeal(userId: str, db: AsyncSession = Depends(get_db)):
+    """
+    No auth. User Service calls this during a suspended login so it can tell
+    the account owner the appeal is still open, or why it was rejected.
+    The public gateway must not expose this path.
+    """
+    user_id = userId.strip()
+    if not user_id or len(user_id) > 200:
+        raise HTTPException(status_code=422, detail="userId is required")
+    return await db.scalar(
+        select(SuspensionAppeal)
+        .where(SuspensionAppeal.user_id == user_id)
+        .order_by(SuspensionAppeal.created_at.desc())
+        .limit(1)
+    )
+
+
 @appeals.get("/{appeal_id}", response_model=AppealDetail)
 async def get_appeal(appeal_id: uuid.UUID, admin: CurrentAdmin = AdminDep, db: AsyncSession = Depends(get_db)):
     row = await db.get(SuspensionAppeal, appeal_id)
@@ -99,9 +123,19 @@ async def get_appeal(appeal_id: uuid.UUID, admin: CurrentAdmin = AdminDep, db: A
 
 
 @appeals.post("/{appeal_id}/reject", response_model=AppealDetail)
-async def reject(appeal_id: uuid.UUID, admin: CurrentAdmin = AdminDep, db: AsyncSession = Depends(get_db)):
-    """Leave the suspension in place. Reinstating the user closes the open appeal instead."""
-    outcome, row = await reject_appeal(db, appeal_id, admin.user_id)
+async def reject(
+    appeal_id: uuid.UUID,
+    body: RejectAppealRequest,
+    request: Request,
+    admin: CurrentAdmin = AdminDep,
+    db: AsyncSession = Depends(get_db),
+):
+    """Leave the suspension in place and keep the reason the user will be shown."""
+    outcome, row = await reject_appeal(db, appeal_id, admin.user_id, body.reason)
     if outcome is not CloseOutcome.closed:
         _closed(outcome, row, "Appeal")
+    if row is None:
+        raise HTTPException(status_code=404)
+    from app.routers import users as user_routes
+    await user_routes.notify_appeal_rejected(request, row.user_id, body.reason)
     return row

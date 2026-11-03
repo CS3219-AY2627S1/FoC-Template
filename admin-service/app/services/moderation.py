@@ -76,6 +76,7 @@ async def create_appeal(db: AsyncSession, user_id: str, message: str) -> Suspens
     row = SuspensionAppeal(
         user_id=user_id,
         message=message,
+        rejection_reason=None,
         status=AppealStatus.open,
         created_at=_now(),
     )
@@ -118,13 +119,20 @@ async def dismiss_report(db: AsyncSession, report_id: uuid.UUID, admin_id: str) 
     return CloseOutcome.closed, await db.get(UserReport, report_id)
 
 
-async def reject_appeal(db: AsyncSession, appeal_id: uuid.UUID, admin_id: str) -> tuple[CloseOutcome, SuspensionAppeal | None]:
+async def reject_appeal(
+    db: AsyncSession, appeal_id: uuid.UUID, admin_id: str, reason: str
+) -> tuple[CloseOutcome, SuspensionAppeal | None]:
     now = _now()
     row = (
         await db.execute(
             update(SuspensionAppeal)
             .where(SuspensionAppeal.id == appeal_id, SuspensionAppeal.status == AppealStatus.open)
-            .values(status=AppealStatus.rejected, closed_at=now, closed_by_admin_id=admin_id)
+            .values(
+                status=AppealStatus.rejected,
+                rejection_reason=reason,
+                closed_at=now,
+                closed_by_admin_id=admin_id,
+            )
             .returning(SuspensionAppeal.id)
         )
     ).first()
@@ -135,7 +143,7 @@ async def reject_appeal(db: AsyncSession, appeal_id: uuid.UUID, admin_id: str) -
             return CloseOutcome.missing, None
         return CloseOutcome.not_open, current
 
-    await audit.record(db, admin_id=admin_id, action="reject_appeal", target_id=str(appeal_id))
+    await audit.record(db, admin_id=admin_id, action="reject_appeal", target_id=str(appeal_id), detail=reason)
     await db.commit()
     return CloseOutcome.closed, await db.get(SuspensionAppeal, appeal_id)
 

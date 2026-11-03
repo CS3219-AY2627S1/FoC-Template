@@ -11,12 +11,14 @@
 
 import { api } from './api';
 
+export type AdminAccountStatus = 'Created' | 'Verified' | 'Suspended';
+
 /** A row of UI FR17's user table. */
 export interface AdminUser {
   userId: string;
   name: string;
   email: string;
-  status: 'Created' | 'Verified' | 'Suspended';
+  status: AdminAccountStatus;
   isAdmin: boolean;
   /**
    * TODO(credit): the mockup shows a balance per user. Credit exposes
@@ -33,6 +35,8 @@ export interface AdminUserPage {
   items: AdminUser[];
   page: number;
   hasMore: boolean;
+  /** Full match count. The dashboard uses this for suspended users. */
+  total: number;
 }
 
 /** One row as the Admin Service returns it, passed through from the User Service. */
@@ -60,13 +64,18 @@ export function clearAdminUserCache(): void {
  * `GET /api/v1/admin/users?search=&page=` (Admin F1, NFR1.1). The search
  * matches name, email, or an exact user ID.
  */
-export async function fetchAdminUsers(search: string, page: number): Promise<AdminUserPage> {
-  const key = `${search.trim().toLowerCase()}|${page}`;
+export async function fetchAdminUsers(
+  search: string,
+  page: number,
+  status?: AdminAccountStatus,
+): Promise<AdminUserPage> {
+  const key = `${search.trim().toLowerCase()}|${page}|${status ?? ''}`;
   const cached = searchCache.get(key);
   if (cached !== undefined && Date.now() - cached.at < SEARCH_CACHE_MS) return cached.result;
 
   const params = new URLSearchParams({ page: String(page) });
   if (search.trim() !== '') params.set('search', search.trim());
+  if (status) params.set('status', status);
 
   const result = await api.get<{ items: UserSummary[]; page: number; total: number }>(
     `/admin/users?${params.toString()}`,
@@ -78,7 +87,7 @@ export async function fetchAdminUsers(search: string, page: number): Promise<Adm
     status: row.status,
     isAdmin: row.role === 'admin',
   }));
-  const found = { items, page, hasMore: page * ADMIN_USERS_PAGE_SIZE < result.total };
+  const found = { items, page, total: result.total, hasMore: page * ADMIN_USERS_PAGE_SIZE < result.total };
   searchCache.set(key, { at: Date.now(), result: found });
   return found;
 }

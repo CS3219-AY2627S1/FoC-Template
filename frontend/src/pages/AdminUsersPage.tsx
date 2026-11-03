@@ -18,6 +18,7 @@
  */
 
 import { useCallback, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { ModerationQueues } from '../components/admin/ModerationQueues';
 import { Alert } from '../components/ui/Alert';
@@ -33,9 +34,17 @@ import {
   promoteUser,
   reinstateUser,
   suspendUser,
+  type AdminAccountStatus,
   type AdminUser,
 } from '../lib/adminUsers';
 import styles from './AdminUsersPage.module.css';
+
+const STATUS_FILTERS: { value: '' | AdminAccountStatus; label: string }[] = [
+  { value: '', label: 'All' },
+  { value: 'Created', label: 'Created' },
+  { value: 'Verified', label: 'Verified' },
+  { value: 'Suspended', label: 'Suspended' },
+];
 
 type Pending =
   | { kind: 'suspend'; user: AdminUser }
@@ -48,6 +57,10 @@ export function AdminUsersPage() {
 
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [params, setParams] = useSearchParams();
+  const requested = params.get('status');
+  const status: '' | AdminAccountStatus =
+    requested === 'Created' || requested === 'Verified' || requested === 'Suspended' ? requested : '';
   const [actionError, setActionError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -59,12 +72,18 @@ export function AdminUsersPage() {
 
   // Admin F1: search runs on the service, so it covers every user, not just
   // the page on screen. Rows on screen narrow as you type meanwhile.
-  const { users, hasMore, loadError, search } = useAdminUserSearch(
+  const { users, hasMore, total, loadError, search } = useAdminUserSearch(
     query,
     page,
     reloadKey,
     'Could not reach the Admin Service. Start it and reload.',
+    status,
   );
+
+  function chooseStatus(next: '' | AdminAccountStatus) {
+    setPage(1);
+    setParams(next === '' ? {} : { status: next }, { replace: true });
+  }
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
 
@@ -126,6 +145,20 @@ export function AdminUsersPage() {
       <div className={`${styles.header} ${styles.sectionHeader}`}>
         <h2 className={styles.sectionTitle}>All users</h2>
 
+        <div className={styles.filters} role="group" aria-label="Filter by status">
+          {STATUS_FILTERS.map((option) => (
+            <button
+              key={option.label}
+              type="button"
+              className={status === option.value ? styles.filterActive : styles.filter}
+              aria-pressed={status === option.value}
+              onClick={() => chooseStatus(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
         <label className={styles.search}>
           <Icon name="search" size={16} />
           <span className="visually-hidden">Search by name or email</span>
@@ -140,9 +173,8 @@ export function AdminUsersPage() {
           />
         </label>
 
-        {/* The contract's list carries no total, so only the page is counted. */}
         <p className={styles.totals}>
-          {users === null ? 'Loading' : `${users.length} on this page`}
+          {users === null || total === null ? 'Loading' : `${total} matching`}
         </p>
       </div>
 
@@ -228,7 +260,7 @@ export function AdminUsersPage() {
 
       {users !== null && users.length === 0 && loadError === null ? (
         <p className={styles.empty}>
-          {search.trim() === '' ? 'No users yet.' : 'No user matches that search.'}
+          {search.trim() === '' && status === '' ? 'No users yet.' : 'No user matches that filter.'}
         </p>
       ) : null}
 
