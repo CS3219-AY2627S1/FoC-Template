@@ -33,6 +33,7 @@ model Supplier {
   startingTime        String
   closingTime         String
   status              SupplierStatus @default(pending)
+  // Set only while status is rejected. Cleared on approved or pending.
   rejectionReason     String?
   createdByUserId     String?
   createdAt           DateTime       @default(now())
