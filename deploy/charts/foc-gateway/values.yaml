@@ -75,6 +75,9 @@ blockedPrefixes:
   # Order's escalation intake and User's report/appeal intake: no admin session,
   # so a client could open cases, reports or appeals for anyone.
   - /api/v1/admin/internal
+  # No routes here yet; blocked ahead of time so a new one is never public.
+  - /api/v1/orders/internal
+  - /api/v1/supplier/internal
 
 # `helm test` pod (not used by Argo CD).
 tests:

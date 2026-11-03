@@ -46,14 +46,14 @@ users:
     write: []
     read: [foc.user.status, foc.credit.commands]
   order:
-    write: [foc.order.status, foc.credit.commands, foc.rating.commands, foc.admin.commands]
+    write: [foc.order.status, foc.credit.commands, foc.rating.commands] # escalations go to admin over HTTP
     read: [foc.admin.events, foc.user.status] # user.status: UserDeleted → drop delivery points
   rating:
     write: [foc.user.rating]
     read: [foc.rating.commands]
   admin:
     write: [foc.admin.events]
-    read: [foc.admin.commands]
+    read: [] # foc.admin.commands is unused: escalations arrive over HTTP
   badges:
     write: []
     read: [foc.order.status, foc.user.rating, foc.admin.events]
