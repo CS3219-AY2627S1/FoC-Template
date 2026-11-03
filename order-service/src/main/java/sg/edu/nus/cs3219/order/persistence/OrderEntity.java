@@ -110,6 +110,9 @@ public class OrderEntity {
     @Column(name = "case_id")
     private String caseId;
 
+    @Column(name = "fault_party")
+    private String faultParty;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -376,6 +379,14 @@ public class OrderEntity {
 
     public void setCaseId(String caseId) {
         this.caseId = caseId;
+    }
+
+    public String getFaultParty() {
+        return faultParty;
+    }
+
+    public void setFaultParty(String faultParty) {
+        this.faultParty = faultParty;
     }
 
     public Instant getCreatedAt() {
