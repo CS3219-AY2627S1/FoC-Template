@@ -1,5 +1,5 @@
 image:
-  tag: "12a64b3bc726df3ff8ff4cc0bb29162716063d8d" # git SHA, set by deploy/push-dev.sh
+  tag: "51a1941e08d5f0aba79886cee6542ee303ba7307" # git SHA, set by deploy/push-dev.sh
 # Only one replica may poll the Telegram bot: before adding a bot token, run
 # the poller separately and set TELEGRAM_POLLING_ENABLED=false here.
 autoscaling:
