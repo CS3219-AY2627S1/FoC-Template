@@ -47,7 +47,7 @@ users:
     read: [foc.user.status, foc.credit.commands]
   order:
     write: [foc.order.status, foc.credit.commands, foc.rating.commands, foc.admin.commands]
-    read: [foc.admin.events]
+    read: [foc.admin.events, foc.user.status] # user.status: UserDeleted → drop delivery points
   rating:
     write: [foc.user.rating]
     read: [foc.rating.commands]

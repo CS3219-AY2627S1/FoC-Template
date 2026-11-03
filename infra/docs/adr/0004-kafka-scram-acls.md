@@ -22,7 +22,7 @@ publishing to it could transfer money.
   |---|---|---|
   | `user` | `foc.user.status` | |
   | `credit` | | `foc.user.status`, `foc.credit.commands` |
-  | `order` | `foc.order.status`, `foc.credit.commands`, `foc.rating.commands`, `foc.admin.commands` | `foc.admin.events` |
+  | `order` | `foc.order.status`, `foc.credit.commands`, `foc.rating.commands`, `foc.admin.commands` | `foc.admin.events`, `foc.user.status` |
   | `rating` | `foc.user.rating` | `foc.rating.commands` |
   | `admin` | `foc.admin.events` | `foc.admin.commands` |
 
