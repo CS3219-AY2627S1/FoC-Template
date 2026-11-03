@@ -45,6 +45,12 @@
   border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* The short label only shows where the bar runs out of room (media query below). */
+.tabShort {
+  display: none;
 }
 
 .tab:hover {
@@ -144,10 +150,15 @@
   text-decoration: none;
 }
 
+/* Desktop only (the mobile menu has its own), so a slim pill rather than a full touch target. */
 .signOut {
-  min-height: var(--touch-target);
-  padding: 0 var(--space-2);
-  border: none;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  /* Into the bar's right padding, so the pill sits nearer the edge than the bare text did. */
+  margin-right: calc(-1 * var(--space-3));
+  /* Transparent until hover, so the darker border appearing does not shift the layout. */
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--color-text-muted);
   font: inherit;
@@ -156,8 +167,12 @@
   white-space: nowrap;
 }
 
-.signOut:hover {
-  color: var(--color-text);
+/* A solid accent pill on hover, so leaving reads as a deliberate action. */
+.signOut:hover,
+.signOut:focus-visible {
+  background: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 60%, #000);
+  color: var(--color-accent-contrast);
 }
 
 .creditsShort {
@@ -195,6 +210,41 @@
 }
 
 /* UI FR20.1.2: below the breakpoint, tabs collapse into the hamburger menu. */
+/*
+ * Between the phone layout and a wide window the tabs and actions do not all
+ * fit at full size, and the tab labels used to wrap onto two lines. Tighter
+ * spacing keeps the bar on one line here.
+ */
+@media (min-width: 768px) and (max-width: 1099px) {
+  .nav {
+    gap: var(--space-3);
+    padding: 0 var(--space-4);
+  }
+
+  .tab {
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .actions {
+    gap: var(--space-1);
+  }
+}
+
+/*
+ * Only an admin's bar (four tabs) runs out of room, needing about 783px with
+ * "Browse requests"; 820px leaves space for a four-digit balance. Everyone
+ * else's fits down to the phone layout, so their label never shortens.
+ */
+@media (min-width: 768px) and (max-width: 819px) {
+  .tabsWithAdmin .tabLong {
+    display: none;
+  }
+
+  .tabsWithAdmin .tabShort {
+    display: inline;
+  }
+}
+
 @media (max-width: 767px) {
   .nav {
     padding: 0 var(--space-3);
@@ -203,7 +253,6 @@
 
   .tabs,
   .creditsLong,
-  .chevron,
   .signOut {
     display: none;
   }
@@ -250,6 +299,14 @@
   .menuLinkActive {
     background: var(--color-surface-raised);
     color: var(--color-text);
+  }
+
+  /* Log out turns accent while touched or focused, like the desktop pill. */
+  .menuSignOut:hover,
+  .menuSignOut:active,
+  .menuSignOut:focus-visible {
+    background: var(--color-accent);
+    color: var(--color-accent-contrast);
   }
 
 }

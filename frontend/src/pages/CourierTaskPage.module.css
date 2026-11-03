@@ -250,10 +250,21 @@
   color: var(--color-text-subtle);
 }
 
+/* When the button would squeeze the text, it drops below and fills the row. */
 .personCard {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
+}
+
+.personCard > .contactLink {
+  display: flex;
+  flex: 1 1 auto;
+}
+
+.personCard > .contactLink > button {
+  width: 100%;
 }
 
 .avatar {
@@ -271,7 +282,7 @@
 }
 
 .personText {
-  flex: 1;
+  flex: 999 1 220px;
   min-width: 0;
 }
 
@@ -397,7 +408,6 @@
     padding: var(--space-4);
   }
 
-  .desktopBadge,
   .statusPanel {
     display: none;
   }

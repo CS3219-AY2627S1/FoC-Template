@@ -18,6 +18,9 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
+import { FriendControl } from '../components/friends/FriendControl';
+import { useFriendName } from '../lib/friends';
+import { useOrderTrailStatus } from '../components/layout/orderTrail';
 import { ReportUser } from '../components/moderation/ReportUser';
 import { PickupDetail } from '../components/order/PickupDetail';
 import { StatusStepper } from '../components/order/StatusStepper';
@@ -149,6 +152,11 @@ export function CourierTaskPage() {
 }
 
 function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) => void }) {
+  // Orders carry the requester's id and Telegram handle, not their name; the
+  // name is known only once they are a friend.
+  const requesterName = useFriendName(task.requesterId);
+  // Desktop shows the status beside the reference in the nav trail.
+  useOrderTrailStatus(task.status);
   const accepted = task.status === 'Accepted';
   const collected = task.status === 'Collected';
   const delivered = task.status === 'Delivered';
@@ -278,9 +286,6 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
       <div className={styles.body}>
         <div className={styles.mainColumn}>
           <header className={styles.header}>
-            <span className={styles.desktopBadge}>
-              <StatusBadge status={task.status} />
-            </span>
             <h1 className={styles.title}>{task.item}</h1>
             <p className={styles.subtitle}>{subtitle}</p>
           </header>
@@ -310,9 +315,7 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
                 <div className={styles.detailBlock}>
                   <h2 className={styles.detailLabel}>Requester</h2>
                   <p className={styles.detailValue}>
-                    {/* TODO(order-service): the requester's name - orders carry ids only.
-                    {task.requesterName} &middot;{' '} */}
-                    @{task.requesterTelegramHandle}
+                    {requesterName ?? `@${task.requesterTelegramHandle}`}
                     {/*
                       TODO(order-service): the requester's rating, hidden for now.
                       Order Service has no Rating client yet: its stub stores 5.0
@@ -359,9 +362,8 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
 
           {collected || delivered ? (
             <section className={styles.personCard}>
-              {/* TODO(order-service): the requester's name and initials. */}
               <div className={styles.personText}>
-                <p className={styles.personName}>Requester</p>
+                <p className={styles.personName}>{requesterName ?? 'Requester'}</p>
                 <p className={styles.personNote}>
                   {delivered
                     ? 'Settle the item cost directly if not already done'
@@ -373,6 +375,7 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
           ) : null}
 
           {/* In the main column, not the status panel, which mobile hides. */}
+          <FriendControl userId={task.requesterId} role="requester" />
           <ReportUser userId={task.requesterId} role="requester" />
         </div>
 

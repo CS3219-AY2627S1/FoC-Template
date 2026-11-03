@@ -14,6 +14,9 @@
 import { useCallback, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
+import { FriendControl } from '../components/friends/FriendControl';
+import { useFriendName } from '../lib/friends';
+import { useOrderTrailStatus } from '../components/layout/orderTrail';
 import { ReportUser } from '../components/moderation/ReportUser';
 import { PickupDetail } from '../components/order/PickupDetail';
 import { ReportIssueDialog } from '../components/order/ReportIssueDialog';
@@ -69,6 +72,9 @@ export function OrderDetailPage() {
 }
 
 function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Order) => void }) {
+  const courierName = useFriendName(order.courierId);
+  // Desktop shows the status beside the reference in the nav trail.
+  useOrderTrailStatus(order.status);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
@@ -157,9 +163,6 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
       <div className={styles.body}>
         <div className={styles.mainColumn}>
           <header className={styles.header}>
-            <span className={styles.desktopBadge}>
-              <StatusBadge status={order.status} />
-            </span>
             <h1 className={styles.title}>{order.item}</h1>
             <p className={styles.posted}>
               Posted {postedTime} &middot; reward <strong>{order.credits} credits</strong>
@@ -198,21 +201,26 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
 
             <div className={styles.detailBlock}>
               <h2 className={styles.detailLabel}>Courier</h2>
-              {/* TODO(order-service): the courier's name - orders carry ids only. */}
+              {/*
+                Orders carry the courier's id and Telegram handle, not their
+                name; the name is known only once they are a friend.
+              */}
+              <p className={styles.detailValue}>
+                {order.courierId === null
+                  ? 'Not accepted yet'
+                  : (courierName ??
+                    (order.courierTelegramHandle ? `@${order.courierTelegramHandle}` : 'Assigned'))}
+              </p>
               {order.courierTelegramHandle ? (
                 <a
-                  className={styles.detailValue}
+                  className={styles.contact}
                   href={`https://t.me/${order.courierTelegramHandle}`}
                   target="_blank"
                   rel="noreferrer noopener"
                 >
                   Contact on Telegram
                 </a>
-              ) : (
-                <p className={styles.detailValue}>
-                  {order.courierId !== null ? 'Assigned' : 'Not accepted yet'}
-                </p>
-              )}
+              ) : null}
             </div>
           </section>
 
@@ -237,6 +245,7 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
           */}
 
           {/* In the main column, not the status panel, which mobile hides. */}
+          {order.courierId !== null ? <FriendControl userId={order.courierId} role="courier" /> : null}
           {order.courierId !== null ? <ReportUser userId={order.courierId} role="courier" /> : null}
         </div>
 

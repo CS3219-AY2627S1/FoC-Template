@@ -89,6 +89,11 @@
   overflow-wrap: anywhere;
 }
 
+.contact {
+  width: fit-content;
+  font-size: var(--font-size-sm);
+}
+
 .photoCard {
   display: flex;
   flex-direction: column;
@@ -226,8 +231,6 @@
     padding: var(--space-4);
   }
 
-  /* Desktop keeps the badge beside the title; mobile has it in the header. */
-  .desktopBadge,
   .statusPanel {
     display: none;
   }

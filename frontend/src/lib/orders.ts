@@ -142,6 +142,11 @@ export interface Order {
   hasDeliveryPhoto: boolean;
 }
 
+/** The label for one of order-service's status names; null for one this frontend does not know. */
+export function statusLabel(status: string): OrderStatus | null {
+  return (STATUS_LABELS as Record<string, OrderStatus | undefined>)[status] ?? null;
+}
+
 /** The first block of the order id, e.g. "3f2a9c1e". */
 export function orderReference(id: string): string {
   return id.split('-')[0];

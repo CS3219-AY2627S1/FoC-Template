@@ -12,13 +12,24 @@ import { useAuth } from '../../auth/AuthProvider';
 import { Icon } from '../ui/Icon';
 import { RatingPrompt } from '../rating/RatingPrompt';
 import { useCreditBalance } from '../../lib/credit';
+import { refreshIncomingCount, useIncomingFriendRequestCount } from '../../lib/friends';
 import { initials } from '../../lib/format';
 import { orderReference } from '../../lib/orders';
+import { StatusBadge, type OrderStatus } from '../ui/StatusBadge';
+import { AlertsBell } from './AlertsBell';
+import { OrderTrailContext } from './orderTrail';
 import styles from './AppShell.module.css';
 
 // UI FR5.2: the three mode tabs.
-const MODE_TABS = [
-  { to: '/browse', label: 'Browse requests' },
+interface NavTab {
+  to: string;
+  label: string;
+  short?: string;
+}
+
+const MODE_TABS: NavTab[] = [
+  // `short` replaces the label only where the bar runs out of room (AppShell.module.css).
+  { to: '/browse', label: 'Browse requests', short: 'Browse' },
   { to: '/my-requests', label: 'My requests' },
   { to: '/my-deliveries', label: 'My deliveries' },
 ];
@@ -28,14 +39,14 @@ const MODE_TABS = [
  * Admin F2.2.1 keeps the admin pages unknown to everyone else, and the routes
  * are registered for admins only (App.tsx), so the link would 404 anyway.
  */
-const ADMIN_TAB = { to: '/admin', label: 'Admin' };
+const ADMIN_TAB: NavTab = { to: '/admin', label: 'Admin' };
 
 const MENU_LINKS = [
   ...MODE_TABS,
   { to: '/requests/new', label: 'New request' },
   { to: '/suppliers', label: 'Suppliers' },
+  { to: '/friends', label: 'Friends' },
   { to: '/profile', label: 'Profile' },
-  { to: '/account-status', label: 'Account status' },
 ];
 
 /**
@@ -47,6 +58,8 @@ const OWN_MOBILE_HEADER_ROUTES = ['/requests/new'];
 
 export function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
+  // The open order's status, reported by its page for the trail.
+  const [trailStatus, setTrailStatus] = useState<OrderStatus | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
@@ -63,12 +76,11 @@ export function AppShell() {
   useEffect(() => setMenuOpen(false), [location.pathname]);
 
   const creditBalance = useCreditBalance();
-  /*
-   * TODO(order-service): GET /api/v1/orders/alerts lists status changes, but
-   * nothing records which ones were read, so there is no unread state to show.
-   */
-  const hasUnreadNotifications = false;
-
+  const friendRequests = useIncomingFriendRequestCount();
+  // Re-read on navigation, so a request answered or received shows up soon.
+  useEffect(() => {
+    void refreshIncomingCount();
+  }, [location.pathname]);
   const orderMatch = location.pathname.match(/^\/orders\/(.+)$/)?.[1];
   const requestReference = orderMatch === undefined ? undefined : orderReference(orderMatch);
   const taskMatch = location.pathname.match(/^\/deliveries\/(.+)$/)?.[1];
@@ -106,22 +118,31 @@ export function AppShell() {
             <Link to="/my-requests">My requests</Link>
             <span aria-hidden="true">/</span>
             <span aria-current="page">Request #{requestReference}</span>
+            {trailStatus !== null ? <StatusBadge status={trailStatus} /> : null}
           </nav>
         ) : taskReference !== undefined ? (
           <nav className={styles.trail} aria-label="Breadcrumb">
             <Link to="/my-deliveries">My deliveries</Link>
             <span aria-hidden="true">/</span>
             <span aria-current="page">Task #{taskReference}</span>
+            {trailStatus !== null ? <StatusBadge status={trailStatus} /> : null}
           </nav>
         ) : (
-          <nav className={styles.tabs} aria-label="Mode">
+          <nav className={isAdmin ? `${styles.tabs} ${styles.tabsWithAdmin}` : styles.tabs} aria-label="Mode">
             {tabs.map((tab) => (
               <NavLink
                 key={tab.to}
                 to={tab.to}
                 className={({ isActive }) => (isActive ? `${styles.tab} ${styles.tabActive}` : styles.tab)}
               >
-                {tab.label}
+                {tab.short ? (
+                  <>
+                    <span className={styles.tabLong}>{tab.label}</span>
+                    <span className={styles.tabShort}>{tab.short}</span>
+                  </>
+                ) : (
+                  tab.label
+                )}
               </NavLink>
             ))}
           </nav>
@@ -143,16 +164,22 @@ export function AppShell() {
               </>
             )}
           </span>
-          <button type="button" className={styles.iconButton} aria-label="Notifications">
-            <Icon name="bell" />
-            {hasUnreadNotifications ? <span className={styles.unreadDot} /> : null}
-          </button>
+          <Link
+            to="/friends"
+            className={styles.iconButton}
+            aria-label={
+              friendRequests > 0
+                ? `Friends, ${friendRequests} ${friendRequests === 1 ? 'request' : 'requests'} waiting`
+                : 'Friends'
+            }
+          >
+            <Icon name="users" />
+            {friendRequests > 0 ? <span className={styles.unreadDot} /> : null}
+          </Link>
+          {user !== null ? <AlertsBell userId={user.userId} /> : null}
           <Link to="/profile" className={styles.profile} aria-label="Profile">
             <span className={styles.avatar} aria-hidden="true">
               {initials(user?.name)}
-            </span>
-            <span className={styles.chevron} aria-hidden="true">
-              <Icon name="chevronDown" size={16} />
             </span>
           </Link>
           {/* Below 768px this moves into the hamburger menu, to keep the bar short. */}
@@ -175,14 +202,20 @@ export function AppShell() {
               {link.label}
             </NavLink>
           ))}
-          <button type="button" className={styles.menuLink} onClick={() => void handleSignOut()}>
+          <button
+            type="button"
+            className={`${styles.menuLink} ${styles.menuSignOut}`}
+            onClick={() => void handleSignOut()}
+          >
             Log out
           </button>
         </nav>
       ) : null}
 
       <main className={styles.main}>
-        <Outlet />
+        <OrderTrailContext.Provider value={setTrailStatus}>
+          <Outlet />
+        </OrderTrailContext.Provider>
       </main>
 
       {/* UI FR14.1.1: opens by itself when a rating is owed, on any page. */}

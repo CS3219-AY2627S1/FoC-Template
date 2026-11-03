@@ -13,6 +13,7 @@ import { RequireVerified } from './auth/RequireVerified';
 import { AppShell } from './components/layout/AppShell';
 import { AuthLayout } from './components/layout/AuthLayout';
 import { BrowsePage } from './pages/BrowsePage';
+import { FriendsPage } from './pages/FriendsPage';
 import { MyDeliveriesPage } from './pages/MyDeliveriesPage';
 import { MyRequestsPage } from './pages/MyRequestsPage';
 import { NewRequestPage } from './pages/NewRequestPage';
@@ -106,7 +107,7 @@ export function App() {
             <Route path="/suppliers/new" element={<NewSupplierPage />} />
             <Route path="/suppliers/:supplierId" element={<SupplierDetailPage />} />
             <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/account-status" element={<PagePlaceholder title="Account status" requirements="UI FR13" />} />
+            <Route path="/friends" element={<FriendsPage />} />
 
             {/*
               Admin pages have their own shell (UI FR15.1.2), so they sit
