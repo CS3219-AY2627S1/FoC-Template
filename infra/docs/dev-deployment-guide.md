@@ -42,7 +42,7 @@ file is the most common way to end up talking to the wrong cluster (section 3).
 | Seed suppliers (**wipes them first**) | `deploy/seed-supplier.sh dev` | type `dev` to confirm |
 | **Pause dev** (remove EKS, ~$100/month of ~$140) | `deploy/eks-down.sh` | type `down`; ~15 min |
 | **Resume dev** | `deploy/eks-up.sh` | ~25 min; same URL, IDs and RDS data, nothing to commit |
-| Query RDS from your laptop (psql / DBeaver) | `deploy/db-relay-dev.sh [admin\|<svc>] [database]` | connect to 127.0.0.1:15433, `sslmode=require`; Ctrl-C closes |
+| Query RDS from your laptop (psql / DBeaver) | `deploy/db-relay-dev.sh [master\|<svc>] [database]` (`master` sees every `dev_*` database; `admin` is admin-service's login) | connect to 127.0.0.1:15433, `sslmode=require`; Ctrl-C closes |
 | Add the Gemini key | paste into Secrets Manager `foc/dev/admin-ai` | wait ≤1 h (or restart admin) |
 | Turn on the Telegram bot | paste `TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_USERNAME` into Secrets Manager `foc/dev/user-telegram` | `kubectl -n foc-dev annotate externalsecret user-telegram force-sync=$(date +%s) --overwrite` (or wait ≤1 h), then `kubectl -n foc-dev rollout restart deploy/user` |
 | Open Argo CD | `kubectl -n argocd port-forward svc/argocd-server 8081:80` | http://localhost:8081, user `admin` |
