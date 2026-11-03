@@ -1,5 +1,6 @@
 package sg.edu.nus.foc.user.logic;
 
+import java.time.Instant;
 import java.util.UUID;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -66,6 +67,40 @@ public class UserLifecycleStore {
                 FindAndModifyOptions.options().returnNew(true), User.class);
         if (saved == null) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Account is not active.");
         return saved;
+    }
+
+    public User clearExpiredSuspension(String uid, Instant now) {
+        User updated = mongo.findAndModify(
+                Query.query(
+                        Criteria.where("userId").is(uid)
+                                .and("status").is(AccountStatus.ACTIVE)
+                                .and("isCourierSuspended").is(true)
+                                .and("isPermanentlySuspended").ne(true)
+                                .and("suspensionEndDate").lte(now)
+                ),
+                new Update()
+                        .set("isCourierSuspended", false)
+                        .unset("suspensionEndDate"),
+                FindAndModifyOptions.options().returnNew(true),
+                User.class
+        );
+
+        return updated;
+    }
+
+    public void clearAllExpiredSuspensions(Instant now) {
+        Query expiredSuspensions = new Query(
+                Criteria.where("status").is(AccountStatus.ACTIVE)
+                        .and("isCourierSuspended").is(true)
+                        .and("isPermanentlySuspended").ne(true)
+                        .and("suspensionEndDate").lte(now)
+        );
+
+        Update update = new Update()
+                .set("isCourierSuspended", false)
+                .unset("suspensionEndDate");
+
+        mongo.updateMulti(expiredSuspensions, update, User.class);
     }
 
     private Query owned(User pending) {

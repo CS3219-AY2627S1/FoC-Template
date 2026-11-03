@@ -2,9 +2,10 @@ package sg.edu.nus.foc.user.logic;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,7 +42,6 @@ class AccountDeletionSafetyTest {
         });
         doAnswer(call -> { ((User) call.getArgument(0)).setStatus(AccountStatus.DEACTIVATED); return null; })
                 .when(lifecycle).complete(any());
-        when(lifecycle.saveActive(any(User.class))).thenAnswer(call -> call.getArgument(0));
     }
 
     @Test
@@ -94,12 +94,9 @@ class AccountDeletionSafetyTest {
         when(repository.countByRolesContainingAndStatus("admin", AccountStatus.ACTIVE)).thenReturn(1L);
         assertEquals(HttpStatus.CONFLICT, assertThrows(ResponseStatusException.class,
                 () -> service.deactivateUser("admin-token", "student")).getStatusCode());
+        verify(lifecycle).clearExpiredSuspension(eq("student"), any(Instant.class));
+        verifyNoMoreInteractions(lifecycle);
         verifyNoInteractions(orders, firebase);
-        verify(lifecycle).saveActive(user);
-        verify(lifecycle, never()).begin(anyString());
-        verify(lifecycle, never()).seal(any());
-        verify(lifecycle, never()).restoreAfterDenial(any());
-        verify(lifecycle, never()).complete(any());
     }
 
     @Test
@@ -134,7 +131,9 @@ class AccountDeletionSafetyTest {
         service.deactivateUser("token", "student");
         user.setStatus(AccountStatus.DEACTIVATION_PENDING);
         assertThrows(ResponseStatusException.class, () -> service.deactivateUser("token", "student"));
-        verifyNoInteractions(orders, firebase, lifecycle);
+        verify(lifecycle, times(2)).clearExpiredSuspension(eq("student"), any(Instant.class));
+        verifyNoMoreInteractions(lifecycle);
+        verifyNoInteractions(orders, firebase);
     }
 
     private void pending(User target, String operation) {

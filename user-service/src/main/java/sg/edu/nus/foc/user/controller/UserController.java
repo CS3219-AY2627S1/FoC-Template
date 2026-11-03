@@ -291,7 +291,7 @@ public class UserController {
 
     // TODO: GET /api/users?searchBy=name&q=Alex&page=1&size=20
 
-    // TODO: PUT or POST /api/users/:userid/suspension
+    // PUT /api/users/:userid/suspension
     // Admin manual suspension
     @Operation(summary = "Manually suspend a user")
     @PreAuthorize(ADMIN_ONLY)
