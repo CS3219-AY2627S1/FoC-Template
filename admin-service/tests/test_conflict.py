@@ -164,7 +164,7 @@ def create_case(api, photos=None, order_id=None) -> dict:
     }
     if photos is not None:
         body["photos"] = photos
-    resp = api.post("/api/v1/admin/conflicts", json=body)
+    resp = api.post("/api/v1/admin/internal/conflicts", json=body)
     assert resp.status_code == 201, resp.text
     return resp.json()
 
@@ -229,7 +229,7 @@ def test_intake_does_not_require_a_service_token(api, headers):
         "comment": "Item arrived damaged",
         "photos": ["https://example.com/before.jpg"],
     }
-    resp = api.post("/api/v1/admin/conflicts", json=body, headers=headers)
+    resp = api.post("/api/v1/admin/internal/conflicts", json=body, headers=headers)
     assert resp.status_code == 201, resp.text
     assert resp.json()["orderId"] == order_id
     matched = events_for("admin.conflict-case-created", orderId=order_id)
@@ -246,7 +246,7 @@ def test_intake_rejects_incomplete_body(api, missing):
     }
     order_id = body["orderId"]
     del body[missing]
-    resp = api.post("/api/v1/admin/conflicts", json=body)
+    resp = api.post("/api/v1/admin/internal/conflicts", json=body)
     assert resp.status_code == 422
     assert events_for("admin.conflict-case-created", orderId=order_id) == []
 
@@ -265,7 +265,7 @@ def test_conflict_lifecycle_publishes_events(api):
         "comment": "Item arrived damaged",
         "photos": ["https://example.com/before.jpg", "https://example.com/after.jpg"],
     }
-    created = api.post("/api/v1/admin/conflicts", json=body)
+    created = api.post("/api/v1/admin/internal/conflicts", json=body)
     assert created.status_code == 201, created.text
     case = created.json()
     case_id = case["id"]
@@ -274,7 +274,7 @@ def test_conflict_lifecycle_publishes_events(api):
     assert case["comment"] == body["comment"]
     assert case["reporterUserId"] == "u-1"
 
-    again = api.post("/api/v1/admin/conflicts", json=body)
+    again = api.post("/api/v1/admin/internal/conflicts", json=body)
     assert again.status_code == 201
     assert again.json()["id"] == case_id
     created_events = events_for("admin.conflict-case-created", orderId=order_id)
@@ -362,7 +362,7 @@ def test_concurrent_create_publishes_one_event(api):
 
     def post():
         with httpx.Client(base_url=str(api.base_url), timeout=20.0) as client:
-            return client.post("/api/v1/admin/conflicts", json=body)
+            return client.post("/api/v1/admin/internal/conflicts", json=body)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         responses = [future.result() for future in (pool.submit(post), pool.submit(post))]

@@ -17,7 +17,7 @@ Downstream calls, as a share of that traffic:
 | Supplier | Order validates **pickup only** (`fromLocation`) on create. Search re-checks that pickup id. |
 | Order DB | Dropoff is Order-owned: create sends `deliveryPointId` (seeded campus catalogue from Flyway `V6`). |
 | Credit | Order reserves 1 credit on create. Acknowledge publishes `credit.reservation.release`. The credit consumer has to be running for that second call to land. |
-| Admin | Escalate calls `POST /api/v1/admin/conflicts`. About 1 in 20 closes. |
+| Admin | Escalate calls `POST /api/v1/admin/internal/conflicts`. About 1 in 20 closes. |
 | Rating | Order reads `GET /api/v1/rating/{userId}` on create and accept. Deliver and acknowledge publish `rating.permission.granted` on `foc.rating.commands` for Rating Service to grant the modal. |
 | MinIO / S3 | Collect and deliver store the PNG. |
 

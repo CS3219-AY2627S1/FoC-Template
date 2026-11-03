@@ -95,7 +95,7 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
     public void openConflict(UUID orderId, String reporterUserId, String comment, List<String> photos) {
         try {
             admins.post()
-                    .uri("/api/v1/admin/conflicts")
+                    .uri("/api/v1/admin/internal/conflicts")
                     .body(new ConflictRequest(orderId.toString(), reporterUserId, comment, photos == null ? List.of() : photos))
                     .retrieve()
                     .toBodilessEntity();

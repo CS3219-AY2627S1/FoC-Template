@@ -361,7 +361,7 @@ Appeals normalize email and trim passwords using the same password verification 
 
 The public appeal route has a best-effort limiter keyed by the normalized email's hash: 10 requests per 15 minutes per process, including unknown emails. It stores at most 10,000 entries and returns `429 TOO_MANY_APPEAL_ATTEMPTS` when the limit or live-entry capacity is reached. It resets on process restart and is not distributed; ingress rate limiting remains required.
 
-User sends only `{ reporterUserId, reportedUserId, comment }` to Admin's `POST /api/v1/admin/reports`, or `{ userId, message }` to `POST /api/v1/admin/appeals`. Passwords and bearer tokens are never forwarded. Returned records are strictly validated, matched to the submitted user UUIDs and restricted to these camelCase fields, with no legacy snake_case fallback:
+User sends only `{ reporterUserId, reportedUserId, comment }` to Admin's `POST /api/v1/admin/internal/reports`, or `{ userId, message }` to `POST /api/v1/admin/internal/appeals`. Passwords and bearer tokens are never forwarded. Returned records are strictly validated, matched to the submitted user UUIDs and restricted to these camelCase fields, with no legacy snake_case fallback:
 
 - Report: `{ id, reporterUserId, reportedUserId, comment, status, createdAt, closedAt, closedByAdminId }`; status is `open`, `dismissed` or `actioned`.
 - Appeal: `{ id, userId, message, status, createdAt, closedAt, closedByAdminId }`; status is `open`, `rejected` or `reinstated`.
@@ -483,8 +483,8 @@ See [API_CONTRACT_UPDATES.txt](API_CONTRACT_UPDATES.txt) for exact edits to the 
 Moderation handoff only; this PR is User Service only and does not change infrastructure, Admin or frontend source:
 
 - Gateway owner: add the exact public `POST /api/v1/user/appeals` route without the usual bearer-authorization prerequisite. Keep `POST /api/v1/user/reports` protected by the real user bearer session. Add ingress rate limiting to the public credential-checking appeal route.
-- Infrastructure owner: configure User's `ADMIN_SERVICE_BASE_URL=http://admin:8084` and allow private User-to-Admin access only to the two intake POST routes. The current Admin mesh callers allow gateway/order and deny User, so this policy needs an explicit update before deployment.
-- Gateway/mesh owners: block external `POST /api/v1/admin/reports` and `POST /api/v1/admin/appeals`, including trailing-slash requests that FastAPI can redirect to those routes. Preserve authenticated Admin GET queues/detail and review operations. Admin's current intake has no application authentication and trusts User's validation, so direct public intake must not bypass User.
+- Infrastructure: done. `ADMIN_SERVICE_BASE_URL=http://admin:8084` is set in `deploy/values/services/user.yaml`, and Admin's mesh policy admits User only on `/api/v1/admin/internal/reports` and `/appeals`.
+- Gateway/mesh: done. Intake moved under `/api/v1/admin/internal`, which the gateway blocks as a prefix (trailing slashes and sub-paths included); Admin's GET queues and review operations stay on the authenticated routes. Admin intake has no application authentication and trusts User's validation, so it must stay unreachable from clients.
 - Frontend owner: add report and appeal forms, handle login `403 ACCOUNT_SUSPENDED`, and implement friendship UI separately. Apply the shared-contract edits in section 14 of the edit guide. Deployment still needs the friendship migration; report/appeal intake adds no User migration.
 
 ## Account deletion (F5)

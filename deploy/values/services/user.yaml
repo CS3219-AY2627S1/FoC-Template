@@ -13,6 +13,8 @@ env:
   # poll a bot, so user stays on one replica; set false on any extra ones.
   TELEGRAM_POLLING_ENABLED: "true"
   TELEGRAM_RESEND_COOLDOWN_SECONDS: "60"
+  # Report and appeal intake (src/admin-intake.ts); without it both answer 503.
+  ADMIN_SERVICE_BASE_URL: http://admin:8084
 migrate:
   enabled: true # runs before each deploy (ADR-0011); image: the Dockerfile's `migrate` stage
   command: ["node_modules/.bin/prisma", "migrate", "deploy"]

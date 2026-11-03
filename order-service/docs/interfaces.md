@@ -65,7 +65,7 @@ These HTTP calls finish before the order row changes. A failure leaves the previ
 | Accept | `GET /api/v1/rating/{userId}` for the courier snapshot, then `GET /api/v1/user/internal/users/{userId}/telegram` before the order is claimed |
 | Create, if the insert fails | `POST /api/v1/credit/internal/release` with `{ orderId }` |
 | Requester cancels CREATED | `POST /api/v1/credit/internal/release` before the status becomes CANCELLED |
-| Requester escalates, and a collected order that misses its delivery deadline | `POST /api/v1/admin/conflicts` with `{ orderId, reporterUserId, comment, photos }` before the status becomes ESCALATED. A repeat for the same order is accepted |
+| Requester escalates, and a collected order that misses its delivery deadline | `POST /api/v1/admin/internal/conflicts` with `{ orderId, reporterUserId, comment, photos }` before the status becomes ESCALATED. A repeat for the same order is accepted |
 
 Courier release does not call Credit. The reservation stays with the order.
 

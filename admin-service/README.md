@@ -83,8 +83,8 @@ admin-service/
 | Caller | Mechanism | Failure |
 |---|---|---|
 | Admin UI / admin user | Gateway sets `x-user-id`, `x-is-admin=true`, and `x-permitted-action=true` (role `ADMIN`, account active, email and Telegram verified). Search and role/status changes also forward that caller's `Authorization` bearer to User Service | **404** (never 403) |
-| Order Service (intake) | No auth. `POST /api/v1/admin/conflicts` is open | — |
-| User Service (report and appeal intake) | No auth. `POST /api/v1/admin/reports` and `POST /api/v1/admin/appeals` are open. Call them from User Service, not from the browser | — |
+| Order Service (intake) | No admin session. `POST /api/v1/admin/internal/conflicts`: the gateway blocks `/api/v1/admin/internal`, and the Linkerd policy admits only Order | **403** from the mesh for any other caller |
+| User Service (report and appeal intake) | No admin session. `POST /api/v1/admin/internal/reports` and `POST /api/v1/admin/internal/appeals`: blocked at the gateway, and the mesh admits only User | **403** from the mesh for any other caller |
 
 A missing user id, a non-admin, and an admin who is not permitted all get the same **404**.
 
@@ -108,10 +108,10 @@ Health (no auth): `GET /health` → `{ "status": "ok" }`.
 
 ### Reports — `/api/v1/admin/reports`
 
-**Intake (no auth).** Does not suspend the reported user.
+**Intake (service-only, under `/internal`).** Does not suspend the reported user.
 
 ```http
-POST /api/v1/admin/reports
+POST /api/v1/admin/internal/reports
 ```
 
 ```json
@@ -134,10 +134,10 @@ Returns **201**. While that pair has an open report, a retry returns the same ro
 
 ### Appeals — `/api/v1/admin/appeals`
 
-**Intake (no auth).** Does not reinstate the user. User Service checks the password and that the account is suspended before calling this.
+**Intake (service-only, under `/internal`).** Does not reinstate the user. User Service checks the password and that the account is suspended before calling this.
 
 ```http
-POST /api/v1/admin/appeals
+POST /api/v1/admin/internal/appeals
 ```
 
 ```json
@@ -159,10 +159,10 @@ Returns **201**. While that user has an open appeal, a retry returns the same ro
 
 ### Conflicts — `/api/v1/admin/conflicts`
 
-**Intake (no auth):**
+**Intake (service-only, under `/internal`):**
 
 ```http
-POST /api/v1/admin/conflicts
+POST /api/v1/admin/internal/conflicts
 ```
 
 ```json
@@ -342,9 +342,9 @@ calls send `x-user-id`, `x-is-admin`, and `x-permitted-action`.
 - A failed Kafka publish is only logged. The database commits first, and if
   Kafka is down the API still succeeds. There is no outbox to retry that event
   later.
-- User reports and suspension appeals are stored here. User Service does not
-  call `POST /api/v1/admin/reports` or `POST /api/v1/admin/appeals` yet, and
-  the frontend has no report form, appeal form, or admin queue for them.
+- Intake has no application auth: it relies on the gateway block and the
+  mesh policy (`deploy/values/services/admin.yaml`). Outside the cluster (Compose,
+  `uvicorn` on a laptop) anything that can reach the port can call it.
 - First admin. Promote requires an existing admin, so this service cannot create
   the first one. The mock treats any `admin-*` bearer token as an admin. There
   is no bootstrap or seed for a real first admin account.

@@ -21,8 +21,11 @@ app = FastAPI(title="Admin Service", lifespan=lifespan)
 
 app.include_router(users.router)
 app.include_router(conflicts.router)
+app.include_router(conflicts.internal)
 app.include_router(moderation.reports)
 app.include_router(moderation.appeals)
+app.include_router(moderation.internal_reports)
+app.include_router(moderation.internal_appeals)
 
 
 @app.get("/health")

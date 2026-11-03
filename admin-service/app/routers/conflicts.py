@@ -24,6 +24,9 @@ from app.services import audit, conflict_resolution, kafka_producer, scheduler
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/admin/conflicts", tags=["admin-conflicts"])
+# Order's escalation intake. Under /internal so the gateway never forwards it
+# and the mesh lets only Order call it (ADR-0012); it has no admin session.
+internal = APIRouter(prefix="/api/v1/admin/internal/conflicts", tags=["admin-intake"])
 
 # Contract documents ?status=pending|resolved; keep those working.
 _STATUS_ALIASES = {
@@ -43,7 +46,7 @@ def _parse_status(value: str | None) -> ConflictStatus | None:
         raise HTTPException(status_code=422, detail=f"Unknown status '{value}'")
 
 
-@router.post("", response_model=ConflictDetail, status_code=201)
+@internal.post("", response_model=ConflictDetail, status_code=201)
 async def create_conflict(
     body: CreateConflictRequest,
     db: AsyncSession = Depends(get_db),

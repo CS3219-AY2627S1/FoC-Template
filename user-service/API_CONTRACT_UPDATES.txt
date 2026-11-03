@@ -468,7 +468,7 @@ and accounts awaiting a future deletion deadline remain reportable. comment is
 trimmed to 1-4000 characters (400 INVALID_SUPPORT_TEXT). Invalid/unusable reporter
 session/account: 401 UNAUTHORIZED. Submission does not suspend anyone.
 Forwards only { reporterUserId, reportedUserId, comment } to private Admin
-POST /api/v1/admin/reports. Returns 201 with a validated, identity-matched,
+POST /api/v1/admin/internal/reports. Returns 201 with a validated, identity-matched,
 allowlisted Admin record, preserving its camelCase fields:
 { id, reporterUserId, reportedUserId, comment, status, createdAt,
 closedAt, closedByAdminId }.
@@ -484,7 +484,7 @@ deadline returns generic 401 INVALID_CREDENTIALS. Correct credentials for an
 active account return 409 ACCOUNT_NOT_SUSPENDED. The account/password state is
 rechecked under an account lock before forwarding. A suspended account with
 valid credentials forwards only { userId, message } to private Admin
-POST /api/v1/admin/appeals; no password or bearer token is forwarded by either
+POST /api/v1/admin/internal/appeals; no password or bearer token is forwarded by either
 intake call. No session is created, no deletion cancelled, and no reinstatement
 performed. Returns 201 with the validated, identity-matched, allowlisted record:
 { id, userId, message, status, createdAt, closedAt, closedByAdminId }.
@@ -525,14 +525,13 @@ HANDOFF ONLY - USER SERVICE PR; NO INFRASTRUCTURE/ADMIN/FRONTEND EDITS
 Gateway owner: add exact public POST /api/v1/user/appeals without bearer
 preauthorization, retain bearer protection for POST /api/v1/user/reports, and
 add ingress rate limiting for appeal credential attempts.
-Infrastructure owner: set ADMIN_SERVICE_BASE_URL=http://admin:8084 and allow
-private User-to-Admin access only to the two intake POST routes. Current Admin
-mesh callers allow gateway/order and deny User; this requires a policy update.
-Gateway/mesh owners: block external POST /api/v1/admin/reports and
-POST /api/v1/admin/appeals, including trailing-slash requests that FastAPI can
-redirect to intake. Keep authenticated Admin GET queues/detail and review routes
-accessible. Admin intake currently has no application authentication and trusts
-User; direct public intake must not bypass User's checks.
+Infrastructure (done): ADMIN_SERVICE_BASE_URL=http://admin:8084 is set for
+User, and Admin's mesh policy admits User only on the two intake routes.
+Gateway/mesh (done): intake lives under /api/v1/admin/internal, which the
+gateway blocks as a prefix (trailing slashes and sub-paths included). Admin's
+GET queues/detail and review routes stay on the authenticated routes. Admin
+intake has no application authentication and trusts User; it must stay
+unreachable from clients.
 Frontend owner: add appeal/report forms and login 403 ACCOUNT_SUSPENDED handling;
 friendship UI is separate owner work. No such source changes are made here.
 
