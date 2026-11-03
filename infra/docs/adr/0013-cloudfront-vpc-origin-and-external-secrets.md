@@ -124,10 +124,10 @@ without them):
 
 Nothing in the charts or the apps changes.
 
-The same deny on `sts:AssumeRoleWithWebIdentity` means **GitHub Actions can't
-use OIDC** (`infra/global/github-oidc`), and `iam:CreateUser` is denied, so it
-can't use access keys either. Deploys run from a laptop with the team's SSO
-login instead ([`cloud-dev.md`](../cloud-dev.md)).
+**Amendment (2026-11-03):** GitHub Actions *can* use OIDC
+(`infra/global/github-oidc`); the first failures came from a trust policy that
+didn't match GitHub's immutable subject, not from the NUS policy. Deploys run
+from the workflows; the laptop scripts are a fallback.
 
 ## Consequences
 

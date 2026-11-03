@@ -31,9 +31,9 @@ file is the most common way to end up talking to the wrong cluster (section 3).
 
 | I want to… | Run | Then |
 |---|---|---|
-| Deploy a **service** code change | commit it, then `deploy/push-dev.sh <svc>` | `git push`, merge to `main`, **Refresh** in Argo CD |
+| Deploy a **service** code change | merge it to `main` (deploy-dev builds it); fallback `deploy/push-dev.sh <svc>` | pull `main` (the bot commits the tag) |
 | Deploy **every** changed service | `deploy/push-dev.sh` | same |
-| Publish the **frontend** | `deploy/push-frontend-dev.sh` | nothing: live in 1–2 min (no merge) |
+| Publish the **frontend** | merge to `main` (frontend-dev publishes it); fallback `deploy/push-frontend-dev.sh` | live in 1–2 min |
 | Change **config** (env vars, replicas, quota, mesh) | edit `deploy/values/...`, commit | push, merge to `main`, Refresh |
 | Change **AWS resources** | edit `infra/nonprod/aws`, then the apply below | commit the `.tf` |
 | Let a tester sign up | SES console → Identities → Create identity → their email | they click the link |
@@ -138,16 +138,15 @@ browser ─HTTPS─▶ CloudFront ─┬─ /*      ─▶ S3 (frontend bucket, 
 
 ### The NUS account rules (why things are unusual)
 
-The NUS organisation denies `AssumeRoleForPodIdentity`,
-`AssumeRoleWithWebIdentity`, role chaining and `iam:CreateUser`. So:
+The NUS organisation denies `AssumeRoleForPodIdentity`, role chaining and
+`iam:CreateUser`. So:
 
 - **Pods use the node role** (`foc-nonprod-node`, policy `foc-workloads`) for
   SES, S3 photos, Secrets Manager and load-balancer targets. Every pod shares
   those permissions; each is limited to its resources.
-- **GitHub Actions can't reach AWS**: no OIDC and no access keys. Images and
-  the frontend are pushed from a laptop with the scripts above;
-  `deploy-dev.yml` and `frontend-dev.yml` are manual-only. `ci.yml` (tests)
-  still runs on PRs.
+- **GitHub Actions uses OIDC** (role `foc-ci`, no keys), which works. Its trust
+  policy must name the repo's immutable subject
+  (`repo:junngithub@127373610/AY2627S1-CS3219-P15@1357933367:…`).
 
 ### Email (SES)
 
@@ -182,7 +181,7 @@ something similar happens.
 |---|---|---|
 | `backend "s3"`: *value cannot be empty* | `bucket=$B` with `$B` unset (it only lives in the terminal that set it) | Pass the bucket name literally, or `B=$(terraform -chdir=infra/state output -raw bucket)` |
 | EBS CSI add-on stuck `CREATING`; `AssumeRoleForPodIdentity … explicit deny` | NUS policy blocks Pod Identity, IRSA and OIDC | All pod permissions moved to the node role; IMDS hop limit 2 so pods can reach it (ADR-0013 amendment) |
-| CI can't log in to AWS | Same policy (OIDC denied, no IAM users) | Laptop scripts; workflows manual-only |
+| CI couldn't log in to AWS (`Not authorized to perform sts:AssumeRoleWithWebIdentity`) | Assumed the NUS policy; really the trust policy expected `repo:owner/name:…`, but the repo sends GitHub's immutable subject | Trust both forms (`infra/global/github-oidc`); workflows deploy on merge |
 | Pods `Pending`, `Too many pods` | One `t4g.large` = 29 pod IPs; dev needs ~39 | 2 nodes |
 | `frontend_url` output missing | An earlier edit silently didn't apply | After scripted edits, check the result (`grep`), not just "no error" |
 | `cloud-values.sh` put JSON into a header comment | Its pattern matched the bare `TF:` in `TF:<output>` | Pattern needs ≥1 character after `TF:` |
