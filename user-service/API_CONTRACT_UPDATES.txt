@@ -522,9 +522,9 @@ Errors are sanitized, without logging raw upstream errors or payloads. A failed
 response can follow persistence; a manual retry uses open-record deduplication.
 
 HANDOFF ONLY - USER SERVICE PR; NO INFRASTRUCTURE/ADMIN/FRONTEND EDITS
-Gateway owner: add exact public POST /api/v1/user/appeals without bearer
-preauthorization, retain bearer protection for POST /api/v1/user/reports, and
-add ingress rate limiting for appeal credential attempts.
+Gateway (done): POST /api/v1/user/appeals is an exact public route; POST
+/api/v1/user/reports keeps bearer protection. Still open: ingress rate limiting
+for appeal credential attempts.
 Infrastructure (done): ADMIN_SERVICE_BASE_URL=http://admin:8084 is set for
 User, and Admin's mesh policy admits User only on the two intake routes.
 Gateway/mesh (done): intake lives under /api/v1/admin/internal, which the

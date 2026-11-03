@@ -482,7 +482,7 @@ See [API_CONTRACT_UPDATES.txt](API_CONTRACT_UPDATES.txt) for exact edits to the 
 
 Moderation handoff only; this PR is User Service only and does not change infrastructure, Admin or frontend source:
 
-- Gateway owner: add the exact public `POST /api/v1/user/appeals` route without the usual bearer-authorization prerequisite. Keep `POST /api/v1/user/reports` protected by the real user bearer session. Add ingress rate limiting to the public credential-checking appeal route.
+- Gateway: done. `POST /api/v1/user/appeals` is an exact public route (`deploy/charts/foc-gateway/values.yaml`); `POST /api/v1/user/reports` stays behind the bearer session. Still open: ingress rate limiting on the appeal route (only User's per-process limiter applies today).
 - Infrastructure: done. `ADMIN_SERVICE_BASE_URL=http://admin:8084` is set in `deploy/values/services/user.yaml`, and Admin's mesh policy admits User only on `/api/v1/admin/internal/reports` and `/appeals`.
 - Gateway/mesh: done. Intake moved under `/api/v1/admin/internal`, which the gateway blocks as a prefix (trailing slashes and sub-paths included); Admin's GET queues and review operations stay on the authenticated routes. Admin intake has no application authentication and trusts User's validation, so it must stay unreachable from clients.
 - Frontend owner: add report and appeal forms, handle login `403 ACCOUNT_SUSPENDED`, and implement friendship UI separately. Apply the shared-contract edits in section 14 of the edit guide. Deployment still needs the friendship migration; report/appeal intake adds no User migration.
