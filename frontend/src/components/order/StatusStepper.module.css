@@ -29,6 +29,10 @@
   --step-colour: var(--color-success);
 }
 
+.toneAcknowledged {
+  --step-colour: var(--color-lime);
+}
+
 .step {
   position: relative;
   display: grid;

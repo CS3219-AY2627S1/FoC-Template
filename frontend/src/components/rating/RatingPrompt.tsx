@@ -10,12 +10,16 @@
  * rates the courier). Unacknowledged happens on a timer, possibly while the
  * requester is elsewhere in the app, so the prompt lives in the app shell
  * rather than on the order page.
+ *
+ * Limited to once per session with Claude Code (Claude Opus 5.5) on
+ * 2026-11-03: after one prompt closes, older waiting ratings wait for the next
+ * session instead of opening one after another (lib/rating.ts readPromptedAt).
  */
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../auth/AuthProvider';
 import { fetchOrder } from '../../lib/orders';
-import { isSkipped, skipRating, usePendingRatings } from '../../lib/rating';
+import { isSkipped, markPrompted, readPromptedAt, skipRating, usePendingRatings } from '../../lib/rating';
 import { RatingDialog } from './RatingDialog';
 
 interface OrderContext {
@@ -32,10 +36,28 @@ export function RatingPrompt() {
   const [context, setContext] = useState<OrderContext | null>(null);
 
   const userId = user?.userId ?? null;
+  // Once the prompt has closed this session, only ratings granted after that open it again.
+  const [promptedAt, setPromptedAt] = useState<number | null>(() =>
+    userId === null ? null : readPromptedAt(userId),
+  );
+  useEffect(() => setPromptedAt(userId === null ? null : readPromptedAt(userId)), [userId]);
+
   const next =
     userId === null
       ? undefined
-      : pending.find((p) => !skippedHere.includes(p.orderId) && !isSkipped(userId, p.orderId));
+      : pending.find(
+          (p) =>
+            !skippedHere.includes(p.orderId) &&
+            !isSkipped(userId, p.orderId) &&
+            (promptedAt === null || p.grantedAt.getTime() > promptedAt),
+        );
+
+  function closed() {
+    if (userId === null) return;
+    const now = Date.now();
+    markPrompted(userId, now);
+    setPromptedAt(now);
+  }
 
   // Name the order and the other person in the header, when the order loads.
   useEffect(() => {
@@ -70,10 +92,14 @@ export function RatingPrompt() {
       rateeRole={next.rateeRole}
       item={details?.item ?? null}
       rateeHandle={details?.rateeHandle ?? null}
-      onDone={() => setContext(null)}
+      onDone={() => {
+        setContext(null);
+        closed();
+      }}
       onSkip={() => {
         skipRating(userId, next.orderId);
         setSkippedHere((current) => [...current, next.orderId]);
+        closed();
       }}
     />
   );

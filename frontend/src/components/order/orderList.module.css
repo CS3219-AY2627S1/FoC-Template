@@ -114,7 +114,12 @@
 .headRow,
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  /*
+   * The credit column is a fixed width, not auto: each row is its own grid, so
+   * a row with a dispute note (CreditCell) would otherwise widen its own last
+   * column and shift its other cells out of line with the rest.
+   */
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 1fr) 11rem;
   gap: var(--space-4);
   align-items: center;
   padding: var(--space-4) var(--space-5);
@@ -184,10 +189,28 @@
 }
 
 .reward {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
   text-align: right;
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-bold);
   font-variant-numeric: tabular-nums;
+}
+
+/* Where the credits went on a disputed order (CreditCell). */
+.rewardNote {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-muted);
+  /* Wraps inside the fixed column rather than widening it. */
+  overflow-wrap: anywhere;
+}
+
+.rewardNone {
+  color: var(--color-text-subtle);
+  text-decoration: line-through;
 }
 
 /* Column headings carry the meaning on desktop; the cards repeat them. */

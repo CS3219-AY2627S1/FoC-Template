@@ -174,6 +174,34 @@ export function isSkipped(userId: string, orderId: string): boolean {
   return readSkipped(userId).includes(orderId);
 }
 
+/*
+ * The prompt opens by itself at most once per session (this tab, until it
+ * closes): after it has been rated or skipped, the other waiting ratings wait
+ * for the next session. A rating granted after that (an order acknowledged
+ * meanwhile) still prompts once, so UI FR14.1.1 holds.
+ */
+const PROMPTED_KEY = 'foc.rating.promptedAt';
+
+/** When the prompt last closed in this session for this user, in ms; null if it has not. */
+export function readPromptedAt(userId: string): number | null {
+  try {
+    const all = JSON.parse(window.sessionStorage.getItem(PROMPTED_KEY) ?? '{}') as Record<string, number>;
+    return typeof all[userId] === 'number' ? all[userId] : null;
+  } catch {
+    return null;
+  }
+}
+
+export function markPrompted(userId: string, at: number): void {
+  try {
+    const all = JSON.parse(window.sessionStorage.getItem(PROMPTED_KEY) ?? '{}') as Record<string, number>;
+    all[userId] = at;
+    window.sessionStorage.setItem(PROMPTED_KEY, JSON.stringify(all));
+  } catch {
+    // Storage blocked: the prompt may open again after a reload, which is harmless.
+  }
+}
+
 export function skipRating(userId: string, orderId: string): void {
   try {
     const all = JSON.parse(window.localStorage.getItem(SKIPPED_KEY) ?? '{}') as Record<string, string[]>;
