@@ -196,6 +196,23 @@ the apps share about 20 across staging and production.
 - To scale beyond that: a larger tier (db-g1-small allows 50), Cloud SQL managed connection pooling,
   or a separate instance per service.
 
+### Logs
+
+Backend services write one JSON object per line to stdout, and Cloud Logging indexes it under
+`jsonPayload`. `deploy.sh` sets the format for every backend:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| `LOGGING_STRUCTURED_FORMAT_CONSOLE` | `logstash` | Flat JSON. Key-value pairs (`log.atInfo().addKeyValue(...)`) and MDC values such as `requestId` become top-level fields. |
+| `LOGGING_STRUCTURED_JSON_RENAME_LEVEL` | `severity` | Cloud Logging reads a top-level `severity` as the entry's level, so `severity>=WARNING` works. |
+| `LOGGING_STRUCTURED_JSON_EXCLUDE` | `@version,level_value` | Noise |
+
+Until Nov 4 the format was ECS, which caused two problems:
+- ECS nests the level under `log.level`, so every entry showed as DEFAULT.
+- ECS reserves the top-level `service` object, so logback dropped every line that added its own
+  `service` key ("The name 'service' has already been written"). Order's `order_action` and
+  `peer_dependency` lines and all of Credit's business lines were lost that way.
+
 ## Rollback
 
 Traffic can be moved back to any earlier revision instantly:
