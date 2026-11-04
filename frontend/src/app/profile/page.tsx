@@ -18,6 +18,7 @@ type UserProfile = {
   roles: string[]
   penalty: number
   isCourierSuspended: boolean
+  suspensionEndDate: string | null
 }
 
 export default function ProfilePage() {
@@ -79,8 +80,18 @@ export default function ProfilePage() {
               <div><dt className="text-sm text-muted-foreground">Account name</dt><dd className="mt-1 break-all font-medium">{profile.username}</dd></div>
               <div><dt className="text-sm text-muted-foreground">Email</dt><dd className="mt-1 break-all font-medium">{profile.email}</dd></div>
               <div><dt className="text-sm text-muted-foreground">Roles</dt><dd className="mt-1 flex flex-wrap gap-1">{profile.roles.map((role) => <Badge key={role} variant="secondary">{role}</Badge>)}</dd></div>
-              <div><dt className="text-sm text-muted-foreground">Courier status</dt><dd className="mt-1"><Badge variant={profile.isCourierSuspended ? "destructive" : "outline"}>{profile.isCourierSuspended ? "Suspended" : "Active"}</Badge></dd></div>
               <div><dt className="text-sm text-muted-foreground">Penalty</dt><dd className="mt-1 font-medium">{profile.penalty} penalties</dd></div>
+              <div><dt className="text-sm text-muted-foreground">Courier status</dt><dd className="mt-1"><Badge variant={profile.isCourierSuspended ? "destructive" : "outline"}>{profile.isCourierSuspended ? "Suspended" : "Active"}</Badge></dd></div>
+              {profile.isCourierSuspended && (
+                <div>
+                  <dt className="text-sm text-muted-foreground">Suspension end date</dt>
+                  <dd className="mt-1 font-medium">
+                    {profile.suspensionEndDate
+                      ? new Date(profile.suspensionEndDate).toLocaleString()
+                      : "Permanent suspension"}
+                  </dd>
+                </div>
+              )}
             </dl>
           ) : null}
           {profileError && (
