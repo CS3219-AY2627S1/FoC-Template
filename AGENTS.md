@@ -91,9 +91,11 @@ Generate a new service from https://start.spring.io (Maven, Java 21, Boot 4.1.1,
 
 - Use `docs/templates/spring-boot.Dockerfile` unchanged unless you have a reason:
   multi-stage (JDK build → JRE runtime), layered jar, non-root user, `EXPOSE 8080`.
-- Standalone services use `docker build <folder>`. Order depends on `foc-common`
-  and uses `docker build -f order-service/Dockerfile .` from the repo root; Compose,
-  CI and staging use the same root context. Keep root `.dockerignore` restrictive.
+- Standalone services use `docker build <folder>`. Services that depend on `foc-common` (Order,
+  User) build from the repo root: `docker build -f order-service/Dockerfile .`. CI and staging
+  pick the context with `scripts/ci/build-context.sh` (root when the Dockerfile copies
+  `foc-common/` or `<service>/` paths); set the same in `compose.yaml`. Keep root
+  `.dockerignore` restrictive.
   Tests are **not** run inside
   the image build; CI runs them separately (they need Docker for Testcontainers).
 - Never bake data files or secrets into images. Mount files (e.g. seed CSVs) instead.

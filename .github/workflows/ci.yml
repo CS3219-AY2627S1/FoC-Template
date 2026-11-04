@@ -180,10 +180,16 @@ jobs:
 
       # ---- Every service: the Dockerfile must build -----------------------------
       - uses: docker/setup-buildx-action@v4
+      - name: Docker build context
+        id: context
+        working-directory: .
+        env:
+          SERVICE: ${{ matrix.service }}
+        run: echo "dir=$(scripts/ci/build-context.sh "$SERVICE")" >> "$GITHUB_OUTPUT"
       - name: Docker build
         uses: docker/build-push-action@v7
         with:
-          context: ${{ contains(fromJSON('["order-service","user-service"]'), matrix.service) && '.' || matrix.service }}
+          context: ${{ steps.context.outputs.dir }}
           file: ${{ format('{0}/Dockerfile', matrix.service) }}
           push: false
           cache-from: type=gha,scope=${{ matrix.service }}
