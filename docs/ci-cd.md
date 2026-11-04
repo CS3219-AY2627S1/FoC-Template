@@ -17,13 +17,14 @@ CI detects the dependency and uses the reactor. Other services remain standalone
 Common/root Maven/ignore changes conservatively select all Maven backends;
 `bash scripts/ci/test-list-services.sh` checks this against isolated Git fixtures.
 
-Only Order changes image context to repo root: `docker build -f
-order-service/Dockerfile .`. Compose, CI and staging agree; its Dockerfile copies
-only root/common/Order manifests and source. Root allowlist `.dockerignore`
-excludes credentials, local databases and generated files. No registry publishing,
-Git submodule, remote latest-code fetch or extra runtime service is involved.
-Production still promotes the exact staging image. Adding another consumer
-requires its dependency, root reactor entry and explicit Docker/CI integration.
+Order and User build their images from the repo root (`docker build -f
+order-service/Dockerfile .`), because their Dockerfiles copy `foc-common`.
+`scripts/ci/build-context.sh <service>` decides the context for CI and the staging deploy. It picks
+the repo root when a Dockerfile copies `foc-common/` or `<service>/` paths. CI and the deploy
+therefore can't drift apart: on Nov 2 they did, and CI built User from the root while the deploy
+built it from its folder and failed. Compose sets the same contexts in `compose.yaml`. The root
+allowlist `.dockerignore` excludes credentials, local databases and generated files. Production
+still promotes the exact staging image.
 
 
 Owner: Zheng Jiongjie. This is the runbook for the FoC pipelines (NTH5).
