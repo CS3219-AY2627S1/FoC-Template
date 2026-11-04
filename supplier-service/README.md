@@ -95,7 +95,7 @@ An empty result is `200` with `items: []` and a `message` (F4.4).
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `name`, `type`, `building` | string | required; `type` follows the seed CSV (Food, Food/Coffee, Printing, Shopping, ...) |
+| `name`, `type`, `building` | string | required; `type` follows the seed CSV (Food, Food/Coffee, Food/Drinks, Shopping, Printing, Library, Services, Landmark) |
 | `floor`, `locationDescription`, `imageUrl` | string / null | optional |
 | `latitude`, `longitude` | number | required |
 | `openingTime`, `closingTime` | `"HH:mm"` | Singapore time; a closing time before the opening time means it closes after midnight |
@@ -125,6 +125,15 @@ and curly quotes.
   - A missing or malformed file stops startup.
   - The provided CSV contains Windows-1252 apostrophes, and GitHub page links for images. The
     loader handles both: it decodes the apostrophes and rewrites the links to direct image URLs.
+- **Seed data:** [data/csv/supplier-seed-data.csv](../data/csv/supplier-seed-data.csv) has 120
+  campus places.
+  - It starts with the 21 rows the course provided, unchanged. A copy of the original file is the test fixture in
+    `src/test/resources/seed/`.
+  - The other 99 are real places at Kent Ridge, UTown and the NUH Medical Centre (above Kent Ridge MRT):
+    canteens, cafés, shops, libraries, services, and delivery landmarks such as halls, colleges and faculty
+    lobbies.
+  - Their names, positions and buildings come from OpenStreetMap (© OpenStreetMap contributors, ODbL). Opening
+    hours are taken from OpenStreetMap where it lists them, and are typical hours otherwise.
 - **Administrators' changes win:** the loader only changes records it created and no administrator has
   changed since. Cloud Run restarts the service often, and each start reloads the file, so without this
   rule a restart would undo edits. Rows are matched by `seedKey`, so a record an administrator renamed is not

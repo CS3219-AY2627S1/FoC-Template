@@ -48,7 +48,7 @@ class SupplierApiIntegrationTest {
         FirestoreEmulator.clear(DATABASE);
         registry.add("foc.supplier.firestore.emulator-host", FirestoreEmulator::endpoint);
         registry.add("foc.supplier.firestore.database-id", () -> DATABASE);
-        registry.add("foc.supplier.seed-file", () -> "../data/csv/supplier-seed-data.csv");
+        registry.add("foc.supplier.seed-file", () -> "src/test/resources/seed/provided-supplier-seed-data.csv");
         registry.add("foc.supplier.user-service.mock-admin-emails", () -> ADMIN);
     }
 
