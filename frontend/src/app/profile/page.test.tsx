@@ -33,6 +33,7 @@ it("renders the responsive profile summary alongside transaction history", async
   expect(screen.getByText("Active")).toBeInTheDocument()
   expect(screen.getByText("2 penalties")).toBeInTheDocument()
   expect(screen.getByText("Transaction history")).toBeInTheDocument()
+  expect(screen.queryByText("Suspension end date")).not.toBeInTheDocument()
 })
 
 it("opens the compatible own-profile edit page", async () => {
