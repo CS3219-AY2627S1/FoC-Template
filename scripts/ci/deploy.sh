@@ -129,12 +129,6 @@ render_env_file() {
       defaults[FIRESTORE_PROJECT_ID]="$FIRESTORE_PROJECT_ID"
       defaults[FIRESTORE_DATABASE_ID]="$name-$ENVIRONMENT"
     fi
-    # Order and Credit share one db-f1-micro Cloud SQL instance (25 connections for both environments).
-    # Hikari's default keeps 10 open per instance, which fills it during a rollout; open them on demand.
-    if grep -q '^SPRING_DATASOURCE_URL:' "$out"; then
-      defaults[SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE]=4
-      defaults[SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE]=1
-    fi
     local key
     for key in "${!defaults[@]}"; do
       grep -q "^$key:" "$out" || printf '%s: "%s"\n' "$key" "${defaults[$key]}" >>"$out"

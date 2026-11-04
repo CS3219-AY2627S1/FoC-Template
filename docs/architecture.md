@@ -86,13 +86,14 @@ event when the result can follow.**
 | Part | How it scales today | Limit | Next step |
 | --- | --- | --- | --- |
 | Gateway, frontend, services | Cloud Run adds instances per service with load; they are stateless | `--max-instances=3` per service (a cost guard) | Raise the cap per service; tune per-instance concurrency |
-| Cloud SQL (Order, Credit) | One db-f1-micro, a database per service per environment | **25 connections** for both services and both environments. Each instance holds 1–4 ([Cloud SQL connections](ci-cd.md#cloud-sql-connections)), so about five busy instances in total | A larger tier or managed connection pooling; a separate instance per service; regional HA (it is zonal now) |
+| Cloud SQL (Order, Credit) | One db-f1-micro, a database per service per environment | **25 connections** for both services and both environments. Each instance keeps Hikari's default pool of 10 open, so Order and Credit staging hold 20 while idle, and a rollout can run out | For the Order and Credit owners: pool sizing, a larger tier or connection pooling, a separate instance, regional HA (it is zonal now) |
 | Firestore (Supplier, Reporting) | Serverless | Effectively none at this size | – |
 | Pub/Sub | Serverless; push subscriptions scale with the consumer | Consumer throughput | – |
 | Scheduled jobs | Run in every instance of Order, Credit and User | More instances means more runs. Order's outbox claims rows with `FOR UPDATE SKIP LOCKED`, so its instances share the work instead of repeating it | Move the jobs to Cloud Scheduler calling an endpoint, so they run once and the services can scale to zero |
 | Supplier catalogue cache | In memory, per instance, ≤ 60 s | Each instance may be up to 60 s behind an admin edit; reads by ID always go to Firestore | A shared cache (Memorystore) if the catalogue grows large |
 | User Service role lookups | Every role-checked request in another service calls it; Supplier caches for 30 s | It's on the hot path for Order, Credit and Reporting | Cache roles in every caller, or put roles in Firebase custom claims |
 
-The first bottleneck is the database's connection count, not Cloud Run. We measured it: Cloud SQL's
-`num_backends` metric, and Postgres refusing connections during rollouts. The pool cap fixed the
-rollouts. Larger scale needs one of the database steps above.
+The first bottleneck is the database's connection count, not Cloud Run. It shows in Cloud SQL's
+`num_backends` metric, and Postgres refuses connections during rollouts ("remaining connection slots
+are reserved"). Pool sizing and database scaling belong to the Order and Credit owners, and the problem is
+tracked as a GitHub issue.
