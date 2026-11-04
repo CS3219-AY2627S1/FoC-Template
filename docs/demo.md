@@ -94,14 +94,20 @@ Logs Explorer, project `protean-vigil-509704-q4`. Services log JSON lines. Cloud
 | A request through the gateway (status, latency, trace) | `resource.labels.service_name="gateway-staging" httpRequest.requestUrl:"/api/orders"` |
 | Pub/Sub deliveries (push requests from Google) | `resource.type="cloud_run_revision" httpRequest.userAgent:"APIs-Google"` |
 | Order lifecycle audit (create, accept, expire, complete) | `resource.labels.service_name="order-service-staging" jsonPayload.message="order_action"` |
+| Credit money movements (reserve, assign, pay, refund) | `resource.labels.service_name="credit-service-staging" (jsonPayload.message:"credits_" OR jsonPayload.message:"credit_reservation")` |
 | Order scheduler (expiry, auto-complete) | `resource.labels.service_name="order-service-staging" jsonPayload.logger_name:"OrderLifecycleScheduler"` |
 | Supplier catalogue changes and rejected pickup/delivery pairs (the deactivation edge case) | `resource.labels.service_name="supplier-service-staging" (jsonPayload.action:"SUPPLIER_" OR jsonPayload.action="PAIR_REJECTED")` |
 | Supplier seed on startup | `resource.labels.service_name="supplier-service-staging" jsonPayload.message:"Supplier seed"` |
 | Warnings and errors, all services | `resource.type="cloud_run_revision" severity>=WARNING` |
 
-Rehearse these: staging only has `order_action` entries after someone has created or changed an
-order. The Pub/Sub query is the clearest way to show the async flows. After completing an order, it
-shows Credit receiving the completion event; after a penalty, it shows the User Service receiving it.
+Rehearse these. Order's `order_action` and Credit's `credits_*` lines appear only after someone has
+created or changed an order. They also only appear for activity after the Nov 4 deploy: before it, the
+cloud's ECS log format dropped every line that carried its own `service` field, and these lines do
+(see [ci-cd.md](ci-cd.md#logs)).
+
+The Pub/Sub query is the clearest way to show the async flows. After you complete an order, it shows
+Credit receiving the completion event, and Credit's query then shows `credits_transferred`. After a
+penalty, it shows the User Service receiving it.
 
 ## Nice-to-haves to show
 
