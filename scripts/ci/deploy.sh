@@ -113,7 +113,11 @@ render_env_file() {
     local -A defaults=(
       [ENVIRONMENT]="$ENVIRONMENT"
       [LOG_LEVEL]="${LOG_LEVEL:-INFO}"
-      [LOGGING_STRUCTURED_FORMAT_CONSOLE]="ecs"
+      # JSON logs with a top-level "severity", which Cloud Logging reads as the entry's level (ECS nests
+      # it under log.level, so every entry showed as DEFAULT and severity filters didn't work).
+      [LOGGING_STRUCTURED_FORMAT_CONSOLE]="logstash"
+      [LOGGING_STRUCTURED_JSON_RENAME_LEVEL]="severity"
+      [LOGGING_STRUCTURED_JSON_EXCLUDE]="@version,level_value"
       [FIREBASE_AUTH_PROJECT_ID]="$FIREBASE_AUTH_PROJECT_ID"
       [USER_SERVICE_MODE]="$USER_SERVICE_MODE"
       [USER_SERVICE_URL]="${USER_SERVICE_URL:-}"

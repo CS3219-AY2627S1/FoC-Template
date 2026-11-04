@@ -69,7 +69,9 @@ Generate a new service from https://start.spring.io (Maven, Java 21, Boot 4.1.1,
   use it). Enable `management.endpoint.health.probes.enabled: true`.
 - Don't give any endpoint a path ending in `z` (e.g. `/healthz`). Cloud Run reserves such
   paths and answers 404 before the request reaches your container.
-- Log to stdout. The cloud sets `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` for JSON logs.
+- Log to stdout. The cloud writes JSON logs (`LOGGING_STRUCTURED_FORMAT_CONSOLE=logstash`, with the
+  level renamed to `severity` so Cloud Logging shows and filters it). Key-value pairs
+  (`log.atInfo().addKeyValue("orderId", id)`) and MDC values become JSON fields you can query.
 - Standard variables (compose sets them locally, `scripts/ci/deploy.sh` in the cloud):
 
 | Variable | Meaning |

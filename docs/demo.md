@@ -85,8 +85,8 @@ Notes:
 
 ## Showing logs
 
-Logs Explorer, project `protean-vigil-509704-q4`. Services log JSON (ECS), so fields appear under
-`jsonPayload`.
+Logs Explorer, project `protean-vigil-509704-q4`. Services log JSON lines. Cloud Logging reads their
+`severity` as the entry's level, and every other field appears under `jsonPayload`.
 
 | Show | Query |
 | --- | --- |
@@ -94,9 +94,10 @@ Logs Explorer, project `protean-vigil-509704-q4`. Services log JSON (ECS), so fi
 | A request through the gateway (status, latency, trace) | `resource.labels.service_name="gateway-staging" httpRequest.requestUrl:"/api/orders"` |
 | Pub/Sub deliveries (push requests from Google) | `resource.type="cloud_run_revision" httpRequest.userAgent:"APIs-Google"` |
 | Order lifecycle audit (create, accept, expire, complete) | `resource.labels.service_name="order-service-staging" jsonPayload.message="order_action"` |
-| Order scheduler (expiry, auto-complete) | `resource.labels.service_name="order-service-staging" jsonPayload.log.logger:"OrderLifecycleScheduler"` |
+| Order scheduler (expiry, auto-complete) | `resource.labels.service_name="order-service-staging" jsonPayload.logger_name:"OrderLifecycleScheduler"` |
+| Supplier catalogue changes and rejected pickup/delivery pairs (the deactivation edge case) | `resource.labels.service_name="supplier-service-staging" (jsonPayload.action:"SUPPLIER_" OR jsonPayload.action="PAIR_REJECTED")` |
 | Supplier seed on startup | `resource.labels.service_name="supplier-service-staging" jsonPayload.message:"Supplier seed"` |
-| Warnings and errors, all services | `resource.type="cloud_run_revision" jsonPayload.log.level=("WARN" OR "ERROR")` |
+| Warnings and errors, all services | `resource.type="cloud_run_revision" severity>=WARNING` |
 
 Rehearse these: staging only has `order_action` entries after someone has created or changed an
 order. The Pub/Sub query is the clearest way to show the async flows. After completing an order, it

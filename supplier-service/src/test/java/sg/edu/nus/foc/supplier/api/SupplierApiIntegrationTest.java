@@ -1,5 +1,6 @@
 package sg.edu.nus.foc.supplier.api;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
@@ -20,8 +21,11 @@ import java.util.UUID;
 
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -37,6 +41,7 @@ import sg.edu.nus.foc.supplier.support.FirestoreEmulator;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@ExtendWith(OutputCaptureExtension.class)
 class SupplierApiIntegrationTest {
 
     private static final String DATABASE = "api-test";
@@ -277,7 +282,7 @@ class SupplierApiIntegrationTest {
     }
 
     @Test
-    void deleteDeactivatesButKeepsTheRecord() throws Exception {
+    void deleteDeactivatesButKeepsTheRecord(CapturedOutput output) throws Exception {
         String name = unique("Retired Kiosk");
         String id = createAsAdmin(name);
 
@@ -285,6 +290,7 @@ class SupplierApiIntegrationTest {
         mvc.perform(delete("/api/suppliers/{id}", id).with(as(ADMIN)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(false));
+        assertThat(output).contains("\"" + name + "\" deactivated by uid-" + ADMIN);
 
         // Still retrievable by ID (F6.3.3) but hidden from the default listing (F3.1.1).
         mvc.perform(get("/api/suppliers/{id}", id).with(as(STUDENT))).andExpect(jsonPath("$.active").value(false));
@@ -306,7 +312,7 @@ class SupplierApiIntegrationTest {
     // ---- Service-to-service endpoints (F5) -------------------------------------------
 
     @Test
-    void validatesPickupAndDeliveryPairs() throws Exception {
+    void validatesPickupAndDeliveryPairs(CapturedOutput output) throws Exception {
         String pickup = createAsAdmin(unique("Pickup"));
         String delivery = createAsAdmin(unique("Delivery"));
         String retired = createAsAdmin(unique("Retired"));
@@ -323,6 +329,8 @@ class SupplierApiIntegrationTest {
                 .andExpect(jsonPath("$.valid").value(false))
                 .andExpect(jsonPath("$.problems[0].reason").value("NOT_FOUND"))
                 .andExpect(jsonPath("$.problems[1].reason").value("INACTIVE"));
+        assertThat(output).contains("Rejected pickup/delivery pair: [pickupSupplierId missing NOT_FOUND, "
+                + "deliverySupplierId " + retired + " INACTIVE]");
 
         mvc.perform(post("/api/suppliers/validate").with(as(STUDENT)).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"pickupSupplierId\":\"\"}"))

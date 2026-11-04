@@ -156,6 +156,9 @@ and curly quotes.
   - `USER_SERVICE_MODE=mock` gives everyone requester + courier and grants admin to `MOCK_ADMIN_EMAILS`.
 - **Request IDs:** the gateway's `X-Request-Id` is put in the logging context (`requestId`, a field in the
   cloud's JSON logs) and forwarded to the User Service, so one request can be traced across both services.
+- **Audit logs:** every catalogue change logs one line with `action` (`SUPPLIER_CREATED`, `SUPPLIER_UPDATED`,
+  `SUPPLIER_DEACTIVATED`), `supplierId` and the admin's `actorId`. A rejected pickup/delivery pair logs
+  `PAIR_REJECTED` with the reasons. In Cloud Logging: `jsonPayload.action:"SUPPLIER_"`.
 - **Deployment:** Cloud Run as `supplier-service-<environment>`, running as its own service
   account, which can only access its own Firestore databases. The seed CSV is uploaded to the
   environment's config bucket and mounted read-only (F2.1.1). See [docs/ci-cd.md](../docs/ci-cd.md).
