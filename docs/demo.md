@@ -140,8 +140,8 @@ penalty, it shows the User Service receiving it.
 - **Does it scale?**
   - The stateless services scale out on Cloud Run.
   - Firestore and Pub/Sub are serverless.
-  - The first limit is the shared Cloud SQL instance's 25 connections, which we hit and fixed by
-    capping the pools. Beyond that, the instance needs a bigger tier or connection pooling.
+  - The first limit is the shared Cloud SQL instance's 25 connections, which Order and Credit
+    share. The Order and Credit owners answer how their services handle it.
   - In-process schedulers would move to Cloud Scheduler.
   - Details: [architecture.md](architecture.md#scaling).
 - **Why async here and sync there?** See [architecture.md](architecture.md#synchronous-or-asynchronous).
