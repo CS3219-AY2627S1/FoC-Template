@@ -3,7 +3,6 @@ package sg.edu.nus.foc.order.adapter;
 import java.util.Optional;
 import java.time.Duration;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -25,6 +24,11 @@ import sg.edu.nus.foc.order.application.CreditServicePort;
 import sg.edu.nus.foc.order.application.SupplierServicePort;
 import sg.edu.nus.foc.order.application.UserServicePort;
 import sg.edu.nus.foc.order.domain.OrderProblem;
+import sg.edu.nus.foc.order.domain.CourierAcceptanceDenied;
+import sg.edu.nus.foc.order.security.CourierSuspensionAuthority;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import sg.edu.nus.foc.order.security.dto.UserRoleContextResponse;
 import sg.edu.nus.foc.order.security.Role;
 import sg.edu.nus.foc.order.security.VerifiedOrderCaller;
@@ -75,15 +79,6 @@ public class HttpPeerAdapters implements UserServicePort, SupplierServicePort, C
     @Override
     public String verifyCourier(String id, String authorization) {
         Optional<String> verifiedIdentity = VerifiedOrderCaller.identityFor(Role.COURIER, id);
-        CourierEligibility eligibility = call(
-                user,
-                "/api/users/courier-eligibility",
-                authorization,
-                CourierEligibility.class);
-        if (eligibility == null || !eligibility.isCourierEligible()) {
-            throw OrderProblem.forbidden("Courier is not eligible to perform this action.");
-        }
-
         if (verifiedIdentity.isPresent()) {
             return verifiedIdentity.get();
         }
@@ -95,6 +90,28 @@ public class HttpPeerAdapters implements UserServicePort, SupplierServicePort, C
                 UserRoleContextResponse.class);
         requireMatchingRole(context, id, "courier");
         return context.getUserId();
+    }
+
+    @Override
+    public void requireCourierAcceptance(String id, String authorization) {
+        Optional<String> verifiedIdentity = VerifiedOrderCaller.identityFor(Role.COURIER, id);
+        if (verifiedIdentity.isPresent()
+                && SecurityContextHolder.getContext().getAuthentication() instanceof JwtAuthenticationToken caller) {
+            for (GrantedAuthority authority : caller.getAuthorities()) {
+                if (authority instanceof CourierSuspensionAuthority suspension) {
+                    requireNotSuspended(suspension.suspended());
+                    return;
+                }
+            }
+        }
+        UserRoleContextResponse context = call(user, "/api/users/role-context", authorization, UserRoleContextResponse.class);
+        requireMatchingRole(context, id, "courier");
+        requireNotSuspended(context.getCourierSuspended());
+    }
+
+    private static void requireNotSuspended(Boolean suspended) {
+        if (suspended == null) throw new OrderProblem("SERVICE_UNAVAILABLE", "Courier suspension status could not be confirmed. Please try again later.");
+        if (suspended) throw new CourierAcceptanceDenied();
     }
 
     @Override
@@ -262,12 +279,4 @@ public class HttpPeerAdapters implements UserServicePort, SupplierServicePort, C
         private long amount;
     }
 
-    @Getter
-    @Setter
-    @NoArgsConstructor
-    @AllArgsConstructor
-    private static class CourierEligibility {
-        @JsonProperty("isCourierEligible")
-        private boolean courierEligible;
-    }
 }

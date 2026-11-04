@@ -1473,3 +1473,40 @@ Required Report implementation (proposed contract, full examples in [handoff](re
 This replaces the prior proposed HTTP restore/result-query requirement. Specify400/401/403/404/409/503 and conflicting-key behavior with the owner. Do not call a Report route that calls back into Order release. Keep the hold until local release commits; never compensate committed success due to a lost response. Request/result topics: report-resolution-compensation-{local|dev|prod}-v1 and report-resolution-compensation-result-{local|dev|prod}-v1. No GCP resources were created; agreed retention/reconciliation and real authenticated tests are activation gates.
 
 Report creation must persist stable report/intent identity before remote hold placement and recover uncertain calls, preventing orphan holds. Confirm acceptance of Order's approved retry behavior: repeated placement reuses the hold but returns the **current** Order snapshot; delivery may have progressed. No snapshot migration is planned. Admin replies must be visible only to the submitter and authorized admins.
+
+
+## User penalty consumer review - 2026-11-04
+
+Earlier missing-consumer request below is superseded: actual User consumers and local emulator wiring exist. Ten disposable end-to-end penalty checks passed using real Order/User/Mongo/Postgres/PubSub; Credit/Supplier were explicit mock peers. Audit constructor mapping defect and policy follow-ups remain in current FEEDBACK-014. Cloud integration not verified.
+
+## User Service — penalty consumers (FEEDBACK-014)
+
+Implement authenticated Pub/Sub consumers for both channels below; current User source has penalty HTTP helpers but no penalty subscriber. These are scoring consumers, not new human-admin HTTP mutation endpoints.
+
+| Topic | Body eventType | Effect |
+|---|---|---|
+| courier-penalty-addition-{environment}-v1 | PenaltyScoreAdditionEvent | Add positive penaltyAmount |
+| courier-penalty-deduction-{environment}-v1 | PenaltyScoreDeductionEvent | Deduct positive penaltyAmount |
+
+Use local topics only with the emulator; staging uses dev, production prod. Body has exactly seven fields:
+
+~~~json
+{"eventId":"stable-event-id","eventType":"PenaltyScoreAdditionEvent","orderId":"order-id","courierId":"courier-uid","penaltyAmount":4,"occurredAt":"2026-10-28T08:00:00Z","appliedReason":"WRONG_LOCATION_DELIVERY"}
+~~~
+
+Pub/Sub attributes: eventId, eventType, eventVersion=1. Decode base64 message.data for push delivery. The JSON courierId is the score recipient, including when a requester/system completes the Order.
+
+| appliedReason | Magnitude | Direction |
+|---|---:|---|
+| ACCEPTED_TASK_CANCELLATION |2|Addition|
+| OVERDUE_DELIVERY |1|Addition|
+| SUCCESSFUL_DELIVERY |1|Deduction|
+| WRONG_LOCATION_DELIVERY |4|Addition|
+| ITEM_MISHANDLING_OR_DAMAGE |4|Addition|
+| DELIBERATE_ITEM_RETENTION_OR_THEFT |10|Addition|
+
+- Order saves final score intent with the lifecycle transition and outbox. Apply Penalty alone stores a provisional policy; completion/cancellation emits one final outcome per courier attempt. Reopened Orders can have different couriers/attempts: do not deduplicate by orderId alone.
+- Deduplicate by **body eventId**, not Google's messageId. Order retries reuse the persisted ID. Atomically save the processed ID and update the score; concurrent duplicates have one effect. ACK only after commit or a known duplicate; retry transient failures and monitor dead letters/permanent failures.
+- Agree score floor/cap and suspension policy, including the theft permanent-suspension requirement. Two topics have no cross-topic order: clamping after each delivery makes +1/-1 order-dependent at zero. Define a ledger/reconciliation policy or explicitly agree arrival-order semantics before claiming order-independent scoring.
+- Retired COURIER_UNRESPONSIVE(3) can still occur in saved historical events; preserve read compatibility. Do not create new choices for it. AcceptedOrderCancellationTaskEvent is retired; no new legacy subscription/scoring or penalty-replacement API is requested. Credit events remain separate.
+- Full schemas/examples: [AsyncAPI](asyncapi/asyncapi.yaml). Provider consumer/security/duplicate tests and local integration are still required.

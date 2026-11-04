@@ -3467,3 +3467,36 @@ OpenAI Codex; Yao Xiang on hfix/report-service; authorized frontend implementati
 - **Author verification:** User-directed UI choice; code/browser review pending. No independent AI architecture approval, commit or push.
 
 - **Verification update (CHANGE-178):**54 affected page tests,full lint and frontend production build/TypeScript pass. Frontend-only recreation is healthy; Orders/Reports routes return200. Existing unrelated test warnings retained, no failed final checks. No backend/API/config/cloud/data change or publication. Code/browser review and staging rollout pending.
+
+
+## CHANGE-179 suspension and existing courier work assistance (Order Service / Frontend)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-04
+- **Mode:** Implementation, verification and documentation.
+- **Affected locations:** Order security/adapter/application/API docs and tests; frontend use-order-command hook/tests; Order context/ADR-067/change/learning records.
+- **Prompt:** User supplied the newly implemented UserRoleContext suspension flag and approved starting the fix after selecting retained courier role and acceptance-only suspension checks.
+- **Key response:** Implemented current-request role/suspension reuse, new ACCEPT guard, existing-work role-only identity, safe journal recovery and authoritative browser rejection reconciliation. Test-first reproduced discarded suspension data and false pending behavior. Final701Order+13common verify/coverage,321frontend tests, lint and both Docker builds/TypeScript pass. Initial Docker/PATH and DTO equality fixture issues resolved; final evidence and limits in CHANGE-179. Application stack not started; browser/staging rollout pending.
+- **Author verification:** Yao Xiang selected the role-context design and scope. Human source review and browser/staging confirmation pending; automated checks are not human approval.
+
+
+## Local penalty integration verification assistance (Order Service / User Service inspection)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-04
+- **Mode:** Verification and documentation.
+- **Affected locations:** Order peer-feedback/history and Yao Xiang active-work; ignored target verification harness/results. No application source modified in this turn.
+- **Prompt:** "can u check is the penalty system work locally"
+- **Key response:** 2026-11-04 local penalty verification:10 disposable checks passed using actual Order/User images, private PostgreSQL/Mongo replica-set databases, the local Pub/Sub emulator and fresh Auth-emulator identities. Financial Credit/Supplier peers were explicitly mocked in the private Order instance; this verifies penalty integration, not Credit settlement. Tested abort addition, duplicate ID/single effect, successful-delivery deduction, deferred/highest admin policy, no-penalty and highest-selected admin cancellations, cap10/suspension/new-accept403/existing-delivery, overdue completion, held auto-completion/release, and transaction rollback followed by same-ID retry. First probe expected500 for missing User but actual404 was correct; adjusted only the verification expectation and reran all10 successfully. Live audit defect: ProcessedPenaltyEvent constructor receives courierId/eventType swapped. Score effect and deduplication remain correct. Updated FEEDBACK-014 and archived superseded missing-consumer request; did not modify User or other application source. Disposable instances/databases/topics/subscriptions/Auth test accounts cleaned; existing application data and scores untouched. Sources and cloud/config unchanged this turn; earlier CHANGE-179 source patch preserved. Evidence target/penalty-local-check-final.log and penalty-local-result.json. Remaining: User audit metadata fix; existing ordering/theft/legacy-policy coordination; cloud delivery unverified.
+- **Author verification:** User requested local verification. Automated checks do not constitute human source review; User audit correction remains with the peer owner.
+
+
+## Legacy penalty account diagnosis assistance (Order Service / User inspection)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-04
+- **Mode:** Investigation, reproduction and documentation.
+- **Prompt:** User reports completion still does not apply a marked penalty; supplies local Order9ce2e006-a150-45f0-b35a-4356b6bc5be7.
+- **Affected locations:** Order peer feedback/active-work, ignored diagnostic/verification artifacts; application source untouched this turn.
+- **Key response:** 2026-11-04 reported local completion failure: exact Order9ce2e006-a150-45f0-b35a-4356b6bc5be7 became COMPLETED during inspection; final addition814db288-c038-3230-af76-02689d0e3ee0 is PUBLISHED10, User processed marker absent/score0. Source/data reveal legacy courier missing status; Java defaults ACTIVE but raw saveActive query excludes missing status. Disposable real User/Mongo transaction reproduction returns403/rolls back, and the same event applies10 once after test-only ACTIVE backfill. This explains why fresh-account verification passed but existing account fails. Running images/config match tested builds; no missing endpoint/topic, no Order transition/event-generation fault. Asked explicit permission for a narrow User compatibility fix/tests/restart under prior sibling-scope boundary. No real User/Order/credit data mutated; staged CHANGE-179 retained. Evidence target/penalty-legacy-repro.log; FEEDBACK-014 updated. Awaiting scope answer.
+- **Author verification:** User requests diagnosis/fix; extending to User implementation is awaiting explicit approval. Disposable proof is not a modification of the user account.

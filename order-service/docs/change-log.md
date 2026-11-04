@@ -577,3 +577,11 @@ Yao Xiang on hfix/report-service; user-authorized frontend default only. Missing
 - 2026-11-02: CHANGE-177 adds Action-eligible orders switch, synchronized status/page reset and optional backwards-compatible admin list SQL filter before pagination.
 
 - 2026-11-02: CHANGE-178 aligns Orders/Reports toggles with status/search and adds the Admin Reports Ready for review shortcut using existing status filtering.
+
+
+## CHANGE-179 - Courier suspension role context (2026-11-04)
+
+User-directed role-context suspension fix: acceptance-only refusal, existing assigned work permitted, clear browser403 feedback with authoritative command reconciliation, no-effect rejection and safe uncertain-effect reversal; successful replay retained. Changes: Order security/adapter/application/API documentation, existing/new tests, USER Courier hook and workflow records. No sibling implementation, SQL migration, environment/topic/cloud change. See CHANGE-179 and ADR-067 for evidence and limitations.
+
+
+CHANGE-179 verification amendment:701Order+13common full scoped verify passes, no failures/errors/skips; branch81.28/line94.63%;321frontend tests, lint and both Docker builds/TypeScript pass. Initial environment and fixture failures are resolved; authoritative final log is target/change179-scoped-verify.log. No backend peers, schema/config/cloud change. Images built, application stack not started; browser/staging rollout pending. Full acceptance/negative-case traceability is in changes/CHANGE-179-suspended-courier-acceptance.md.

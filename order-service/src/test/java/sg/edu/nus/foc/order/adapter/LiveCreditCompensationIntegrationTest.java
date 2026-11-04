@@ -152,6 +152,7 @@ class LiveCreditCompensationIntegrationTest {
     @BeforeEach void fixturesAndSubscriptions() {
         doAnswer(call -> call.getArgument(0)).when(peers).verifyRequester(anyString(), nullable(String.class));
         doAnswer(call -> call.getArgument(0)).when(peers).verifyCourier(anyString(), nullable(String.class));
+        doNothing().when(peers).requireCourierAcceptance(anyString(), nullable(String.class));
         doNothing().when(peers).validatePair(anyString(), anyString(), nullable(String.class));
         doNothing().when(backgroundChecks).validate(anyString(), anyString(), anyString());
         // Funding reads still call actual Credit through HTTP, not a fixture.

@@ -61,6 +61,11 @@ public class OrderCommandService {
     public CommandView submit(String key, CommandRequest input, String authorization) {
         requireEnabled();
         authorize(input, authorization);
+        // Replaying an existing command is not a new assignment. Recovery below
+        // checks suspension before any further ACCEPT effect.
+        if ("ACCEPT".equals(input.kind()) && store.find(key).isEmpty()) {
+            users.requireCourierAcceptance(input.actorId(), authorization);
+        }
         try (CommandScope ignored = new CommandScope(key)) {
             tx().executeWithoutResult(status -> {
                 Order original = null;
@@ -223,6 +228,7 @@ public class OrderCommandService {
                 throw new OrderProblem("UNAUTHENTICATED", "Fresh authorization is required to recover this request.");
             }
             authorize(claim.input(), authorization);
+            if ("ACCEPT".equals(claim.kind())) users.requireCourierAcceptance(claim.actorId(), authorization);
             try {
                 tx().executeWithoutResult(status -> {
                     store.assertOwned(claim);
@@ -274,6 +280,10 @@ public class OrderCommandService {
                 }
             }
         } catch (RuntimeException failure) {
+            if (failure instanceof CourierAcceptanceDenied denied) {
+                rejectSuspendedAcceptance(claim, mutation, authorization, denied);
+                return view(store.get(key));
+            }
             boolean auth = failure instanceof OrderProblem p && isAuthorization(p);
             store.defer(claim, auth ? "AUTHORIZATION_REQUIRED" : "RETRY_SCHEDULED",
                     auth ? "Sign in or continue to authorize recovery of this request."
@@ -281,6 +291,25 @@ public class OrderCommandService {
             audit.action("COMMAND_RECOVERY", claim.orderId(), claim.actorId(), key, auth ? "authorization_required" : "pending");
         }
         return view(store.get(key));
+    }
+
+    private void rejectSuspendedAcceptance(OrderCommandStore.Entry claim, CreditCommandGateway.Mutation mutation,
+            String authorization, CourierAcceptanceDenied denied) {
+        tx().executeWithoutResult(status -> store.assertOwned(claim));
+        // Claim can predate a persisted uncertainty barrier; re-read before rejecting.
+        if (store.get(claim.key()).possibleEffect()) {
+            boolean reversed;
+            try {
+                reversed = gateway.getObject().compensate(claim.key(), mutation, claim.generation(), authorization);
+            } catch (RuntimeException uncertain) {
+                reversed = false;
+            }
+            if (!reversed) {
+                store.defer(claim, "RECONCILIATION_REQUIRED", "We are checking the earlier Credit outcome. Please wait.", Math.max(1, retrySeconds));
+                return;
+            }
+        }
+        reject(claim, denied.getCode(), denied.getMessage());
     }
 
     private CommandView executeCompensation(String key, String authorization, boolean userResume) {
@@ -292,6 +321,7 @@ public class OrderCommandService {
             compensationWorkflow.execute(claim, mutation(claim), authorization, () -> {
                 boolean automatic = store.automaticExecution(key);
                 if (!automatic) authorize(claim.input(), authorization);
+                if ("ACCEPT".equals(claim.kind())) users.requireCourierAcceptance(claim.actorId(), authorization);
                 tx().executeWithoutResult(tx -> { store.assertOwned(claim); validate(claim); });
                 if ("CREATE".equals(claim.kind()) || "REPOST".equals(claim.kind())) {
                     var fields = claim.input().creation();

@@ -7,6 +7,17 @@ import static org.mockito.Mockito.*;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import sg.edu.nus.foc.order.security.CourierSuspensionAuthority;
+import sg.edu.nus.foc.order.domain.CourierAcceptanceDenied;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -29,6 +40,7 @@ import sg.edu.nus.foc.order.domain.OrderProblem;
     "order.messaging.outbox.recovery-cron=-", "debug=false", "logging.level.root=WARN",
     "logging.level.org.hibernate.SQL=OFF"})
 @Testcontainers
+@AutoConfigureMockMvc
 class OrderCommandRecoveryIntegrationTest {
     @Container static final PostgreSQLContainer<?> DB = new PostgreSQLContainer<>("postgres:15-alpine");
     @DynamicPropertySource static void database(DynamicPropertyRegistry p) {
@@ -39,7 +51,8 @@ class OrderCommandRecoveryIntegrationTest {
     @Autowired OrderCommandService service;
     @Autowired OrderCommandStore store;
     @Autowired JdbcTemplate jdbc;
-    @Autowired MockPeerAdapters balances;
+    @MockitoSpyBean MockPeerAdapters balances;
+    @Autowired MockMvc mvc;
     @MockitoSpyBean LocalCreditCommandStub credit;
     @MockitoSpyBean sg.edu.nus.foc.order.application.OrderCreationService creation;
     @Autowired sg.edu.nus.foc.order.application.OrderTransitionService transitions;
@@ -54,6 +67,118 @@ class OrderCommandRecoveryIntegrationTest {
     }
     String key() { return UUID.randomUUID().toString(); }
     void due(String k) { jdbc.update("update order_commands set next_retry_at=clock_timestamp()-interval '1 second', owner=null, lease_expires_at=null where command_id=?", k); }
+
+    @Test void suspendedAcceptanceReturns403WithoutSavingOrGuardingTheOrder() throws Exception {
+        OrderResponse opened = service.submit(key(), create(key()), null).result();
+        String courier = key();
+        for (String prefix : new String[] {"/api/orders/", "/api/orders/commands/"}) {
+            String commandId = key();
+            mvc.perform(post(prefix + opened.getId() + "/accept")
+                    .with(jwt().jwt(token -> token.subject(courier)).authorities(new SimpleGrantedAuthority("ROLE_COURIER"), new CourierSuspensionAuthority(true)))
+                    .contentType(MediaType.APPLICATION_JSON).content("{\"commandId\":\"" + commandId + "\",\"actorId\":\"" + courier + "\",\"expectedVersion\":0}"))
+                    .andExpect(status().isForbidden()).andExpect(jsonPath("message").value(new CourierAcceptanceDenied().getMessage()));
+            assertTrue(store.find(commandId).isEmpty());
+            mvc.perform(get("/api/orders/commands/" + commandId).param("userId", courier)
+                    .with(jwt().jwt(token -> token.subject(courier)).authorities(new SimpleGrantedAuthority("ROLE_COURIER"))))
+                    .andExpect(status().isNotFound());
+            verify(credit, never()).execute(eq(commandId), any(), anyLong(), nullable(String.class));
+        }
+        assertEquals("OPEN", jdbc.queryForObject("select status from orders where id=?", String.class, opened.getId()));
+        assertEquals("CANCELLED", transitions.cancel(key(), opened.getId(), opened.getRequesterId(), opened.getVersion(), null).getStatus().name());
+    }
+
+    @Test void suspendedAssignedCourierCanDeliverWhileHeldButOtherCouriersCannot() throws Exception {
+        OrderResponse opened = service.submit(key(), create(key()), null).result();
+        String courier = key();
+        OrderResponse accepted = service.submit(key(), new CommandRequest("ACCEPT", courier, opened.getId(), opened.getVersion(), null), null).result();
+        jdbc.update("update orders set completion_hold=true where id=?", opened.getId());
+        clearInvocations(balances);
+        String other = key();
+        mvc.perform(post("/api/orders/" + opened.getId() + "/start")
+                .with(jwt().jwt(token -> token.subject(other)).authorities(new SimpleGrantedAuthority("ROLE_COURIER"), new CourierSuspensionAuthority(true)))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"commandId\":\"" + key() + "\",\"actorId\":\"" + other + "\",\"expectedVersion\":" + accepted.getVersion() + "}"))
+                .andExpect(status().isForbidden());
+        String[] actions = {"start", "pickup", "deliver"};
+        String[] states = {"IN_PROGRESS", "PICKED_UP", "DELIVERED"};
+        for (int index = 0; index < actions.length; index++) {
+            long version = jdbc.queryForObject("select version from orders where id=?", Long.class, opened.getId());
+            mvc.perform(post("/api/orders/" + opened.getId() + "/" + actions[index])
+                    .with(jwt().jwt(token -> token.subject(courier)).authorities(new SimpleGrantedAuthority("ROLE_COURIER"), new CourierSuspensionAuthority(true)))
+                    .contentType(MediaType.APPLICATION_JSON).content("{\"commandId\":\"" + key() + "\",\"actorId\":\"" + courier + "\",\"expectedVersion\":" + version + "}"))
+                    .andExpect(status().isOk()).andExpect(jsonPath("status").value(states[index]));
+        }
+        verify(balances, never()).requireCourierAcceptance(anyString(), nullable(String.class));
+        long version = jdbc.queryForObject("select version from orders where id=?", Long.class, opened.getId());
+        assertEquals("COMPLETION_ON_HOLD", assertThrows(OrderProblem.class,
+                () -> transitions.complete(key(), opened.getId(), opened.getRequesterId(), version, null)).getCode());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"RETRY", "COMPENSATE"})
+    void suspendedNoEffectRecoveryFinishesRejectedWithoutCallingCredit(String policy) {
+        OrderResponse opened = service.submit(key(), create(key()), null).result();
+        String courier = key();
+        String commandId = key();
+        store.register(commandId, new CommandRequest("ACCEPT", courier, opened.getId(), opened.getVersion(), null), policy, 120);
+        doThrow(new CourierAcceptanceDenied()).when(balances).requireCourierAcceptance(eq(courier), nullable(String.class));
+        CommandView result = service.resume(commandId, courier, null);
+        assertEquals("COMPLETED", result.status());
+        assertEquals("REJECTED", result.outcome());
+        assertEquals(new CourierAcceptanceDenied().getMessage(), result.message());
+        assertFalse(store.get(commandId).possibleEffect());
+        verify(credit, never()).execute(eq(commandId), any(), anyLong(), nullable(String.class));
+        verify(credit, never()).compensate(eq(commandId), any(), anyLong(), nullable(String.class));
+        assertEquals("CANCELLED", transitions.cancel(key(), opened.getId(), opened.getRequesterId(), opened.getVersion(), null).getStatus().name());
+    }
+
+    @Test void suspendedUncertainAcceptanceWaitsForConfirmedReversalBeforeRejecting() {
+        OrderResponse opened = service.submit(key(), create(key()), null).result();
+        String courier = key();
+        String commandId = key();
+        doAnswer(call -> { call.callRealMethod(); throw new IllegalStateException("lost Credit reply"); })
+                .when(credit).execute(eq(commandId), any(), anyLong(), nullable(String.class));
+        assertEquals("PENDING", service.submit(commandId, new CommandRequest("ACCEPT", courier, opened.getId(), opened.getVersion(), null), null).status());
+        assertTrue(store.get(commandId).possibleEffect());
+        doThrow(new CourierAcceptanceDenied()).when(balances).requireCourierAcceptance(eq(courier), nullable(String.class));
+        doReturn(false).doThrow(new IllegalStateException("reversal unavailable")).doCallRealMethod()
+                .when(credit).compensate(eq(commandId), any(), anyLong(), nullable(String.class));
+        for (int attempt = 0; attempt < 2; attempt++) {
+            CommandView waiting = service.resume(commandId, courier, null);
+            assertEquals("PENDING", waiting.status());
+            assertEquals("RECONCILIATION_REQUIRED", waiting.reason());
+        }
+        CommandView rejected = service.resume(commandId, courier, null);
+        assertEquals("REJECTED", rejected.outcome());
+        assertNull(balances.reservationCourier(opened.getId()));
+        assertEquals("OPEN", jdbc.queryForObject("select status from orders where id=?", String.class, opened.getId()));
+        verify(credit, times(1)).execute(eq(commandId), any(), anyLong(), nullable(String.class));
+    }
+
+    @Test void suspensionAfterCreditSuccessReadsThePersistedEffectBarrierBeforeRejection() {
+        OrderResponse opened = service.submit(key(), create(key()), null).result();
+        String courier = key();
+        String commandId = key();
+        doNothing().doNothing().doThrow(new CourierAcceptanceDenied()).when(balances)
+                .requireCourierAcceptance(eq(courier), nullable(String.class));
+        CommandView rejected = service.submit(commandId, new CommandRequest("ACCEPT", courier, opened.getId(), opened.getVersion(), null), null);
+        assertEquals("REJECTED", rejected.outcome());
+        verify(credit).compensate(eq(commandId), any(), anyLong(), nullable(String.class));
+        assertNull(balances.reservationCourier(opened.getId()));
+        assertEquals("OPEN", jdbc.queryForObject("select status from orders where id=?", String.class, opened.getId()));
+    }
+
+    @Test void alreadySuccessfulAcceptanceReplaysAfterSuspension() {
+        OrderResponse opened = service.submit(key(), create(key()), null).result();
+        String courier = key();
+        String commandId = key();
+        CommandRequest input = new CommandRequest("ACCEPT", courier, opened.getId(), opened.getVersion(), null);
+        CommandView completed = service.submit(commandId, input, null);
+        doThrow(new CourierAcceptanceDenied()).when(balances).requireCourierAcceptance(eq(courier), nullable(String.class));
+        CommandView replayed = service.submit(commandId, input, null);
+        tools.jackson.databind.json.JsonMapper json = tools.jackson.databind.json.JsonMapper.builder().build();
+        assertEquals(json.writeValueAsString(completed), json.writeValueAsString(replayed));
+        verify(credit, times(1)).execute(eq(commandId), any(), anyLong(), nullable(String.class));
+    }
 
     @Test void reportPlacementVersionChangeDoesNotHideTheHoldFromAStaleCourier() {
         String requester = key();

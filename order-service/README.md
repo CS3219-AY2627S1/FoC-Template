@@ -534,3 +534,8 @@ Report saga cloud setup (CHANGE-167): `infra/gcp/configure-report-pubsub.sh stag
 Report enhancements (CHANGE-168): optional completed Order context for credit complaints, requester/courier-scoped SQL reads, nullable startedAt, duplicate-report protection and the caller-scoped courier response count are implemented. See [Report handoff](../reporting-service/HANDOFF.md). No credit adjustment or new topic is introduced.
 
 Effective Report simplification (CHANGE-169): credit/general reports are unlinked and the original active-order dropdown is restored. The courier reply badge remains. Independent caller-scoped completed/cancelled Order history lives in OrderCreditHistoryController at /api/orders/mine/completed and /api/orders/mine/cancelled (list/detail); Report submission does not call these APIs. No new topics or migration.
+
+
+## CHANGE-179 - Courier suspension role context (2026-11-04)
+
+Courier suspension is an acceptance restriction (ADR-067). Order uses User role-context roles plus isCourierSuspended; assigned couriers can keep delivering while suspended. A new acceptance is denied403 with an explanation; saved/uncertain command recovery remains protected. Role, ownership, state, version and report-hold checks still apply. No new environment variables or migrations. Use the root wrapper with -pl order-service -am verify to limit checks to Order and its shared library; the root reactor also contains User Service.

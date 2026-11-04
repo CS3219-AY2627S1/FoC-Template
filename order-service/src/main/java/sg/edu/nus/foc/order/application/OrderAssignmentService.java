@@ -49,6 +49,7 @@ public class OrderAssignmentService {
             return orders.get(previous.get().getOrderId()).orElseThrow();
         }
 
+        users.requireCourierAcceptance(authenticatedCourier, authorization);
         Order order = findForUpdate(id);
         Instant acceptedAt = Instant.now();
         order.validateAcceptance(authenticatedCourier, version, acceptedAt);

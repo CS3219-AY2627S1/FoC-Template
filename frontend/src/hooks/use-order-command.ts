@@ -76,6 +76,24 @@ export function useOrderCommand(scope: string, onSuccess: (order: Order) => void
       await receive(await api<OrderCommandStatus>(saved.path, { method: "POST", body: saved.body }))
     } catch (error) {
       if (session.current !== `${account}:${scope}`) return
+      if (error instanceof ApiError && error.status === 403) {
+        // A rejection may precede registration. Confirm no saved effect before
+        // clearing this intent; a failed POST alone cannot establish that.
+        try {
+          const existing = await api<OrderCommandStatus>(`/api/orders/commands/${encodeURIComponent(saved.key)}?userId=${encodeURIComponent(account!)}`)
+          await receive(existing)
+          return
+        } catch (lookupError) {
+          if (session.current !== `${account}:${scope}`) return
+          if (lookupError instanceof ApiError && lookupError.status === 404) {
+            await removeOrderIntent(account!, scope, saved.key)
+            if (session.current !== `${account}:${scope}`) return
+            setIntent(null); setStatus(null); setMessage(null)
+            callbacks.current.onRejected(error.message)
+            return
+          }
+        }
+      }
       if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
         setStatus({ commandId: saved.key, status: "PENDING", reason: "AUTHORIZATION_REQUIRED" })
         setMessage("Sign in or continue to authorize recovery of this request.")
