@@ -693,3 +693,13 @@ layout = "opt-in matching desktop status/search/toggle/actions row; shorter flex
 reports = "Ready for review toggles existing status; dropdown synchronized; page1/Clear reset"
 scope = "frontend/tests/docs only; no backend/API/config/schema/cloud change"
 verification = "54affected frontend tests;full lint;Docker production build/TypeScript;frontend healthy;Orders/Reports routes200"
+
+[courier_suspension_179]
+date = "2026-11-04"
+owner = "Yao Xiang"
+branch = "hfix/suspended-courier-acceptance"
+status = "automated verification passed; images built; browser and staging rollout pending"
+contract = "User role-context roles retained; isCourierSuspended gates new ACCEPT only; missing flag fails acceptance closed"
+recovery = "owned-status reconciliation before clearing forbidden intent; possible Credit effects require confirmed reversal or compensation"
+scope = "Order/frontend/source/tests/docs only; no sibling backend/schema/topic/env/cloud change"
+verification = "701Order+13common verify;branch81.28/line94.63%;321frontend tests;lint;Order/frontend Docker build and TypeScript;OpenAPI/TOML/whitespace"

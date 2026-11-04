@@ -36,14 +36,17 @@ curl -H "Authorization: Bearer $TOKEN" 'http://localhost:8080/api/suppliers?lat=
 ```
 
 Roles come from the User Service (`USER_SERVICE_MODE=http`, the compose default for this service).
-Signing up in the UI creates the User Service profile with the `requester` and `courier` roles. The
-User Service has no API to grant `admin` yet, so grant it in the local MongoDB once:
+Signing up in the UI creates the User Service profile with the `requester` and `courier` roles. An
+administrator can promote other users from the admin pages, but the first local administrator has to be
+granted in MongoDB once:
 
 ```bash
 docker compose exec mongodb mongosh UserServiceDB --quiet   --eval 'db.users.updateOne({email: "admin@u.nus.edu"}, {$addToSet: {roles: "admin"}})'
 ```
 
-Roles are cached for up to 30 s (`USER_SERVICE_ROLE_CACHE_TTL`), so the new role applies within that time. To fall back to
+Admin checks ask the User Service on every request, so the new role applies at once. The UI shows or hides
+admin actions from `/permissions`, which reuses roles for up to 30 s (`USER_SERVICE_ROLE_CACHE_TTL`), so the
+buttons can take that long to appear. To fall back to
 mock roles (everyone is a requester and a courier; `MOCK_ADMIN_EMAILS` are admins), set
 `SUPPLIER_USER_SERVICE_MODE=mock` in the root `.env`.
 
@@ -95,7 +98,7 @@ An empty result is `200` with `items: []` and a `message` (F4.4).
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `name`, `type`, `building` | string | required; `type` follows the seed CSV (Food, Food/Coffee, Printing, Shopping, ...) |
+| `name`, `type`, `building` | string | required; `type` follows the seed CSV (Food, Food/Coffee, Food/Drinks, Shopping, Printing, Library, Services, Landmark) |
 | `floor`, `locationDescription`, `imageUrl` | string / null | optional |
 | `latitude`, `longitude` | number | required |
 | `openingTime`, `closingTime` | `"HH:mm"` | Singapore time; a closing time before the opening time means it closes after midnight |
@@ -125,6 +128,15 @@ and curly quotes.
   - A missing or malformed file stops startup.
   - The provided CSV contains Windows-1252 apostrophes, and GitHub page links for images. The
     loader handles both: it decodes the apostrophes and rewrites the links to direct image URLs.
+- **Seed data:** [data/csv/supplier-seed-data.csv](../data/csv/supplier-seed-data.csv) has 120
+  campus places.
+  - It starts with the 21 rows the course provided, unchanged. A copy of the original file is the test fixture in
+    `src/test/resources/seed/`.
+  - The other 99 are real places at Kent Ridge, UTown and the NUH Medical Centre (above Kent Ridge MRT):
+    canteens, cafés, shops, libraries, services, and delivery landmarks such as halls, colleges and faculty
+    lobbies.
+  - Their names, positions and buildings come from OpenStreetMap (© OpenStreetMap contributors, ODbL). Opening
+    hours are taken from OpenStreetMap where it lists them, and are typical hours otherwise.
 - **Administrators' changes win:** the loader only changes records it created and no administrator has
   changed since. Cloud Run restarts the service often, and each start reloads the file, so without this
   rule a restart would undo edits. Rows are matched by `seedKey`, so a record an administrator renamed is not
@@ -143,10 +155,16 @@ and curly quotes.
   - `USER_SERVICE_MODE=http` calls `GET {USER_SERVICE_URL}/api/users/role-context`, forwarding the caller's
     bearer token and the request ID. A caller with no User Service profile (404) gets no roles. Any other
     failure or a timeout (`USER_SERVICE_TIMEOUT`) answers 503 on the role-dependent endpoints only.
-  - Roles are cached per user for `USER_SERVICE_ROLE_CACHE_TTL` (30 s; `0s` disables it). Failures are never cached.
+  - Admin checks (management endpoints and the `inactive`/`all` listings) ask the User Service on every request, so
+    a demoted or disabled administrator loses access at once.
+  - Only `/permissions`, which the UI uses to show or hide admin actions, reuses a user's roles for
+    `USER_SERVICE_ROLE_CACHE_TTL` (30 s; `0s` disables it). Failures are never cached.
   - `USER_SERVICE_MODE=mock` gives everyone requester + courier and grants admin to `MOCK_ADMIN_EMAILS`.
 - **Request IDs:** the gateway's `X-Request-Id` is put in the logging context (`requestId`, a field in the
   cloud's JSON logs) and forwarded to the User Service, so one request can be traced across both services.
+- **Audit logs:** every catalogue change logs one line with `action` (`SUPPLIER_CREATED`, `SUPPLIER_UPDATED`,
+  `SUPPLIER_DEACTIVATED`), `supplierId` and the admin's `actorId`. A rejected pickup/delivery pair logs
+  `PAIR_REJECTED` with the reasons. In Cloud Logging: `jsonPayload.action:"SUPPLIER_"`.
 - **Deployment:** Cloud Run as `supplier-service-<environment>`, running as its own service
   account, which can only access its own Firestore databases. The seed CSV is uploaded to the
   environment's config bucket and mounted read-only (F2.1.1). See [docs/ci-cd.md](../docs/ci-cd.md).
@@ -162,7 +180,7 @@ and curly quotes.
 | `FIREBASE_AUTH_EMULATOR_HOST` | – | Accept Auth emulator tokens (local only) |
 | `USER_SERVICE_MODE` / `USER_SERVICE_URL` | `mock` / – | Role lookup: `http` in compose and the cloud |
 | `USER_SERVICE_TIMEOUT` | `3s` | Connect/read timeout for role lookups; in the cloud it must cover a User Service cold start (about 20 s) |
-| `USER_SERVICE_ROLE_CACHE_TTL` | `30s` | How long a user's roles are reused; `0s` disables the cache |
+| `USER_SERVICE_ROLE_CACHE_TTL` | `30s` | How long `/permissions` reuses a user's roles (admin checks never use the cache); `0s` disables it |
 | `MOCK_ADMIN_EMAILS` | – | Admins while in mock mode |
 | `SUPPLIER_SEED_FILE` | – | CSV loaded at startup |
 | `SUPPLIER_CACHE_TTL` | `60s` | Catalogue cache TTL (capped at 60 s) |

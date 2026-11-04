@@ -1,0 +1,48 @@
+---
+config:
+  layout: elk
+---
+flowchart LR
+  browser["Browser"]:::ext
+  auth[("Firebase Auth")]:::ext
+  atlas[("MongoDB Atlas")]:::ext
+
+  subgraph gcp["Google Cloud, asia-southeast1 (staging)"]
+    gw["<b>gateway</b> (nginx)<br/>public ingress"]:::gw
+    subgraph internal["Cloud Run, internal ingress: reached only over the VPC"]
+      direction TB
+      fe["frontend"]:::fe
+      us["user-service"]:::svc
+      ss["supplier-service"]:::svc
+      os["order-service"]:::svc
+      cs["credit-service"]:::svc
+      rs["reporting-service"]:::svc
+    end
+    ps[["Pub/Sub<br/>topics + authenticated push"]]:::topic
+    sql[("Cloud SQL<br/>PostgreSQL")]:::db
+    fs[("Firestore")]:::db
+    cfg[("Cloud Storage<br/>seed CSV, mounted")]:::db
+    gcs[("Cloud Storage<br/>report photos")]:::db
+    sm[("Secret Manager<br/>DB passwords, Mongo URI<br/><i>injected at deploy</i>")]:::sec
+    nat["Cloud NAT"]:::net
+  end
+
+  browser -- HTTPS --> gw
+  browser -. "sign in" .-> auth
+  gw --> fe & ss & rs & us & cs & os
+  os & cs --> sql
+  ss --> cfg
+  ss & rs --> fs
+  rs --> gcs
+  os & cs & us & rs <-.-> ps
+  us --> nat --> atlas
+
+  classDef ext fill:#FFFFFF,stroke:#5F6368,stroke-width:2px,color:#202124
+  classDef gw fill:#F3E8FD,stroke:#8430CE,stroke-width:2px,color:#202124
+  classDef fe fill:#FEF7E0,stroke:#F9AB00,stroke-width:2px,color:#202124
+  classDef svc fill:#E8F0FE,stroke:#1A73E8,stroke-width:2px,color:#202124
+  classDef db fill:#E6F4EA,stroke:#188038,stroke-width:2px,color:#202124
+  classDef topic fill:#FEEFE3,stroke:#E8710A,stroke-width:2px,color:#202124
+  classDef sec fill:#FCE8E6,stroke:#C5221F,stroke-width:2px,color:#202124
+  classDef net fill:#FFFFFF,stroke:#5F6368,stroke-width:2px,color:#202124
+  linkStyle default stroke:#3C4043,stroke-width:2px

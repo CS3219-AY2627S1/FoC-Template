@@ -17,25 +17,31 @@ CI detects the dependency and uses the reactor. Other services remain standalone
 Common/root Maven/ignore changes conservatively select all Maven backends;
 `bash scripts/ci/test-list-services.sh` checks this against isolated Git fixtures.
 
-Only Order changes image context to repo root: `docker build -f
-order-service/Dockerfile .`. Compose, CI and staging agree; its Dockerfile copies
-only root/common/Order manifests and source. Root allowlist `.dockerignore`
-excludes credentials, local databases and generated files. No registry publishing,
-Git submodule, remote latest-code fetch or extra runtime service is involved.
-Production still promotes the exact staging image. Adding another consumer
-requires its dependency, root reactor entry and explicit Docker/CI integration.
+Order and User build their images from the repo root (`docker build -f
+order-service/Dockerfile .`), because their Dockerfiles copy `foc-common`.
+`scripts/ci/build-context.sh <service>` decides the context for CI and the staging deploy. It picks
+the repo root when a Dockerfile copies `foc-common/` or `<service>/` paths. CI and the deploy
+therefore can't drift apart: on Nov 2 they did, and CI built User from the root while the deploy
+built it from its folder and failed. Compose sets the same contexts in `compose.yaml`. The root
+allowlist `.dockerignore` excludes credentials, local databases and generated files. Production
+still promotes the exact staging image.
 
 
 Owner: Zheng Jiongjie. This is the runbook for the FoC pipelines (NTH5).
 
 ## Overview
 
-```mermaid
-flowchart LR
-  pr[Pull request] --> ci[CI<br/>tests + coverage + docker build]
-  main[Push to main] --> ci2[CI] --> build[Build images once<br/>tag = commit SHA] --> stg[Deploy staging]
-  stg -. "manual: Deploy production" .-> prod[Deploy production<br/>same images]
-```
+### Pipeline
+
+![CI/CD pipeline: pull-request checks, CI passed, build once, deploy staging, manual promotion to production](diagrams/04-cicd-pipeline.png)
+
+### Runtime (one environment)
+
+![Cloud runtime: the public gateway, internal Cloud Run services, and the managed data stores, Pub/Sub, NAT and Secret Manager](diagrams/05-cloud-runtime.png)
+
+The pipeline authenticates to Google Cloud with Workload Identity Federation, so GitHub holds no
+service-account keys. Each Cloud Run service runs as its own identity (`foc-<service>@`), which can
+only reach its own databases.
 
 | Environment | Trigger | Cloud Run services | Firestore databases |
 | --- | --- | --- | --- |
@@ -131,6 +137,23 @@ For each service (backends → frontend → gateway):
 
 Service URLs are deterministic (`https://<service>-<env>-<project-number>.<region>.run.app`),
 so any service can reference another as `${SUPPLIER_SERVICE_URL}` etc.
+
+### Logs
+
+Backend services write one JSON object per line to stdout, and Cloud Logging indexes it under
+`jsonPayload`. `deploy.sh` sets the format for every backend:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| `LOGGING_STRUCTURED_FORMAT_CONSOLE` | `logstash` | Flat JSON. Key-value pairs (`log.atInfo().addKeyValue(...)`) and MDC values such as `requestId` become top-level fields. |
+| `LOGGING_STRUCTURED_JSON_RENAME_LEVEL` | `severity` | Cloud Logging reads a top-level `severity` as the entry's level, so `severity>=WARNING` works. |
+| `LOGGING_STRUCTURED_JSON_EXCLUDE` | `@version,level_value` | Noise |
+
+Until Nov 4 the format was ECS, which caused two problems:
+- ECS nests the level under `log.level`, so every entry showed as DEFAULT.
+- ECS reserves the top-level `service` object, so logback dropped every line that added its own
+  `service` key ("The name 'service' has already been written"). Order's `order_action` and
+  `peer_dependency` lines and all of Credit's business lines were lost that way.
 
 ## Rollback
 

@@ -13,6 +13,11 @@ import sg.edu.nus.foc.order.application.SupplierServicePort;
 import sg.edu.nus.foc.order.application.UserServicePort;
 import sg.edu.nus.foc.order.security.Role;
 import sg.edu.nus.foc.order.security.VerifiedOrderCaller;
+import sg.edu.nus.foc.order.security.CourierSuspensionAuthority;
+import sg.edu.nus.foc.order.domain.CourierAcceptanceDenied;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 /** Local-only peer adapter with an in-memory credit reservation lifecycle. */
 @Component
@@ -43,6 +48,19 @@ public class MockPeerAdapters implements UserServicePort, SupplierServicePort, C
         require(userId, "courier");
         account(userId);
         return userId;
+    }
+
+    @Override
+    public void requireCourierAcceptance(String userId, String authorization) {
+        verifyCourier(userId, authorization);
+        if (SecurityContextHolder.getContext().getAuthentication() instanceof JwtAuthenticationToken caller) {
+            for (GrantedAuthority authority : caller.getAuthorities()) {
+                if (authority instanceof CourierSuspensionAuthority suspension && suspension.suspended()) {
+                    throw new CourierAcceptanceDenied();
+                }
+            }
+        }
+        // Explicit local mock accounts have no independent suspension database.
     }
 
     @Override

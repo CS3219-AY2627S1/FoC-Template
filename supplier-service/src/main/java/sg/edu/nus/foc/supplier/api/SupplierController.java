@@ -17,6 +17,8 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -52,6 +54,8 @@ import sg.edu.nus.foc.supplier.supplier.SupplierService;
 @RequestMapping("/api/suppliers")
 @Tag(name = "Suppliers", description = "Campus stores, facilities and landmarks used as errand pickup and delivery points")
 public class SupplierController {
+
+    private static final Logger log = LoggerFactory.getLogger(SupplierController.class);
 
     private static final String ADMIN_ONLY = "@callerRoles.isAdmin(authentication)";
 
@@ -161,7 +165,14 @@ public class SupplierController {
     @PostMapping("/validate")
     @Operation(summary = "Validate an errand's pickup and delivery suppliers (F5.1)")
     public PairValidation validate(@Valid @RequestBody ValidatePairRequest request) {
-        return service.validatePair(request.pickupSupplierId().strip(), request.deliverySupplierId().strip());
+        PairValidation result =
+                service.validatePair(request.pickupSupplierId().strip(), request.deliverySupplierId().strip());
+        if (!result.valid()) {
+            log.atInfo().addKeyValue("action", "PAIR_REJECTED")
+                    .log("Rejected pickup/delivery pair: {}", result.problems().stream()
+                            .map(p -> p.field() + " " + p.supplierId() + " " + p.reason()).toList());
+        }
+        return result;
     }
 
     @PostMapping("/lookup")
@@ -180,8 +191,10 @@ public class SupplierController {
     @PostMapping
     @PreAuthorize(ADMIN_ONLY)
     @Operation(summary = "Create a supplier (admin, F6.1)")
-    public ResponseEntity<SupplierResponse> create(@Valid @RequestBody CreateSupplierRequest request) {
+    public ResponseEntity<SupplierResponse> create(@Valid @RequestBody CreateSupplierRequest request,
+            JwtAuthenticationToken caller) {
         Supplier created = service.create(request.toDetails());
+        audit("CREATED", created, caller);
         return ResponseEntity.created(URI.create("/api/suppliers/" + created.id()))
                 .body(SupplierResponse.from(created, service.isOpenNow(created), null));
     }
@@ -189,8 +202,10 @@ public class SupplierController {
     @PatchMapping("/{id}")
     @PreAuthorize(ADMIN_ONLY)
     @Operation(summary = "Update any field or the active status of a supplier (admin, F6.2)")
-    public SupplierResponse update(@PathVariable String id, @Valid @RequestBody UpdateSupplierRequest request) {
+    public SupplierResponse update(@PathVariable String id, @Valid @RequestBody UpdateSupplierRequest request,
+            JwtAuthenticationToken caller) {
         Supplier updated = service.update(id, request::applyTo, request.active());
+        audit("UPDATED", updated, caller);
         return SupplierResponse.from(updated, service.isOpenNow(updated), null);
     }
 
@@ -198,9 +213,19 @@ public class SupplierController {
     @PreAuthorize(ADMIN_ONLY)
     @Operation(summary = "Deactivate a supplier (admin, F6.3). Records are never hard-deleted.")
     @ApiResponse(responseCode = "200", description = "The supplier, now inactive")
-    public SupplierResponse deactivate(@PathVariable String id) {
+    public SupplierResponse deactivate(@PathVariable String id, JwtAuthenticationToken caller) {
         Supplier supplier = service.deactivate(id);
+        audit("DEACTIVATED", supplier, caller);
         return SupplierResponse.from(supplier, service.isOpenNow(supplier), null);
+    }
+
+    /** One line per catalogue change, with fields Cloud Logging can filter on (jsonPayload.supplierId etc.). */
+    private static void audit(String change, Supplier supplier, JwtAuthenticationToken caller) {
+        log.atInfo().addKeyValue("action", "SUPPLIER_" + change)
+                .addKeyValue("supplierId", supplier.id())
+                .addKeyValue("actorId", caller.getName())
+                .log("Supplier {} \"{}\" {} by {} (active: {})", supplier.id(), supplier.details().name(),
+                        change.toLowerCase(Locale.ROOT), caller.getName(), supplier.active());
     }
 
     private static <T> T parse(String field, String value, Map<String, T> allowed) {

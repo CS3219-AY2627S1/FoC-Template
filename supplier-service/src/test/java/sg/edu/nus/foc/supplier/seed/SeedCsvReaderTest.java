@@ -31,7 +31,8 @@ class SeedCsvReaderTest {
 
     @Test
     void readsTheProvidedSeedFile() {
-        SeedFile file = reader.read(Path.of("../data/csv/supplier-seed-data.csv"));
+        // The course-provided file, unchanged; data/csv/ extends it.
+        SeedFile file = reader.read(Path.of("src/test/resources/seed/provided-supplier-seed-data.csv"));
         assertThat(file.errors()).isEmpty();
         assertThat(file.rows()).hasSize(21);
         assertThat(file.rows()).anySatisfy(row -> {
@@ -39,6 +40,18 @@ class SeedCsvReaderTest {
             // The file stores this apostrophe as a Windows-1252 byte.
             assertThat(row.details().building()).isEqualTo("Prince George's Park");
         });
+    }
+
+    @Test
+    void readsTheCampusSeedFileWithEveryProvidedRow() {
+        SeedFile campus = reader.read(Path.of("../data/csv/supplier-seed-data.csv"));
+        SeedFile provided = reader.read(Path.of("src/test/resources/seed/provided-supplier-seed-data.csv"));
+        assertThat(campus.errors()).isEmpty();
+        assertThat(campus.rows()).hasSizeGreaterThanOrEqualTo(100);
+        // Same details, so the records already in each environment keep their seed keys.
+        assertThat(campus.rows().stream().map(SeedRow::details).toList())
+                .containsAll(provided.rows().stream().map(SeedRow::details).toList());
+        assertThat(campus.rows().stream().map(row -> row.details().naturalKey()).toList()).doesNotHaveDuplicates();
     }
 
     @Test

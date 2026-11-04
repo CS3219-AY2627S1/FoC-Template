@@ -18,14 +18,6 @@ Author review: I validated correctness and edited for style.
 
 ## Friend on Campus (FoC)
 
-Shared Java penalty policy lives in [foc-common](foc-common/README.md), an ordinary
-Maven library, not a service or Git submodule. Order is its first consumer.
-From repo root: `bash ./mvnw -pl order-service -am verify` (PowerShell:
-`.\mvnw.cmd -pl order-service -am verify`). Compose bundles it automatically;
-direct Order image build uses `docker build -f order-service/Dockerfile .`.
-Other backends retain their existing standalone builds.
-
-
 **Friend on Campus (FoC)** is a peer-to-peer campus errand platform where
 students can request items to be collected from stores or facilities on
 campus, and other students can fulfil (and deliver) those requests. The
@@ -38,38 +30,44 @@ withdrawn, or exchanged for money, and only circulate within the platform.
 
 | Name | Role |
 | ----- | ----- |
-| Khoo Yu Yien | TBC |
-| Tham Yao Xiang | TBC |
-| Oh Yi Xian | TBC |
+| Khoo Yu Yien | Credit Service (balances, reservations, transaction history, admin credit endpoints, sign-up credits, Credit side of compensation); Reporting Service (NTH3: reports and attachments) |
+| Tham Yao Xiang | Order Service (core order lifecycle, admin order APIs, penalty and report integration); administrator dashboard UI (NTH1) |
+| Oh Yi Xian | User Service (profiles, Firebase sign-up, roles, user-created events, account deletion); penalty system (NTH2: penalties, courier suspension and its UI) |
 | Zheng Jiongjie | Supplier Service (catalogue, search/filter API, supplier management UI); CI/CD pipeline & cloud deployment (NTH5: GitHub Actions, Cloud Run, Artifact Registry, Firestore, staging/production environments) |
-| Choong Weng Sheng | TBC |
+| Choong Weng Sheng | Order Service (sprint 2–3 features, order UI, Order–Credit compensation and recovery); errand reposting (NTH4) |
+
+### Nice-to-haves
+
+| NTH | What it adds | Owner | Where |
+| --- | --- | --- | --- |
+| NTH1 Administrator dashboard | Admins see and act on all orders, users, suppliers and reports | Tham Yao Xiang | Order admin APIs; `frontend/src/app/admin` |
+| NTH2 Penalty system | Couriers who abandon or overrun errands get penalties and are suspended from accepting at the threshold | Oh Yi Xian | User Service (Pub/Sub penalty consumer), Order (penalty policy in `foc-common`) |
+| NTH3 Report system | Requesters and couriers report problems with an errand; admins resolve them | Khoo Yu Yien | `reporting-service/`, Order report holds |
+| NTH4 Errand reposting | An expired errand comes back as a new linked order without retyping | Choong Weng Sheng | Order Service |
+| NTH5 CI/CD and cloud deployment | Every merge is tested and deployed to a live staging environment | Zheng Jiongjie | `.github/workflows/`, `scripts/ci/`, `infra/`, [docs/ci-cd.md](docs/ci-cd.md) |
 
 ---
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  browser[Browser] --> gateway[gateway<br/>nginx]
-  gateway -- "/" --> frontend[frontend<br/>Next.js UI]
-  gateway -- "/api/users" --> user[user-service]
-  gateway -- "/api/suppliers" --> supplier[supplier-service]
-  gateway -- "/api/orders" --> order[order-service]
-  gateway -- "/api/credits" --> credit[credit-service]
-  gateway -- "/api/reports" --> reporting[reporting-service]
-  gateway -- "/api/admin" --> admin[admin-service]
-  browser -. "sign in" .-> auth[(Firebase Auth)]
-  order -- "HTTP: roles" --> user
-  order -- "HTTP: validate pickup/delivery" --> supplier
-  order -- "HTTP: reserve, assign courier" --> credit
-  order -. "events via Pub/Sub: refund, completion" .-> credit
-  supplier --> sdb[(Firestore<br/>supplier-*)]
-  order --> odb[(PostgreSQL<br/>Cloud SQL order_*)]
-  credit --> cdb[(PostgreSQL<br/>Cloud SQL credit_*)]
-  reporting --> rdb[(Firestore<br/>reporting-*)]
-  reporting --> photos[(Private Cloud Storage<br/>report photos)]
-  user --> udb[(MongoDB Atlas)]
-```
+Components and the data each service owns:
+
+![Architecture: the gateway, the frontend, five services and the data store each one owns](docs/diagrams/01-architecture-components.png)
+
+How the services talk to each other. Synchronous HTTP calls, where the caller needs the answer now
+(grey lines are role lookups):
+
+![Synchronous calls between services](docs/diagrams/02-sync-http.png)
+
+Events and commands over Pub/Sub, where the result can follow. Each publisher stores them in an
+outbox first, so an event survives a crash or a Pub/Sub outage:
+
+![Pub/Sub topics: which service publishes each event and which service consumes it](docs/diagrams/03-async-pubsub.png)
+
+The deployment diagrams (pipeline and cloud runtime) are in [docs/ci-cd.md](docs/ci-cd.md). An
+errand end to end, the compensation flow and the order lifecycle are in
+[docs/architecture.md](docs/architecture.md), with the key design decisions and how the system
+scales. All diagrams and their sources are in [docs/diagrams/](docs/diagrams/README.md).
 
 - **Microservices**: each backend service is an independent Spring Boot app with its own
   database, chosen per service (database-per-service): Firestore for the read-heavy supplier
@@ -112,8 +110,9 @@ microservice lives in its own top-level folder.
 ├── supplier-service/
 ├── order-service/
 ├── credit-service/
-├── reporting-service/     # report records and private photo attachments
-├── admin-service/         # N2H: admin dashboard backend
+├── reporting-service/     # report records and private photo attachments (NTH3)
+├── foc-common/            # shared Maven library: courier penalty policy (not a service)
+├── admin-service/         # placeholder, not deployed; the admin dashboard uses the services' admin APIs
 ├── frontend/              # Next.js UI for every feature
 ├── gateway/               # nginx: routes /api/<service> and serves the UI
 ├── data/                  # seed data (CSV, images)
@@ -122,7 +121,7 @@ microservice lives in its own top-level folder.
 │   ├── firebase-emulator/ # local Firebase Auth, Firestore and Storage emulators
 │   └── gcp/               # one-time GCP bootstrap (infrastructure as code)
 ├── scripts/ci/            # scripts used by the GitHub Actions workflows
-├── docs/                  # CI/CD runbook, templates
+├── docs/                  # architecture and design decisions, CI/CD runbook, demo runbook, diagrams, templates
 ├── .github/workflows/     # CI, staging and production pipelines
 ├── compose.yaml           # local deployment of the whole system
 ├── AGENTS.md              # conventions every service follows (humans and AI tools)
@@ -138,6 +137,11 @@ microservice lives in its own top-level folder.
 - **Before adding or changing a service, read [AGENTS.md](AGENTS.md)**: it defines the
   folder layout, tech stack, runtime contract, API conventions and testing bar that every
   service follows.
+- [foc-common](foc-common/README.md) is an ordinary Maven library, not a service or Git
+  submodule; Order is its first consumer. Build Order with it from the repo root:
+  `bash ./mvnw -pl order-service -am verify` (PowerShell: `.\mvnw.cmd -pl order-service -am verify`).
+  Compose bundles it automatically; a direct Order image build uses
+  `docker build -f order-service/Dockerfile .`. Other backends keep their standalone builds.
 
 ---
 
@@ -225,7 +229,7 @@ A service joins CI/CD automatically once its `Dockerfile` has content.
 | Environment | URL |
 | --- | --- |
 | Staging | https://gateway-staging-374055363871.asia-southeast1.run.app |
-| Production | `https://gateway-production-374055363871.asia-southeast1.run.app` (after the first promotion) |
+| Production | Not deployed. Staging is the live environment for this submission. Production is a manual promotion of the same images (`https://gateway-production-374055363871.asia-southeast1.run.app` once promoted). |
 
 - **Always use the gateway URL above.** It is the only public service. The others are
   internal-only (their own `*.run.app` URLs return 404), and the gateway routes `/api/*` to them.
@@ -238,8 +242,9 @@ A service joins CI/CD automatically once its `Dockerfile` has content.
 - **Admins** are accounts with the `admin` role in that environment's User Service. An admin
   promotes others from the admin pages. (`MOCK_ADMIN_EMAILS` in
   `infra/environments/<environment>.env` only applies if `USER_SERVICE_MODE` is set back to `mock`.)
-- Services scale to zero when idle, so the first request after a quiet period can take
-  10–20 seconds.
+- Order, Credit and User keep one instance running, because their scheduled jobs (expiry,
+  outbox recovery) need CPU. The gateway, frontend, Supplier and Reporting scale to zero when
+  idle, so the first request after a quiet period can take 10–20 seconds.
 
 ---
 

@@ -872,3 +872,15 @@ Affected source: Order AdminOrderController/OrderQueryService/repository port/pe
 User requests Orders toggle on the status/search row and explicitly adds Admin Reports toggle. Existing AdminFilterForm gets an opt-in desktop four-column layout: Status, shorter flexible Order ID input, toggle, Search/Clear. Orders and Reports use it; narrower screens wrap and other admin search forms keep their original layout. Toggle controls match the40px field/button height.
 
 Reports Ready for review is a UI shortcut for existing READY_FOR_REVIEW status, off by default. Enable selects it; disable selects All statuses; dropdown changes reflect the switch. Existing changeFilters resets page1 and retains applied ID; Clear resets both. Existing Report API/database paging/status filtering, grey viewable resolved cards and early admin resolution stay unchanged. Orders actionEligibleOnly SQL/status/page behavior remains unchanged. No backend/API/schema/config/broker/cloud or workflow/skill change; frontend source/tests/context only. Verification in changes/CHANGE-178-inline-admin-filter-toggles.md.
+
+
+## CHANGE-179 - Courier suspension role context (2026-11-04)
+
+| Reference | Approved behavior | Implementation / tests | Status |
+| --- | --- | --- | --- |
+| User suspension amendment; existing F3/F4 | Reject new acceptance while suspended; assigned deliveries continue | Role context + acceptance-only guard; HttpPeerAdaptersTest, PostgreSQL/MVC OrderCommandRecoveryIntegrationTest | Verification in CHANGE-179 |
+| Existing durable recovery; NFR3.1.3 | No journal/Credit on initial refusal; no-effect recovery terminates; uncertain effect retains fencing/reversal; successful replay preserved | OrderCommandService/OrderAssignmentService; both policy/no-effect, lost reply/reversal and persisted-barrier tests | Verification in CHANGE-179 |
+| NFR3.1.1; existing USER Courier feedback | Useful403 without fake pending; preserve401/network/pending recovery | useOrderCommand and regression/polling tests; full verify/lint/build | Verification in CHANGE-179 |
+
+
+CHANGE-179 verification amendment:701Order+13common full scoped verify passes, no failures/errors/skips; branch81.28/line94.63%;321frontend tests, lint and both Docker builds/TypeScript pass. Initial environment and fixture failures are resolved; authoritative final log is target/change179-scoped-verify.log. No backend peers, schema/config/cloud change. Images built, application stack not started; browser/staging rollout pending. Full acceptance/negative-case traceability is in changes/CHANGE-179-suspended-courier-acceptance.md.
