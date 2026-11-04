@@ -52,53 +52,22 @@ withdrawn, or exchanged for money, and only circulate within the platform.
 
 Components and the data each service owns:
 
-```mermaid
-flowchart LR
-  browser[Browser] --> gateway[gateway<br/>nginx]
-  browser -. "sign in" .-> auth[(Firebase Auth)]
-  gateway -- "/" --> frontend[frontend<br/>Next.js UI]
-  gateway -- "/api/users" --> user[user-service]
-  gateway -- "/api/suppliers" --> supplier[supplier-service]
-  gateway -- "/api/orders" --> order[order-service]
-  gateway -- "/api/credits" --> credit[credit-service]
-  gateway -- "/api/reports" --> reporting[reporting-service]
-  user --> udb[(MongoDB Atlas)]
-  supplier --> sdb[(Firestore<br/>supplier-*)]
-  order --> odb[(PostgreSQL<br/>Cloud SQL order_*)]
-  credit --> cdb[(PostgreSQL<br/>Cloud SQL credit_*)]
-  reporting --> rdb[(Firestore<br/>reporting-*)]
-  reporting --> photos[(Private Cloud Storage<br/>report photos)]
-```
+![Architecture: the gateway, the frontend, five services and the data store each one owns](docs/diagrams/01-architecture-components.png)
 
-How the services talk to each other. Solid arrows are synchronous HTTP calls; dotted arrows are
-events and commands over Pub/Sub. Each publisher stores them in an outbox first, so an event
-survives a crash or a Pub/Sub outage. Supplier, Credit and Reporting also ask the User Service
-for the caller's roles, like Order does.
+How the services talk to each other. Synchronous HTTP calls, where the caller needs the answer now
+(grey lines are role lookups):
 
-```mermaid
-flowchart LR
-  supplier[supplier-service]
-  order[order-service]
-  credit[credit-service]
-  user[user-service]
-  reporting[reporting-service]
+![Synchronous calls between services](docs/diagrams/02-sync-http.png)
 
-  order -- "validate pickup and delivery" --> supplier
-  order -- "reserve credits, assign courier" --> credit
-  order -- "roles, courier eligibility" --> user
-  reporting -- "hold or release an order" --> order
+Events and commands over Pub/Sub, where the result can follow. Each publisher stores them in an
+outbox first, so an event survives a crash or a Pub/Sub outage:
 
-  order -. "completion, refund,<br/>compensation command" .-> credit
-  credit -. "compensation result" .-> order
-  user -. "user-created" .-> credit
-  order -. "courier penalty" .-> user
-  order -. "report resolution" .-> reporting
-  reporting -. "resolution result" .-> order
-```
+![Pub/Sub topics: which service publishes each event and which service consumes it](docs/diagrams/03-async-pubsub.png)
 
-The deployment diagrams (pipeline and cloud runtime) are in [docs/ci-cd.md](docs/ci-cd.md). The
-key design decisions, their trade-offs, and how the system scales are in
-[docs/architecture.md](docs/architecture.md).
+The deployment diagrams (pipeline and cloud runtime) are in [docs/ci-cd.md](docs/ci-cd.md). An
+errand end to end, the compensation flow and the order lifecycle are in
+[docs/architecture.md](docs/architecture.md), with the key design decisions and how the system
+scales. All diagrams and their sources are in [docs/diagrams/](docs/diagrams/README.md).
 
 - **Microservices**: each backend service is an independent Spring Boot app with its own
   database, chosen per service (database-per-service): Firestore for the read-heavy supplier
@@ -152,7 +121,7 @@ microservice lives in its own top-level folder.
 │   ├── firebase-emulator/ # local Firebase Auth, Firestore and Storage emulators
 │   └── gcp/               # one-time GCP bootstrap (infrastructure as code)
 ├── scripts/ci/            # scripts used by the GitHub Actions workflows
-├── docs/                  # architecture and design decisions, CI/CD runbook, demo runbook, templates
+├── docs/                  # architecture and design decisions, CI/CD runbook, demo runbook, diagrams, templates
 ├── .github/workflows/     # CI, staging and production pipelines
 ├── compose.yaml           # local deployment of the whole system
 ├── AGENTS.md              # conventions every service follows (humans and AI tools)

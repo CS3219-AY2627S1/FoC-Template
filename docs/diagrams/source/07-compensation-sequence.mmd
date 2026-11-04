@@ -1,0 +1,21 @@
+sequenceDiagram
+  autonumber
+  actor R as Requester
+  participant O as Order Service
+  participant Cr as Credit Service
+  participant P as Pub/Sub
+
+  R->>O: Create errand
+  Note over O: #nbsp;#nbsp;Record the command durably#nbsp;#nbsp;<br/>#nbsp;#nbsp;("may have a Credit effect")#nbsp;#nbsp;
+  O-xCr: Reserve credits
+  Note over O,Cr: #nbsp;#nbsp;Timeout or Credit down:#nbsp;#nbsp;<br/>#nbsp;#nbsp;did the reservation happen?#nbsp;#nbsp;
+  Note over O: #nbsp;#nbsp;Outcome uncertain:#nbsp;#nbsp;<br/>#nbsp;#nbsp;queue a compensation command (outbox)#nbsp;#nbsp;
+  O-->>R: 202 Pending: "We are reversing or fencing the Credit request"
+  O-)P: credit-command-compensation (re-published every 30 s until a result)
+  P-)Cr: Push (retried until Credit is back, then dead-letter)
+  Note over Cr: #nbsp;#nbsp;Reverse the reservation if it happened,#nbsp;#nbsp;<br/>#nbsp;#nbsp;or fence the command so a late copy is ignored#nbsp;#nbsp;
+  Cr-)P: credit-command-compensation-result
+  P-)O: Push result
+  Note over O: #nbsp;#nbsp;Close the request as REJECTED (compensated)#nbsp;#nbsp;
+  R->>O: Poll the request (UI, every 5 s)
+  O-->>R: "Request did not complete: Credit confirmed reversal or fencing"

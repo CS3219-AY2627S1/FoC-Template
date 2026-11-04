@@ -1,0 +1,50 @@
+---
+config:
+  layout: elk
+  elk:
+    nodePlacementStrategy: NETWORK_SIMPLEX
+---
+flowchart LR
+  browser["Browser"]:::ext
+  auth[("Firebase Auth")]:::ext
+  gw["API gateway<br/>nginx<br/><i>the only public entry</i>"]:::gw
+
+  subgraph services["Services"]
+    direction TB
+    fe["Frontend<br/>Next.js 16"]:::fe
+    us["User Service"]:::svc
+    ss["Supplier Service"]:::svc
+    os["Order Service"]:::svc
+    cs["Credit Service"]:::svc
+    rs["Reporting Service"]:::svc
+  end
+
+  subgraph data["Data stores"]
+    direction TB
+    udb[("MongoDB Atlas")]:::db
+    sdb[("Firestore")]:::db
+    odb[("PostgreSQL<br/>Cloud SQL")]:::db
+    cdb[("PostgreSQL<br/>Cloud SQL")]:::db
+    rdb[("Firestore +<br/>Cloud Storage")]:::db
+  end
+
+  browser -- HTTPS --> gw
+  browser -. sign in .-> auth
+  gw -- "/" --> fe
+  gw -- "/api/users" --> us
+  gw -- "/api/suppliers" --> ss
+  gw -- "/api/orders" --> os
+  gw -- "/api/credits" --> cs
+  gw -- "/api/reports" --> rs
+  us --> udb
+  ss --> sdb
+  os --> odb
+  cs --> cdb
+  rs --> rdb
+
+  classDef ext fill:#FFFFFF,stroke:#5F6368,stroke-width:2px,color:#202124
+  classDef gw fill:#F3E8FD,stroke:#8430CE,stroke-width:2px,color:#202124
+  classDef fe fill:#FEF7E0,stroke:#F9AB00,stroke-width:2px,color:#202124
+  classDef svc fill:#E8F0FE,stroke:#1A73E8,stroke-width:2px,color:#202124
+  classDef db fill:#E6F4EA,stroke:#188038,stroke-width:2px,color:#202124
+  linkStyle default stroke:#3C4043,stroke-width:2px
