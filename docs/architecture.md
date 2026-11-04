@@ -61,8 +61,9 @@ event when the result can follow.**
     If a peer is down, the user gets an error (503) at once, rather than an order that can't be
     paid for.
   - Role checks call the User Service with the caller's token, and only on endpoints that need a
-    role. Supplier looks roles up only for admin actions and caches them for 30 s, so browsing
-    the catalogue keeps working even when the User Service is down.
+    role. Supplier looks roles up only for admin actions, and checks them on every request, so a
+    demoted admin loses access at once. Browsing the catalogue and Order's validation need no role,
+    so they keep working even when the User Service is down.
 - **Asynchronous (Pub/Sub):**
   - **Order → Credit:** payment on completion and refunds of open orders. Completing an order
     doesn't wait for Credit, and Credit catches up if it was down.
@@ -104,7 +105,7 @@ from the reservation through Pub/Sub.
 | Pub/Sub | Serverless; push subscriptions scale with the consumer | Consumer throughput | – |
 | Scheduled jobs | Run in every instance of Order, Credit and User | More instances means more runs. Order's outbox claims rows with `FOR UPDATE SKIP LOCKED`, so its instances share the work instead of repeating it | Move the jobs to Cloud Scheduler calling an endpoint, so they run once and the services can scale to zero |
 | Supplier catalogue cache | In memory, per instance, ≤ 60 s | Each instance may be up to 60 s behind an admin edit; reads by ID always go to Firestore | A shared cache (Memorystore) if the catalogue grows large |
-| User Service role lookups | Every role-checked request in another service calls it; Supplier caches for 30 s | It's on the hot path for Order, Credit and Reporting | Cache roles in every caller, or put roles in Firebase custom claims |
+| User Service role lookups | Every role-checked request in another service calls it, including Supplier's admin actions (Supplier caches roles only for the UI's permission check) | It's on the hot path for Order, Credit and Reporting | Cache roles in every caller, or put roles in Firebase custom claims |
 
 The first bottleneck is the database's connection count, not Cloud Run. It shows in Cloud SQL's
 `num_backends` metric, and Postgres refuses connections during rollouts ("remaining connection slots
