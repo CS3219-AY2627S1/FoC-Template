@@ -107,7 +107,8 @@ For each service (backends → frontend → gateway):
 
 1. Run `<service>/deploy/pre-deploy.sh` if present (e.g. upload seed files).
 2. Render env vars: standard runtime variables (AGENTS.md §4) + `<service>/deploy/env.yaml`
-   (envsubst with `infra/environments/<env>.env` and every `<SERVICE>_URL`).
+   (envsubst with `infra/environments/<env>.env` and every `<SERVICE>_URL`). Services with a
+   `SPRING_DATASOURCE_URL` also get a small connection pool (see [Cloud SQL connections](#cloud-sql-connections)).
 3. `gcloud run deploy` as the service's own identity `foc-<service>@`. If the identity
    doesn't exist, the deploy stops rather than using the project's default identity. For an existing
    service the new revision gets **no traffic** and a `sha-xxxxxxx` tag URL.
@@ -131,6 +132,24 @@ For each service (backends → frontend → gateway):
 
 Service URLs are deterministic (`https://<service>-<env>-<project-number>.<region>.run.app`),
 so any service can reference another as `${SUPPLIER_SERVICE_URL}` etc.
+
+### Cloud SQL connections
+
+Order and Credit use one Cloud SQL instance, `order-postgres` (db-f1-micro), with a database each per
+environment. It accepts 25 connections, a few of which Postgres and Cloud SQL keep for themselves, so
+the apps share about 20 across staging and production.
+
+- Hikari's default pool keeps 10 connections open per instance. With one instance each, Order and
+  Credit staging held 20 between them. Every rollout starts new revisions next to the old ones, and
+  Postgres refused them ("remaining connection slots are reserved").
+- `deploy.sh` therefore sets `SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=4` and
+  `SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE=1` for every service with a `SPRING_DATASOURCE_URL`. A
+  service's `env.yaml` can override them.
+- An idle instance holds 1 connection and a busy one up to 4 (Order's outbox publisher alone runs 2
+  worker threads). That leaves room for both environments plus a rollout, or about five busy
+  instances in total.
+- To scale beyond that: a larger tier (db-g1-small allows 50), Cloud SQL managed connection pooling,
+  or a separate instance per service.
 
 ## Rollback
 
