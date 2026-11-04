@@ -117,9 +117,11 @@ export function AdminPagination({ page, totalPages, totalItems, onPage }: {
   </div>
 }
 
-export function AdminConfirmation({ open, title, description, busy, error, onClose, onConfirm }: {
+export function AdminConfirmation({ open, title, description, busy, error, onClose, onConfirm,
+  confirmLabel = "Confirm deactivation", cancelLabel = "Keep active", busyLabel = "Deactivating…", confirmVariant = "destructive" }: {
   open: boolean; title: string; description: string; busy: boolean; error: string | null
   onClose: () => void; onConfirm: () => void
+  confirmLabel?: string; cancelLabel?: string; busyLabel?: string; confirmVariant?: "default" | "destructive"
 }) {
   return <AlertDialog open={open} onOpenChange={(next) => { if (!next && !busy) onClose() }}>
     <AlertDialogContent>
@@ -127,8 +129,8 @@ export function AdminConfirmation({ open, title, description, busy, error, onClo
         <AlertDialogDescription>{description}</AlertDialogDescription></AlertDialogHeader>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <AlertDialogFooter>
-        <Button variant="outline" disabled={busy} onClick={onClose}>Keep active</Button>
-        <Button variant="destructive" disabled={busy} onClick={onConfirm}>{busy ? "Deactivating…" : "Confirm deactivation"}</Button>
+        <Button variant="outline" disabled={busy} onClick={onClose}>{cancelLabel}</Button>
+        <Button variant={confirmVariant} disabled={busy} onClick={onConfirm}>{busy ? busyLabel : confirmLabel}</Button>
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>

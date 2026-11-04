@@ -703,3 +703,15 @@ contract = "User role-context roles retained; isCourierSuspended gates new ACCEP
 recovery = "owned-status reconciliation before clearing forbidden intent; possible Credit effects require confirmed reversal or compensation"
 scope = "Order/frontend/source/tests/docs only; no sibling backend/schema/topic/env/cloud change"
 verification = "701Order+13common verify;branch81.28/line94.63%;321frontend tests;lint;Order/frontend Docker build and TypeScript;OpenAPI/TOML/whitespace"
+
+
+[admin_courier_suspension_ui_180]
+date = "2026-11-04"
+owner = "Yao Xiang"
+branch = "feat/suspend-unsuspend"
+status = "frontend automated checks passed; image/runtime/browser verification blocked or pending"
+contract = "existing admin-only bodyless User PUT suspension and suspension-removal; matching User response"
+ui = "confirmed conditional Suspend/Unsuspend in Admin user profile; pending/error/inactive guards; existing styling"
+scope = "frontend and Order documentation only; no backend/API/schema/config/cloud changes"
+verification = "11 expected RED failures;52 focused and331 full frontend tests pass;lint/typecheck pass"
+blockers = "Docker engine unresponsive;host build Windows OutOfMemoryException;old local User image lacks Unsuspend;legacy missing-status writes remain separate"

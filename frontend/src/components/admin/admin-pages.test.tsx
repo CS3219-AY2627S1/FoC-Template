@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AdminOrders } from "./admin-orders"
@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   order: vi.fn(), push: vi.fn(),
   recordName: vi.fn(),
   supplier: vi.fn(), userTransactions: vi.fn(), userBalance: vi.fn(),
-  suspendUser: vi.fn(), promoteUser: vi.fn(), deactivateUser: vi.fn(),
+  suspendUser: vi.fn(), unsuspendUser: vi.fn(), promoteUser: vi.fn(), deactivateUser: vi.fn(),
   createSupplier: vi.fn(), deactivateSupplier: vi.fn(),
 }))
 vi.mock("@/hooks/use-admin-api", () => ({ useAdminApi: () => mocks }))
@@ -64,7 +64,8 @@ beforeEach(() => {
   mocks.userTransactions.mockResolvedValue(page([]))
   mocks.suppliers.mockResolvedValue(page([supplier]))
   mocks.promoteUser.mockResolvedValue({ ...user, roles: [...user.roles, "admin"] })
-  mocks.suspendUser.mockResolvedValue({ ...user, isCourierSuspended: true })
+  mocks.suspendUser.mockResolvedValue({ ...user, penalty: 10, isCourierSuspended: true, suspensionEndDate: "2026-12-04T00:00:00Z" })
+  mocks.unsuspendUser.mockResolvedValue({ ...user, penalty: 10 })
   mocks.deactivateUser.mockResolvedValue({ ...user, active: false })
   mocks.deactivateSupplier.mockResolvedValue({ ...supplier, active: false })
 })
@@ -234,15 +235,85 @@ describe("Admin pages", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("supplier-1"))
   })
 
-  it("loads a full user profile with only promotion and deactivation actions", async () => {
+  it("loads a full user profile with promotion, courier suspension and deactivation actions", async () => {
     render(<AdminUsers />)
     fireEvent.click(await screen.findByRole("button", { name: "View profile of Alex" }))
     expect(await screen.findByText("80000000")).toBeInTheDocument()
     const actions = screen.getByText("Admin actions").closest("[data-slot=card]") as HTMLElement
     expect(within(actions).getAllByRole("button").map((button) => button.textContent))
-      .toEqual(["Promote to Admin", "Deactivate User"])
+      .toEqual(["Promote to Admin", "Suspend Courier", "Deactivate User"])
     expect(screen.queryByLabelText("Suspension end (your local time)")).not.toBeInTheDocument()
     expect(mocks.suspendUser).not.toHaveBeenCalled()
+  })
+
+  it("confirms suspension, explains the effects and updates the selected profile", async () => {
+    render(<AdminUsers />)
+    fireEvent.click(await screen.findByRole("button", { name: "View profile of Alex" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Suspend Courier" }))
+    expect(screen.getByText(/one month.*penalty score to 10/i)).toBeInTheDocument()
+    expect(mocks.suspendUser).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(mocks.suspendUser).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Suspend Courier" }))
+    fireEvent.click(screen.getByRole("button", { name: "Confirm suspension" }))
+    expect(await screen.findByRole("button", { name: "Unsuspend Courier" })).toBeEnabled()
+    expect(mocks.suspendUser).toHaveBeenCalledExactlyOnceWith("user-1")
+    expect(screen.getByText("10")).toBeInTheDocument()
+    expect(screen.getByText("Suspended")).toBeInTheDocument()
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
+  })
+
+  it("confirms unsuspension without implying the penalty score is reset", async () => {
+    mocks.user.mockResolvedValue({ ...user, penalty: 10, isCourierSuspended: true, suspensionEndDate: "2026-12-04T00:00:00Z" })
+    render(<AdminUsers />)
+    fireEvent.click(await screen.findByRole("button", { name: "View profile of Alex" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Unsuspend Courier" }))
+    expect(screen.getByText(/penalty score will not be reset/i)).toBeInTheDocument()
+    expect(mocks.unsuspendUser).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Confirm unsuspension" }))
+    expect(await screen.findByRole("button", { name: "Suspend Courier" })).toBeEnabled()
+    expect(mocks.unsuspendUser).toHaveBeenCalledExactlyOnceWith("user-1")
+    expect(screen.getByText("10")).toBeInTheDocument()
+    expect(screen.queryByText("Suspended")).not.toBeInTheDocument()
+  })
+
+  it.each([false, true])("retains profile and allows retry after a failed suspension action (suspended=%s)", async (suspended) => {
+    mocks.user.mockResolvedValue({ ...user, isCourierSuspended: suspended })
+    const mutation = suspended ? mocks.unsuspendUser : mocks.suspendUser
+    mutation.mockRejectedValue(new Error("Account is not active."))
+    render(<AdminUsers />)
+    fireEvent.click(await screen.findByRole("button", { name: "View profile of Alex" }))
+    fireEvent.click(await screen.findByRole("button", { name: suspended ? "Unsuspend Courier" : "Suspend Courier" }))
+    const label = suspended ? "Confirm unsuspension" : "Confirm suspension"
+    fireEvent.click(screen.getByRole("button", { name: label }))
+    expect(await screen.findByRole("alert")).toHaveTextContent("Account is not active.")
+    expect(screen.getByRole("button", { name: label })).toBeEnabled()
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument()
+    expect(screen.getByText("80000000")).toBeInTheDocument()
+  })
+
+  it.each([false, true])("disables suspension actions for inactive accounts (suspended=%s)", async (suspended) => {
+    mocks.user.mockResolvedValue({ ...user, active: false, isCourierSuspended: suspended })
+    render(<AdminUsers />)
+    fireEvent.click(await screen.findByRole("button", { name: "View profile of Alex" }))
+    expect(await screen.findByRole("button", { name: suspended ? "Unsuspend Courier" : "Suspend Courier" })).toBeDisabled()
+    expect(mocks.suspendUser).not.toHaveBeenCalled()
+    expect(mocks.unsuspendUser).not.toHaveBeenCalled()
+  })
+
+  it("prevents repeat suspension submissions and dismissal while saving", async () => {
+    let resolve!: (value: typeof user) => void
+    mocks.suspendUser.mockImplementation(() => new Promise<typeof user>((done) => { resolve = done }))
+    render(<AdminUsers />)
+    fireEvent.click(await screen.findByRole("button", { name: "View profile of Alex" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Suspend Courier" }))
+    fireEvent.click(screen.getByRole("button", { name: "Confirm suspension" }))
+    expect(screen.getByRole("button", { name: "Suspending…" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled()
+    fireEvent.click(screen.getByRole("button", { name: "Suspending…" }))
+    expect(mocks.suspendUser).toHaveBeenCalledTimes(1)
+    await act(async () => { resolve({ ...user, penalty: 10, isCourierSuspended: true }) })
+    expect(await screen.findByRole("button", { name: "Unsuspend Courier" })).toBeEnabled()
   })
 
   it("requires confirmation before deactivating a user", async () => {

@@ -1710,3 +1710,8 @@ Approved contract/security refinement, ADR-067: User retains courier roles and a
 
 
 CHANGE-179 verification amendment:701Order+13common full scoped verify passes, no failures/errors/skips; branch81.28/line94.63%;321frontend tests, lint and both Docker builds/TypeScript pass. Initial environment and fixture failures are resolved; authoritative final log is target/change179-scoped-verify.log. No backend peers, schema/config/cloud change. Images built, application stack not started; browser/staging rollout pending. Full acceptance/negative-case traceability is in changes/CHANGE-179-suspended-courier-acceptance.md.
+
+
+## CHANGE-180 - Existing Admin profile gains suspension actions (2026-11-04)
+
+The explicit user request supersedes the earlier removal of Suspend from Admin Users. Reuse the existing profile/actions/confirmation and API normalization; no new service, endpoint, client authentication, persistence or broker mechanism. Shared confirmation labels/variant are optional with original deactivation defaults. User Service remains policy/authorization authority. Existing ADMIN gate and USER-mode behavior are unchanged. No new ADR is needed for this presentation extension. CHANGE-180 records test-first evidence and build/runtime limits.
