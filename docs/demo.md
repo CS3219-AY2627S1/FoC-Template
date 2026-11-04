@@ -43,6 +43,10 @@ Answers to "why" and "does it scale" questions are in [architecture.md](architec
 
 ## Main flows (show these first)
 
+The order states these flows walk through:
+
+![Order lifecycle: OPEN, ACCEPTED, IN_PROGRESS, PICKED_UP, DELIVERED, COMPLETED, with CANCELLED and EXPIRED](diagrams/08-order-lifecycle.png)
+
 1. **Find a place.** As the requester, open Suppliers.
    - Search "coffee".
    - Filter by type (Food/Coffee, Landmark).

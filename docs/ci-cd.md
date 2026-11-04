@@ -33,50 +33,11 @@ Owner: Zheng Jiongjie. This is the runbook for the FoC pipelines (NTH5).
 
 ### Pipeline
 
-```mermaid
-flowchart TB
-  subgraph prflow["Every pull request"]
-    direction LR
-    pr["Pull request"] --> ci["CI per changed service, in parallel<br/>Maven: unit + Testcontainers tests, JaCoCo ≥ 80% line and branch<br/>npm: lint, typecheck, test<br/>docker build"]
-    pr --> checks["Repository checks: shellcheck, actionlint,<br/>compose config, secret guard<br/>Cloud infrastructure check (read-only, WIF)"]
-    ci & checks --> gate{{"CI passed<br/>required to merge"}}
-  end
-  subgraph mainflow["Every merge to main"]
-    direction LR
-    build["Build each image once<br/>tag = commit SHA"] --> ar[("Artifact Registry")]
-    ar --> stg["deploy.sh staging<br/>revision with no traffic, startup probe,<br/>then 100% traffic, smoke test via gateway"]
-  end
-  gate -- merge --> build
-  stg -. "manual: Deploy production<br/>same images, never rebuilt" .-> prod["deploy.sh production"]
-```
+![CI/CD pipeline: pull-request checks, CI passed, build once, deploy staging, manual promotion to production](diagrams/04-cicd-pipeline.png)
 
 ### Runtime (one environment)
 
-```mermaid
-flowchart LR
-  browser(("Browser")) -- HTTPS --> gw
-  browser -. "sign in" .-> auth[("Firebase Auth")]
-  subgraph run["Cloud Run, asia-southeast1 (one service account per service)"]
-    gw["gateway<br/>public ingress"]
-    subgraph internal["internal ingress only"]
-      fe["frontend"]
-      user["user-service"]
-      sup["supplier-service"]
-      ord["order-service"]
-      cred["credit-service"]
-      rep["reporting-service"]
-    end
-  end
-  gw -- "Direct VPC egress" --> internal
-  internal -. "publish" .-> ps[["Pub/Sub"]]
-  ps -. "authenticated push" .-> internal
-  ord & cred --> sql[("Cloud SQL PostgreSQL")]
-  sup & rep --> fs[("Firestore")]
-  rep --> att[("Cloud Storage<br/>report attachments")]
-  cfg[("Cloud Storage<br/>config: seed CSV")] -. "mounted read-only" .-> sup
-  user -- "Cloud NAT" --> atlas[("MongoDB Atlas")]
-  sm[("Secret Manager")] -. "secrets at deploy" .-> ord & cred & user
-```
+![Cloud runtime: the public gateway, internal Cloud Run services, and the managed data stores, Pub/Sub, NAT and Secret Manager](diagrams/05-cloud-runtime.png)
 
 The pipeline authenticates to Google Cloud with Workload Identity Federation, so GitHub holds no
 service-account keys. Each Cloud Run service runs as its own identity (`foc-<service>@`), which can

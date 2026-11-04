@@ -1,7 +1,8 @@
 # Architecture, key decisions and scaling
 
-The system diagram is in the [README](../README.md#architecture), and the pipeline and cloud
-runtime diagrams are in [ci-cd.md](ci-cd.md). This page records why the system is shaped this way,
+The system diagrams are in the [README](../README.md#architecture), and the pipeline and cloud
+runtime diagrams are in [ci-cd.md](ci-cd.md). All diagrams and their sources are in
+[diagrams/](diagrams/README.md). This page records why the system is shaped this way,
 what each choice costs, and how far it scales. Service-level decisions are in each service's README
 and in [order-service/docs/decisions/](../order-service/docs/decisions/).
 
@@ -80,6 +81,18 @@ event when the result can follow.**
   the command durably and drives it to a known outcome later, undoing it if needed (Pub/Sub command
   and result topics). It neither retries blindly nor leaves credits stuck. See Order Service
   ADR-054 and ADR-055.
+
+### An errand end to end
+
+The blue band is synchronous: the credits are reserved before the errand exists, and the courier
+is assigned in Credit before Order accepts. The orange band is asynchronous: the courier is paid
+from the reservation through Pub/Sub.
+
+![One errand from creation to payment, across Order, Supplier, Credit, User and Pub/Sub](diagrams/06-errand-flow-sequence.png)
+
+### Compensation when Credit's outcome is uncertain
+
+![Order records the command, publishes a compensation command, and Credit reverses or fences it](diagrams/07-compensation-sequence.png)
 
 ## Scaling
 

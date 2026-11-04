@@ -1,0 +1,51 @@
+{
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Arial, Helvetica, sans-serif",
+    "fontSize": "18px",
+    "primaryColor": "#E8F0FE",
+    "primaryBorderColor": "#1A73E8",
+    "primaryTextColor": "#202124",
+    "secondaryColor": "#E6F4EA",
+    "tertiaryColor": "#FFFFFF",
+    "lineColor": "#3C4043",
+    "clusterBkg": "#F8F9FA",
+    "clusterBorder": "#9AA0A6",
+    "edgeLabelBackground": "#FFFFFF",
+    "actorBkg": "#E8F0FE",
+    "actorBorder": "#1A73E8",
+    "actorTextColor": "#202124",
+    "signalColor": "#3C4043",
+    "signalTextColor": "#202124",
+    "noteBkgColor": "#FEF7E0",
+    "noteBorderColor": "#F9AB00",
+    "labelBoxBkgColor": "#F8F9FA",
+    "sequenceNumberColor": "#FFFFFF"
+  },
+  "flowchart": {
+    "curve": "linear",
+    "nodeSpacing": 45,
+    "rankSpacing": 70,
+    "padding": 18,
+    "htmlLabels": true,
+    "wrappingWidth": 380,
+    "useMaxWidth": false
+  },
+  "sequence": {
+    "actorMargin": 70,
+    "messageFontSize": 18,
+    "actorFontSize": 18,
+    "noteFontSize": 18,
+    "mirrorActors": false,
+    "boxMargin": 12,
+    "useMaxWidth": false,
+    "noteFontFamily": "Arial, Helvetica, sans-serif",
+    "messageFontFamily": "Arial, Helvetica, sans-serif",
+    "actorFontFamily": "Arial, Helvetica, sans-serif",
+    "wrap": false,
+    "noteMargin": 14
+  },
+  "state": {
+    "useMaxWidth": false
+  }
+}
