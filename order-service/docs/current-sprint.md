@@ -609,3 +609,8 @@ Suspension fix [~]: latest explicit user amendment requires suspended couriers r
 
 
 CHANGE-179 verification amendment:701Order+13common full scoped verify passes, no failures/errors/skips; branch81.28/line94.63%;321frontend tests, lint and both Docker builds/TypeScript pass. Initial environment and fixture failures are resolved; authoritative final log is target/change179-scoped-verify.log. No backend peers, schema/config/cloud change. Images built, application stack not started; browser/staging rollout pending. Full acceptance/negative-case traceability is in changes/CHANGE-179-suspended-courier-acceptance.md.
+
+
+## CHANGE-180 - Admin suspension controls (2026-11-04)
+
+[~] User-approved Admin Users profile suspension/unsuspension UI implemented against ready User endpoints. Automated frontend checks pass:331 tests, lint and TypeScript. Docker engine unresponsive and direct production build hit Windows OutOfMemoryException; no new image/runtime verification. Existing local User image lacks Unsuspend until rebuilt. Human/browser/staging verification pending. No backend scope expansion; see CHANGE-180.

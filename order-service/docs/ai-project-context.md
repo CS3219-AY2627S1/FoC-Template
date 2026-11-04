@@ -971,3 +971,8 @@ User-approved Yao Xiang on hfix/suspended-courier-acceptance: use User role-cont
 
 
 CHANGE-179 verification amendment:701Order+13common full scoped verify passes, no failures/errors/skips; branch81.28/line94.63%;321frontend tests, lint and both Docker builds/TypeScript pass. Initial environment and fixture failures are resolved; authoritative final log is target/change179-scoped-verify.log. No backend peers, schema/config/cloud change. Images built, application stack not started; browser/staging rollout pending. Full acceptance/negative-case traceability is in changes/CHANGE-179-suspended-courier-acceptance.md.
+
+
+## Current amendment - CHANGE-180 Admin suspension UI (2026-11-04)
+
+Yao Xiang on feat/suspend-unsuspend: ADMIN Users profile has confirmed Suspend Courier/Unsuspend Courier, existing promotion/deactivation retained. Bodyless PUT suspension/suspension-removal through existing useApi, immediate returned-profile update, safe pending/error/inactive controls. No backend/auth/contracts/schema/env/topics changed.331 frontend tests, lint and TypeScript pass; Docker engine unavailable, host production build hit Windows OutOfMemoryException, local User image still lacks Unsuspend until rebuild. Browser/staging/human review pending. Legacy missing-status compatibility fix/backfill is not authorized or performed. Details: changes/CHANGE-180-admin-courier-suspension-ui.md.

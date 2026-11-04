@@ -108,6 +108,8 @@ function createLiveAdminApi(request: AdminRequest) {
       request<CreditTransactionPage>(detail("/api/credits/users", id) + "/transactions?" +
         new URLSearchParams({ page: String(page), size: "20" }), { signal }),
     promoteUser: async (id: string) => normalizeUser(await request<UserProfile>(detail("/api/users", id) + "/user-promotion", { method: "PUT" }), id),
+    suspendUser: async (id: string) => normalizeUser(await request<UserProfile>(detail("/api/users", id) + "/suspension", { method: "PUT" }), id),
+    unsuspendUser: async (id: string) => normalizeUser(await request<UserProfile>(detail("/api/users", id) + "/suspension-removal", { method: "PUT" }), id),
     deactivateUser: async (id: string) => {
       await request<unknown>(detail("/api/users", id), { method: "DELETE" })
       return profile(id)

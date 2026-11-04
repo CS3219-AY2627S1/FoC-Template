@@ -673,3 +673,8 @@ Affected source: Order AdminOrderController/OrderQueryService/repository port/pe
 ## CHANGE-179 - Courier suspension role context (2026-11-04)
 
 Order now consumes existing authenticated GET /api/users/role-context with required matching userId, recognized roles and isCourierSuspended for acceptance. Boolean true rejects new acceptance with403; false allows further normal checks; absent/null flag fails new acceptance503. Existing work needs role/identity only. No Order call to /api/users/courier-eligibility remains. User must retain/restore courier roles; Order never invents a missing role. Existing acceptance routes document403; request/response structures stay compatible. Normal JWT requests use one User lookup and refresh on the next request. No new peer endpoint/event/schema/topic; consumer/rollout verification in CHANGE-179.
+
+
+## CHANGE-180 - Existing User suspension APIs consumed by Admin UI (2026-11-04)
+
+Admin Users profile now calls PUT /api/users/{userId}/suspension and PUT /api/users/{userId}/suspension-removal through the existing authenticated gateway client. Both are bodyless, ADMIN_ONLY and return200 User; IDs are encoded and returned target identity is validated. Suspend sets score10 and a one-month courier suspension; Unsuspend clears suspension/deadline without score reset. No provider contract or implementation changes. Current local User image exposes only Suspend and needs rebuilding from existing source; end-to-end verification is pending. Missing-status legacy account writes remain a separate unapproved provider compatibility issue.

@@ -884,3 +884,14 @@ Reports Ready for review is a UI shortcut for existing READY_FOR_REVIEW status, 
 
 
 CHANGE-179 verification amendment:701Order+13common full scoped verify passes, no failures/errors/skips; branch81.28/line94.63%;321frontend tests, lint and both Docker builds/TypeScript pass. Initial environment and fixture failures are resolved; authoritative final log is target/change179-scoped-verify.log. No backend peers, schema/config/cloud change. Images built, application stack not started; browser/staging rollout pending. Full acceptance/negative-case traceability is in changes/CHANGE-179-suspended-courier-acceptance.md.
+
+
+## CHANGE-180 - Admin courier suspension controls (2026-11-04)
+
+| Reference | Approved behavior | Evidence | Status |
+| --- | --- | --- | --- |
+| Explicit Admin UI amendment; existing User admin contract | Suspend/Unsuspend on selected active user; confirmations explain score10/month and preserved score on restoration | admin-users.tsx, admin-api.ts; provider inspected read-only | Implemented; browser/live verification pending |
+| NFR2.1; existing Admin visual baseline | Reuse top action row, responsive shared confirmation and current button styles | Shared AdminConfirmation optional labels preserve deactivation defaults; existing flex-wrap | Component verified; browser not verified |
+| NFR3.1.3; authorization/error safety | Correct encoded-ID PUT/no body; no request before confirmation; cancel, success switch, errors, disabled inactive/capability/busy and duplicate-submit safeguards | RED11 failures then52 focused pass;331 full frontend tests, lint/typecheck pass | Automated verification passed |
+
+Sequence: admin selects user/action -> confirmation -> existing useApi bearer PUT through gateway -> User Service enforces ADMIN_ONLY and updates -> normalize matching user response -> update profile/status/score/deadline or retain dialog/error for retry. Responsibilities remain AdminUserProfile presentation/state, AdminConfirmation dialog, admin-api transport/normalization and existing User provider policy. No new lifecycle, domain, diagram, schema or contract. Docker/production-build and legacy-account limitations recorded in CHANGE-180.

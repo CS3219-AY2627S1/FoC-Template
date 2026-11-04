@@ -34,6 +34,7 @@ export function AdminUserProfile({ userId, onBack }: { userId: string; onBack: (
   const [updated, setUpdated] = useState<AdminUser | null>(null)
   const selected = updated ?? data
   const [confirmDeactivate, setConfirmDeactivate] = useState(false)
+  const [confirmSuspension, setConfirmSuspension] = useState<"suspend" | "unsuspend" | null>(null)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const missing = "Not provided"
@@ -44,6 +45,7 @@ export function AdminUserProfile({ userId, onBack }: { userId: string; onBack: (
     try {
       setUpdated(await action())
       setConfirmDeactivate(false)
+      setConfirmSuspension(null)
       toast.success(message)
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Could not update the user.")
@@ -63,10 +65,13 @@ export function AdminUserProfile({ userId, onBack }: { userId: string; onBack: (
             <Button variant="outline" disabled={!api.capabilities.userActions || busy || !selected.active || selected.roles.includes("admin")}
               onClick={() => void mutate(() => api.promoteUser(selected.userId), "User promoted to admin.")}>
               {selected.roles.includes("admin") ? "Already an admin" : "Promote to Admin"}</Button>
+            <Button variant="outline" disabled={!api.capabilities.userActions || busy || !selected.active}
+              onClick={() => { setActionError(null); setConfirmSuspension(selected.isCourierSuspended ? "unsuspend" : "suspend") }}>
+              {selected.isCourierSuspended ? "Unsuspend Courier" : "Suspend Courier"}</Button>
             <Button variant="destructive" disabled={!api.capabilities.userActions || busy || !selected.active}
               onClick={() => { setActionError(null); setConfirmDeactivate(true) }}>Deactivate User</Button>
           </div>
-          {actionError && !confirmDeactivate && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
+          {actionError && !confirmDeactivate && !confirmSuspension && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
         </CardContent>
       </Card>
       <Card>
@@ -90,6 +95,21 @@ export function AdminUserProfile({ userId, onBack }: { userId: string; onBack: (
       description="This will deactivate the selected account. Please check that you have selected the correct user before continuing."
       busy={busy} error={actionError} onClose={() => { setConfirmDeactivate(false); setActionError(null) }}
       onConfirm={() => { if (selected) void mutate(() => api.deactivateUser(selected.userId), "User deactivated.") }} />
+    <AdminConfirmation open={confirmSuspension !== null}
+      title={confirmSuspension === "unsuspend" ? "Unsuspend this courier?" : "Suspend this courier?"}
+      description={confirmSuspension === "unsuspend"
+        ? "This will restore courier access. Their penalty score will not be reset."
+        : "This will suspend courier access for one month and set the penalty score to 10. Existing errands can continue."}
+      confirmLabel={confirmSuspension === "unsuspend" ? "Confirm unsuspension" : "Confirm suspension"}
+      busyLabel={confirmSuspension === "unsuspend" ? "Unsuspending…" : "Suspending…"}
+      confirmVariant={confirmSuspension === "unsuspend" ? "default" : "destructive"}
+      cancelLabel="Cancel" busy={busy} error={actionError}
+      onClose={() => { setConfirmSuspension(null); setActionError(null) }}
+      onConfirm={() => {
+        if (!selected || !confirmSuspension) return
+        void mutate(() => confirmSuspension === "unsuspend" ? api.unsuspendUser(selected.userId) : api.suspendUser(selected.userId),
+          confirmSuspension === "unsuspend" ? "Courier unsuspended." : "Courier suspended.")
+      }} />
   </section>
 }
 
