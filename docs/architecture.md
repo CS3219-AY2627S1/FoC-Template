@@ -60,7 +60,8 @@ event when the result can follow.**
     If a peer is down, the user gets an error (503) at once, rather than an order that can't be
     paid for.
   - Role checks call the User Service with the caller's token, and only on endpoints that need a
-    role. Supplier caches roles for 30 s, so browsing keeps working while the User Service is slow.
+    role. Supplier looks roles up only for admin actions and caches them for 30 s, so browsing
+    the catalogue keeps working even when the User Service is down.
 - **Asynchronous (Pub/Sub):**
   - **Order → Credit:** payment on completion and refunds of open orders. Completing an order
     doesn't wait for Credit, and Credit catches up if it was down.
