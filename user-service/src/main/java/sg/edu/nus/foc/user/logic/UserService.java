@@ -429,6 +429,7 @@ public class UserService {
     // Can suspend admin because suspended admins still can carry out admin actions
     // Just not courier actions
     // Sets penalty to MAX_PENALTY
+    // If a user is already suspended, this will extend suspension to 1 month from now
     public User suspendUser(String userId) {
         User user = getUserByUserId(userId);
 
@@ -451,6 +452,21 @@ public class UserService {
 
         user.setIsCourierSuspended(true);
         user.setIsPermanentlySuspended(true);
+
+        return lifecycle.saveActive(user);
+    }
+
+    // Single method to unsuspend a user
+    public User unsuspendUser(String userId) {
+        User user = getUserByUserId(userId);
+
+        if (!user.getIsCourierSuspended() || !verifyActive(user)) {
+            // Do not unsuspend already unsuspended users, or inactive users
+            return user;
+        }
+
+        user.setIsCourierSuspended(false);
+        user.setSuspensionEndDate(null);
 
         return lifecycle.saveActive(user);
     }
@@ -513,7 +529,7 @@ public class UserService {
                 .findByUserId(userId)
                 .orElseThrow(() ->
                         new RuntimeException("User not found"));
-        return user.getStatus() != AccountStatus.ACTIVE;
+        return user.getStatus() == AccountStatus.ACTIVE;
     }
 
     private boolean verifyActive(User user) {

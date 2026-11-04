@@ -289,8 +289,6 @@ public class UserController {
         return ResponseEntity.ok("User disabled");
     }
 
-    // TODO: GET /api/users?searchBy=name&q=Alex&page=1&size=20
-
     // PUT /api/users/:userid/suspension
     // Admin manual suspension
     @Operation(summary = "Manually suspend a user")
@@ -298,10 +296,23 @@ public class UserController {
     @PutMapping("/{userId}/suspension")
     public ResponseEntity<User> updateUserSuspension(
             @PathVariable String userId,
-            @RequestBody UpdateUserRequest request,
             JwtAuthenticationToken authentication) {
 
         User user = userService.suspendUser(userId);
+
+        return ResponseEntity.ok(user);
+    }
+
+    // PUT /api/users/:userid/suspension-removal
+    // Admin manual suspension-removal
+    @Operation(summary = "Manually unsuspend a user")
+    @PreAuthorize(ADMIN_ONLY)
+    @PutMapping("/{userId}/suspension-removal")
+    public ResponseEntity<User> updateUserSuspensionRemoval(
+            @PathVariable String userId,
+            JwtAuthenticationToken authentication) {
+
+        User user = userService.unsuspendUser(userId);
 
         return ResponseEntity.ok(user);
     }
