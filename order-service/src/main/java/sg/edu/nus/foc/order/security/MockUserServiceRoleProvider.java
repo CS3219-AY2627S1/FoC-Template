@@ -27,4 +27,9 @@ public class MockUserServiceRoleProvider implements RoleProvider {
         }
         return roles;
     }
+
+    @Override
+    public CallerRoleContext contextFor(Jwt caller) {
+        return new CallerRoleContext(rolesFor(caller), false);
+    }
 }

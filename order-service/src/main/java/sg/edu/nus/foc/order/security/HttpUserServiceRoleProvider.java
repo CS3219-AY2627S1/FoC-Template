@@ -21,6 +21,11 @@ public class HttpUserServiceRoleProvider implements RoleProvider {
 
     @Override
     public Set<Role> rolesFor(Jwt caller) {
+        return contextFor(caller).roles();
+    }
+
+    @Override
+    public CallerRoleContext contextFor(Jwt caller) {
         Set<Role> roles = EnumSet.noneOf(Role.class);
         UserRoleContextResponse response;
         try {
@@ -31,7 +36,7 @@ public class HttpUserServiceRoleProvider implements RoleProvider {
                     .body(UserRoleContextResponse.class);
         } catch (HttpClientErrorException exception) {
             if (exception.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) {
-                return roles;
+                return new CallerRoleContext(roles, null);
             }
             throw new RoleLookupException("User Service role lookup failed for " + caller.getSubject(), exception);
         } catch (RestClientException exception) {
@@ -43,6 +48,6 @@ public class HttpUserServiceRoleProvider implements RoleProvider {
             throw new RoleLookupException("User Service returned an invalid caller role context.", null);
         }
         response.getRoles().forEach(value -> Role.fromId(value).ifPresent(roles::add));
-        return roles;
+        return new CallerRoleContext(roles, response.getCourierSuspended());
     }
 }

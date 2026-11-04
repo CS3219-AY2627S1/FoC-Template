@@ -104,3 +104,5 @@ ADR-050 — Deferred monotonic Order penalty (CHANGE-146), approved Yao Xiang202
 - [ADR-065 ? Unified Order reports and opposite-party responses](ADR-065-unified-order-report-responses.md): supersedes separate courier Errand submissions; preserves actual participant saga bindings.
 
 - [ADR-066 ? Separate Order/Errand categories with opposite-party replies](ADR-066-separate-order-errand-with-responses.md): user-directed supersession of ADR-065 unified submissions; preserves holds/saga.
+
+- [ADR-067: Courier suspension role context](ADR-067-courier-suspension-role-context.md) - retained courier role, acceptance-only flag, existing-work authorization and safe browser/durable recovery; CHANGE-179.

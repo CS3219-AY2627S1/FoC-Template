@@ -20,6 +20,37 @@ import org.springframework.web.client.RestClient;
 class HttpUserServiceRoleProviderTest {
     private static final String ROLE_CONTEXT_URL = "http://user-service/api/users/role-context";
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"true, COURIER_SUSPENDED", "false, COURIER_ACCEPTANCE_ALLOWED"})
+    void preservesCourierRoleAndVerifiedSuspensionWithOneLookup(boolean suspended, String expectedAuthority) {
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://user-service");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(ROLE_CONTEXT_URL)).andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer verified-token"))
+                .andRespond(withSuccess("{\"userId\":\"u1\",\"roles\":[\"courier\",\"requester\"],\"isCourierSuspended\":" + suspended + "}", MediaType.APPLICATION_JSON));
+        java.util.Collection<org.springframework.security.core.GrantedAuthority> authorities = new FirebaseRoleAuthoritiesConverter(
+                new HttpUserServiceRoleProvider(builder.build())).convert(jwt());
+        assertEquals(java.util.Set.of("ROLE_COURIER", "ROLE_REQUESTER", expectedAuthority), authorities.stream()
+                .map(org.springframework.security.core.GrantedAuthority::getAuthority).collect(java.util.stream.Collectors.toSet()));
+        server.verify();
+    }
+
+    @Test
+    void laterRequestsRefreshSuspensionAndMissingFlagDoesNotGrantAcceptance() {
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://user-service");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        for (String flag : List.of(",\"isCourierSuspended\":false", ",\"isCourierSuspended\":true", "")) {
+            server.expect(requestTo(ROLE_CONTEXT_URL)).andRespond(withSuccess(
+                    "{\"userId\":\"u1\",\"roles\":[\"courier\"]" + flag + "}", MediaType.APPLICATION_JSON));
+        }
+        FirebaseRoleAuthoritiesConverter converter = new FirebaseRoleAuthoritiesConverter(new HttpUserServiceRoleProvider(builder.build()));
+        for (java.util.Set<String> expected : List.of(java.util.Set.of("ROLE_COURIER", "COURIER_ACCEPTANCE_ALLOWED"),
+                java.util.Set.of("ROLE_COURIER", "COURIER_SUSPENDED"), java.util.Set.of("ROLE_COURIER"))) {
+            assertEquals(expected, converter.convert(jwt()).stream().map(org.springframework.security.core.GrantedAuthority::getAuthority)
+                    .collect(java.util.stream.Collectors.toSet()));
+        }
+        server.verify();
+    }
+
     @Test
     void forwardsTheVerifiedCallerTokenAndMapsKnownRolesOnly() {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://user-service");

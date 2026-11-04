@@ -10,6 +10,37 @@ vi.mock("@/lib/order-command-storage", () => ({ readOrderIntent: m.read, writeOr
 vi.mock("@/hooks/use-visible-polling", () => ({ ORDER_POLL_INTERVAL_MS: 5000, useVisiblePolling: (cb: () => Promise<void>, enabled: boolean) => { m.poll = enabled ? cb : null } }))
 
 describe("durable Order UI intent", () => {
+  it("clears a suspended acceptance only after the owned lookup confirms no saved command", async () => {
+    const rejected = vi.fn()
+    const hook = renderHook(() => useOrderCommand("accept:order", vi.fn(), rejected))
+    await waitFor(() => expect(hook.result.current.ready).toBe(true))
+    const explanation = "Your courier access is suspended. You cannot accept new errands, but you can continue errands already assigned to you."
+    m.api.mockImplementation(async (path: string) => {
+      if (path.endsWith("/accept")) throw new ApiError(403, "FORBIDDEN", explanation)
+      throw new ApiError(404, "NOT_FOUND", "Command not found.")
+    })
+    await act(() => hook.result.current.run("ACCEPT", "/api/orders/order/accept", { commandId: "K" }))
+    expect(m.api).toHaveBeenLastCalledWith("/api/orders/commands/K?userId=user-a")
+    expect(rejected).toHaveBeenCalledWith(explanation)
+    expect(m.remove).toHaveBeenCalledWith("user-a", "accept:order", "K")
+    expect(hook.result.current.pending).toBe(false)
+    expect(hook.result.current.needsAuthorization).toBe(false)
+  })
+  it.each(["pending", "unavailable"])("retains the same intent after403 when the owned lookup is %s", async (lookup) => {
+    const rejected = vi.fn()
+    const hook = renderHook(() => useOrderCommand("accept:order", vi.fn(), rejected))
+    await waitFor(() => expect(hook.result.current.ready).toBe(true))
+    m.api.mockImplementation(async (path: string) => {
+      if (path.endsWith("/accept")) throw new ApiError(403, "FORBIDDEN", "Courier is suspended.")
+      if (lookup === "unavailable") throw new ApiError(503, "SERVICE_UNAVAILABLE", "Offline")
+      return { commandId: "K", status: "PENDING", reason: "RECONCILIATION_REQUIRED", message: "Checking Credit." }
+    })
+    await act(() => hook.result.current.run("ACCEPT", "/api/orders/order/accept", { commandId: "K" }))
+    expect(hook.result.current.pending).toBe(true)
+    expect(m.remove).not.toHaveBeenCalled()
+    expect(rejected).not.toHaveBeenCalled()
+    if (lookup === "pending") expect(hook.result.current.message).toBe("Checking Credit.")
+  })
   beforeEach(() => {
     vi.clearAllMocks(); m.poll = null; m.account = "user-a"
     m.read.mockResolvedValue(null); m.write.mockResolvedValue(undefined); m.remove.mockResolvedValue(undefined)

@@ -111,8 +111,6 @@ class HttpPeerAdaptersTest {
         userServer.expect(requestTo("/api/users/role-context"))
             .andExpect(header("Authorization", "Bearer token"))
             .andRespond(withSuccess("{\"userId\":\"requester\",\"roles\":[\"requester\"]}", MediaType.APPLICATION_JSON));
-        userServer.expect(requestTo("/api/users/courier-eligibility"))
-            .andRespond(withSuccess("{\"isCourierEligible\":true}", MediaType.APPLICATION_JSON));
         userServer.expect(requestTo("/api/users/role-context"))
             .andRespond(withSuccess("{\"userId\":\"courier\",\"roles\":[\"courier\"]}", MediaType.APPLICATION_JSON));
         userServer.expect(requestTo("/api/users/role-context"))
@@ -129,10 +127,67 @@ class HttpPeerAdaptersTest {
         RestClient.Builder userBuilder = RestClient.builder();
         MockRestServiceServer userServer = MockRestServiceServer.bindTo(userBuilder).build();
         HttpPeerAdapters adapters = new HttpPeerAdapters(userBuilder.build(), RestClient.builder().build(), RestClient.builder().build());
-        userServer.expect(requestTo("/api/users/courier-eligibility"))
-            .andRespond(withSuccess("{\"isCourierEligible\":false}", MediaType.APPLICATION_JSON));
-        assertThrows(sg.edu.nus.foc.order.domain.OrderProblem.class, () -> adapters.verifyCourier("courier", "Bearer token"));
+        userServer.expect(requestTo("/api/users/role-context"))
+            .andRespond(withSuccess("{\"userId\":\"courier\",\"roles\":[\"courier\"],\"isCourierSuspended\":true}", MediaType.APPLICATION_JSON));
+        OrderProblem denied = assertThrows(sg.edu.nus.foc.order.domain.CourierAcceptanceDenied.class,
+                () -> adapters.requireCourierAcceptance("courier", "Bearer token"));
+        assertEquals("FORBIDDEN", denied.getCode());
+        assertTrue(denied.getMessage().contains("suspended"));
         userServer.verify();
+    }
+
+    @Test
+    void suspendedCourierRetainsExistingWorkIdentityThroughRoleContext() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        HttpPeerAdapters adapters = new HttpPeerAdapters(builder.build(), RestClient.builder().build(), RestClient.builder().build());
+        server.expect(requestTo("/api/users/role-context"))
+                .andRespond(withSuccess("{\"userId\":\"courier\",\"roles\":[\"courier\"],\"isCourierSuspended\":true}", MediaType.APPLICATION_JSON));
+        assertEquals("courier", adapters.verifyCourier("courier", "Bearer token"));
+        server.verify();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"", ",\"isCourierSuspended\":null"})
+    void missingSuspensionDoesNotAuthorizeNewAcceptance(String flag) {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        HttpPeerAdapters adapters = new HttpPeerAdapters(builder.build(), RestClient.builder().build(), RestClient.builder().build());
+        server.expect(requestTo("/api/users/role-context"))
+                .andRespond(withSuccess("{\"userId\":\"courier\",\"roles\":[\"courier\"]" + flag + "}", MediaType.APPLICATION_JSON));
+        assertEquals("SERVICE_UNAVAILABLE", assertThrows(OrderProblem.class,
+                () -> adapters.requireCourierAcceptance("courier", "Bearer token")).getCode());
+        server.verify();
+    }
+
+    @Test
+    void verifiedSuspensionRejectsNewWorkButNotExistingWorkAndDoesNotTrustPlainAuthorityStrings() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        HttpPeerAdapters adapters = new HttpPeerAdapters(builder.build(), RestClient.builder().build(), RestClient.builder().build());
+        org.springframework.security.oauth2.jwt.Jwt token = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("token")
+                .header("alg", "RS256").subject("courier").build();
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(token, java.util.List.of(
+                        new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_COURIER"),
+                        new sg.edu.nus.foc.order.security.CourierSuspensionAuthority(true))));
+        try {
+            assertEquals("courier", adapters.verifyCourier("courier", "Bearer token"));
+            assertThrows(sg.edu.nus.foc.order.domain.CourierAcceptanceDenied.class,
+                    () -> adapters.requireCourierAcceptance("courier", "Bearer token"));
+            assertThrows(OrderProblem.class, () -> adapters.requireCourierAcceptance("other", "Bearer token"));
+            server.expect(requestTo("/api/users/role-context"))
+                    .andRespond(withSuccess("{\"userId\":\"courier\",\"roles\":[\"courier\"],\"isCourierSuspended\":true}", MediaType.APPLICATION_JSON));
+            org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                    new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(token, java.util.List.of(
+                            new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_COURIER"),
+                            new org.springframework.security.core.authority.SimpleGrantedAuthority("COURIER_ACCEPTANCE_ALLOWED"))));
+            assertThrows(sg.edu.nus.foc.order.domain.CourierAcceptanceDenied.class,
+                    () -> adapters.requireCourierAcceptance("courier", "Bearer token"));
+            server.verify();
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
     }
 
     @Test
@@ -146,8 +201,6 @@ class HttpPeerAdaptersTest {
             .andRespond(withSuccess("{\"userId\":\"\",\"roles\":[\"requester\"]}", MediaType.APPLICATION_JSON));
         userServer.expect(requestTo("/api/users/role-context"))
             .andRespond(withSuccess("{\"userId\":\"requester\",\"roles\":[\"courier\"]}", MediaType.APPLICATION_JSON));
-        userServer.expect(requestTo("/api/users/courier-eligibility"))
-            .andRespond(withSuccess("{\"isCourierEligible\":true}", MediaType.APPLICATION_JSON));
         userServer.expect(requestTo("/api/users/role-context"))
             .andRespond(withSuccess("{\"userId\":\"courier\",\"roles\":[\"courier\"]}", MediaType.APPLICATION_JSON));
 
@@ -159,25 +212,24 @@ class HttpPeerAdaptersTest {
     }
 
     @Test
-    void productionCallerReusesConfirmedRolesButStillChecksCourierEligibility() {
+    void productionCallerReusesConfirmedRolesAndSuspensionWithoutAnotherLookup() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         HttpPeerAdapters adapters = new HttpPeerAdapters(
                 builder.build(), RestClient.builder().build(), RestClient.builder().build());
         org.springframework.security.oauth2.jwt.Jwt caller = org.springframework.security.oauth2.jwt.Jwt
                 .withTokenValue("token").header("alg", "RS256").subject("u1").build();
+        server.expect(requestTo("/api/users/role-context"))
+                .andRespond(withSuccess("{\"userId\":\"u1\",\"roles\":[\"requester\",\"courier\"],\"isCourierSuspended\":false}", MediaType.APPLICATION_JSON));
         org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken authentication =
-                new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(
-                        caller, java.util.List.of(
-                                new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_REQUESTER"),
-                                new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_COURIER")));
+                new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(caller,
+                        new sg.edu.nus.foc.order.security.FirebaseRoleAuthoritiesConverter(
+                                new sg.edu.nus.foc.order.security.HttpUserServiceRoleProvider(builder.build())).convert(caller));
         org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(authentication);
         try {
-            server.expect(requestTo("/api/users/courier-eligibility"))
-                    .andRespond(withSuccess("{\"isCourierEligible\":true}", MediaType.APPLICATION_JSON));
-
             assertEquals("u1", adapters.verifyRequester("u1", "Bearer token"));
             assertEquals("u1", adapters.verifyCourier("u1", "Bearer token"));
+            adapters.requireCourierAcceptance("u1", "Bearer token");
             assertThrows(sg.edu.nus.foc.order.domain.OrderProblem.class,
                     () -> adapters.verifyRequester("other", "Bearer token"));
             server.verify();
@@ -192,11 +244,11 @@ class HttpPeerAdaptersTest {
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         HttpPeerAdapters adapters = new HttpPeerAdapters(
                 builder.build(), RestClient.builder().build(), RestClient.builder().build());
-        server.expect(requestTo("/api/users/courier-eligibility")).andRespond(withServerError());
+        server.expect(requestTo("/api/users/role-context")).andRespond(withServerError());
 
         sg.edu.nus.foc.order.domain.OrderProblem problem = assertThrows(
                 sg.edu.nus.foc.order.domain.OrderProblem.class,
-                () -> adapters.verifyCourier("courier", "Bearer token"));
+                () -> adapters.requireCourierAcceptance("courier", "Bearer token"));
 
         assertEquals("SERVICE_UNAVAILABLE", problem.getCode());
         server.verify();

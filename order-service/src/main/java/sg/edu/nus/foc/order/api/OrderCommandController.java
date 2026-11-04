@@ -44,6 +44,7 @@ public class OrderCommandController {
 
     @PostMapping("/{id}/accept") @RequireCourierRole
     @Operation(summary = "Submit a durable courier acceptance command")
+    @ApiResponse(responseCode = "403", description = "Courier role/identity mismatch or courier is suspended; no new command is registered")
     @ApiResponse(responseCode = "200", description = "Terminal command result")
     @ApiResponse(responseCode = "202", description = "Durable pending command")
     public ResponseEntity<CommandView> accept(@PathVariable String id, @Valid @RequestBody OrderActorRequest r,

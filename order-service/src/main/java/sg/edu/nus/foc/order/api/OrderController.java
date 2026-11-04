@@ -140,6 +140,7 @@ public class OrderController {
     }
 
     @Operation(summary = "Accept an available order as a courier")
+    @ApiResponse(responseCode = "403", description = "Courier role/identity mismatch or courier is suspended; no new acceptance is registered")
     @PostMapping("/{id}/accept")
     @RequireCourierRole
     @ApiResponse(responseCode = "202", description = "Saved pending command; keep the same command ID")
@@ -152,6 +153,7 @@ public class OrderController {
     }
 
     @Operation(summary = "Start an accepted order")
+    @ApiResponse(responseCode = "200", description = "Assigned courier starts delivery; courier suspension does not block existing work")
     @PostMapping("/{id}/start")
     @RequireCourierRole
     public OrderResponse start(
@@ -167,6 +169,7 @@ public class OrderController {
     }
 
     @Operation(summary = "Mark an order as picked up")
+    @ApiResponse(responseCode = "200", description = "Assigned courier picks up the order; courier suspension does not block existing work")
     @PostMapping("/{id}/pickup")
     @RequireCourierRole
     public OrderResponse pickup(
@@ -182,6 +185,7 @@ public class OrderController {
     }
 
     @Operation(summary = "Mark an order as delivered")
+    @ApiResponse(responseCode = "200", description = "Assigned courier delivers the order; courier suspension does not block existing work")
     @PostMapping("/{id}/deliver")
     @RequireCourierRole
     public OrderResponse deliver(

@@ -7,6 +7,9 @@ public interface UserServicePort {
      */
     String verifyRequester(String userId, String authorization);
 
-    /** Verifies courier eligibility and returns the provider-confirmed user ID. */
+    /** Verifies courier role/identity for existing work; suspension does not remove the role. */
     String verifyCourier(String userId, String authorization);
+
+    /** Extra guard for a new assignment only. Local mock accounts are nonsuspended. */
+    void requireCourierAcceptance(String userId, String authorization);
 }
