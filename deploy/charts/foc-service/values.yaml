@@ -96,6 +96,11 @@ mesh:
   gateway:
     namespace: envoy-gateway-system
     serviceAccount: ""
+  # The identity that may read the proxy's /metrics (charts/kube-prometheus-stack).
+  metrics:
+    enabled: false
+    namespace: monitoring
+    serviceAccount: prometheus
 
 # HTTP health check path; "" disables the probes and the HTTP test.
 healthPath: /health

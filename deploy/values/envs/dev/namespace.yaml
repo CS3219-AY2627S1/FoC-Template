@@ -10,4 +10,5 @@ quota:
   pods: "64"
 networkPolicy:
   # Envoy proxies (charts/foc-gateway) route traffic in and call User's /authorize.
-  allowFromNamespaces: [envoy-gateway-system]
+  # Prometheus scrapes the Linkerd proxies (charts/kube-prometheus-stack).
+  allowFromNamespaces: [envoy-gateway-system, monitoring]
