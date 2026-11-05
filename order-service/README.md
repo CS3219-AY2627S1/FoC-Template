@@ -13,7 +13,7 @@ and expiry (backlog: Order Service; project M4).
 - **F2** courier-facing listing + accept; corner cases: only-open orders,
   cannot accept own order, single courier per order, ≤3 concurrent.
 - **F3** courier flow: pickup → deliver → requester approve/complete; courier
-  withdraw; requester cancel-before-pickup.
+  withdraw; requester cancellation of an assigned `ACCEPTED` order before pickup.
 - **F4** cancel `OPEN` and `ACCEPTED` orders when their supplier is deactivated
   (event-driven); orders from `PICKED_UP` onward continue.
 - **F5** lifecycle **state machine** — see `app/services/lifecycle.py`
@@ -21,6 +21,12 @@ and expiry (backlog: Order Service; project M4).
   CANCELLED, EXPIRED`). Invalid transitions are rejected.
 - **F6** expiry sweeper runs every five seconds, expires due orders in batches,
   and publishes `OrderExpired`.
+
+Requester deletion is available only for an unassigned `OPEN` order and removes
+the row after credit release. Requester cancellation is available only for an
+assigned `ACCEPTED` order before pickup and retains the row as `CANCELLED` after
+credit release. Supplier deactivation may independently cancel `OPEN` or
+`ACCEPTED` orders and publishes an Order-owned cancellation fact.
 
 ## Events
 

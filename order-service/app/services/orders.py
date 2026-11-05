@@ -431,19 +431,19 @@ async def delete_order_for_requester(
             if order.requester_id != requester_id:
                 raise OrderAccessDeniedError(order_id)
 
+            status = OrderStatus(order.status)
+            if status != OrderStatus.OPEN or order.courier_id is not None:
+                raise OrderStateConflictError(
+                    order_id,
+                    "Only an open order without an assigned courier can be deleted.",
+                )
+
             existing = await release_tasks.get_for_order(session, order_id)
             if existing is not None:
                 if existing.action == ReleaseAction.DELETE.value:
                     return existing
                 raise OrderStateConflictError(
                     order_id, "A different terminal action is already pending."
-                )
-
-            status = OrderStatus(order.status)
-            if status != OrderStatus.OPEN or order.courier_id is not None:
-                raise OrderStateConflictError(
-                    order_id,
-                    "Only an open order without an assigned courier can be deleted.",
                 )
 
             if await update_tasks.get_pending_for_order(session, order_id):
@@ -484,6 +484,12 @@ async def cancel_order_for_requester(
             if order.requester_id != requester_id:
                 raise OrderAccessDeniedError(order_id)
 
+            current_status = OrderStatus(order.status)
+            if current_status != OrderStatus.ACCEPTED or order.courier_id is None:
+                raise OrderStateConflictError(
+                    order_id, "Only an accepted order with an assigned courier can be cancelled."
+                )
+
             existing = await release_tasks.get_for_order(session, order_id)
             if existing is not None:
                 if existing.action != ReleaseAction.CANCEL.value:
@@ -491,12 +497,6 @@ async def cancel_order_for_requester(
                         order_id, "A different terminal action is already pending."
                     )
                 return existing
-
-            current_status = OrderStatus(order.status)
-            if current_status not in (OrderStatus.OPEN, OrderStatus.ACCEPTED):
-                raise OrderStateConflictError(
-                    order_id, "Only an open or accepted order can be cancelled."
-                )
 
             if await update_tasks.get_pending_for_order(session, order_id):
                 raise OrderStateConflictError(

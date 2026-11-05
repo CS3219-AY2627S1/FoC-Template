@@ -81,12 +81,12 @@ The ovals are exactly the seven values stored in `orders.status`. A double oval 
 | `ACCEPTED` → `PICKED_UP` | Assigned courier picks up; no pending terminal action | `OrderPickedUp` |
 | `PICKED_UP` → `AWAITING_APPROVAL` | Assigned courier delivers; sets `awaiting_approval_at` | `OrderDelivered` |
 | `AWAITING_APPROVAL` → `COMPLETED` | Requester approval **after** a matching `CreditTransferSucceeded` result, or local auto-approval once 24 hours have elapsed | `OrderApproved` |
-| `OPEN`/`ACCEPTED` → `CANCELLED` | Requester starts cancellation before pickup; status changes only after matching `CreditReleased` | `OrderCancellationRequested`, then `OrderCancelled` |
+| `ACCEPTED` → `CANCELLED` | Requester starts cancellation while a courier is assigned and before pickup; status changes only after matching `CreditReleased` | `OrderCancellationRequested`, then `OrderCancelled` |
 | `OPEN`/`ACCEPTED` → `CANCELLED` | `SupplierDeactivated` is consumed; matching orders are cancelled directly in locked batches | `OrderCancelled` with a supplier-deactivation reason |
 | `OPEN` → `EXPIRED` | Deadline reaches database time; expiry sweeper locks and rechecks the row | `OrderExpired` |
 | `OPEN` → deleted row | Requester starts deletion while unassigned; row removed only after matching `CreditReleased` | `OrderDeletionRequested`, then `OrderDeleted` |
 
-Pending cancellation, deletion, update, and approval are **task records**, not order statuses. `CreditReleaseFailed` leaves the existing `OPEN`/`ACCEPTED` order in place and records an Order failure fact. `CreditAmended` changes editable fields while the order stays `OPEN`; `CreditAmendRejected` leaves those fields unchanged. A transfer failure leaves a requester-approved order in `AWAITING_APPROVAL`; a later automatic approval may still complete it. The expiry sweeper checks `OPEN` and deadline, even if a separate task is pending. Supplier deactivation can cancel an `OPEN` or `ACCEPTED` order but leaves `PICKED_UP` and later orders alone. `COMPLETED`, `CANCELLED`, and `EXPIRED` have no outgoing status transitions in the policy.
+Pending cancellation, deletion, update, and approval are **task records**, not order statuses. Requester deletion is limited to unassigned `OPEN` orders; requester cancellation is limited to assigned `ACCEPTED` orders. `CreditReleaseFailed` leaves the order in its existing status and records an Order failure fact. `CreditAmended` changes editable fields while the order stays `OPEN`; `CreditAmendRejected` leaves those fields unchanged. A transfer failure leaves a requester-approved order in `AWAITING_APPROVAL`; a later automatic approval may still complete it. The expiry sweeper checks `OPEN` and deadline, even if a separate task is pending. Supplier deactivation can cancel an `OPEN` or `ACCEPTED` order but leaves `PICKED_UP` and later orders alone. `COMPLETED`, `CANCELLED`, and `EXPIRED` have no outgoing status transitions in the policy.
 
 ### Evidence used
 

@@ -16,6 +16,22 @@ Format for each entry:
 - Author review: <how you validated/edited/tested the output>
 ```
 
+## 20/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Restricted requester deletion to unassigned `OPEN` orders and requester
+  cancellation to assigned `ACCEPTED` orders at task initiation and credit-result
+  handling. Preserved independent supplier-deactivation cancellation. Updated
+  focused tests and Order Service lifecycle documentation and diagram.
+- Prompt(s): “Update Order Service so requester deletion applies only to
+  unassigned `OPEN` orders, and requester cancellation only to assigned
+  `ACCEPTED` orders before pickup. Preserve supplier deactivation cancellation.
+  Update relevant tests and documentation. Keep published events as facts about
+  Order Service. Change files only in `order-service/`, except the required
+  `ai/usage-log.md` entry.”
+- Author review: Contributor review pending. Order Service tests, Ruff checks,
+  and `git diff --check` passed.
+
 ## 19/10/2026 — Alexander Gerald
 
 - Tool: Codex (model: GPT-6)

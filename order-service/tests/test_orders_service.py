@@ -186,9 +186,7 @@ async def test_get_order_as_requester_succeeds(
         AsyncMock(return_value=order),
     )
 
-    result = await order_service.get_order_for_participant(
-        _Session(), "order-1", "user-1"
-    )
+    result = await order_service.get_order_for_participant(_Session(), "order-1", "user-1")
     assert result is order
 
 
@@ -202,9 +200,7 @@ async def test_get_order_as_assigned_courier_succeeds(
         AsyncMock(return_value=order),
     )
 
-    result = await order_service.get_order_for_participant(
-        _Session(), "order-1", "courier-1"
-    )
+    result = await order_service.get_order_for_participant(_Session(), "order-1", "courier-1")
     assert result is order
 
 
@@ -231,9 +227,7 @@ async def test_get_order_as_withdrawn_courier_raises_access_denied(
     )
 
     with pytest.raises(OrderAccessDeniedError):
-        await order_service.get_order_for_participant(
-            _Session(), "order-1", "courier-99"
-        )
+        await order_service.get_order_for_participant(_Session(), "order-1", "courier-99")
 
 
 async def test_get_order_reports_missing_order(
@@ -357,10 +351,7 @@ async def test_update_validates_changed_supplier_before_saving_task(
         AsyncMock(side_effect=create_event),
     )
 
-    assert (
-        await order_service.update_order("order-1", update, "user-1", _Session())
-        is task
-    )
+    assert await order_service.update_order("order-1", update, "user-1", _Session()) is task
     assert calls == (["supplier"] if supplier_id != order.supplier_id else []) + [
         "task",
         "event",
@@ -397,9 +388,7 @@ async def test_update_rejects_invalid_supplier_without_task_or_event(
         AsyncMock(return_value=None),
     )
     monkeypatch.setattr(order_service.update_tasks, "create_task", create_task)
-    monkeypatch.setattr(
-        order_service.event_outbox_repository, "create_event", create_event
-    )
+    monkeypatch.setattr(order_service.event_outbox_repository, "create_event", create_event)
 
     with pytest.raises(SupplierNotFoundError if missing else SupplierInactiveError):
         await order_service.update_order("order-1", update, "user-1", _Session())
@@ -457,10 +446,7 @@ async def test_same_pending_update_returns_existing_task(
     create = AsyncMock()
     monkeypatch.setattr(order_service.update_tasks, "create_task", create)
 
-    assert (
-        await order_service.update_order("order-1", update, "user-1", _Session())
-        is pending
-    )
+    assert await order_service.update_order("order-1", update, "user-1", _Session()) is pending
     lookup.assert_not_awaited()
     create.assert_not_awaited()
 
@@ -483,9 +469,7 @@ async def test_different_update_is_rejected_while_one_is_pending(
     )
 
     with pytest.raises(OrderStateConflictError):
-        await order_service.update_order(
-            "order-1", _updated_order(30), "user-1", _Session()
-        )
+        await order_service.update_order("order-1", _updated_order(30), "user-1", _Session())
 
 
 async def test_delete_saves_task_without_calling_credit_or_deleting_order(
@@ -532,9 +516,7 @@ async def test_delete_saves_task_without_calling_credit_or_deleting_order(
     monkeypatch.setattr(order_service.order_repository, "delete_order", delete)
     _mock_credit_client(monkeypatch, release_credits=release)
 
-    result = await order_service.delete_order_for_requester(
-        RecordingSession(), "order-1", "user-1"
-    )
+    result = await order_service.delete_order_for_requester(RecordingSession(), "order-1", "user-1")
 
     assert result is task
     assert events == ["begin", "task_saved", "commit"]
@@ -564,9 +546,7 @@ async def test_repeated_delete_returns_existing_task(
     create = AsyncMock()
     monkeypatch.setattr(order_service.release_tasks, "create_task", create)
 
-    result = await order_service.delete_order_for_requester(
-        _Session(), "order-1", "user-1"
-    )
+    result = await order_service.delete_order_for_requester(_Session(), "order-1", "user-1")
 
     assert result is task
     create.assert_not_awaited()
@@ -620,15 +600,13 @@ async def test_delete_creates_new_task_after_failed_task(
     create = AsyncMock(return_value=task)
     monkeypatch.setattr(order_service.release_tasks, "create_task", create)
 
-    result = await order_service.delete_order_for_requester(
-        _Session(), "order-1", "user-1"
-    )
+    result = await order_service.delete_order_for_requester(_Session(), "order-1", "user-1")
 
     assert result is task
     create.assert_awaited_once()
 
 
-async def test_cancel_creates_pending_action_for_open_or_accepted_order(
+async def test_cancel_creates_pending_action_for_assigned_accepted_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     order = _order(status=OrderStatus.ACCEPTED, courier_id="courier-1")
@@ -667,7 +645,7 @@ async def test_repeated_cancel_returns_the_same_pending_cancel_task(
     monkeypatch.setattr(
         order_service.order_repository,
         "get_order_for_update",
-        AsyncMock(return_value=_order()),
+        AsyncMock(return_value=_order(status=OrderStatus.ACCEPTED, courier_id="courier-1")),
     )
     monkeypatch.setattr(
         order_service.release_tasks,
@@ -725,20 +703,46 @@ async def test_cancel_enforces_requester_ownership(
     create.assert_not_awaited()
 
 
-async def test_cancel_rejects_order_after_pickup_or_with_pending_update(
+@pytest.mark.parametrize(
+    "order",
+    [
+        _order(),
+        _order(status=OrderStatus.OPEN, courier_id="courier-1"),
+        _order(status=OrderStatus.ACCEPTED),
+        _order(status=OrderStatus.PICKED_UP, courier_id="courier-1"),
+    ],
+)
+async def test_cancel_rejects_unassigned_or_non_accepted_order(
     monkeypatch: pytest.MonkeyPatch,
+    order: SimpleNamespace,
 ) -> None:
-    get_order = AsyncMock(return_value=_order(status=OrderStatus.PICKED_UP))
     monkeypatch.setattr(
-        order_service.order_repository, "get_order_for_update", get_order
+        order_service.order_repository,
+        "get_order_for_update",
+        AsyncMock(return_value=order),
     )
+    create = AsyncMock()
+    publish = AsyncMock()
+    pending = AsyncMock(return_value=_action_task(ReleaseAction.CANCEL))
+    monkeypatch.setattr(order_service.release_tasks, "create_task", create)
+    monkeypatch.setattr(order_service.release_tasks, "get_for_order", pending)
+    monkeypatch.setattr(order_service.event_outbox_repository, "create_event", publish)
 
-    with pytest.raises(OrderStateConflictError, match="open or accepted"):
+    with pytest.raises(OrderStateConflictError, match="assigned courier"):
         await order_service.cancel_order_for_requester(
             _Session(), "order-1", "user-1", "No longer needed"
         )
 
-    get_order.return_value = _order()
+    create.assert_not_awaited()
+    pending.assert_not_awaited()
+    publish.assert_not_awaited()
+
+
+async def test_cancel_rejects_order_with_pending_update(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    get_order = AsyncMock(return_value=_order(status=OrderStatus.ACCEPTED, courier_id="courier-1"))
+    monkeypatch.setattr(order_service.order_repository, "get_order_for_update", get_order)
     monkeypatch.setattr(
         order_service.update_tasks,
         "get_pending_for_order",
@@ -791,6 +795,7 @@ async def test_delete_rejects_order_with_pending_update(
     "order",
     [
         _order(courier_id="courier-1"),
+        _order(status=OrderStatus.ACCEPTED, courier_id="courier-1"),
         _order(status=OrderStatus.COMPLETED),
     ],
 )
@@ -804,12 +809,15 @@ async def test_delete_rejects_assigned_or_non_open_order(
         AsyncMock(return_value=order),
     )
     create = AsyncMock()
+    pending = AsyncMock(return_value=_action_task(ReleaseAction.DELETE))
     monkeypatch.setattr(order_service.release_tasks, "create_task", create)
+    monkeypatch.setattr(order_service.release_tasks, "get_for_order", pending)
 
     with pytest.raises(OrderStateConflictError):
         await order_service.delete_order_for_requester(_Session(), "order-1", "user-1")
 
     create.assert_not_awaited()
+    pending.assert_not_awaited()
 
 
 async def test_delete_translates_database_failure(
@@ -860,9 +868,7 @@ async def test_delete_does_not_call_credit_when_task_commit_fails(
     _mock_credit_client(monkeypatch, release_credits=release)
 
     with pytest.raises(OrderDeletionError):
-        await order_service.delete_order_for_requester(
-            CommitFailingSession(), "order-1", "user-1"
-        )
+        await order_service.delete_order_for_requester(CommitFailingSession(), "order-1", "user-1")
 
     release.assert_not_awaited()
 
@@ -881,9 +887,7 @@ async def test_update_rejects_pending_terminal_action(
         AsyncMock(return_value=SimpleNamespace(status="pending")),
     )
     with pytest.raises(OrderStateConflictError, match="pending terminal action"):
-        await order_service.update_order(
-            "order-1", _updated_order(), "user-1", _Session()
-        )
+        await order_service.update_order("order-1", _updated_order(), "user-1", _Session())
 
 
 async def test_deletion_status_is_only_visible_to_requester(
