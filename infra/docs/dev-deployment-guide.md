@@ -157,6 +157,21 @@ The NUS organisation denies `AssumeRoleForPodIdentity`, role chaining and
 - The account is in the **SES sandbox**: every recipient must be a verified
   identity, at most 200 emails a day. Request production access to lift both.
 
+### Monitoring (Prometheus and Grafana)
+
+`charts/kube-prometheus-stack`, namespace `monitoring`, private to the cluster. There is no gateway or CloudFront route.
+
+```bash
+aws secretsmanager get-secret-value --secret-id foc/dev/grafana-admin --query SecretString --output text   # user: admin
+kubectl -n monitoring port-forward svc/kps-grafana 3000:80        # http://localhost:3000
+kubectl -n monitoring port-forward svc/kps-prometheus 9090:9090   # http://localhost:9090
+```
+
+- The services expose no metrics of their own. Per-service request rate, success rate and latency come from their Linkerd proxies, e.g. `sum by (app_kubernetes_io_name) (rate(response_total{direction="inbound"}[1m]))`.
+- `all-authenticated` also covers the proxy's admin port, so `foc-service` opens `/metrics` to Prometheus's mesh identity only, and `/live` and `/ready` to the kubelet (`mesh.metrics`). An unmeshed scraper gets 403.
+- Prometheus keeps 7 days on a 10 GiB `gp3` disk. `eks-down.sh` deletes the disk, so history doesn't survive a pause.
+- k6 can push to `http://kps-prometheus.monitoring:9090/api/v1/write`. Give every request a fixed `name` tag first: `load.js` has order IDs in its URLs, which would create a series per order.
+
 ### Sizing and autoscaling
 
 - Nodes: `default` group, 2 × `t4g.large` Spot (29 pods each). Cluster
