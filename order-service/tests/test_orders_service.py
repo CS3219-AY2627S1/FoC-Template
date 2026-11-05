@@ -55,6 +55,7 @@ def _order(
         reservation_id="reservation-1",
         supplier_id="supplier-1",
         status=status,
+        proof_of_delivery_photo_key=None,
         deadline=datetime.now(UTC) + timedelta(hours=2),
     )
 
@@ -187,7 +188,7 @@ async def test_get_order_as_requester_succeeds(
     )
 
     result = await order_service.get_order_for_participant(_Session(), "order-1", "user-1")
-    assert result is order
+    assert result == (order, None)
 
 
 async def test_get_order_as_assigned_courier_succeeds(
@@ -201,7 +202,21 @@ async def test_get_order_as_assigned_courier_succeeds(
     )
 
     result = await order_service.get_order_for_participant(_Session(), "order-1", "courier-1")
-    assert result is order
+    assert result == (order, None)
+
+
+async def test_get_order_loads_photo_for_participant(monkeypatch: pytest.MonkeyPatch) -> None:
+    order = _order(requester_id="user-1")
+    order.proof_of_delivery_photo_key = "proof-of-delivery/order-1/photo.jpg"
+    photo = order_service.proof_photo.Photo(b"photo", "image/jpeg")
+    load = AsyncMock(return_value=photo)
+    monkeypatch.setattr(order_service.order_repository, "get_order", AsyncMock(return_value=order))
+    monkeypatch.setattr(order_service.proof_photo, "get", load)
+
+    result = await order_service.get_order_for_participant(_Session(), "order-1", "user-1")
+
+    assert result == (order, photo)
+    load.assert_awaited_once_with(order.proof_of_delivery_photo_key)
 
 
 async def test_get_order_as_unrelated_user_raises_access_denied(

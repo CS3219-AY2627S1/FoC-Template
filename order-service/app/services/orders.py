@@ -1,6 +1,7 @@
 # AI-influenced: Order Service workflows; get_order_for_participant allows assigned courier access.
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -27,6 +28,7 @@ from app.schemas.orders import (
     OrderUpdate,
     SortDirection,
 )
+from app.services import proof_photo
 from app.services.client_manager import get_credit_client, get_supplier_client
 from app.services.clients.supplier.error import SupplierInactiveError
 from app.services.clients.supplier.get_supplier import get_supplier
@@ -52,6 +54,7 @@ ORDER_ACTION_EVENT_TYPES: dict[ReleaseAction, OrderActionEventType] = {
     ReleaseAction.DELETE: "OrderDeletionRequested",
     ReleaseAction.CANCEL: "OrderCancellationRequested",
 }
+logger = logging.getLogger(__name__)
 
 
 def _build_order_action_event(task: OrderReleaseTask) -> OrderActionEvent:
@@ -195,7 +198,11 @@ async def withdraw_order(
         raise OrderWithdrawalError(order_id) from exc
 
 
-async def deliver_order(session: AsyncSession, order_id: str, courier_id: str) -> OrderTable:
+async def deliver_order(
+    session: AsyncSession, order_id: str, courier_id: str, photo: proof_photo.Photo
+) -> OrderTable:
+    photo_key = None
+    committed = False
     try:
         async with session.begin():
             order = await order_repository.get_order_for_update(session, order_id)
@@ -211,7 +218,9 @@ async def deliver_order(session: AsyncSession, order_id: str, courier_id: str) -
                 )
 
             assert_transition(current_status, OrderStatus.AWAITING_APPROVAL)
+            photo_key = await proof_photo.upload(order_id, photo)
             delivered_at = datetime.now(UTC)
+            order.proof_of_delivery_photo_key = photo_key
             order.awaiting_approval_at = delivered_at
             await order_repository.set_status(session, order, OrderStatus.AWAITING_APPROVAL)
             await event_outbox_repository.create_event(
@@ -224,9 +233,18 @@ async def deliver_order(session: AsyncSession, order_id: str, courier_id: str) -
                     timestamp=delivered_at,
                 ),
             )
+        committed = True
         return order
     except SQLAlchemyError as exc:
         raise OrderDeliveryError(order_id) from exc
+    finally:
+        if photo_key and not committed:
+            try:
+                await proof_photo.delete(photo_key)
+            except Exception:
+                logger.exception(
+                    "Could not remove unreferenced delivery photo for order %s", order_id
+                )
 
 
 async def approve_order_for_requester(
@@ -389,7 +407,7 @@ async def get_order_for_participant(
     session: AsyncSession,
     order_id: str,
     user_id: str,
-) -> OrderTable:
+) -> tuple[OrderTable, proof_photo.Photo | None]:
     try:
         order = await order_repository.get_order(session, order_id)
     except SQLAlchemyError as exc:
@@ -401,7 +419,10 @@ async def get_order_for_participant(
     is_courier = order.courier_id is not None and user_id == order.courier_id
     if not (is_requester or is_courier):
         raise OrderAccessDeniedError(order_id)
-    return order
+    photo = None
+    if order.proof_of_delivery_photo_key:
+        photo = await proof_photo.get(order.proof_of_delivery_photo_key)
+    return order, photo
 
 
 async def get_deletion_for_requester(

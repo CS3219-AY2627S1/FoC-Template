@@ -2,6 +2,22 @@
 
 # AI usage log — Order Service
 
+## 2026-11-06 — Delivery photo proof integration
+
+Tool: Codex (GPT-6). Prompt: “Port delivery photo proof from
+`order/proof-of-delivery-photo` into `feature/photo-proof`. Extract image
+validation and private S3 operations into `shared/foc_shared/images.py` for
+future chat reuse. Keep all other changes within `order-service/`. Preserve
+the required multipart `photo` upload, courier authorization, delivery state
+transition, and participant-only retrieval through order details. Include
+the migration, service-local configuration, focused tests, AI attribution,
+and an entry in `order-service/ai/usage-log.md`."
+
+Codex adapted the existing Order Service upload and retrieval flow to the
+current branch, placed reusable image validation and S3 storage in the shared
+library, and added service tests, migration, and documentation. Author review
+and validation results are recorded in the task exchange.
+
 ## 2026-10-16 — F2.6 courier acceptance
 
 User request: “For F2.6, tell me the pseudocode. Remember that it has to check
