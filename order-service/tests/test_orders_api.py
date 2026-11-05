@@ -185,11 +185,27 @@ def test_deliver_maps_database_failure(client, monkeypatch):
     assert response.json()["code"] == "order_delivery_failed"
 
 
-def test_deliver_rejects_missing_or_invalid_photo(client, monkeypatch):
+def test_deliver_without_photo(client, fake_session, monkeypatch):
+    order = _stored_order(requester_id="requester-1")
+    order.courier_id = "courier-1"
+    order.status = OrderStatus.AWAITING_APPROVAL
+    deliver = AsyncMock(return_value=order)
+    monkeypatch.setattr(order_routes.order_service, "deliver_order", deliver)
+
+    response = client.post(
+        "/orders/order-1/deliver",
+        headers={"X-User-Id": "courier-1", "X-User-Role": "client"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "AWAITING_APPROVAL"
+    deliver.assert_awaited_once_with(fake_session, "order-1", "courier-1", None)
+
+
+def test_deliver_rejects_invalid_photo(client, monkeypatch):
     deliver = AsyncMock()
     monkeypatch.setattr(order_routes.order_service, "deliver_order", deliver)
     headers = {"X-User-Id": "courier-1", "X-User-Role": "client"}
-    assert client.post("/orders/order-1/deliver", headers=headers).status_code == 422
     response = client.post(
         "/orders/order-1/deliver",
         headers=headers,
