@@ -10,15 +10,23 @@ from foc_shared.auth import Role
 _ALLOWED_EMAIL_DOMAIN = "u.nus.edu"
 _PASSWORD_MIN_LENGTH = 8
 
+
+def validate_password_strength(v: str) -> str:
+    """Shared password rule for registration, admin creation and resets."""
+    if len(v) < _PASSWORD_MIN_LENGTH:
+        raise ValueError(f"password must be at least {_PASSWORD_MIN_LENGTH} characters")
+    if not re.search(r"[A-Za-z]", v) or not re.search(r"\d", v):
+        raise ValueError("password must contain both letters and digits")
+    return v
+
+
 class RegisterRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: EmailStr
     password: str = Field(min_length=_PASSWORD_MIN_LENGTH, max_length=72)
     display_name: str = Field(min_length=1, max_length=50)
-    contact_number: str | None = Field(
-        default=None, max_length=8, pattern=r"^[89]\d{7}$"
-    )
+    contact_number: str | None = Field(default=None, max_length=8, pattern=r"^[89]\d{7}$")
 
     @field_validator("email")
     @classmethod
@@ -31,15 +39,12 @@ class RegisterRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def _validate_password_strength(cls, v: str) -> str:
-        if len(v) < _PASSWORD_MIN_LENGTH:
-            raise ValueError(f"password must be at least {_PASSWORD_MIN_LENGTH} characters")
-        if not re.search(r"[A-Za-z]", v) or not re.search(r"\d", v):
-            raise ValueError("password must contain both letters and digits")
-        return v
+        return validate_password_strength(v)
 
 
 class CreateAdminRequest(RegisterRequest):
     """Validated account details for an administrator created by an admin."""
+
 
 class RegisterResponse(BaseModel):
     id: str
@@ -95,9 +100,7 @@ class ProfileUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     display_name: str | None = Field(default=None, min_length=1, max_length=50)
-    contact_number: str | None = Field(
-        default=None, max_length=8, pattern=r"^[89]\d{7}$"
-    )
+    contact_number: str | None = Field(default=None, max_length=8, pattern=r"^[89]\d{7}$")
 
     @model_validator(mode="after")
     def _at_least_one_field(self) -> ProfileUpdateRequest:

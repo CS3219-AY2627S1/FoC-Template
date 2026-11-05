@@ -14,7 +14,16 @@ import type {
   SupplierUpdate,
 } from "./types";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
+declare global {
+  interface Window {
+    __FOC_ENV__?: { API_BASE_URL?: string };
+  }
+}
+
+const BASE_URL =
+  (typeof window !== "undefined" ? window.__FOC_ENV__?.API_BASE_URL : undefined) ??
+  import.meta.env.VITE_API_BASE_URL ??
+  "http://localhost:8080";
 
 const TOKEN_KEY = "foc.token";
 
@@ -140,6 +149,18 @@ export const authApi = {
       password,
     });
   },
+  forgotPassword(email: string) {
+    return request<{ message: string }>("POST", "/api/users/password/forgot", {
+      email,
+    });
+  },
+  resetPassword(email: string, code: string, newPassword: string) {
+    return request<{ message: string }>("POST", "/api/users/password/reset", {
+      email,
+      code,
+      new_password: newPassword,
+    });
+  },
   me() {
     return request<ProfileResponse>("GET", "/api/users/me");
   },
@@ -263,7 +284,7 @@ export interface OrderCreate {
   delivery_location: string;
 }
 
-export interface OrderUpdate extends OrderCreate {}
+export type OrderUpdate = OrderCreate;
 
 export interface OrderCancellationRequest {
   reason: string;

@@ -1,4 +1,5 @@
 <!-- AI-INFLUENCED: Record Order Service photo implementation with Codex. -->
+
 # AI Usage Log
 
 Per the CS3219 AI Usage Policy (Project Document, Appendix 2). Record every
@@ -15,6 +16,23 @@ Format for each entry:
 - Prompt(s): <exact prompt(s) + key responses, or a link>
 - Author review: <how you validated/edited/tested the output>
 ```
+
+## 31/10/2026 — John
+
+- Tool: Claude Code (model: Opus 4.8)
+- Scope: Added ArgoCD GitOps deployment for the FoC k3s-on-EC2 cluster -
+  Terraform Elastic IP for a stable nip.io host, chart hardening
+  (`createNamespaces` flag, ArgoCD sync-option annotations, optional PostSync
+  smoke Job), a Sealed Secrets refactor (shared builder script with local and
+  sealed modes), the ArgoCD app-of-apps manifests plus bootstrap values and a
+  Let's Encrypt ClusterIssuer, the `render-ec2-values` / `argocd-bootstrap` /
+  `sealed-secrets-keygen` scripts, a restructured gated CI pipeline with a Trivy
+  scan + GHCR push + image-tag bump, Dependabot config, and these docs. Top-level
+  dirs changed: `infra/terraform`, `infra/helm/foc`, `infra/argocd`, `infra/k8s`,
+  `scripts`, `.github`, `docs`, `frontend`.
+- Prompt(s): Implement the team's ArgoCD GitOps design for the FoC k3s cluster
+  (full task spec in the PR description).
+- Author review: Validated the helm charts with helm lint and also deployed onto the cluster.
 
 ## 20/10/2026 — Alexander Gerald
 
@@ -466,6 +484,22 @@ Format for each entry:
   changed here). order-service and its event/HTTP flows are drawn dashed and
   labelled "PR #5" because they exist only on the unmerged branch.
 
+## 18/10/2026 — John Gao Jiahao
+
+- Tool: Claude Code (model: Claude Opus 4.8) with the draw.io MCP server
+- Scope: Generated the cluster infrastructure diagram
+  (`docs/cluster-infrastructure.drawio`) depicting the k3s-on-EC2 Kubernetes
+  deployment: VPC/public subnet, the EC2 node, namespace-per-service with each
+  service's co-located Postgres, RabbitMQ, Traefik ingress, HPA, S3 backups, and
+  the CloudWatch/EventBridge/Budgets auto-stop. Exported it to PNG/SVG and added
+  a "Cluster infrastructure" section embedding it in `docs/deployment.md`. The
+  architecture was decided by the team; AI only drew the diagram from it.
+- Prompt(s):
+  1. "make a cluster infrastructure diagram using drawio mcp"
+  2. "can you export and put it in the documentation markdown files"
+- Author review: Checked every node and edge against the Helm charts
+  (`infra/helm/foc`) and Terraform (`infra/terraform`).
+
 ## 04/10/2026 — Alexander Gerald
 
 - Tool: Codex (model: GPT-5)
@@ -493,6 +527,44 @@ Format for each entry:
 - Author review: Pending contributor review. Codex restored the Alembic
   scaffold and dependency, removed only the two tracked revision files, kept
   the versions directory, and did not modify a live database.
+
+## 19/10/2026 — Zhou Shiyao
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Added Playwright end-to-end regression tests for the frontend:
+  (a) **auth** — login, registration, OTP verification, session
+  hydration/expiry, logout, and client/admin route guards; (b) **suppliers** —
+  browse with search/category/zone/sort/pagination, detail with optional-field
+  fallbacks and 404s, plus admin create/edit/deactivate/reactivate; (c) **admin
+  client accounts** — list/self-row behaviour, search + status filters,
+  suspend/reinstate, promote/demote, create-admin validation and gateway
+  rejection; and (d) **profile** — read-only account fields, editable
+  name/contact, client-side validation and error handling. Also added the shared
+  API-gateway mock helper (with query-parameter capture and request recording),
+  supplier/admin fixtures, a Vite warm-up global setup, Playwright config
+  updates, and the frontend test documentation. Test tooling only; no
+  application behavior, endpoint contracts, or architecture decisions were
+  changed.
+- Prompt(s):
+  1. "Help me to write regression tests for frontend/auth."
+  2. "Now generate the regression tests for supplier pages. …" (detailed
+     instruction: inspect the code/contracts first; cover positive, negative,
+     edge and state-transition scenarios; avoid redundant or fragile tests;
+     then implement, run, and summarize), followed by "commit the changes".
+  3. "commit the changes then continue to generate tests for admin and profile
+     following the same instruction."
+- Author review: Reviewed every spec against the code it exercises —
+  `src/pages/{auth,suppliers,admin}`, `src/pages/Profile.tsx`,
+  `src/components/RouteGuards.tsx`, and the client logic in `src/lib/api.ts` /
+  `src/lib/auth.tsx` — so each assertion matches actual behavior. Cross-checked
+  request payloads and query parameters against
+  `docs/supplier-service-api.md` and `user-service/docs/api-contract.md`.
+  Ran `npx tsc --noEmit -p tsconfig.json` (clean; tests are part of the
+  TypeScript project) and
+  `cd frontend && npx playwright test tests/auth tests/suppliers tests/admin tests/profile`
+  — **162 passed** (54 tests × Chromium/Firefox/WebKit) with a cold Vite cache.
+  Tests use a mocked gateway (no backend/DB required); no production code was
+  modified.
 
 ## 14/10/2026 — Alexander Gerald
 
@@ -790,6 +862,7 @@ Format for each entry:
   Make sure the code is neat, simple to understand, and add clear comments
   where appropriate but don't overdo the comments either. Make sure it follows
   the project's architecture.”
+
 - Author review: Ruff lint, format, and `git diff --check` passed. Tests were
   not run.
 
@@ -879,6 +952,7 @@ Format for each entry:
   branch to be photo proof of delivery feature free.”
 - Author review: Order Service tests and Ruff checks passed. Existing staged
   Order Service work was preserved separately during the removal.
+
 ---
 
 ## 17/10/2026 — Frank Yu / Zhou Shiyao
@@ -909,7 +983,6 @@ Format for each entry:
   `OrderExpiryRequested`, definitive replies and schema ownership. Verified
   with `pytest` (73 tests passing) and `ruff check`/`ruff format` (clean).
   PR #11.
-
 
 ## 18/10/2026 - credit-service owner (fill in name)
 
@@ -957,9 +1030,9 @@ Format for each entry:
 - Scope: credit-service participant side of the Order approval transfer task.
   Generated: `OrderApprovalRequestedEvent` and `CreditTransferResult` in
   `app/schemas/interop.py` (mirroring `order-service/app/schemas/
-  order_approval_events.py` and `credit_events.py`), `TaskResultKind.TRANSFER`
+order_approval_events.py` and `credit_events.py`), `TaskResultKind.TRANSFER`
   with `transferred` / `transfer_failed` outcomes, `_transfer_reservation(
-  commit=False)` so the settlement and its task result commit once,
+commit=False)` so the settlement and its task result commit once,
   `CreditService.handle_approval_requested` /
   `report_transfer_retries_exhausted` / `_record_transfer_outcome` /
   `_publish_transfer_outcome`, the consumer binding for
@@ -1003,8 +1076,6 @@ Format for each entry:
 - Author review: TDD: 9 RED failures confirmed before implementing. After
   implementation: `pytest` (213 passed, 15 skipped) and `ruff check` /
   `ruff format` clean.
-
-
 
 ## 2026-10-19 — frontend: ordersApi + creditsApi API layer (Task 3)
 
@@ -1084,3 +1155,37 @@ Format for each entry:
   1. Task brief in `.superpowers/sdd/you-are-working-in-snug-gizmo/task-10-brief.md`.
 - Author review: `npm run build` (tsc + vite) passed with zero TypeScript errors.
   Build output: 501.45 kB JS, 202.52 kB CSS.
+
+## 2026-10-20 — postman: D3 demo collection for order + credit workflows
+
+- Author: johngao122. Tool: Claude Code. Model: Claude Opus 4.8.
+- Task: Branch `feat/postman-d3`. Added a self-contained, re-runnable Postman
+  collection demonstrating Milestone D3 (Order + Credit services and their async
+  RabbitMQ/outbox workflows) end-to-end through the API Gateway, no UI. Twelve
+  numbered folders (00 Setup through 11 Ledger) cover allocation, synchronous
+  reservation, queries/filters, authZ and invalid transitions, the happy path
+  with a concurrent-accept race, withdraw idempotency, async update/amendment
+  (accept + reject), cancel/delete, expiry, and supplier-deactivation cascade.
+  Every request asserts status + key body fields; async terminal states are
+  reached by in-collection polling (a request re-issues itself via
+  `setNextRequest`, capped, failing loudly on timeout); OTP codes are read from
+  Mailpit; emails embed a per-run `runId` so the whole run repeats with no
+  manual steps. Auth is per-request `Bearer` only (never raw `X-User-*`).
+  Credit assertions are deltas against a snapshot taken immediately before each
+  action. Also added `scripts/d3-race.sh` (bash + curl + jq concurrent-accept
+  demo) and documented both in `postman/README.md`.
+- Files changed: `postman/FoC-D3.postman_collection.json`,
+  `postman/FoC-local.postman_environment.json`, `scripts/d3-race.sh`,
+  `postman/README.md`, `ai/usage-log.md`.
+- Prompt(s):
+  1. Executable brief from the D3 Postman plan (collection folder/assertion
+     spec, verified ground truth for order/credit/gateway/user/supplier routes,
+     re-runnability mechanics, env additions, and the verification bar).
+- Author review: against a fresh stack (`docker compose down -v && up --build`,
+  all 14 services healthy), `newman run` passed twice back-to-back with 0 failed
+  assertions (212 then 217; request/assertion counts vary with poll retries),
+  and `scripts/d3-race.sh` printed one 200 + one 409 and exited 0. The only
+  adjustment from the brief: the folder-01 allocation balance poll had to
+  tolerate an initial 404 (the credit account is created asynchronously from the
+  UserRegistered event, so `GET /balance` 404s until it exists) rather than
+  assert 200 on every poll.
