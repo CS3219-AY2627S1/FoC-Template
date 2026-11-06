@@ -1,0 +1,45 @@
+digraph NotificationServiceArchitecture {
+  graph [
+    label="Notification Service architecture | implemented component view (C4 level 3)",
+    labelloc=t, labeljust=l, fontsize=22, fontname="Helvetica-Bold",
+    fontcolor="#14243a", bgcolor="white", pad=0.35, rankdir=TB,
+    compound=true, newrank=true, splines=polyline, nodesep=0.32, ranksep=0.58
+  ];
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11,
+        color="#4c7180", fillcolor="#e8f4ef", fontcolor="#14243a", margin="0.18,0.12"];
+  edge [fontname="Helvetica", fontsize=9, color="#345d76", fontcolor="#28475c", arrowsize=0.7, penwidth=1.25];
+
+  order_x [label="foc.order.events\nRabbitMQ topic exchange\norder-local facts", fillcolor="#fceecb", color="#bd943d"];
+  queue [label="notification-service.order-events\ndurable queue\nbinds eight order routing keys", fillcolor="#fceecb", color="#bd943d"];
+  gateway [label="API Gateway\nJWT validation; trusted identity headers", fillcolor="#e9f1fb", color="#678dbd"];
+  bell [label="Frontend notification bell\nReact SPA; 15 s poll of unread list", fillcolor="#e9f1fb", color="#678dbd"];
+
+  subgraph cluster_notification {
+    label="Notification Service | FastAPI / Python 3.12 :8000";
+    labelloc=t; labeljust=l; fontsize=16; fontname="Helvetica-Bold";
+    color="#4a8a71"; bgcolor="#f8fcf9"; style="rounded"; penwidth=1.7;
+
+    consumer [label="Event consumer\nservices/consumer.py\nreconnect loop; validate payload;\nrouting-key check; ack / nack", fillcolor="#fff2dc", color="#ba8c49"];
+    rules [label="Notification rules\nservices/rules.py\nbuild_notifications: event -> drafts\nper recipient and order status", fillcolor="#d9eee1"];
+    channel [label="Delivery channel\nservices/channels.py\nDeliveryChannel protocol; InAppChannel\n(NTH2 push plugs in here)"];
+    routes [label="HTTP interface\napi/routes/notifications.py + deps.py\nlist, mark-read, mark-all-read;\nself-or-admin check on identity headers"];
+    service [label="Notification service\nservices/notification_service.py\nlist / mark-read use cases; commit"];
+    repo [label="Persistence repository\nrepositories/notifications.py\nsavepoint insert; list; mark read"];
+
+    consumer -> rules [label="builds drafts for the event"];
+    consumer -> channel [label="deliver(drafts) in one txn"];
+    channel -> repo [label="insert_notifications"];
+    routes -> service [label="calls / validated query"];
+    service -> repo [label="reads / transactional writes"];
+  }
+
+  db [shape=cylinder, style=filled, label="notification-db | PostgreSQL\nnotifications\nunique (event_id, recipient_id)", fillcolor="#eef0f3", color="#778390"];
+
+  legend [shape=note, style=filled, label="Legend\nBlue/green solid arrow = synchronous call or local control\nOrange dashed arrow = AMQP event flow\nGrey dotted arrow = database access\nCylinder = service-owned data store\nGreen boundary = Notification Service process", fillcolor="#f6f7f9", color="#9aa4ae", fontsize=10];
+
+  order_x -> queue [label="AMQP route by event type", style=dashed, color="#b47a21", fontcolor="#805716"];
+  queue -> consumer [label="AMQP consume; prefetch 10", style=dashed, color="#b47a21", fontcolor="#805716"];
+  repo -> db [label="SQLAlchemy / asyncpg", style=dotted, color="#778390", fontcolor="#626c76"];
+  bell -> gateway [label="HTTPS / JSON + bearer token"];
+  gateway -> routes [label="HTTP GET/POST /notifications/*\nX-User-Id, X-User-Role"];
+}

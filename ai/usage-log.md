@@ -1173,3 +1173,71 @@ commit=False)` so the settlement and its task result commit once,
   tolerate an initial 404 (the credit account is created asynchronously from the
   UserRegistered event, so `GET /balance` 404s until it exists) rather than
   assert 200 on every poll.
+
+## 06/11/2026 - John
+
+- Tool: Claude Code (model: Claude Opus 4.8)
+- Scope: notification-service implementation on branch `feat/notification-service`
+  (backlog Notification F1-F4, N1.1, N2.1). Implemented, against the team's
+  existing event contracts and the route/service/repository layering: the
+  RabbitMQ consumer (`app/services/consumer.py`) that binds a durable queue to
+  `foc.order.events`, validates each payload, checks the routing key against the
+  event type, and acks only after a committed write, with a reconnect loop and
+  message_id / derived-id idempotency; the pure `build_notifications` rules
+  (`app/services/rules.py`) mapping each order event to per-recipient drafts and
+  the supplier-deactivation branch; the pluggable `DeliveryChannel` / `InAppChannel`
+  (`app/services/channels.py`) left as the NTH2 push hook; the idempotent
+  savepoint insert plus list and mark-read queries (`app/repositories/notifications.py`);
+  the `Notification` model with the unique `(event_id, recipient_id)` constraint
+  and the recipient/created-at index (`app/models/notification.py`); the read API
+  (`app/api/routes/notifications.py`, `app/api/deps.py`) with the gateway identity
+  headers and the self-or-admin rule; the frontend notification bell, page, and
+  15-second poll (`frontend/src/components/AppLayout.tsx`,
+  `frontend/src/pages/notifications/Notifications.tsx`,
+  `frontend/src/lib/useNotifications.ts`, `frontend/src/lib/api.ts`); and the
+  gateway exposure of `/api/notifications/*`. Added the `order_name` field to
+  `OrderEvent` (`shared/foc_shared/events.py`) and `OrderApprovedEvent`
+  (`order-service/app/schemas/order_approval_events.py`) so the order name
+  travels on the event (event-carried state transfer). The requirements and the
+  event/endpoint contracts were decided by the team; the tool implemented them.
+- Prompt(s): Implement the notification-service: consume order-lifecycle events
+  idempotently from `foc.order.events`, build one notification per recipient per
+  the D1 Notification requirements, persist to a service-owned database with no
+  duplicates on redelivery, expose a gateway-fronted read API guarded by the
+  trusted identity headers, and add a frontend bell that polls it. Keep the code
+  neat and follow the project's architecture.
+- Author review: `make test-notification-service` passes (rules, consumer, and
+  route suites). `ruff check` / `ruff format` clean. Idempotency verified by the
+  duplicate-message-id consumer test. Frontend `npm run build` passes.
+
+## 06/11/2026 - John
+
+- Tool: Claude Code (model: Claude Opus 4.8)
+- Scope: notification-service documentation only; no code changes. Every table,
+  column, arrow, status code, and test name was derived from the implemented
+  source, matching the repo's existing doc house style. Added
+  `notification-service/docs/architecture.md` (purpose, F1-F4, and a C4 level-3
+  component view authored as `notification-service-architecture.dot` and exported
+  to `.svg` with Graphviz), `docs/event-flow.md` (two Mermaid sequence diagrams:
+  end-to-end order-event-to-bell and a duplicate-redelivery drop),
+  `docs/api-contract.md` (the three read endpoints, headers, self-or-admin rule,
+  and error shapes in the user-service contract style), `docs/data-model.md` (a
+  Mermaid ER diagram of the `notifications` table with the unique constraint and
+  index), and `docs/requirements-traceability.md` (one row per D1 Notification
+  requirement mapped to file/function and the exact covering test, plus the
+  OrderApproved and order_name deviations). Rewrote `notification-service/README.md`
+  (removed the scaffold status, documented the real layout, env vars, run and test
+  commands, and linked the five docs). Updated the root `docs/architecture.md`
+  container view so the `RabbitMQ -> notification-service` edge reads as an active
+  consume path, refreshed the components table row, and resolved the notification
+  part of the "TODO (other services)" L3 line. Set the notification-service owner
+  to John in the root `AGENTS.md`. No architecture or design decisions were made
+  by the tool.
+- Prompt(s): Write the notification-service docs from the implementation (source
+  of truth), matching the existing architecture/api-contract/dot+svg doc styles;
+  diagrams must render on GitHub; derive the traceability test names from the real
+  test files.
+- Author review: regenerated the SVG with
+  `dot -Tsvg notification-service/docs/notification-service-architecture.dot -o notification-service/docs/notification-service-architecture.svg`
+  and confirmed it is non-empty. Grepped every cited test name against `tests/`.
+  Re-read the Markdown for the one-sentence-per-line rule and no em dashes.
