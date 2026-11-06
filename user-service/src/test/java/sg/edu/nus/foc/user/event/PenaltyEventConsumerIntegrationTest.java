@@ -1,4 +1,10 @@
-
+/*
+ * AI Assistance Disclosure:
+ * Tool: OpenAI Codex (GPT-5), date: 2026-11-05
+ * Mode: Code generation.
+ * Scope: Generated the initial test code and provided testing assistance.
+ * Author review: I reviewed for correctness.
+ */
 package sg.edu.nus.foc.user.event;
 
 import java.time.Instant;
@@ -11,7 +17,6 @@ import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -37,6 +42,7 @@ import sg.edu.nus.foc.user.model.User;
 import sg.edu.nus.foc.user.repository.UserRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @SpringBootTest(properties = {
@@ -151,17 +157,12 @@ class PenaltyEventConsumerIntegrationTest {
         );
     }
 
-    private PubSubPushRequest createRequest(
-            PenaltyScoreEvent event
-    ) throws Exception {
+    private PubSubPushRequest createRequest(PenaltyScoreEvent event) throws Exception {
 
         String json = jsonMapper.writeValueAsString(event);
 
-        String encodedData = Base64.getEncoder()
-                .encodeToString(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-
         return createRequest(
-                encodedData,
+                json,
                 Map.of(
                         "eventId", event.eventId(),
                         "eventType", event.eventType(),
@@ -170,10 +171,21 @@ class PenaltyEventConsumerIntegrationTest {
         );
     }
 
-    private PubSubPushRequest createRequest(
-            String encodedData,
-            Map<String, String> attributes
-    ) {
+    private PubSubPushRequest createRequest(PenaltyScoreEvent event, Map<String, String> attributes) throws Exception {
+        return createRequest(jsonMapper.writeValueAsString(event), attributes);
+    }
+
+    // Accepts raw JSON and encodes it into Base64.
+    private PubSubPushRequest createRequest(String json, Map<String, String> attributes) {
+        String encodedData = Base64.getEncoder().encodeToString(
+                json.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+
+        return createRequestWithEncodedData(encodedData, attributes);
+    }
+
+    // Accepts data that is already Base64-encoded.
+    private PubSubPushRequest createRequestWithEncodedData(String encodedData, Map<String, String> attributes) {
         PubSubMessage message = new PubSubMessage(
                 encodedData,
                 attributes,
@@ -399,13 +411,7 @@ class PenaltyEventConsumerIntegrationTest {
         );
 
         PubSubPushRequest request = createRequest(
-                jsonMapper.writeValueAsString(event)
-                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)
-                        .length > 0
-                        ? Base64.getEncoder().encodeToString(
-                                jsonMapper.writeValueAsString(event)
-                                        .getBytes(java.nio.charset.StandardCharsets.UTF_8))
-                        : "",
+                event,
                 Map.of(
                         "eventId", "different-event-id",
                         "eventType", ADDITION_EVENT,
@@ -435,14 +441,8 @@ class PenaltyEventConsumerIntegrationTest {
                 "ACCEPTED_TASK_CANCELLATION"
         );
 
-        String json = jsonMapper.writeValueAsString(event);
-
-        String encodedData = Base64.getEncoder().encodeToString(
-                json.getBytes(java.nio.charset.StandardCharsets.UTF_8)
-        );
-
         PubSubPushRequest request = createRequest(
-                encodedData,
+                event,
                 Map.of(
                         "eventId", event.eventId(),
                         "eventType", event.eventType(),
@@ -535,7 +535,7 @@ class PenaltyEventConsumerIntegrationTest {
 
     @Test
     void consumeAddition_invalidBase64ReturnsBadRequest() {
-        PubSubPushRequest request = createRequest(
+        PubSubPushRequest request = createRequestWithEncodedData(
                 "invalid-base64%%%",
                 Map.of(
                         "eventId", "event-invalid-7",
@@ -582,6 +582,356 @@ class PenaltyEventConsumerIntegrationTest {
         // The event insert and penalty update should be atomic.
         // If updating the courier fails, the inserted event must roll back.
         assertThat(processedEventCount()).isZero();
+    }
+
+    // --------------------------------------------------
+    // decodeEvent() validation
+    // --------------------------------------------------
+
+    @Test
+    void rejectsNullPubSubRequest() {
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(null),
+                "Missing Pub/Sub message"
+        );
+    }
+
+    @Test
+    void rejectsMissingPubSubMessage() {
+        PubSubPushRequest request = new PubSubPushRequest(null, null);
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Missing Pub/Sub message"
+        );
+    }
+
+    @Test
+    void rejectsMissingMessageData() {
+        PubSubPushRequest request = new PubSubPushRequest(
+                new PubSubMessage(null, validAttributes(), "message-1", null),
+                null
+        );
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Missing Pub/Sub message data"
+        );
+    }
+
+    @Test
+    void rejectsBlankMessageData() {
+        PubSubPushRequest request = new PubSubPushRequest(
+                new PubSubMessage("   ", validAttributes(), "message-1", null),
+                null
+        );
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Missing Pub/Sub message data"
+        );
+    }
+
+    @Test
+    void rejectsInvalidBase64Payload() {
+        PubSubPushRequest request = createRequestWithEncodedData("invalid-base64!!!", validAttributes());
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Invalid penalty event payload"
+        );
+    }
+
+    @Test
+    void rejectsInvalidJsonPayload() {
+        PubSubPushRequest request = createRequest(
+                "{ invalid json",
+                validAttributes()
+        );
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Invalid penalty event payload"
+        );
+    }
+
+    @Test
+    void rejectsNullEventPayload() {
+        PubSubPushRequest request = createRequest(
+                "null",
+                validAttributes()
+        );
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Penalty event cannot be null"
+        );
+    }
+
+    // --------------------------------------------------
+    // validateEvent() required fields
+    // --------------------------------------------------
+
+    @Test
+    void rejectsEventWithMissingRequiredFields() {
+        String json = """
+                {
+                    "eventId": "event-1",
+                    "eventType": "PenaltyScoreAdditionEvent",
+                    "orderId": null,
+                    "courierId": "courier-1",
+                    "penaltyAmount": 2,
+                    "occurredAt": "2026-11-06T10:00:00Z",
+                    "appliedReason": "ACCEPTED_TASK_CANCELLATION"
+                }
+                """;
+
+        PubSubPushRequest request = createRequest(json, validAttributes());
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Penalty event contains missing fields"
+        );
+    }
+
+    // --------------------------------------------------
+    // validateEvent() event type and amount
+    // --------------------------------------------------
+
+    @Test
+    void rejectsUnexpectedEventType() {
+        String json = validAdditionEventJson()
+                .replace(
+                        "PenaltyScoreAdditionEvent",
+                        "PenaltyScoreDeductionEvent"
+                );
+
+        PubSubPushRequest request = createRequest(json, validAttributes());
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Unexpected penalty event type"
+        );
+    }
+
+    @Test
+    void rejectsNonPositivePenaltyAmount() {
+        String json = validAdditionEventJson()
+                .replace("\"penaltyAmount\": 2", "\"penaltyAmount\": 0");
+
+        PubSubPushRequest request = createRequest(json, validAttributes());
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Penalty amount must be positive"
+        );
+    }
+
+    // --------------------------------------------------
+    // validateEvent() Pub/Sub attributes
+    // --------------------------------------------------
+
+    @Test
+    void rejectsMissingPubSubAttributes() {
+        PubSubPushRequest request = createRequest(
+                validAdditionEventJson(),
+                null
+        );
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Missing Pub/Sub message attributes"
+        );
+    }
+
+    @Test
+    void rejectsMismatchedEventId() {
+        Map<String, String> attributes = Map.of(
+                "eventId", "different-event",
+                "eventType", "PenaltyScoreAdditionEvent",
+                "eventVersion", "1"
+        );
+
+        PubSubPushRequest request = createRequest(
+                validAdditionEventJson(),
+                attributes
+        );
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Event ID does not match Pub/Sub attributes"
+        );
+    }
+
+    @Test
+    void rejectsMismatchedEventTypeAttribute() {
+        Map<String, String> attributes = Map.of(
+                "eventId", "event-1",
+                "eventType", "WrongEventType",
+                "eventVersion", "1"
+        );
+
+        PubSubPushRequest request = createRequest(
+                validAdditionEventJson(),
+                attributes
+        );
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Event type does not match Pub/Sub attributes"
+        );
+    }
+
+    @Test
+    void rejectsUnsupportedEventVersion() {
+        Map<String, String> attributes = Map.of(
+                "eventId", "event-1",
+                "eventType", "PenaltyScoreAdditionEvent",
+                "eventVersion", "2"
+        );
+
+        PubSubPushRequest request = createRequest(
+                validAdditionEventJson(),
+                attributes
+        );
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Unsupported penalty event version"
+        );
+    }
+
+    // --------------------------------------------------
+    // validatePolicy() validation
+    // --------------------------------------------------
+
+    @Test
+    void rejectsUnknownPenaltyReason() {
+        String json = validAdditionEventJson()
+                .replace(
+                        "ACCEPTED_TASK_CANCELLATION",
+                        "UNKNOWN_REASON"
+                );
+
+        PubSubPushRequest request = createRequest(json, validAttributes());
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Unknown penalty reason"
+        );
+    }
+
+    @Test
+    void rejectsDeprecatedPenaltyReason() {
+        String json = validAdditionEventJson()
+                .replace(
+                        "ACCEPTED_TASK_CANCELLATION",
+                        "COURIER_UNRESPONSIVE"
+                );
+
+        PubSubPushRequest request = createRequest(json, validAttributes());
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Deprecated penalty reason cannot be published"
+        );
+    }
+
+    @Test
+    void rejectsInvalidReasonForDeduction() {
+        PubSubPushRequest request = createRequest(
+                validAdditionEventJson(),
+                validAttributes()
+        );
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeDeduction(request),
+                "Unexpected penalty event type"
+        );
+    }
+
+    @Test
+    void rejectsSuccessfulDeliveryAsAddition() {
+        String json = validAdditionEventJson()
+                .replace(
+                        "ACCEPTED_TASK_CANCELLATION",
+                        "SUCCESSFUL_DELIVERY"
+                )
+                .replace("\"penaltyAmount\": 2", "\"penaltyAmount\": 1");
+
+        PubSubPushRequest request = createRequest(json, validAttributes());
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Successful delivery must use deduction event"
+        );
+    }
+
+    @Test
+    void rejectsPenaltyAmountThatDoesNotMatchPolicy() {
+        String json = validAdditionEventJson()
+                .replace("\"penaltyAmount\": 2", "\"penaltyAmount\": 3");
+
+        PubSubPushRequest request = createRequest(json, validAttributes());
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeAddition(request),
+                "Penalty amount does not match policy"
+        );
+    }
+
+    @Test
+    void rejectsInvalidReasonForDeductionEvent() {
+        String json = validAdditionEventJson()
+                .replace(
+                        "PenaltyScoreAdditionEvent",
+                        "PenaltyScoreDeductionEvent"
+                );
+
+        PubSubPushRequest request = createRequest(json, Map.of(
+                "eventId", "event-1",
+                "eventType", "PenaltyScoreDeductionEvent",
+                "eventVersion", "1"
+        ));
+
+        assertBadRequest(
+                () -> penaltyEventConsumer.consumeDeduction(request),
+                "Invalid reason for penalty deduction"
+        );
+    }
+
+    // Helper functions
+
+    private void assertBadRequest(Runnable action, String expectedMessage) {
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                action::run
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertEquals(expectedMessage, exception.getReason());
+    }
+
+    private String validAdditionEventJson() {
+        return """
+                {
+                    "eventId": "event-1",
+                    "eventType": "PenaltyScoreAdditionEvent",
+                    "orderId": "order-1",
+                    "courierId": "courier-1",
+                    "penaltyAmount": 2,
+                    "occurredAt": "2026-11-06T10:00:00Z",
+                    "appliedReason": "ACCEPTED_TASK_CANCELLATION"
+                }
+                """;
+    }
+
+    private Map<String, String> validAttributes() {
+        return Map.of(
+                "eventId", "event-1",
+                "eventType", "PenaltyScoreAdditionEvent",
+                "eventVersion", "1"
+        );
     }
 }
 

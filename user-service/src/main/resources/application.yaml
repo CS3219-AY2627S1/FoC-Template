@@ -4,9 +4,6 @@ spring:
     uri: ${MONGODB_URI:mongodb://mongodb:27017/UserServiceDB?replicaSet=rs0}
   application:
     name: userservice
-  mvc:
-    problemdetails:
-      enabled: true
 
 admin:
   bootstrap-enabled: ${ADMIN_BOOTSTRAP_ENABLED:false}

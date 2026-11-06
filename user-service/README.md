@@ -17,10 +17,22 @@ It follows the repo conventions in [AGENTS.md](../AGENTS.md).
 # Whole system through the gateway at http://localhost:8080
 docker compose up --build
 
+# First install shared foc-common dependency from repo root
+cd foc-common
+mvn clean install
+
+# Then navigate to the User Service directory
+cd ../user-service
+
 # Service from source against the emulators
-docker compose up -d firebase-emulator
+docker compose up -d firebase-emulator pubsub-emulator
+docker compose up pubsub-init
 MONGODB_URI="mongodb+srv://USERNAME:PASSWORD@cluster.mongodb.net/UserServiceDB?retryWrites=true&w=majority" \
-PORT=8081 ./mvnw spring-boot:run
+PORT=8081
+FOC_ENVIRONMENT=local \
+USER_PUBSUB_PUSH_MODE=emulator \
+PUBSUB_EMULATOR_HOST=localhost:8085 \
+./mvnw spring-boot:run
 ```
 
 - Swagger UI: `/api/users/docs`
@@ -114,10 +126,10 @@ The `users` collection contains one document per application user in MongoDB.
 Locally:
 ```bash
 $env:MONGODB_URI="mongodb+srv://..."
-./mvnw verify
-```
 
-Tests are not implemented yet.
+# In repo root
+./mvnw -pl user-service -am verify
+```
 
 ## Admin directory
 

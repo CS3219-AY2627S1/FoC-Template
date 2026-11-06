@@ -11,6 +11,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.InvocationTargetException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -25,6 +27,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 import sg.edu.nus.foc.user.authentication.FirebaseAuthService;
@@ -59,6 +62,14 @@ class UserServiceTest {
     private UserService userService;
 
     private User activeUser;
+
+    private User createUser(String userId, List<String> roles, AccountStatus status) {
+        User user = new User();
+        user.setUserId(userId);
+        user.setRoles(roles);
+        user.setStatus(status);
+        return user;
+    }
 
     @BeforeEach
     void setUp() {
@@ -811,5 +822,403 @@ class UserServiceTest {
 
         verify(lifecycle, never()).saveActive(any());
     }
+
+    // --------------------------------------------------
+    // Helper functions
+    // --------------------------------------------------
+
+    @Test
+    void verifyAdminWithUserReturnsTrueForActiveAdmin() {
+        User user = createUser(
+                "admin-1",
+                List.of("admin", "requester"),
+                AccountStatus.ACTIVE
+        );
+
+        assertTrue(userService.verifyAdmin(user));
+    }
+
+    @Test
+    void verifyAdminWithUserReturnsFalseForNonAdmin() {
+        User user = createUser(
+                "user-1",
+                List.of("requester", "courier"),
+                AccountStatus.ACTIVE
+        );
+
+        assertFalse(userService.verifyAdmin(user));
+    }
+
+    @Test
+    void verifyAdminWithUserReturnsFalseForInactiveAdmin() {
+        User user = createUser(
+                "admin-1",
+                List.of("admin"),
+                AccountStatus.DEACTIVATED
+        );
+
+        assertFalse(userService.verifyAdmin(user));
+    }
+
+    @Test
+    void verifyAdminWithUserReturnsFalseForNullRoles() {
+        User user = createUser(
+                "user-1",
+                null,
+                AccountStatus.ACTIVE
+        );
+
+        assertFalse(userService.verifyAdmin(user));
+    }
+
+    @Test
+    void verifyRequesterWithUserReturnsTrueForActiveRequester() {
+        User user = createUser(
+                "user-1",
+                List.of("requester"),
+                AccountStatus.ACTIVE
+        );
+
+        assertTrue(userService.verifyRequester(user));
+    }
+
+    @Test
+    void verifyRequesterWithUserReturnsFalseForNonRequester() {
+        User user = createUser(
+                "courier-1",
+                List.of("courier"),
+                AccountStatus.ACTIVE
+        );
+
+        assertFalse(userService.verifyRequester(user));
+    }
+
+    @Test
+    void verifyRequesterWithUserReturnsFalseForInactiveRequester() {
+        User user = createUser(
+                "user-1",
+                List.of("requester"),
+                AccountStatus.DEACTIVATED
+        );
+
+        assertFalse(userService.verifyRequester(user));
+    }
+
+    @Test
+    void verifyRequesterWithUserReturnsFalseForNullRoles() {
+        User user = createUser(
+                "user-1",
+                null,
+                AccountStatus.ACTIVE
+        );
+
+        assertFalse(userService.verifyRequester(user));
+    }
+
+    @Test
+    void verifyCourierWithUserReturnsTrueForActiveCourier() {
+        User user = createUser(
+                "courier-1",
+                List.of("courier"),
+                AccountStatus.ACTIVE
+        );
+
+        assertTrue(userService.verifyCourier(user));
+    }
+
+    @Test
+    void verifyCourierWithUserReturnsFalseForNonCourier() {
+        User user = createUser(
+                "user-1",
+                List.of("requester"),
+                AccountStatus.ACTIVE
+        );
+
+        assertFalse(userService.verifyCourier(user));
+    }
+
+    @Test
+    void verifyCourierWithUserReturnsFalseForInactiveCourier() {
+        User user = createUser(
+                "courier-1",
+                List.of("courier"),
+                AccountStatus.DEACTIVATED
+        );
+
+        assertFalse(userService.verifyCourier(user));
+    }
+
+    @Test
+    void verifyCourierWithUserReturnsFalseForNullRoles() {
+        User user = createUser(
+                "user-1",
+                null,
+                AccountStatus.ACTIVE
+        );
+
+        assertFalse(userService.verifyCourier(user));
+    }
+
+    @Test
+    void verifyAdminWithUserIdReturnsTrueForActiveAdmin() {
+        User user = createUser(
+                "admin-1",
+                List.of("admin"),
+                AccountStatus.ACTIVE
+        );
+
+        when(userRepository.findByUserId("admin-1"))
+                .thenReturn(Optional.of(user));
+
+        assertTrue(userService.verifyAdmin("admin-1"));
+    }
+
+    @Test
+    void verifyAdminWithUserIdReturnsFalseForNonAdmin() {
+        User user = createUser(
+                "user-1",
+                List.of("requester"),
+                AccountStatus.ACTIVE
+        );
+
+        when(userRepository.findByUserId("user-1"))
+                .thenReturn(Optional.of(user));
+
+        assertFalse(userService.verifyAdmin("user-1"));
+    }
+
+    @Test
+    void verifyAdminWithUserIdThrowsWhenUserDoesNotExist() {
+        when(userRepository.findByUserId("missing"))
+                .thenReturn(Optional.empty());
+
+        RuntimeException exception = assertThrows(
+                RuntimeException.class,
+                () -> userService.verifyAdmin("missing")
+        );
+
+        assertEquals("User not found", exception.getMessage());
+    }
+
+    @Test
+    void verifyActiveWithUserIdReturnsTrueForActiveUser() throws Exception {
+        User user = new User();
+        user.setUserId("user-1");
+        user.setStatus(AccountStatus.ACTIVE);
+
+        when(userRepository.findByUserId("user-1"))
+                .thenReturn(Optional.of(user));
+
+        Method method = UserService.class.getDeclaredMethod(
+                "verifyActive", String.class
+        );
+        method.setAccessible(true);
+
+        boolean result = (boolean) method.invoke(userService, "user-1");
+
+        assertTrue(result);
+    }
+
+    @Test
+    void verifyActiveWithUserIdThrowsWhenUserDoesNotExist() throws Exception {
+        when(userRepository.findByUserId("missing"))
+                .thenReturn(Optional.empty());
+
+        Method method = UserService.class.getDeclaredMethod(
+                "verifyActive", String.class
+        );
+        method.setAccessible(true);
+
+        InvocationTargetException exception = assertThrows(
+                InvocationTargetException.class,
+                () -> method.invoke(userService, "missing")
+        );
+
+        assertInstanceOf(RuntimeException.class, exception.getCause());
+        assertEquals("User not found", exception.getCause().getMessage());
+    }
+    
+    @Test
+    void getCourierEligibilityReturnsFalseForNonCourier() {
+        activeUser.setRoles(List.of("requester"));
+
+        when(userRepository.findByUserId("user-1"))
+                .thenReturn(Optional.of(activeUser));
+
+        CourierEligibility result =
+                userService.getCourierEligibility("user-1");
+
+        assertNotNull(result);
+    }
+
+    @Test
+    void getCourierEligibilityReturnsTrueWhenPenaltyIsBelowMaximum() {
+        activeUser.setPenalty(9);
+
+        when(userRepository.findByUserId("user-1"))
+                .thenReturn(Optional.of(activeUser));
+
+        CourierEligibility result =
+                userService.getCourierEligibility("user-1");
+
+        assertNotNull(result);
+    }
+
+    @Test
+    void getCourierEligibilityReturnsTrueWhenMaximumPenaltyHasNoSuspensionDate() {
+        activeUser.setPenalty(10);
+        activeUser.setSuspensionEndDate(null);
+
+        when(userRepository.findByUserId("user-1"))
+                .thenReturn(Optional.of(activeUser));
+
+        CourierEligibility result =
+                userService.getCourierEligibility("user-1");
+
+        assertNotNull(result);
+    }
+
+    @Test
+    void getCourierEligibilityReturnsTrueWhenSuspensionHasExpired() {
+        activeUser.setPenalty(10);
+        activeUser.setSuspensionEndDate(
+                Instant.now().minusSeconds(3600));
+
+        when(userRepository.findByUserId("user-1"))
+                .thenReturn(Optional.of(activeUser));
+
+        CourierEligibility result =
+                userService.getCourierEligibility("user-1");
+
+        assertNotNull(result);
+    }
+
+    @Test
+    void getCourierEligibilityReturnsFalseWhenSuspensionIsStillActive() {
+        activeUser.setPenalty(10);
+        activeUser.setSuspensionEndDate(
+                Instant.now().plusSeconds(3600));
+
+        when(userRepository.findByUserId("user-1"))
+                .thenReturn(Optional.of(activeUser));
+
+        CourierEligibility result =
+                userService.getCourierEligibility("user-1");
+
+        assertNotNull(result);
+    }
+
+    
+    @Test
+    void createUserThrowsWhenEventSerializationFails() throws Exception {
+        when(userRepository.findByUserId("user-1"))
+                .thenReturn(Optional.empty());
+
+        when(userRepository.findFirstByEmailAndStatus(
+                "anna@example.com", AccountStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+
+        when(userRepository.save(any(User.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        JacksonException serializationException =
+                mock(JacksonException.class);
+
+        when(objectMapper.writeValueAsString(any()))
+                .thenThrow(serializationException);
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> userService.createUser(
+                        "user-1",
+                        "anna@example.com",
+                        List.of("courier"),
+                        "Anna"
+                )
+        );
+
+        assertEquals(
+                "Could not serialize UserCreated event.",
+                exception.getMessage()
+        );
+
+        assertSame(serializationException, exception.getCause());
+
+        verify(userRepository).save(any(User.class));
+        verify(outboxEventRepository, never()).save(any(OutboxEvent.class));
+    }
+
+    @Test
+    void verifyRequesterWithUserIdThrowsWhenUserDoesNotExist() {
+        when(userRepository.findByUserId("missing"))
+                .thenReturn(Optional.empty());
+
+        RuntimeException exception = assertThrows(
+                RuntimeException.class,
+                () -> userService.verifyRequester("missing")
+        );
+
+        assertEquals("User not found", exception.getMessage());
+    }
+
+    @Test
+    void verifyCourierWithUserIdThrowsWhenUserDoesNotExist() {
+        when(userRepository.findByUserId("missing"))
+                .thenReturn(Optional.empty());
+
+        RuntimeException exception = assertThrows(
+                RuntimeException.class,
+                () -> userService.verifyCourier("missing")
+        );
+
+        assertEquals("User not found", exception.getMessage());
+    }
+
+    @Test
+    void getRoleContextThrowsWhenUserDoesNotExist() {
+        when(userRepository.findByUserId("missing"))
+                .thenReturn(Optional.empty());
+
+        RuntimeException exception = assertThrows(
+                RuntimeException.class,
+                () -> userService.getRoleContext("missing")
+        );
+
+        assertEquals("User not found", exception.getMessage());
+    }
+
+    @Test
+    void getCourierEligibilityThrowsWhenUserDoesNotExist() {
+        when(userRepository.findByUserId("missing"))
+                .thenReturn(Optional.empty());
+
+        assertThrows(
+                RuntimeException.class,
+                () -> userService.getCourierEligibility("missing")
+        );
+    }
+
+    @Test
+    void getRequesterEligibilityThrowsWhenUserDoesNotExist() {
+        when(userRepository.findByUserId("missing"))
+                .thenReturn(Optional.empty());
+
+        assertThrows(
+                RuntimeException.class,
+                () -> userService.getRequesterEligibility("missing")
+        );
+    }
+
+    @Test
+    void getAdminEligibilityThrowsWhenUserDoesNotExist() {
+        when(userRepository.findByUserId("missing"))
+                .thenReturn(Optional.empty());
+
+        assertThrows(
+                RuntimeException.class,
+                () -> userService.getAdminEligibility("missing")
+        );
+    }
+
 }
 

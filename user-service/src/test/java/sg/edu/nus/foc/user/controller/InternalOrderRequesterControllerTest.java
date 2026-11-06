@@ -14,6 +14,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
+import sg.edu.nus.foc.user.config.ClockConfig;
 import sg.edu.nus.foc.user.config.InternalOrderSecurityConfiguration;
 import sg.edu.nus.foc.user.config.UserPushProperties;
 import sg.edu.nus.foc.user.security.SecurityConfig;
@@ -24,7 +25,7 @@ import sg.edu.nus.foc.user.model.AccountStatus;
 @WebMvcTest(controllers = InternalOrderRequesterController.class,
         properties = {"FOC_INTERNAL_ORDER_API_ENABLED=true", "FOC_ENVIRONMENT=staging"})
 @EnableConfigurationProperties(UserPushProperties.class)
-@Import({InternalOrderSecurityConfiguration.class, SecurityConfig.class})
+@Import({InternalOrderSecurityConfiguration.class, SecurityConfig.class, ClockConfig.class})
 class InternalOrderRequesterControllerTest {
     @Autowired MockMvc mvc;
     @MockitoBean UserService users;
