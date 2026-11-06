@@ -102,6 +102,7 @@ async def accept_order(session: AsyncSession, order_id: str, courier_id: str) ->
                     requester_id=order.requester_id,
                     courier_id=courier_id,
                     timestamp=datetime.now(UTC),
+                    order_name=order.name,
                 ),
             )
         return order
@@ -132,6 +133,7 @@ async def pickup_order(session: AsyncSession, order_id: str, courier_id: str) ->
                     requester_id=order.requester_id,
                     courier_id=courier_id,
                     timestamp=datetime.now(UTC),
+                    order_name=order.name,
                 ),
             )
         return order
@@ -188,6 +190,7 @@ async def withdraw_order(
                     requester_id=order.requester_id,
                     courier_id=courier_id,
                     timestamp=datetime.now(UTC),
+                    order_name=order.name,
                 ),
             )
         return response
@@ -222,6 +225,7 @@ async def deliver_order(session: AsyncSession, order_id: str, courier_id: str) -
                     requester_id=order.requester_id,
                     courier_id=order.courier_id,
                     timestamp=delivered_at,
+                    order_name=order.name,
                 ),
             )
         return order

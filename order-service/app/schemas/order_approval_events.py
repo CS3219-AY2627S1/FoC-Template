@@ -33,6 +33,7 @@ class OrderApprovedEvent(BaseModel):
     requester_id: str
     courier_id: str
     timestamp: datetime
+    order_name: str | None = None
 
 
 class OrderApprovalFailedEvent(BaseModel):

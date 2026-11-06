@@ -58,6 +58,7 @@ async def process_supplier_deactivated(
                         courier_id=order.courier_id,
                         timestamp=now,
                         reason=f"Supplier {event.supplier_id} deactivated.",
+                        order_name=order.name,
                     )
                 )
             if facts:
