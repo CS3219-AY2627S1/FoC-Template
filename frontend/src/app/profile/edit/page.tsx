@@ -182,13 +182,16 @@ function EditProfileForm({ user }: { user: User }) {
 
             const newEmail = email.trim()
 
-            // TODO: Enforce @u.nus.edu emails
             if (!newEmail) {
                 throw new Error("Please enter an email address.")
             }
 
             if (newEmail.toLowerCase() === (user.email ?? "").toLowerCase()) {
                 throw new Error("This is already your current email address.")
+            }
+
+            if (!isNusEmail(newEmail)) {
+                throw new Error("Please use your NUS email address (@u.nus.edu).")
             }
 
             setSendingVerification(true)
@@ -311,8 +314,11 @@ function EditProfileForm({ user }: { user: User }) {
     }
 
     async function handleDeleteError(message: string) {
-        console.log("Error received:", message)
         setDeleteError(message);
+    }
+
+    function isNusEmail(email: string): boolean {
+        return /^[^@\s]+@u\.nus\.edu$/i.test(email.trim())
     }
 
   if (profileLoading) {

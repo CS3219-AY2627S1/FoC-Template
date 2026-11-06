@@ -589,7 +589,7 @@ class CreditApiIntegrationTest {
 
     private PubSubPushEnvelope userCreatedEnvelope(String userId, UUID eventId) {
         String event = """
-                {"eventId":"%s","userId":"%s","email":"%s@example.com",
+                {"eventId":"%s","userId":"%s","email":"%s@u.nus.edu",
                  "occurredAt":"2026-10-25T08:00:00Z","schemaVersion":1}
                 """.formatted(eventId, userId, userId);
         String encoded = Base64.getEncoder().encodeToString(event.getBytes(StandardCharsets.UTF_8));

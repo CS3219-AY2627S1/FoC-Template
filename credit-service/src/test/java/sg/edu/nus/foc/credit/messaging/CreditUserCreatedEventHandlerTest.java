@@ -28,7 +28,7 @@ class CreditUserCreatedEventHandlerTest {
         Instant occurredAt = Instant.parse("2026-10-25T08:00:00Z");
 
         handler.handle(new UserCreatedEventMessage(
-                eventId, "user-1", "user@example.com", occurredAt, 1));
+                eventId, "user-1", "user@u.nus.edu", occurredAt, 1));
 
         verify(service).initializeAccount(eventId, "user-1", occurredAt);
     }
@@ -43,7 +43,7 @@ class CreditUserCreatedEventHandlerTest {
                 .when(service).initializeAccount(eventId, "user-1", occurredAt);
 
         assertThatThrownBy(() -> handler.handle(new UserCreatedEventMessage(
-                eventId, "user-1", "user@example.com", occurredAt, 1)))
+                eventId, "user-1", "user@u.nus.edu", occurredAt, 1)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("database unavailable");
     }

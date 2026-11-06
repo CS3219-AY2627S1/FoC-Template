@@ -140,11 +140,11 @@ class FirebaseAuthServiceTest {
             mockedFirebase.when(FirebaseAuth::getInstance).thenReturn(auth);
             when(auth.getUser("firebase-uid")).thenReturn(userRecord);
             when(userRecord.isEmailVerified()).thenReturn(true);
-            when(userRecord.getEmail()).thenReturn("user@example.com");
+            when(userRecord.getEmail()).thenReturn("user@u.nus.edu");
 
             String result = service.getVerifiedEmail("firebase-uid");
 
-            assertEquals("user@example.com", result);
+            assertEquals("user@u.nus.edu", result);
         }
     }
 
@@ -220,7 +220,7 @@ class FirebaseAuthServiceTest {
         try (MockedStatic<FirebaseAuth> mockedFirebase = mockStatic(FirebaseAuth.class)) {
             mockedFirebase.when(FirebaseAuth::getInstance).thenReturn(auth);
 
-            service.updateUserEmail("firebase-uid", "new@example.com");
+            service.updateUserEmail("firebase-uid", "new@u.nus.edu");
 
             verify(auth).updateUser(argThat(request -> request != null));
         }
@@ -239,7 +239,7 @@ class FirebaseAuthServiceTest {
 
             RuntimeException thrown = assertThrows(
                     RuntimeException.class,
-                    () -> service.updateUserEmail("firebase-uid", "new@example.com")
+                    () -> service.updateUserEmail("firebase-uid", "new@u.nus.edu")
             );
 
             assertEquals("Failed to update Firebase email", thrown.getMessage());

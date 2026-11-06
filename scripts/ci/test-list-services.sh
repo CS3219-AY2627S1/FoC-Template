@@ -19,7 +19,7 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 git -c core.excludesFile=/dev/null init -q
 git config core.excludesFile /dev/null
 git config user.name 'CI fixture'
-git config user.email 'ci-fixture@example.invalid'
+git config user.email 'ci-fixture@u.nus.invalid'
 git config commit.gpgsign false
 printf 'FROM scratch\n' | tee order-service/Dockerfile credit-service/Dockerfile frontend/Dockerfile >/dev/null
 printf '<project/>\n' | tee order-service/pom.xml credit-service/pom.xml >/dev/null

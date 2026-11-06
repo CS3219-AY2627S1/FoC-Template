@@ -136,23 +136,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const user = userCredential.user;
 
-      console.log(user)
-
       // User is signed out if email is not verified
       if (!user.emailVerified) {
         await firebaseSignOut(auth);
-
-        console.log(`${user.email} is not verified`)
         throw new Error("EMAIL_NOT_VERIFIED");
       }
-
-      console.log(`${user.email} is verified`)
     },
     [config],
   )
 
   const signUp = useCallback(
     async (email: string, password: string, username: string) => {
+        if (!isNusEmail(email)) {
+            throw new Error("EMAIL_NOT_NUS")
+        }
+
         let user = null;
         const auth = getFirebaseAuth(config);
 
@@ -197,7 +195,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Did not go through, delete Firebase acc
             if (user) {
               try {
-                console.log(`Deleting firebase user ${user.email}`);
                 await user.delete();
               } catch (deleteError) {
                 console.error("Failed to clean up Firebase user:", deleteError)
@@ -280,6 +277,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     [config]
   )
+
+  function isNusEmail(email: string): boolean {
+      return /^[^@\s]+@u\.nus\.edu$/i.test(email.trim())
+  }
 
   const value = useMemo(
     () => ({ user, loading, profile, profileLoading, profileError, refreshProfile, 

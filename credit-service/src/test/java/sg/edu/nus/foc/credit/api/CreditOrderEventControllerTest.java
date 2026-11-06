@@ -17,7 +17,7 @@ import sg.edu.nus.foc.credit.messaging.OrderEventMessage;
 class CreditOrderEventControllerTest {
 
     private static final CreditPushProperties PROPERTIES = new CreditPushProperties(
-            "project", "audience", "push@example.com", "completion", "refund", "compensation", "user-created");
+            "project", "audience", "push@u.nus.edu", "completion", "refund", "compensation", "user-created");
 
     @Test
     void twoEndpointsInvokeOnlyTheirDesignatedHandlers() {

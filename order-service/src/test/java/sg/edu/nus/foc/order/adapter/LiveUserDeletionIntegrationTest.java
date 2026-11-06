@@ -195,7 +195,7 @@ class LiveUserDeletionIntegrationTest {
 
     @SuppressWarnings("unchecked")
     private Map<String, String> account() throws Exception {
-        String email = "delete-" + UUID.randomUUID() + "@example.com";
+        String email = "delete-" + UUID.randomUUID() + "@u.nus.edu";
         Map<String, String> account = auth().post().uri("/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-key")
                 .body(Map.of("email", email, "password", "TestPassword123!", "returnSecureToken", true))
                 .retrieve().body(Map.class);

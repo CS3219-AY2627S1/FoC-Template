@@ -12,18 +12,18 @@ import org.springframework.security.oauth2.jwt.Jwt;
 class MockUserServiceRoleProviderTest {
     @Test
     void regularUserReceivesRequesterAndCourierRolesOnly() {
-        MockUserServiceRoleProvider provider = new MockUserServiceRoleProvider(List.of("admin@example.com"));
+        MockUserServiceRoleProvider provider = new MockUserServiceRoleProvider(List.of("admin@u.nus.edu"));
 
-        Set<Role> roles = provider.rolesFor(jwt("user@example.com"));
+        Set<Role> roles = provider.rolesFor(jwt("user@u.nus.edu"));
 
         assertEquals(Set.of(Role.REQUESTER, Role.COURIER), roles);
     }
 
     @Test
     void configuredAdminEmailReceivesAdminRoleCaseInsensitively() {
-        MockUserServiceRoleProvider provider = new MockUserServiceRoleProvider(List.of(" admin@example.com "));
+        MockUserServiceRoleProvider provider = new MockUserServiceRoleProvider(List.of(" admin@u.nus.edu "));
 
-        Set<Role> roles = provider.rolesFor(jwt("ADMIN@example.com"));
+        Set<Role> roles = provider.rolesFor(jwt("ADMIN@u.nus.edu"));
 
         assertTrue(roles.contains(Role.ADMIN));
     }

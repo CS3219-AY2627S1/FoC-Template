@@ -54,7 +54,7 @@ it("disables the submit button when the email is empty", () => {
 it("enables the submit button when an email is entered", () => {
   render(<PasswordResetForm />)
 
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@example.com" }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@u.nus.edu" }})
 
   expect(screen.getByRole("button", { name: "Send reset link" })).toBeEnabled()
 })
@@ -62,11 +62,11 @@ it("enables the submit button when an email is entered", () => {
 it("sends a password reset email using the trimmed email address", async () => {
   render(<PasswordResetForm />)
 
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: " anna@example.com " }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: " anna@u.nus.edu " }})
   fireEvent.click(screen.getByRole("button", { name: "Send reset link" }))
 
   await waitFor(() => {
-    expect(mocks.sendFirebasePasswordResetEmail).toHaveBeenCalledWith("anna@example.com")
+    expect(mocks.sendFirebasePasswordResetEmail).toHaveBeenCalledWith("anna@u.nus.edu")
   })
 
   expect(await screen.findByText("A password reset link will be sent. Please check your inbox and spam folder.")).toBeInTheDocument()
@@ -79,7 +79,7 @@ it("shows a generic error when the password reset request fails because the user
 
   render(<PasswordResetForm />)
 
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "unknown@example.com" }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "unknown@u.nus.edu" }})
   fireEvent.click(screen.getByRole("button", { name: "Send reset link" }),)
 
   expect(await screen.findByText("Something went wrong. Please try again.")).toBeInTheDocument()
@@ -105,7 +105,7 @@ it("shows an error when too many password reset requests are made", async () => 
 
   render(<PasswordResetForm />)
 
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@example.com" }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@u.nus.edu" }})
   fireEvent.click(screen.getByRole("button", { name: "Send reset link" }),)
 
   expect(await screen.findByText("Too many attempts. Please wait a moment and try again.")).toBeInTheDocument()
@@ -121,7 +121,7 @@ it("shows an error when the authentication service cannot be reached", async () 
 
   render(<PasswordResetForm />)
 
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@example.com" },})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@u.nus.edu" },})
   fireEvent.click(screen.getByRole("button", { name: "Send reset link" }))
 
   expect(await screen.findByText("Could not reach the sign-in service. Check your connection.")).toBeInTheDocument()
@@ -134,7 +134,7 @@ it("shows a fallback error for unexpected errors", async () => {
 
   render(<PasswordResetForm />)
 
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@example.com" }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@u.nus.edu" }})
   fireEvent.click(screen.getByRole("button", { name: "Send reset link" }))
 
   expect(await screen.findByText("Something went wrong. Please try again.")).toBeInTheDocument()
@@ -149,7 +149,7 @@ it("clears the previous error when another request is submitted successfully", a
 
   render(<PasswordResetForm />)
 
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@example.com" }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@u.nus.edu" }})
   fireEvent.click(screen.getByRole("button", { name: "Send reset link" }))
 
   expect(await screen.findByText("Enter a valid email address.")).toBeInTheDocument()

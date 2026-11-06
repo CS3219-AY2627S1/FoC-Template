@@ -71,12 +71,12 @@ it("renders the sign-in form by default", () => {
 it("signs in and redirects to the default page", async () => {
   render(<LoginForm />)
 
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@example.com" }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@u.nus.edu" }})
   fireEvent.change(screen.getByLabelText("Password"), {target: { value: "Password123!" }})
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
   
   await waitFor(() => {
-    expect(mocks.signIn).toHaveBeenCalledWith("anna@example.com", "Password123!")
+    expect(mocks.signIn).toHaveBeenCalledWith("anna@u.nus.edu", "Password123!")
     expect(mocks.replace).toHaveBeenCalledWith("/")
   })
 })
@@ -86,7 +86,7 @@ it("redirects to a valid next URL after signing in", async () => {
 
   render(<LoginForm />)
 
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@example.com" }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@u.nus.edu" }})
   fireEvent.change(screen.getByLabelText("Password"), {target: { value: "Password123!" }})
 
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
@@ -101,7 +101,7 @@ it("rejects an unsafe external next URL", async () => {
 
   render(<LoginForm />)
 
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@example.com" }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@u.nus.edu" }})
   fireEvent.change(screen.getByLabelText("Password"), {target: { value: "Password123!" }})
 
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
@@ -118,7 +118,7 @@ it("shows an error when sign-in fails", async () => {
 
   render(<LoginForm />)
 
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@example.com" }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@u.nus.edu" }})
   fireEvent.change(screen.getByLabelText("Password"), {target: { value: "WrongPassword123!" }})
 
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
@@ -156,17 +156,17 @@ it("signs up with the combined first and last name", async () => {
 
   fireEvent.change(screen.getByLabelText("First name"), {target: { value: " Anna " }})
   fireEvent.change(screen.getByLabelText("Last name"), {target: { value: " Tan " }})
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@example.com" }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@u.nus.edu" }})
   fireEvent.change(screen.getByLabelText("Password"), {target: { value: "Password123!" }})
   fireEvent.change(screen.getByLabelText("Confirm password"), {target: { value: "Password123!" }})
 
   fireEvent.click(screen.getByRole("button", { name: "Create account" }))
 
   await waitFor(() => {
-    expect(mocks.signUp).toHaveBeenCalledWith("anna@example.com", "Password123!", "Anna Tan")
+    expect(mocks.signUp).toHaveBeenCalledWith("anna@u.nus.edu", "Password123!", "Anna Tan")
   })
 
-  expect(await screen.findByText("A verification email has been sent to anna@example.com.")).toBeInTheDocument()
+  expect(await screen.findByText("A verification email has been sent to anna@u.nus.edu.")).toBeInTheDocument()
 
   // The form returns to sign-in mode after successful registration.
   expect(screen.getByText("Sign in", { selector: '[data-slot="card-title"]' })).toBeInTheDocument()
@@ -178,7 +178,7 @@ it("does not sign up when the passwords do not match", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: "New here? Create an account" }))
 
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@example.com" }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@u.nus.edu" }})
   fireEvent.change(screen.getByLabelText("Password"), {target: { value: "Password123!" }})
   fireEvent.change(screen.getByLabelText("Confirm password"), {target: { value: "DifferentPassword123!" }})
 
@@ -202,7 +202,7 @@ it("shows a Firebase error when sign-up fails", async () => {
 
   fireEvent.change(screen.getByLabelText("First name"), {target: { value: "Anna" }})
   fireEvent.change(screen.getByLabelText("Last name"), {target: { value: "Tan" }})
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@example.com" }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@u.nus.edu" }})
   fireEvent.change(screen.getByLabelText("Password"), {target: { value: "Password123!" }})
   fireEvent.change(screen.getByLabelText("Confirm password"), {target: { value: "Password123!" }})
 
@@ -218,7 +218,7 @@ it("shows the verification prompt when sign-in requires email verification", asy
 
   render(<LoginForm />)
 
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@example.com" }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@u.nus.edu" }})
   fireEvent.change(screen.getByLabelText("Password"), {target: { value: "Password123!" }})
 
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
@@ -235,7 +235,7 @@ it("resends the verification email", async () => {
 
   render(<LoginForm />)
 
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@example.com" }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@u.nus.edu" }})
   fireEvent.change(screen.getByLabelText("Password"), {target: { value: "Password123!" }})
 
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
@@ -247,10 +247,10 @@ it("resends the verification email", async () => {
   fireEvent.click(resendButton)
 
   await waitFor(() => {
-    expect(mocks.resendVerificationEmail).toHaveBeenCalledWith("anna@example.com", "Password123!")
+    expect(mocks.resendVerificationEmail).toHaveBeenCalledWith("anna@u.nus.edu", "Password123!")
   })
 
-  expect(await screen.findByText("A new verification email has been sent to anna@example.com.")).toBeInTheDocument()
+  expect(await screen.findByText("A new verification email has been sent to anna@u.nus.edu.")).toBeInTheDocument()
 })
 
 it("informs the user if their email is already verified when resending", async () => {
@@ -261,7 +261,7 @@ it("informs the user if their email is already verified when resending", async (
 
   render(<LoginForm />)
 
-  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@example.com" }})
+  fireEvent.change(screen.getByLabelText("Email"), {target: { value: "anna@u.nus.edu" }})
   fireEvent.change(screen.getByLabelText("Password"), {target: { value: "Password123!" }})
 
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
@@ -271,4 +271,42 @@ it("informs the user if their email is already verified when resending", async (
   expect(await screen.findByText("Your email is already verified. You can sign in now.")).toBeInTheDocument()
 
   expect(screen.queryByRole("button", { name: "Resend verification email" })).not.toBeInTheDocument()
+})
+
+it("shows an error when signing up with a non-NUS email", async () => {
+  mocks.signUp.mockRejectedValue(new Error("EMAIL_NOT_NUS"))
+
+  render(<LoginForm />)
+
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "New here? Create an account",
+    }),
+  )
+
+  fireEvent.change(screen.getByLabelText("First name"), {
+    target: { value: "Anna" },
+  })
+  fireEvent.change(screen.getByLabelText("Last name"), {
+    target: { value: "Tan" },
+  })
+  fireEvent.change(screen.getByLabelText("Email"), {
+    target: { value: "anna@gmail.com" },
+  })
+  fireEvent.change(screen.getByLabelText("Password"), {
+    target: { value: "Password123!" },
+  })
+  fireEvent.change(screen.getByLabelText("Confirm password"), {
+    target: { value: "Password123!" },
+  })
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Create account" }),
+  )
+
+  expect(
+    await screen.findByText(
+      "Please use your NUS email address (@u.nus.edu).",
+    ),
+  ).toBeInTheDocument()
 })

@@ -125,7 +125,7 @@ class UserApiIntegrationTest {
         return jwt()
                 .jwt(token -> token
                         .subject(userId)
-                        .claim("email", userId + "@example.com"));
+                        .claim("email", userId + "@u.nus.edu"));
     }
 
     private RequestPostProcessor authenticatedAsWithAdminClaim(
@@ -134,7 +134,7 @@ class UserApiIntegrationTest {
         return jwt()
                 .jwt(token -> token
                         .subject(userId)
-                        .claim("email", userId + "@example.com")
+                        .claim("email", userId + "@u.nus.edu")
                         .claim("roles", List.of("admin")));
     }
 
@@ -162,7 +162,7 @@ class UserApiIntegrationTest {
                 .isEqualTo("firebase-user-1");
 
         assertThat(savedUser.getEmail())
-                .isEqualTo("firebase-user-1@example.com");
+                .isEqualTo("firebase-user-1@u.nus.edu");
 
         assertThat(savedUser.getUsername())
                 .isEqualTo("testuser");
@@ -183,7 +183,7 @@ class UserApiIntegrationTest {
     void registerUser_duplicateUserId_returnsConflict() throws Exception {
         createUser(
                 "firebase-user-1",
-                "firebase-user-1@example.com",
+                "firebase-user-1@u.nus.edu",
                 "existing",
                 List.of("requester"),
                 AccountStatus.ACTIVE
@@ -213,7 +213,7 @@ class UserApiIntegrationTest {
 
         createUser(
                 "firebase-user-1",
-                "user@example.com",
+                "user@u.nus.edu",
                 "testuser",
                 List.of("requester", "courier"),
                 AccountStatus.ACTIVE
@@ -227,14 +227,14 @@ class UserApiIntegrationTest {
                 .andExpect(jsonPath("$.username")
                         .value("testuser"))
                 .andExpect(jsonPath("$.email")
-                        .value("user@example.com"));
+                        .value("user@u.nus.edu"));
     }
 
     @Test
     void updateCurrentUser_updatesUsername() throws Exception {
         createUser(
                 "firebase-user-1",
-                "user@example.com",
+                "user@u.nus.edu",
                 "oldname",
                 List.of("requester"),
                 AccountStatus.ACTIVE
@@ -266,7 +266,7 @@ class UserApiIntegrationTest {
     void getAllUsers_adminCanAccessEndpoint() throws Exception {
         createUser(
                 "admin-user",
-                "admin@example.com",
+                "admin@u.nus.edu",
                 "admin",
                 List.of("admin", "requester"),
                 AccountStatus.ACTIVE
@@ -274,7 +274,7 @@ class UserApiIntegrationTest {
 
         createUser(
                 "normal-user",
-                "normal@example.com",
+                "normal@u.nus.edu",
                 "normal",
                 List.of("requester"),
                 AccountStatus.ACTIVE
@@ -290,7 +290,7 @@ class UserApiIntegrationTest {
     void getAllUsers_requesterCannotAccessEndpoint() throws Exception {
         createUser(
                 "normal-user",
-                "normal@example.com",
+                "normal@u.nus.edu",
                 "normal",
                 List.of("requester"),
                 AccountStatus.ACTIVE
@@ -307,7 +307,7 @@ class UserApiIntegrationTest {
 
         createUser(
                 "normal-user",
-                "normal@example.com",
+                "normal@u.nus.edu",
                 "normal",
                 List.of("requester"),
                 AccountStatus.ACTIVE
@@ -326,7 +326,7 @@ class UserApiIntegrationTest {
 
         createUser(
                 "inactive-admin",
-                "inactive@example.com",
+                "inactive@u.nus.edu",
                 "inactive",
                 List.of("admin"),
                 AccountStatus.DEACTIVATED
@@ -345,7 +345,7 @@ class UserApiIntegrationTest {
     void adjustPenalty_updatesPenalty() throws Exception {
         createUser(
                 "courier-user",
-                "courier@example.com",
+                "courier@u.nus.edu",
                 "courier",
                 List.of("courier"),
                 AccountStatus.ACTIVE
@@ -373,7 +373,7 @@ class UserApiIntegrationTest {
     void adjustPenalty_capsPenaltyAtMaximum() throws Exception {
         createUser(
                 "courier-user",
-                "courier@example.com",
+                "courier@u.nus.edu",
                 "courier",
                 List.of("courier"),
                 AccountStatus.ACTIVE

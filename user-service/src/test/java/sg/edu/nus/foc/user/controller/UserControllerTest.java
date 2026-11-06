@@ -39,7 +39,7 @@ import sg.edu.nus.foc.user.model.User;
 class UserControllerTest {
 
     private static final String USER_ID = "user-123";
-    private static final String EMAIL = "anna@example.com";
+    private static final String EMAIL = "anna@u.nus.edu";
     private static final String TOKEN_VALUE = "test-firebase-token";
 
     @Mock

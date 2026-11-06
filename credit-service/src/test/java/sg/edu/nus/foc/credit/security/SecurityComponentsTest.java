@@ -67,7 +67,7 @@ class SecurityComponentsTest {
     void choosesConfiguredRoleProviderAndRejectsMissingHttpUrl() {
         CreditProperties mock = new CreditProperties(null,
                 new CreditProperties.UserServiceSettings(
-                        CreditProperties.Mode.MOCK, null, List.of("admin@example.com"), null), null);
+                        CreditProperties.Mode.MOCK, null, List.of("admin@u.nus.edu"), null), null);
         CreditProperties http = new CreditProperties(null,
                 new CreditProperties.UserServiceSettings(
                         CreditProperties.Mode.HTTP, "http://user-service", null, Duration.ofSeconds(1)), null);
@@ -90,7 +90,7 @@ class SecurityComponentsTest {
         assertThat(validator.validate(pushToken(Map.of())).hasErrors()).isFalse();
         assertThat(validator.validate(pushToken(Map.of("iss", "attacker"))).hasErrors()).isTrue();
         assertThat(validator.validate(pushToken(Map.of("aud", List.of("wrong")))).hasErrors()).isTrue();
-        assertThat(validator.validate(pushToken(Map.of("email", "other@example.com"))).hasErrors()).isTrue();
+        assertThat(validator.validate(pushToken(Map.of("email", "other@u.nus.edu"))).hasErrors()).isTrue();
         assertThat(validator.validate(pushToken(Map.of("email_verified", false))).hasErrors()).isTrue();
     }
 
@@ -133,7 +133,7 @@ class SecurityComponentsTest {
     }
 
     private CreditPushProperties pushProperties() {
-        return new CreditPushProperties("project", "https://credit.example.com", "push@example.com",
+        return new CreditPushProperties("project", "https://credit.example.com", "push@u.nus.edu",
                 "completion", "refund", "compensation", "user-created");
     }
 
@@ -141,7 +141,7 @@ class SecurityComponentsTest {
         Map<String, Object> claims = new java.util.HashMap<>(Map.of(
                 "iss", "https://accounts.google.com",
                 "aud", List.of("https://credit.example.com"),
-                "email", "push@example.com",
+                "email", "push@u.nus.edu",
                 "email_verified", true,
                 "sub", "123"));
         claims.putAll(overrides);

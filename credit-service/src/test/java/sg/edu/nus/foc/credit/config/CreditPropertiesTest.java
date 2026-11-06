@@ -31,7 +31,7 @@ class CreditPropertiesTest {
     @Test
     void trimsConfigurationAndCopiesOrigins() {
         List<String> origins = new java.util.ArrayList<>(List.of("https://example.com"));
-        List<String> admins = new java.util.ArrayList<>(List.of("admin@example.com"));
+        List<String> admins = new java.util.ArrayList<>(List.of("admin@u.nus.edu"));
         CreditProperties properties = new CreditProperties(
                 new CreditProperties.AuthSettings(" auth-project ", " localhost:9099 "),
                 new CreditProperties.UserServiceSettings(
@@ -42,7 +42,7 @@ class CreditPropertiesTest {
         assertThat(properties.auth().projectId()).isEqualTo("auth-project");
         assertThat(properties.auth().usesEmulator()).isTrue();
         assertThat(properties.userService().baseUrl()).isEqualTo("http://user-service");
-        assertThat(properties.userService().mockAdminEmails()).containsExactly("admin@example.com");
+        assertThat(properties.userService().mockAdminEmails()).containsExactly("admin@u.nus.edu");
         assertThat(properties.userService().timeout()).isEqualTo(Duration.ofSeconds(1));
         assertThat(properties.corsOrigins()).containsExactly("https://example.com");
     }

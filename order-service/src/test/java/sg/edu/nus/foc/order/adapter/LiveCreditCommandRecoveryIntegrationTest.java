@@ -288,7 +288,7 @@ class LiveCreditCommandRecoveryIntegrationTest {
         String actor = key();
         String eventId = key();
         String payload = """
-                {"eventId":"%s","userId":"%s","email":"%s@example.com",
+                {"eventId":"%s","userId":"%s","email":"%s@u.nus.edu",
                  "occurredAt":"%s","schemaVersion":1}
                 """.formatted(eventId, actor, actor, Instant.now());
         RestClient.builder().baseUrl("http://" + PUBSUB.getHost() + ":" + PUBSUB.getMappedPort(8085)
