@@ -19,6 +19,7 @@ const CreateOrder = React.lazy(() => import("./pages/orders/CreateOrder"));
 const MyRequests = React.lazy(() => import("./pages/orders/MyRequests"));
 const MyDeliveries = React.lazy(() => import("./pages/deliveries/MyDeliveries"));
 const OrderDetail = React.lazy(() => import("./pages/orders/OrderDetail"));
+const Notifications = React.lazy(() => import("./pages/notifications/Notifications"));
 
 export default function App() {
   return (
@@ -42,6 +43,7 @@ export default function App() {
             <Route path="/orders/mine" element={<MyRequests />} />
             <Route path="/deliveries" element={<MyDeliveries />} />
             <Route path="/orders/:id" element={<OrderDetail />} />
+            <Route path="/notifications" element={<Notifications />} />
 
             {/* Admin-only */}
             <Route element={<AdminRoute />}>

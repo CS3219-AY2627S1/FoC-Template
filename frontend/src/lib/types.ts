@@ -105,3 +105,22 @@ export interface AdminUserList {
   limit: number;
   offset: number;
 }
+
+// ---- notification service ----
+export interface Notification {
+  notification_id: string;
+  event_type: string;
+  order_id: string;
+  order_name: string;
+  order_status: string;
+  title: string;
+  body: string;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface NotificationList {
+  items: Notification[];
+  unread_count: number;
+  total: number;
+}
