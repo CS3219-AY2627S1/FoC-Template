@@ -31,7 +31,7 @@ class PubSubPushSecurityTest {
         properties = new UserPushProperties(
                 "demo-foc",
                 "https://user.example.com",
-                "push@example.com",
+                "push@u.nus.edu",
                 "penalty-addition",
                 "penalty-deduction");
 
@@ -79,7 +79,7 @@ class PubSubPushSecurityTest {
     void rejectsIncorrectServiceAccount() {
         OAuth2TokenValidatorResult result =
                 validator.validate(pushToken(
-                        Map.of("email", "attacker@example.com")));
+                        Map.of("email", "attacker@u.nus.edu")));
 
         assertThat(result.hasErrors()).isTrue();
     }

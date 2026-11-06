@@ -37,7 +37,7 @@ class JsonUserCreatedEventPayloadDecoderTest {
                 SUBSCRIPTION, eventJson(1), ATTRIBUTES, SUBSCRIPTION);
 
         assertThat(message).isEqualTo(new UserCreatedEventMessage(
-                EVENT_ID, "user-1", "user@example.com",
+                EVENT_ID, "user-1", "user@u.nus.edu",
                 Instant.parse("2026-10-25T08:00:00Z"), 1));
     }
 
@@ -83,7 +83,7 @@ class JsonUserCreatedEventPayloadDecoderTest {
 
     private static String eventJson(int schemaVersion) {
         return """
-                {"eventId":"%s","userId":"user-1","email":"user@example.com",
+                {"eventId":"%s","userId":"user-1","email":"user@u.nus.edu",
                  "occurredAt":"2026-10-25T08:00:00Z","schemaVersion":%d}
                 """.formatted(EVENT_ID, schemaVersion);
     }

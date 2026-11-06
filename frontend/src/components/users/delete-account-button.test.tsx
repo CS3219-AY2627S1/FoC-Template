@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   signOut: vi.fn(),
   replace: vi.fn(),
   onError: vi.fn(),
-  user: { uid: "anna", email: "anna@example.com" },
+  user: { uid: "anna", email: "anna@u.nus.edu" },
 }))
 
 vi.mock("@/components/providers/auth-provider", () => ({

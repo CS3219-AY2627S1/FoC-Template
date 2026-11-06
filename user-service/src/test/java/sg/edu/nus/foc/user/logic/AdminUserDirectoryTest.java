@@ -82,7 +82,7 @@ class AdminUserDirectoryTest {
     }
 
     private static User user(String id, String name) {
-        User user = new User(); user.setUserId(id); user.setUsername(name); user.setEmail(id + "@example.com");
+        User user = new User(); user.setUserId(id); user.setUsername(name); user.setEmail(id + "@u.nus.edu");
         user.setRoles(List.of("requester", "courier")); return user;
     }
 }

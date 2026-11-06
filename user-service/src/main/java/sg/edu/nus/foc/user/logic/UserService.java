@@ -22,6 +22,7 @@ import sg.edu.nus.foc.user.model.OutboxEvent;
 import sg.edu.nus.foc.user.model.User;
 import sg.edu.nus.foc.user.repository.OutboxEventRepository;
 import sg.edu.nus.foc.user.repository.UserRepository;
+import sg.edu.nus.foc.user.validation.NusEmailValidator;
 import sg.edu.nus.foc.user.authentication.FirebaseAuthService;
 import sg.edu.nus.foc.user.event.UserCreatedEvent;
 
@@ -171,6 +172,13 @@ public class UserService {
                 "Username, user ID and email are required.");
         }
 
+        if (!NusEmailValidator.isValid(email)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Please use your NUS email address (@u.nus.edu)."
+            );
+        }
+
         if (userRepository.findByUserId(userId).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This identity already has an account.");
         }
@@ -239,6 +247,13 @@ public class UserService {
         // Firebase is the source of truth for the verified email.
         String verifiedEmail =
                 firebaseAuthService.getVerifiedEmail(userId);
+
+        if (!NusEmailValidator.isValid(verifiedEmail)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Please use your NUS email address (@u.nus.edu)."
+            );
+        }
 
         // Update MongoDB only after Firebase verification succeeds.
         user.setEmail(verifiedEmail);

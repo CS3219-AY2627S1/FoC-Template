@@ -37,7 +37,7 @@ class OrderSecurityConfigurationTest {
     @Test
     void selectsMockOrHttpRoleProviderAndRejectsInvalidConfiguration() {
         assertInstanceOf(MockUserServiceRoleProvider.class, configuration.roleProvider(
-                "mock", "", "admin@example.com", Duration.ofSeconds(1), RestClient.builder()));
+                "mock", "", "admin@u.nus.edu", Duration.ofSeconds(1), RestClient.builder()));
         assertInstanceOf(HttpUserServiceRoleProvider.class, configuration.roleProvider(
                 "http", "http://user-service", "", Duration.ofSeconds(1), RestClient.builder()));
         assertThrows(IllegalStateException.class, () -> configuration.roleProvider(

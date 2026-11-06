@@ -120,7 +120,7 @@ class PubSubPushSecurityTest {
                 anyString(), any(), eq("projects/test-project/subscriptions/user-created")))
                 .thenReturn(new UserCreatedEventMessage(
                         java.util.UUID.fromString("c91e4571-329a-4399-b87f-a756a6ab7243"),
-                        "user-1", "user@example.com", Instant.now(), 1));
+                        "user-1", "user@u.nus.edu", Instant.now(), 1));
     }
 
     @AfterAll

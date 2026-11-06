@@ -115,7 +115,7 @@ class PenaltyEventConsumerIntegrationTest {
 
         courier.setUserId(courierId);
         courier.setUsername("test-courier");
-        courier.setEmail(courierId + "@example.com");
+        courier.setEmail(courierId + "@u.nus.edu");
         courier.setRoles(List.of("courier"));
         courier.setPenalty(initialPenalty);
         courier.setStatus(AccountStatus.ACTIVE);

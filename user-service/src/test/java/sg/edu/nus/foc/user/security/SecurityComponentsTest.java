@@ -148,7 +148,7 @@ class SecurityComponentsTest {
         return new UserPushProperties(
                 "demo-foc",
                 "https://user.example.com",
-                "push@example.com",
+                "push@u.nus.edu",
                 "penalty-addition",
                 "penalty-deduction");
     }

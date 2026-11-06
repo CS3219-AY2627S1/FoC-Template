@@ -12,7 +12,7 @@ import { afterEach, expect, it, vi } from "vitest"
 import ProfilePage from "@/app/profile/page"
 
 const mocks = vi.hoisted(() => ({
-  api: vi.fn().mockResolvedValue({ email: "anna@example.com",
+  api: vi.fn().mockResolvedValue({ email: "anna@u.nus.edu",
     roles: ["requester", "courier"], penalty: 2, isCourierSuspended: false }),
   replace: vi.fn(),
   push: vi.fn(),
@@ -28,7 +28,7 @@ it("renders the responsive profile summary alongside transaction history", async
   render(<ProfilePage />)
   await waitFor(() => expect(mocks.api).toHaveBeenCalledWith("/api/users/me", expect.anything()))
   expect(screen.queryByText("Account name")).toBeInTheDocument()
-  expect(await screen.findByText("anna@example.com")).toBeInTheDocument()
+  expect(await screen.findByText("anna@u.nus.edu")).toBeInTheDocument()
   expect(screen.getByText("requester")).toBeInTheDocument()
   expect(screen.getByText("Active")).toBeInTheDocument()
   expect(screen.getByText("2 penalties")).toBeInTheDocument()
@@ -38,7 +38,7 @@ it("renders the responsive profile summary alongside transaction history", async
 
 it("opens the compatible own-profile edit page", async () => {
   render(<ProfilePage />)
-  await screen.findByText("anna@example.com")
+  await screen.findByText("anna@u.nus.edu")
   fireEvent.click(screen.getByRole("button", { name: "Edit profile" }))
   expect(mocks.push).toHaveBeenCalledWith("/profile/edit")
 })

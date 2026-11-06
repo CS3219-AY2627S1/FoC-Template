@@ -17,11 +17,11 @@ class CreditPushPropertiesTest {
     @Test
     void buildsFullyQualifiedSubscriptionNames() {
         CreditPushProperties properties = new CreditPushProperties(
-                " project ", " audience ", " push@example.com ",
+                " project ", " audience ", " push@u.nus.edu ",
                 " completion ", " refund ", " compensation ", " user-created ");
 
         assertThat(properties.audience()).isEqualTo("audience");
-        assertThat(properties.serviceAccount()).isEqualTo("push@example.com");
+        assertThat(properties.serviceAccount()).isEqualTo("push@u.nus.edu");
         assertThat(properties.completionSubscriptionPath())
                 .isEqualTo("projects/project/subscriptions/completion");
         assertThat(properties.openRefundSubscriptionPath())

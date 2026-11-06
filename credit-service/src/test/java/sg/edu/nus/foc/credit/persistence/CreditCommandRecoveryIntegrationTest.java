@@ -594,7 +594,7 @@ class CreditCommandRecoveryIntegrationTest {
 
     private void register(String userId) throws Exception {
         userCreatedEvents.handle(new UserCreatedEventMessage(
-                UUID.randomUUID(), userId, userId + "@example.com",
+                UUID.randomUUID(), userId, userId + "@u.nus.edu",
                 Instant.parse("2026-10-11T00:00:00Z"), 1));
     }
 

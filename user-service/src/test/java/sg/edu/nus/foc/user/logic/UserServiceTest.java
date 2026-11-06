@@ -75,7 +75,7 @@ class UserServiceTest {
     void setUp() {
         activeUser = createUser(
                 "user-1",
-                "anna@example.com",
+                "anna@u.nus.edu",
                 "Anna",
                 List.of("courier", "requester")
         );
@@ -238,7 +238,7 @@ class UserServiceTest {
                 .thenReturn(Optional.empty());
 
         when(userRepository.findFirstByEmailAndStatus(
-                "anna@example.com", AccountStatus.ACTIVE))
+                "anna@u.nus.edu", AccountStatus.ACTIVE))
                 .thenReturn(Optional.empty());
 
         when(userRepository.save(any(User.class)))
@@ -249,12 +249,12 @@ class UserServiceTest {
 
         User result = userService.addUser(
                 "user-1",
-                "anna@example.com",
+                "anna@u.nus.edu",
                 "Anna"
         );
 
         assertEquals("user-1", result.getUserId());
-        assertEquals("anna@example.com", result.getEmail());
+        assertEquals("anna@u.nus.edu", result.getEmail());
         assertEquals("Anna", result.getUsername());
         assertTrue(result.getRoles().contains("courier"));
         assertTrue(result.getRoles().contains("requester"));
@@ -269,7 +269,7 @@ class UserServiceTest {
                 .thenReturn(Optional.empty());
 
         when(userRepository.findFirstByEmailAndStatus(
-                "admin@example.com", AccountStatus.ACTIVE))
+                "admin@u.nus.edu", AccountStatus.ACTIVE))
                 .thenReturn(Optional.empty());
 
         when(userRepository.save(any(User.class)))
@@ -280,7 +280,7 @@ class UserServiceTest {
 
         User result = userService.addAdmin(
                 "admin-1",
-                "admin@example.com"
+                "admin@u.nus.edu"
         );
 
         assertTrue(result.getRoles().contains("admin"));
@@ -295,7 +295,7 @@ class UserServiceTest {
                 IllegalArgumentException.class,
                 () -> userService.createUser(
                         " ",
-                        "anna@example.com",
+                        "anna@u.nus.edu",
                         List.of("courier"),
                         "Anna"
                 )
@@ -313,7 +313,7 @@ class UserServiceTest {
                 ResponseStatusException.class,
                 () -> userService.createUser(
                         "user-1",
-                        "another@example.com",
+                        "another@u.nus.edu",
                         List.of("courier"),
                         "Anna"
                 )
@@ -329,14 +329,14 @@ class UserServiceTest {
                 .thenReturn(Optional.empty());
 
         when(userRepository.findFirstByEmailAndStatus(
-                "anna@example.com", AccountStatus.ACTIVE))
+                "anna@u.nus.edu", AccountStatus.ACTIVE))
                 .thenReturn(Optional.of(activeUser));
 
         ResponseStatusException exception = assertThrows(
                 ResponseStatusException.class,
                 () -> userService.createUser(
                         "user-2",
-                        "anna@example.com",
+                        "anna@u.nus.edu",
                         List.of("courier"),
                         "Another Anna"
                 )
@@ -384,11 +384,11 @@ class UserServiceTest {
                 .thenReturn(Optional.of(activeUser));
 
         when(firebaseAuthService.getVerifiedEmail("user-1"))
-                .thenReturn("new@example.com");
+                .thenReturn("new@u.nus.edu");
 
         User result = userService.syncVerifiedEmail("user-1");
 
-        assertEquals("new@example.com", result.getEmail());
+        assertEquals("new@u.nus.edu", result.getEmail());
 
         verify(firebaseAuthService).getVerifiedEmail("user-1");
         verify(lifecycle).saveActive(activeUser);
@@ -407,31 +407,31 @@ class UserServiceTest {
                 () -> userService.syncVerifiedEmail("user-1")
         );
 
-        assertEquals("anna@example.com", activeUser.getEmail());
+        assertEquals("anna@u.nus.edu", activeUser.getEmail());
         verify(lifecycle, never()).saveActive(any());
     }
 
     @Test
     void updateUserEmailUpdatesFirebaseAndDatabase() {
         UpdateUserRequest request = mock(UpdateUserRequest.class);
-        when(request.getEmail()).thenReturn("new@example.com");
+        when(request.getEmail()).thenReturn("new@u.nus.edu");
 
         when(userRepository.findByUserId("user-1"))
                 .thenReturn(Optional.of(activeUser));
 
         User result = userService.updateUserEmail("user-1", request);
 
-        assertEquals("new@example.com", result.getEmail());
+        assertEquals("new@u.nus.edu", result.getEmail());
 
         verify(firebaseAuthService).updateUserEmail(
-                "user-1", "new@example.com");
+                "user-1", "new@u.nus.edu");
         verify(lifecycle).saveActive(activeUser);
     }
 
     @Test
     void updateUserEmailDoesNotCallFirebaseWhenEmailIsUnchanged() {
         UpdateUserRequest request = mock(UpdateUserRequest.class);
-        when(request.getEmail()).thenReturn("anna@example.com");
+        when(request.getEmail()).thenReturn("anna@u.nus.edu");
 
         when(userRepository.findByUserId("user-1"))
                 .thenReturn(Optional.of(activeUser));
@@ -499,7 +499,7 @@ class UserServiceTest {
     void recoverDeletionCompletesSuccessfulDeletion() {
         User pending = createUser(
                 "user-1",
-                "anna@example.com",
+                "anna@u.nus.edu",
                 "Anna",
                 List.of("requester")
         );
@@ -525,7 +525,7 @@ class UserServiceTest {
     void recoverDeletionRestoresAccountWhenOrdersDenyDeletion() {
         User pending = createUser(
                 "user-1",
-                "anna@example.com",
+                "anna@u.nus.edu",
                 "Anna",
                 List.of("requester")
         );
@@ -553,7 +553,7 @@ class UserServiceTest {
     void recoverDeletionReturnsWhenAccountIsNoLongerPending() {
         User user = createUser(
                 "user-1",
-                "anna@example.com",
+                "anna@u.nus.edu",
                 "Anna",
                 List.of("requester")
         );
@@ -568,7 +568,7 @@ class UserServiceTest {
     void recoverDeletionWrapsUnexpectedFailureAsServiceUnavailable() {
         User pending = createUser(
                 "user-1",
-                "anna@example.com",
+                "anna@u.nus.edu",
                 "Anna",
                 List.of("requester")
         );
@@ -1115,7 +1115,7 @@ class UserServiceTest {
                 .thenReturn(Optional.empty());
 
         when(userRepository.findFirstByEmailAndStatus(
-                "anna@example.com", AccountStatus.ACTIVE))
+                "anna@u.nus.edu", AccountStatus.ACTIVE))
                 .thenReturn(Optional.empty());
 
         when(userRepository.save(any(User.class)))
@@ -1131,7 +1131,7 @@ class UserServiceTest {
                 IllegalStateException.class,
                 () -> userService.createUser(
                         "user-1",
-                        "anna@example.com",
+                        "anna@u.nus.edu",
                         List.of("courier"),
                         "Anna"
                 )

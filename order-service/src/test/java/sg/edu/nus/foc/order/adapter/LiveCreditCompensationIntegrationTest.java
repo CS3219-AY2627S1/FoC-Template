@@ -655,7 +655,7 @@ class LiveCreditCompensationIntegrationTest {
         String actor = key();
         String eventId = key();
         String payload = """
-                {"eventId":"%s","userId":"%s","email":"%s@example.com",
+                {"eventId":"%s","userId":"%s","email":"%s@u.nus.edu",
                  "occurredAt":"%s","schemaVersion":1}
                 """.formatted(eventId, actor, actor, Instant.now());
         broker().post().uri("/topics/user-created-local-v1:publish")

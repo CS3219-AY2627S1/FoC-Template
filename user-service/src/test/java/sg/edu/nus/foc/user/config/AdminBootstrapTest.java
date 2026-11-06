@@ -40,7 +40,7 @@ class AdminBootstrapTest {
     @InjectMocks
     private AdminBootstrap adminBootstrap;
 
-    private static final String ADMIN_EMAIL = "admin@example.com";
+    private static final String ADMIN_EMAIL = "admin@u.nus.edu";
     private static final String ADMIN_UID = "firebase-admin-uid";
 
     @BeforeEach

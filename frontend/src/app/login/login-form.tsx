@@ -103,8 +103,16 @@ export function LoginForm() {
         }
 
         const username = `${firstName.trim()} ${lastName.trim()}`
-
-        await signUp(email.trim(), password, username)
+        try {
+          await signUp(email.trim(), password, username)
+        } catch (err) {
+          if (err instanceof Error && err.message == "EMAIL_NOT_NUS") {
+            setError("Please use your NUS email address (@u.nus.edu).")
+            return
+          } else {
+            throw err
+          }
+        }
 
         // Change page back to sign in
         setMode("sign-in")

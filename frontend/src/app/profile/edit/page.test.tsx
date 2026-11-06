@@ -21,7 +21,7 @@ vi.mock("firebase/auth", () => ({
 }))
 vi.mock("@/app/login/password-requirements", () => ({ PasswordRequirements: () => null }))
 
-const profile = { username: "Anna", email: "anna@example.com" }
+const profile = { username: "Anna", email: "anna@u.nus.edu" }
 beforeEach(() => {
   vi.resetAllMocks()
   mocks.auth.loading = false
@@ -42,7 +42,7 @@ async function loaded() {
 }
 
 async function requestEmail() {
-  fireEvent.change(screen.getByLabelText("Email"), { target: { value: "new@example.com" } })
+  fireEvent.change(screen.getByLabelText("Email"), { target: { value: "new@u.nus.edu" } })
   fireEvent.click(screen.getByRole("button", { name: "Send verification email" }))
   await screen.findByRole("button", { name: "I've verified my email" })
 }
@@ -99,7 +99,7 @@ it("does not save an unverified email to User Service", async () => {
   await requestEmail()
   fireEvent.click(screen.getByRole("button", { name: "I've verified my email" }))
   expect(await screen.findByText(/has not been verified yet/)).toBeInTheDocument()
-  expect(mocks.verify).toHaveBeenCalledWith(mocks.auth.user, "new@example.com")
+  expect(mocks.verify).toHaveBeenCalledWith(mocks.auth.user, "new@u.nus.edu")
   expect(mocks.api).toHaveBeenCalledTimes(1)
   expect(mocks.freshToken).not.toHaveBeenCalled()
 })
@@ -107,12 +107,12 @@ it("does not save an unverified email to User Service", async () => {
 it("refreshes the token and saves the verified Firebase email before reporting success", async () => {
   await loaded()
   await requestEmail()
-  mocks.reload.mockImplementationOnce(async () => {mocks.auth.user!.email = "new@example.com"})
+  mocks.reload.mockImplementationOnce(async () => {mocks.auth.user!.email = "new@u.nus.edu"})
   mocks.api.mockImplementationOnce(async (path, options) => {
     expect(path).toBe("/api/users/me/email-sync")
     expect(mocks.freshToken).toHaveBeenCalledWith(true)
     expect(options).toEqual({method: "POST", body: {},})
-    return {...profile, email: "new@example.com"}
+    return {...profile, email: "new@u.nus.edu"}
   })
   fireEvent.click(screen.getByRole("button", { name: "I've verified my email" }))
   expect(await screen.findByText("Your email has been updated and saved successfully.")).toBeInTheDocument()
@@ -122,12 +122,12 @@ it("refreshes the token and saves the verified Firebase email before reporting s
 it("keeps email synchronization retryable if User Service rejects the save", async () => {
   await loaded()
   await requestEmail()
-  mocks.reload.mockImplementationOnce(async () => { mocks.auth.user!.email = "new@example.com" })
+  mocks.reload.mockImplementationOnce(async () => { mocks.auth.user!.email = "new@u.nus.edu" })
   mocks.api.mockRejectedValueOnce(new Error("Profile save unavailable."))
   fireEvent.click(screen.getByRole("button", { name: "I've verified my email" }))
   expect(await screen.findByText("Profile save unavailable.")).toBeInTheDocument()
   expect(screen.queryByText("Your email has been updated and saved successfully.")).not.toBeInTheDocument()
-  mocks.api.mockResolvedValueOnce({ ...profile, email: "new@example.com" })
+  mocks.api.mockResolvedValueOnce({ ...profile, email: "new@u.nus.edu" })
   fireEvent.click(screen.getByRole("button", { name: "I've verified my email" }))
   expect(await screen.findByText("Your email has been updated and saved successfully.")).toBeInTheDocument()
 })
@@ -169,8 +169,8 @@ it("isolates drafts and aborts the old profile load when the account changes", a
   })
   const view = render(<EditProfilePage />)
   await waitFor(() => expect(mocks.api).toHaveBeenCalledTimes(1))
-  mocks.auth.user = { ...mocks.auth.user!, uid: "beth", email: "beth@example.com" }
-  mocks.api.mockResolvedValueOnce({ username: "Beth", email: "beth@example.com" })
+  mocks.auth.user = { ...mocks.auth.user!, uid: "beth", email: "beth@u.nus.edu" }
+  mocks.api.mockResolvedValueOnce({ username: "Beth", email: "beth@u.nus.edu" })
   view.rerender(<EditProfilePage />)
   expect(await screen.findByLabelText("Username")).toHaveValue("Beth")
   expect(oldSignal.aborted).toBe(true)
@@ -184,12 +184,12 @@ it("does not synchronize the old account's email after switching accounts mid-ve
   const originalUser = mocks.auth.user!
   let finish!: () => void
   mocks.reload.mockImplementationOnce(() => new Promise<void>(resolve => {
-    finish = () => { originalUser.email = "new@example.com"; resolve() }
+    finish = () => { originalUser.email = "new@u.nus.edu"; resolve() }
   }))
   fireEvent.click(screen.getByRole("button", { name: "I've verified my email" }))
   await waitFor(() => expect(mocks.reload).toHaveBeenCalledTimes(1))
-  mocks.auth.user = { ...originalUser, uid: "beth", email: "beth@example.com" }
-  mocks.api.mockResolvedValueOnce({ username: "Beth", email: "beth@example.com" })
+  mocks.auth.user = { ...originalUser, uid: "beth", email: "beth@u.nus.edu" }
+  mocks.api.mockResolvedValueOnce({ username: "Beth", email: "beth@u.nus.edu" })
   cleanup()
   render(<EditProfilePage />)
   expect(await screen.findByLabelText("Username")).toHaveValue("Beth")

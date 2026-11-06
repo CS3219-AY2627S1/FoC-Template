@@ -21,7 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "REPORT_RESOLUTION_RESULT_TOPIC=result","REPORT_RESOLUTION_COMPENSATION_SUBSCRIPTION=projects/demo-foc/subscriptions/report-comp",
         "REPORT_RESOLUTION_PUSH_MODE=emulator","PUBSUB_EMULATOR_HOST=localhost:9999","FIREBASE_AUTH_EMULATOR_HOST=localhost:9099",
         "foc.reporting.firestore.emulator-host=localhost:9998","foc.reporting.storage.emulator-host=http://localhost:9997",
-        "foc.reporting.user-service.mock-admin-emails=admin@example.com","REPORT_RESULT_RECOVERY_CRON=-","REPORT_RESPONSE_RECOVERY_CRON=-"})
+        "foc.reporting.user-service.mock-admin-emails=admin@u.nus.edu","REPORT_RESULT_RECOVERY_CRON=-","REPORT_RESPONSE_RECOVERY_CRON=-"})
 @AutoConfigureMockMvc
 class ReportResolutionApiTest {
     @Autowired MockMvc mvc;
@@ -34,10 +34,10 @@ class ReportResolutionApiTest {
         when(store.resolve(c)).thenReturn(new Resolution("key","report","order","requester","courier","admin",1,"APPLIED","RESOLVED"));
         mvc.perform(put(path).contentType("application/json").content(json.writeValueAsString(c))).andExpect(status().isUnauthorized());
         mvc.perform(put(path).with(jwt().jwt(j->j.subject("admin"))).contentType("application/json").content(json.writeValueAsString(c))).andExpect(status().isForbidden());
-        mvc.perform(put(path).with(jwt().jwt(j->j.subject("other").claim("email","admin@example.com"))).contentType("application/json").content(json.writeValueAsString(c))).andExpect(status().isForbidden());
-        mvc.perform(put(path).with(jwt().jwt(j->j.subject("admin").claim("email","admin@example.com"))).contentType("application/json").content(json.writeValueAsString(c))).andExpect(status().isOk()).andExpect(jsonPath("$.outcome").value("APPLIED"));
-        mvc.perform(put(path.replace("key","different")).with(jwt().jwt(j->j.subject("admin").claim("email","admin@example.com"))).contentType("application/json").content(json.writeValueAsString(c))).andExpect(status().isBadRequest());
-        mvc.perform(put(path).with(jwt().jwt(j->j.subject("admin").claim("email","admin@example.com"))).contentType("application/json").content(json.writeValueAsString(c).replace("Evidence reviewed"," "))).andExpect(status().isBadRequest());
+        mvc.perform(put(path).with(jwt().jwt(j->j.subject("other").claim("email","admin@u.nus.edu"))).contentType("application/json").content(json.writeValueAsString(c))).andExpect(status().isForbidden());
+        mvc.perform(put(path).with(jwt().jwt(j->j.subject("admin").claim("email","admin@u.nus.edu"))).contentType("application/json").content(json.writeValueAsString(c))).andExpect(status().isOk()).andExpect(jsonPath("$.outcome").value("APPLIED"));
+        mvc.perform(put(path.replace("key","different")).with(jwt().jwt(j->j.subject("admin").claim("email","admin@u.nus.edu"))).contentType("application/json").content(json.writeValueAsString(c))).andExpect(status().isBadRequest());
+        mvc.perform(put(path).with(jwt().jwt(j->j.subject("admin").claim("email","admin@u.nus.edu"))).contentType("application/json").content(json.writeValueAsString(c).replace("Evidence reviewed"," "))).andExpect(status().isBadRequest());
     }
     @Test void pushValidatesSubscriptionSchemaGenerationAndBusinessEventId() throws Exception {
         var request=new Compensation(UUID.randomUUID().toString(),"key","report","order","requester","courier","admin",2);

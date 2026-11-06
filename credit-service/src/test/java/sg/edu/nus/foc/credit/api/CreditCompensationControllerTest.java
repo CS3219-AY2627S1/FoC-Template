@@ -26,7 +26,7 @@ import sg.edu.nus.foc.credit.persistence.CreditCompensationStore;
 class CreditCompensationControllerTest {
 
     private static final CreditPushProperties PROPERTIES = new CreditPushProperties(
-            "demo", "audience", "push@example.com", "completion", "refund", "compensation", "user-created");
+            "demo", "audience", "push@u.nus.edu", "completion", "refund", "compensation", "user-created");
 
     @Test
     void decodesAgainstConfiguredSubscriptionAndAcknowledgesAfterServiceReturns() {
