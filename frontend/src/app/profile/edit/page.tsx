@@ -182,6 +182,7 @@ function EditProfileForm({ user }: { user: User }) {
 
             const newEmail = email.trim()
 
+            // TODO: Enforce @u.nus.edu emails
             if (!newEmail) {
                 throw new Error("Please enter an email address.")
             }

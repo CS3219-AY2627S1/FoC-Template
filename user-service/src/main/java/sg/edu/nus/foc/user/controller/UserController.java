@@ -2,31 +2,21 @@ package sg.edu.nus.foc.user.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
-import com.google.firebase.auth.FirebaseToken;
-
-import sg.edu.nus.foc.user.authentication.AuthenticationService;
-import sg.edu.nus.foc.user.authentication.FirebaseAuthService;
 import sg.edu.nus.foc.user.logic.AddUserRequest;
 import sg.edu.nus.foc.user.logic.ApplyPenaltyRequest;
 import sg.edu.nus.foc.user.logic.AdminEligibility;
@@ -43,15 +33,10 @@ import sg.edu.nus.foc.user.model.User;
 public class UserController {
     private static final String ADMIN_ONLY = "@callerRoles.isAdmin(authentication)";
 
-    private final AuthenticationService authenticationService;
     private final UserService userService;
 
-    public UserController(
-            UserService userService,
-            AuthenticationService authenticationService) {
-
+    public UserController(UserService userService) {
         this.userService = userService;
-        this.authenticationService = authenticationService;
     }
 
     // GET /api/users

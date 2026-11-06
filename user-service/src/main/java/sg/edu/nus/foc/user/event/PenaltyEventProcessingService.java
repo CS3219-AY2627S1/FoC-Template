@@ -26,8 +26,8 @@ public class PenaltyEventProcessingService {
         mongoTemplate.insert(
                 new ProcessedPenaltyEvent(
                         event.eventId(),
-                        event.eventType(),
                         event.courierId(),
+                        event.eventType(),
                         Instant.now()
                 )
         );
