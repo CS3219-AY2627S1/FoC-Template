@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from app.api.routes import health, notifications
 from app.db import init_db
+from app.errors import register_exception_handlers
 from app.services.consumer import NotificationEventConsumer
 
 
@@ -21,5 +22,6 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="FoC Notification Service", version="0.1.0", lifespan=lifespan)
+register_exception_handlers(app)
 app.include_router(health.router)
 app.include_router(notifications.router)
