@@ -14,6 +14,9 @@ secretEnv:
   - name: DATABASE_URL
     secret: notification-secrets
     key: DATABASE_URL
+  - name: RABBITMQ_URL
+    secret: notification-secrets
+    key: RABBITMQ_URL
 
 resources:
   requests:
