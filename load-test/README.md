@@ -96,3 +96,11 @@ Use the same `VUS` and `REQUESTER_SHARE` for seed and k6. Re-running the seed re
 | `ESCALATE_EVERY` | `20` | k6 |
 | `PICKUP_ID` | `2` | k6 — Supplier approved place id (`fromLocation`) |
 | `DROPOFF_ID` | `1` | k6 — Order `delivery_point.id` (`deliveryPointId`) |
+
+## Metrics tags (Prometheus / Grafana)
+
+Order ids appear in real request paths (`/orders/{id}/accept`, …). For streamed
+metrics, `load.js` sets a stable `tags.name` per endpoint (`accept`, `collect`,
+`get_order`, …) and omits the built-in `url` system tag so those UUIDs do not
+create one time series per order. Thresholds still filter on custom `op`
+(`create` / `read` / `fulfill` / `close`).
