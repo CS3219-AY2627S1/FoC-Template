@@ -278,10 +278,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [config]
   )
 
-  function isNusEmail(email: string): boolean {
-      return /^[^@\s]+@u\.nus\.edu$/i.test(email.trim())
-  }
-
   const value = useMemo(
     () => ({ user, loading, profile, profileLoading, profileError, refreshProfile, 
       signIn, signUp, signOut, getIdToken, resendVerificationEmail, sendFirebasePasswordResetEmail }),
@@ -289,6 +285,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signIn, signUp, signOut, getIdToken, resendVerificationEmail, sendFirebasePasswordResetEmail],
   )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}
+
+function isNusEmail(email: string): boolean {
+  return /^[^@\s]+@u\.nus\.edu$/i.test(email.trim())
 }
 
 export function useAuth(): AuthContextValue {
