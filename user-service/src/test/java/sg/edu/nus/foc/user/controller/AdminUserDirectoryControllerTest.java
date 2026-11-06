@@ -21,6 +21,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 import sg.edu.nus.foc.user.security.SecurityConfig;
+import sg.edu.nus.foc.user.config.ClockConfig;
 import sg.edu.nus.foc.user.config.UserPushProperties;
 import sg.edu.nus.foc.user.logic.AdminUserDirectory;
 import sg.edu.nus.foc.user.logic.AdminUserPage;
@@ -31,7 +32,8 @@ import sg.edu.nus.foc.user.security.CallerRoles;
 import sg.edu.nus.foc.user.security.MongoUserServiceRoleProvider;
 
 @WebMvcTest(controllers = AdminUserDirectoryController.class)
-@Import({SecurityConfig.class, CallerRoles.class, MongoUserServiceRoleProvider.class, AdminUserDirectoryControllerTest.WebSecurityForSlice.class})
+@Import({SecurityConfig.class, CallerRoles.class, MongoUserServiceRoleProvider.class, AdminUserDirectoryControllerTest.WebSecurityForSlice.class,
+        ClockConfig.class})
 class AdminUserDirectoryControllerTest {
     @TestConfiguration(proxyBeanMethods = false)
     @EnableConfigurationProperties(UserPushProperties.class)
