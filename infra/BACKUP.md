@@ -12,11 +12,14 @@ credentials, not that user.
 ## Provision the bucket (one time)
 
 ```
-cd infra/terraform
-terraform init
-terraform apply          # creates the backups bucket (Phase E adds the instance role with S3 write)
-BUCKET=$(terraform output -raw backup_bucket)
+export AWS_PROFILE=nusisb_IsbUsersPS-986918902548
+aws sso login
+terraform -chdir=infra/terraform init
+terraform -chdir=infra/terraform apply          # creates the backups bucket (Phase E adds the instance role with S3 write)
+BUCKET=$(terraform -chdir=infra/terraform output -raw backup_bucket)
 ```
+
+Terraform state is shared in S3 (see [`terraform/README.md`](terraform/README.md)), so `init` configures that backend and `apply` operates on the existing stack. The bucket is not recreated on a fresh clone.
 
 The EC2 instance role (Phase E) grants `s3:PutObject` to this bucket, and the
 backup pods pick it up via IMDS, so no AWS keys live in the cluster.

@@ -17,6 +17,26 @@ Format for each entry:
 - Author review: <how you validated/edited/tested the output>
 ```
 
+## 08/11/2026 — John
+
+- Tool: Claude Code (model: Opus 4.8)
+- Scope: Migrated Terraform state from local to a shared S3 backend with native S3
+  locking (no DynamoDB). Added the `infra/terraform-bootstrap` module that creates
+  the versioned, SSE-S3-encrypted, TLS-only, public-access-blocked state bucket with
+  `prevent_destroy`; added the `backend "s3"` block and bumped `required_version` to
+  `>= 1.10` in `infra/terraform/versions.tf`; pinned CI Terraform to 1.10.5 and added
+  fmt/init/validate for the bootstrap module; added `scripts/tf-state-bootstrap.sh`
+  and `scripts/tf-state-migrate.sh`; added `infra/terraform/README.md` with the
+  migration runbook and updated `infra/argocd/README.md` and `infra/BACKUP.md`. Dirs
+  changed: `infra/terraform`, `infra/terraform-bootstrap`, `scripts`, `.github`, `ai`.
+- Prompt(s): Move Terraform state to a shared S3 backend with native locking, a
+  bootstrap module for the bucket, and a one-time migration runbook (full task spec
+  in the PR description).
+- Author review: Ran `terraform fmt -check -recursive infra/`, `init -backend=false`
+  + `validate` for both `infra/terraform` and `infra/terraform-bootstrap`, `shellcheck`
+  on both new scripts, and `actionlint` on the workflows; confirmed via `git check-ignore`
+  that no `*.tfstate*` or backup files can be committed. Nothing was run against AWS.
+
 ## 31/10/2026 — John
 
 - Tool: Claude Code (model: Opus 4.8)
