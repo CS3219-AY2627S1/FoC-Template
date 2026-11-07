@@ -163,7 +163,7 @@ The NUS organisation denies `AssumeRoleForPodIdentity`, role chaining and
 
 ```bash
 aws secretsmanager get-secret-value --secret-id foc/dev/grafana-admin --query SecretString --output text   # user: admin
-kubectl -n monitoring port-forward svc/kps-grafana 3000:80        # http://localhost:3000
+kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80        # http://localhost:3000
 kubectl -n monitoring port-forward svc/kps-prometheus 9090:9090   # http://localhost:9090
 ```
 
@@ -181,7 +181,8 @@ kubectl -n monitoring port-forward svc/kps-prometheus 9090:9090   # http://local
   credit (1–4). admin and badges stay at 1.
 - The `foc-dev` quota fits every HPA at its max; raise both together.
 - RDS `db.t4g.micro` (~80–90 connections) is the ceiling: resize it before a
-  full-size load test.
+  full-size load test (`-var rds_instance_class=db.m7g.xlarge`, see
+  `load-test/README.md`, "Testing in EKS").
 - Watch: `kubectl -n foc-dev get hpa` · `kubectl top pods -n foc-dev` ·
   `kubectl get nodes -L eks.amazonaws.com/nodegroup`.
 

@@ -27,7 +27,7 @@ resource "aws_db_instance" "foc" {
   identifier        = var.cluster_name
   engine            = "postgres"
   engine_version    = "16"
-  instance_class    = "db.t4g.micro" # full-size load tests: "db.m7g.xlarge" (~$0.47/h, ~1,800 connections), then back
+  instance_class    = var.rds_instance_class
   allocated_storage = 20
   storage_type      = "gp3"
   storage_encrypted = true
