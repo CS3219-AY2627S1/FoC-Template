@@ -1,0 +1,64 @@
+full-2114 
+
+  █ THRESHOLDS
+
+    http_req_failed{op:close}
+    ✗ 'rate<0.05' rate=29.00%
+
+    http_req_failed{op:create}
+    ✗ 'rate<0.05' rate=81.53%
+
+    http_req_failed{op:fulfill}
+    ✗ 'rate<0.05' rate=30.17%
+
+    http_req_failed{op:read}
+    ✗ 'rate<0.05' rate=86.54%
+
+
+  █ TOTAL RESULTS
+
+    checks_total.......................: 2355013 3738.063561/s
+    checks_succeeded...................: 16.86%  397182 out of 2355013
+    checks_failed......................: 83.13%  1957831 out of 2355013
+
+    ✗ order created
+      ↳  18% — ✓ 11298 / ✗ 49880
+    ✗ read ok
+      ↳  13% — ✓ 290127 / ✗ 1866611
+    ✗ accept claimed or already taken
+      ↳  72% — ✓ 85349 / ✗ 31979
+    ✗ collect stored a photo
+      ↳  65% — ✓ 5505 / ✗ 2949
+    ✗ deliver stored a photo
+      ↳  33% — ✓ 2852 / ✗ 5574
+    ✗ acknowledged or already closed
+      ↳  70% — ✓ 2037 / ✗ 834
+    ✗ escalated or already closed
+      ↳  77% — ✓ 14 / ✗ 4
+time="2026-11-07T13:26:27Z" level=error msg="thresholds on metrics 'http_req_failed{op:close}, http_req_failed{op:create}, http_req_failed{op:fulfill}, http_req_failed{op:read}' have been crossed"
+
+    HTTP
+    http_req_duration.......................................................: avg=1.97s min=0s     med=0s    max=30s    p(90)=8.07s  p(95)=11.47s
+      { expected_response:true }............................................: avg=8.71s min=1.77ms med=8s    max=29.99s p(90)=15.91s p(95)=19.13s
+    http_req_failed.........................................................: 83.13%  1957831 out of 2355013
+      { op:close }..........................................................: 29.00%  838 out of 2889
+      { op:create }.........................................................: 81.53%  49880 out of 61178
+      { op:fulfill }........................................................: 30.17%  40502 out of 134208
+      { op:read }...........................................................: 86.54%  1866611 out of 2156738
+    http_reqs...............................................................: 2355013 3738.063561/s
+
+    EXECUTION
+    iteration_duration......................................................: avg=5.64s min=1s     med=1.13s max=1m44s  p(90)=20.48s p(95)=31s
+    iterations..............................................................: 1043407 1656.17841/s
+    vus.....................................................................: 902     min=0                  max=9600
+    vus_max.................................................................: 9600    min=9422               max=9600
+
+    NETWORK
+    data_received...........................................................: 2.7 GB  4.3 MB/s
+    data_sent...............................................................: 188 MB  298 kB/s
+
+
+
+
+running (10m30.0s), 0000/9600 VUs, 1043407 complete and 901 interrupted iterations
+traffic ✓ [ 100% ] 9600 VUs  10m0s

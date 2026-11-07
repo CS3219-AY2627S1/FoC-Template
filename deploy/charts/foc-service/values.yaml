@@ -102,9 +102,17 @@ mesh:
     enabled: false
     namespace: monitoring
     serviceAccount: prometheus
+  # Linkerd sidecar memory. "" = injector defaults (~20Mi/64Mi). Order under
+  # full load needs more (see deploy/values/envs/dev/services/order.yaml).
+  proxy:
+    memoryRequest: ""
+    memoryLimit: ""
 
 # HTTP health check path; "" disables the probes and the HTTP test.
+# readinessPath / livenessPath override when set (e.g. Order: /health vs /live).
 healthPath: /health
+readinessPath: ""
+livenessPath: ""
 
 # `helm test` pods (not used by Argo CD).
 tests:

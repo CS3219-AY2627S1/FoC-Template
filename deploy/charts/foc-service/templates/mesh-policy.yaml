@@ -23,7 +23,10 @@ spec:
   proxyProtocol: HTTP/1
 {{- $probePaths := list }}
 {{- with .Values.healthPath }}{{ $probePaths = append $probePaths . }}{{ end }}
+{{- with .Values.readinessPath }}{{ $probePaths = append $probePaths . }}{{ end }}
+{{- with .Values.livenessPath }}{{ $probePaths = append $probePaths . }}{{ end }}
 {{- if and .Values.database.enabled .Values.database.healthPath }}{{ $probePaths = append $probePaths .Values.database.healthPath }}{{ end }}
+{{- $probePaths = $probePaths | uniq }}
 {{- if $probePaths }}
 ---
 apiVersion: gateway.networking.k8s.io/v1

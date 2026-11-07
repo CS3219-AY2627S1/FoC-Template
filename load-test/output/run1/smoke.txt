@@ -1,0 +1,54 @@
+  █ THRESHOLDS
+
+    http_req_failed{op:close}
+    ✓ 'rate<0.05' rate=0.00%
+
+    http_req_failed{op:create}
+    ✓ 'rate<0.05' rate=0.00%
+
+    http_req_failed{op:fulfill}
+    ✓ 'rate<0.05' rate=0.00%
+
+    http_req_failed{op:read}
+    ✓ 'rate<0.05' rate=0.00%
+
+
+  █ TOTAL RESULTS
+
+    checks_total.......................: 6054    99.140251/s
+    checks_succeeded...................: 100.00% 6054 out of 6054
+    checks_failed......................: 0.00%   0 out of 6054
+
+    ✓ read ok
+    ✓ order created
+    ✓ accept claimed or already taken
+    ✓ collect stored a photo
+    ✓ deliver stored a photo
+    ✓ acknowledged or already closed
+    ✓ escalated or already closed
+
+    HTTP
+    http_req_duration.......................................................: avg=29.9ms min=2.08ms med=19.32ms max=1.08s p(90)=65.89ms p(95)=83.46ms
+      { expected_response:true }............................................: avg=29.9ms min=2.08ms med=19.32ms max=1.08s p(90)=65.89ms p(95)=83.46ms
+    http_req_failed.........................................................: 0.00%  0 out of 6054
+      { op:close }..........................................................: 0.00%  0 out of 477
+      { op:create }.........................................................: 0.00%  0 out of 486
+      { op:fulfill }........................................................: 0.00%  0 out of 1969
+      { op:read }...........................................................: 0.00%  0 out of 3122
+    http_reqs...............................................................: 6054   99.140251/s
+
+    EXECUTION
+    iteration_duration......................................................: avg=1.11s  min=1s     med=1.09s   max=2.33s p(90)=1.19s   p(95)=1.25s
+    iterations..............................................................: 1638   26.823874/s
+    vus.....................................................................: 2      min=2         max=30
+    vus_max.................................................................: 30     min=30        max=30
+
+    NETWORK
+    data_received...........................................................: 17 MB  276 kB/s
+    data_sent...............................................................: 2.0 MB 33 kB/s
+
+
+
+
+running (1m01.1s), 00/30 VUs, 1638 complete and 0 interrupted iterations
+traffic ✓ [ 100% ] 30 VUs  1m0s
