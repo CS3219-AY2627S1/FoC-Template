@@ -11,4 +11,5 @@ quota:
 networkPolicy:
   # Envoy proxies (charts/foc-gateway) route traffic in and call User's /authorize.
   # Prometheus scrapes the Linkerd proxies (charts/kube-prometheus-stack).
-  allowFromNamespaces: [envoy-gateway-system, monitoring]
+  # k6 calls Order (load-test/).
+  allowFromNamespaces: [envoy-gateway-system, monitoring, foc-load]

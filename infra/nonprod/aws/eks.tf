@@ -173,6 +173,54 @@ resource "aws_eks_node_group" "burst" {
   depends_on = [aws_iam_role_policy_attachment.node]
 }
 
+# One node for the k6 full run (load-test/), 0 when idle. Tainted so only
+# pods that tolerate foc.io/pool=loadgen land on it. Cluster Autoscaler reads
+# the label and taint from the node group (eks:DescribeNodegroup) to scale
+# up from 0.
+resource "aws_eks_node_group" "loadgen" {
+  count = var.eks_enabled ? 1 : 0
+
+  cluster_name    = aws_eks_cluster.this[0].name
+  node_group_name = "loadgen"
+  node_role_arn   = aws_iam_role.node.arn
+  subnet_ids      = [for s in aws_subnet.private : s.id]
+
+  ami_type       = "AL2023_ARM_64_STANDARD"
+  capacity_type  = "SPOT"
+  instance_types = var.loadgen_instance_types
+
+  launch_template {
+    id      = aws_launch_template.node.id
+    version = aws_launch_template.node.latest_version
+  }
+
+  scaling_config {
+    min_size     = 0
+    desired_size = 0
+    max_size     = 1
+  }
+
+  update_config {
+    max_unavailable = 1
+  }
+
+  labels = {
+    "foc.io/pool" = "loadgen"
+  }
+
+  taint {
+    key    = "foc.io/pool"
+    value  = "loadgen"
+    effect = "NO_SCHEDULE"
+  }
+
+  lifecycle {
+    ignore_changes = [scaling_config[0].desired_size]
+  }
+
+  depends_on = [aws_iam_role_policy_attachment.node]
+}
+
 resource "aws_eks_addon" "this" {
   for_each = var.eks_enabled ? toset(["vpc-cni", "kube-proxy", "coredns", "metrics-server"]) : toset([])
 

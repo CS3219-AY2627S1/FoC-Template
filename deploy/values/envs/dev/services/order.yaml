@@ -1,5 +1,8 @@
 image:
   tag: "01344fb098b8106827799634d2766b4989cf550c" # git SHA, set by deploy/push-dev.sh
+mesh:
+  # k6 (load-test/) calls Order directly with the identity headers.
+  callers: [gateway, foc-load/k6]
 autoscaling:
   enabled: true
   minReplicas: 2

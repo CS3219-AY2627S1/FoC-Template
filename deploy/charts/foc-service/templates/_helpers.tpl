@@ -23,7 +23,7 @@ app.kubernetes.io/part-of: foc
 app.kubernetes.io/version: {{ .Values.image.tag | quote }}
 {{- end }}
 
-{{/* A mesh caller ("gateway" or a service name) as a Linkerd identityRef. */}}
+{{/* A mesh caller ("gateway", a service name, or <namespace>/<serviceaccount>) as a Linkerd identityRef. */}}
 {{- define "foc-service.meshCaller" -}}
 {{- $root := index . 0 -}}
 {{- $caller := index . 1 -}}
@@ -31,6 +31,10 @@ app.kubernetes.io/version: {{ .Values.image.tag | quote }}
 - kind: ServiceAccount
   name: {{ default (printf "envoy-%s" $root.Release.Namespace) $root.Values.mesh.gateway.serviceAccount }}
   namespace: {{ $root.Values.mesh.gateway.namespace }}
+{{- else if contains "/" $caller -}}
+- kind: ServiceAccount
+  name: {{ index (splitList "/" $caller) 1 }}
+  namespace: {{ index (splitList "/" $caller) 0 }}
 {{- else -}}
 - kind: ServiceAccount
   name: {{ $caller }}

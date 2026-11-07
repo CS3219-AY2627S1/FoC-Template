@@ -1,0 +1,4 @@
+# load-test/ chart against foc-dev (Argo CD app load-test-dev, namespace foc-load).
+orderUrl: http://order.foc-dev.svc.cluster.local:8083
+secretStore: aws-secrets-dev
+secretPrefix: foc/dev/
