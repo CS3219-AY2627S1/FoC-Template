@@ -42,7 +42,9 @@ _MISSING = str(uuid.uuid4())
 CONFLICT_ROUTES = [
     ("GET", "/api/v1/admin/conflicts"),
     ("GET", f"/api/v1/admin/conflicts/{_MISSING}"),
+    ("GET", f"/api/v1/admin/conflicts/{_MISSING}/photos/collection"),
     ("POST", f"/api/v1/admin/conflicts/{_MISSING}/review"),
+    ("POST", f"/api/v1/admin/conflicts/{_MISSING}/reassess"),
     ("POST", f"/api/v1/admin/conflicts/{_MISSING}/resolve"),
 ]
 RESOLVE_BODY = {"faultParty": "courier", "decision": "accept"}

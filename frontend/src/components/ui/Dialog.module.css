@@ -36,6 +36,10 @@
   border-radius: var(--radius-lg);
 }
 
+.panelWide {
+  max-width: 640px;
+}
+
 .panel:focus {
   outline: none;
 }
