@@ -44,7 +44,7 @@ individual contributions.
 | supplier-service | _TBD_ |
 | order-service | _TBD_ |
 | credit-service | _TBD_ |
-| notification-service | _TBD_ |
+| notification-service | John |
 | frontend | _TBD_ |
 | shared / infra / CI | _TBD_ |
 

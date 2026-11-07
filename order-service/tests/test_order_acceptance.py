@@ -17,6 +17,7 @@ from app.services.lifecycle import OrderStatus
 def acceptance(monkeypatch):
     order = SimpleNamespace(
         order_id="order-1",
+        name="Lunch pickup",
         requester_id="requester-1",
         courier_id=None,
         status=OrderStatus.OPEN,
@@ -54,6 +55,7 @@ async def test_acceptance_records_shared_event(acceptance):
         "courier-1",
     )
     assert event.timestamp.tzinfo == UTC
+    assert event.order_name == "Lunch pickup"
 
 
 async def test_missing_order_is_not_found(acceptance):

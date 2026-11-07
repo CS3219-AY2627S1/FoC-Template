@@ -23,6 +23,7 @@ class OrderEvent(BaseModel):
     courier_id: str | None = None
     timestamp: datetime
     reason: str | None = None
+    order_name: str | None = None
 
 
 class UserRegisteredEvent(BaseModel):

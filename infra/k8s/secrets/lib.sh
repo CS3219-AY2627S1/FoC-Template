@@ -43,7 +43,8 @@ build_secrets() {
   render_secret foc-notification notification-secrets \
     --from-literal=POSTGRES_USER="$PG_USER" \
     --from-literal=POSTGRES_PASSWORD="$NOTIF_PW" \
-    --from-literal=DATABASE_URL="$(db_url notification-db "$NOTIF_PW" notification_db)" | sink foc-notification notification-secrets
+    --from-literal=DATABASE_URL="$(db_url notification-db "$NOTIF_PW" notification_db)" \
+    --from-literal=RABBITMQ_URL="$rabbitmq_url" | sink foc-notification notification-secrets
 
   render_secret foc-gateway gateway-secrets \
     --from-literal=JWT_SECRET="$JWT_SECRET" | sink foc-gateway gateway-secrets

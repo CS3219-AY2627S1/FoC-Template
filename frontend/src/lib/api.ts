@@ -5,6 +5,8 @@ import type {
   AdminUser,
   AdminUserList,
   LoginResponse,
+  Notification,
+  NotificationList,
   ProfileResponse,
   RegisterResponse,
   Supplier,
@@ -13,6 +15,8 @@ import type {
   SupplierQuery,
   SupplierUpdate,
 } from "./types";
+
+export type { Notification, NotificationList };
 
 declare global {
   interface Window {
@@ -409,6 +413,35 @@ export const creditsApi = {
     return request<TransactionResponse[]>(
       "GET",
       `/api/credits/${userId}/transactions`,
+    );
+  },
+};
+
+// ---- Notifications ----
+export const notificationsApi = {
+  list(
+    userId: string,
+    params: { unreadOnly?: boolean; limit?: number; offset?: number } = {},
+  ) {
+    return request<NotificationList>(
+      "GET",
+      `/api/notifications/${userId}${buildQuery({
+        unread_only: params.unreadOnly,
+        limit: params.limit,
+        offset: params.offset,
+      })}`,
+    );
+  },
+  markRead(userId: string, notificationId: string) {
+    return request<{ status: string }>(
+      "POST",
+      `/api/notifications/${userId}/${notificationId}/read`,
+    );
+  },
+  markAllRead(userId: string) {
+    return request<{ marked_read: number; unread_count: number }>(
+      "POST",
+      `/api/notifications/${userId}/read-all`,
     );
   },
 };

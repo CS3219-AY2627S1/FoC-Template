@@ -153,6 +153,7 @@ async def handle_cancel(
             courier_id=order.courier_id,
             timestamp=completed_at,
             reason=task.reason,
+            order_name=order.name,
         ),
     )
     _complete_task(task)

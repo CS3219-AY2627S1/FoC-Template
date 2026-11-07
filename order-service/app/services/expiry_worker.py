@@ -96,6 +96,7 @@ async def _expire_batch() -> int:
                     requester_id=order.requester_id,
                     courier_id=order.courier_id,
                     timestamp=database_now,
+                    order_name=order.name,
                 )
                 for order in eligible_orders
             ],

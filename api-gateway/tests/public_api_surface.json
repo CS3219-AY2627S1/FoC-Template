@@ -3,6 +3,8 @@
     "GET /api/credits/{user_id}/balance",
     "GET /api/credits/{user_id}/transactions",
     "GET /api/notifications/{user_id}",
+    "POST /api/notifications/{user_id}/read-all",
+    "POST /api/notifications/{user_id}/{notification_id}/read",
     "GET /api/orders",
     "POST /api/orders",
     "GET /api/orders/assigned",
