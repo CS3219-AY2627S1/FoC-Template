@@ -10,7 +10,7 @@ sequenceDiagram
     opt dispute photo attached
         Orders->>Photos: store dispute photo
     end
-    Orders->>Admin: POST /api/v1/admin/conflicts
+    Orders->>Admin: POST /api/v1/admin/internal/conflicts
     Admin-->>Orders: accepted
     Orders->>DB: ESCALATED, dispute text, log, alert, status outbox
     Orders-->>Requester: 200 ESCALATED

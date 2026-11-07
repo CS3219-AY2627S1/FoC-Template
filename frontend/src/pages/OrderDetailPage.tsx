@@ -14,6 +14,9 @@
 import { useCallback, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
+import { FriendControl } from '../components/friends/FriendControl';
+import { useFriendName } from '../lib/friends';
+import { useOrderTrailStatus } from '../components/layout/orderTrail';
 import { ReportUser } from '../components/moderation/ReportUser';
 import { PickupDetail } from '../components/order/PickupDetail';
 import { ReportIssueDialog } from '../components/order/ReportIssueDialog';
@@ -26,7 +29,7 @@ import { errorMessage } from '../lib/api';
 import { deliveryPointDetail } from '../lib/deliveryPoints';
 import { refreshCreditBalance } from '../lib/credit';
 import { formatWhen } from '../lib/format';
-import { acknowledgeOrder, cancelOrder, type Order } from '../lib/orders';
+import { acknowledgeOrder, cancelOrder, creditOutcome, type Order } from '../lib/orders';
 import { expectNewRating } from '../lib/rating';
 import { useLiveOrder } from '../lib/useLiveOrder';
 import { formatDeadline, useCountdown } from '../lib/useCountdown';
@@ -69,6 +72,9 @@ export function OrderDetailPage() {
 }
 
 function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Order) => void }) {
+  const courierName = useFriendName(order.courierId);
+  // Desktop shows the status beside the reference in the nav trail.
+  useOrderTrailStatus(order.status);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
@@ -157,12 +163,13 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
       <div className={styles.body}>
         <div className={styles.mainColumn}>
           <header className={styles.header}>
-            <span className={styles.desktopBadge}>
-              <StatusBadge status={order.status} />
-            </span>
             <h1 className={styles.title}>{order.item}</h1>
             <p className={styles.posted}>
               Posted {postedTime} &middot; reward <strong>{order.credits} credits</strong>
+              {/* Where the credits went, when not the usual way: returned, or by Admin's verdict. */}
+              {creditOutcome(order, 'requester').note !== null ? (
+                <> &middot; {creditOutcome(order, 'requester').note}</>
+              ) : null}
             </p>
           </header>
 
@@ -198,45 +205,37 @@ function OrderDetail({ order, onChange }: { order: Order; onChange: (order: Orde
 
             <div className={styles.detailBlock}>
               <h2 className={styles.detailLabel}>Courier</h2>
-              {/* TODO(order-service): the courier's name - orders carry ids only. */}
+              {/*
+                Orders carry the courier's id and Telegram handle, not their
+                name; the name is known only once they are a friend.
+              */}
+              <p className={styles.detailValue}>
+                {order.courierId === null
+                  ? 'Not accepted yet'
+                  : (courierName ??
+                    (order.courierTelegramHandle ? `@${order.courierTelegramHandle}` : 'Assigned'))}
+              </p>
               {order.courierTelegramHandle ? (
                 <a
-                  className={styles.detailValue}
+                  className={styles.contact}
                   href={`https://t.me/${order.courierTelegramHandle}`}
                   target="_blank"
                   rel="noreferrer noopener"
                 >
                   Contact on Telegram
                 </a>
-              ) : (
-                <p className={styles.detailValue}>
-                  {order.courierId !== null ? 'Assigned' : 'Not accepted yet'}
-                </p>
-              )}
+              ) : null}
             </div>
           </section>
 
           {/*
-            TODO(order-service): Order F2.3.3 and F2.4.3 photos. The order
-            records whether each was uploaded, but no endpoint serves the
-            image, so this section is commented out.
-
-          <section className={styles.photoCard}>
-            <h2 className={styles.sectionTitle}>Photo evidence</h2>
-            <div className={styles.photoGrid}>
-              <div className={styles.photoSlot}>
-                {beforePhotoUrl ? <img src={beforePhotoUrl} alt="Taken at collection" />
-                  : <span>Before &mdash; pending collection</span>}
-              </div>
-              <div className={styles.photoSlot}>
-                {afterPhotoUrl ? <img src={afterPhotoUrl} alt="Taken at delivery" />
-                  : <span>After &mdash; pending delivery</span>}
-              </div>
-            </div>
-          </section>
+            No photos here by design (2026-11-03): the requester does not see the
+            courier's collection and delivery photos (UI FR7.4 dropped); they
+            exist as evidence for Admin's review of a dispute.
           */}
 
           {/* In the main column, not the status panel, which mobile hides. */}
+          {order.courierId !== null ? <FriendControl userId={order.courierId} role="courier" /> : null}
           {order.courierId !== null ? <ReportUser userId={order.courierId} role="courier" /> : null}
         </div>
 

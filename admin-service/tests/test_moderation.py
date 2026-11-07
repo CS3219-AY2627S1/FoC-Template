@@ -13,7 +13,7 @@ from sqlalchemy.sql.dml import Update
 from app.database import get_db
 from app.models.audit_log import AuditLog
 from app.models.moderation import AppealStatus, ReportStatus, SuspensionAppeal, UserReport
-from app.routers import moderation, users
+from app.routers import conflicts, moderation, users
 
 ADMIN = {
     "x-user-id": "admin-sahana",
@@ -137,8 +137,11 @@ def api():
     session = MemSession()
     app = FastAPI()
     app.include_router(users.router)
+    app.include_router(conflicts.router)
     app.include_router(moderation.reports)
     app.include_router(moderation.appeals)
+    app.include_router(moderation.internal_reports)
+    app.include_router(moderation.internal_appeals)
 
     async def _db():
         yield session
@@ -148,10 +151,19 @@ def api():
         yield client, session
 
 
+@pytest.mark.parametrize(
+    "path", ["/api/v1/admin/conflicts", "/api/v1/admin/reports", "/api/v1/admin/appeals"]
+)
+def test_intake_is_only_under_internal(api, path):
+    # The gateway forwards /api/v1/admin/* to any session; intake must not be there.
+    client, _session = api
+    assert client.post(path, json={}).status_code == 405
+
+
 def test_a_user_cannot_report_themselves(api):
     client, _session = api
     resp = client.post(
-        "/api/v1/admin/reports",
+        "/api/v1/admin/internal/reports",
         json={"reporterUserId": " u-1 ", "reportedUserId": "u-1", "comment": "me"},
     )
     assert resp.status_code == 422
@@ -161,14 +173,14 @@ def test_a_user_cannot_report_themselves(api):
 def test_open_report_is_reused_and_dismiss_does_not_block_another(api):
     client, session = api
     body = {"reporterUserId": "u-1", "reportedUserId": "u-2", "comment": "first"}
-    opened = client.post("/api/v1/admin/reports", json=body)
+    opened = client.post("/api/v1/admin/internal/reports", json=body)
     assert opened.status_code == 201
     assert opened.json()["reporterUserId"] == "u-1"
     assert opened.json()["reportedUserId"] == "u-2"
     assert "reporter_user_id" not in opened.json()
     report_id = opened.json()["id"]
 
-    again = client.post("/api/v1/admin/reports", json={**body, "comment": "second"})
+    again = client.post("/api/v1/admin/internal/reports", json={**body, "comment": "second"})
     assert again.status_code == 201
     assert again.json()["id"] == report_id
     assert again.json()["comment"] == "first"
@@ -192,7 +204,7 @@ def test_open_report_is_reused_and_dismiss_does_not_block_another(api):
     missing = client.post(f"/api/v1/admin/reports/{uuid.uuid4()}/dismiss", headers=ADMIN)
     assert missing.status_code == 404
 
-    reopened = client.post("/api/v1/admin/reports", json=body)
+    reopened = client.post("/api/v1/admin/internal/reports", json=body)
     assert reopened.status_code == 201
     assert reopened.json()["id"] != report_id
     assert reopened.json()["status"] == "open"
@@ -212,7 +224,7 @@ def test_duplicate_open_report_returns_the_row_that_won_the_race(api):
     session.hide_open = True
 
     resp = client.post(
-        "/api/v1/admin/reports",
+        "/api/v1/admin/internal/reports",
         json={"reporterUserId": "u-1", "reportedUserId": "u-2", "comment": "late"},
     )
     assert resp.status_code == 201
@@ -268,14 +280,14 @@ def test_suspend_actions_only_open_reports_against_that_user(api, monkeypatch):
 
 def test_appeal_reject_leaves_it_closed_and_reinstate_closes_the_open_one(api, monkeypatch):
     client, session = api
-    opened = client.post("/api/v1/admin/appeals", json={"userId": "u-2", "message": "first"})
+    opened = client.post("/api/v1/admin/internal/appeals", json={"userId": "u-2", "message": "first"})
     assert opened.status_code == 201
     assert opened.json()["userId"] == "u-2"
     assert opened.json()["rejectionReason"] is None
     assert "user_id" not in opened.json()
     appeal_id = opened.json()["id"]
 
-    again = client.post("/api/v1/admin/appeals", json={"userId": "u-2", "message": "second"})
+    again = client.post("/api/v1/admin/internal/appeals", json={"userId": "u-2", "message": "second"})
     assert again.json()["id"] == appeal_id
     assert again.json()["message"] == "first"
 
@@ -305,7 +317,7 @@ def test_appeal_reject_leaves_it_closed_and_reinstate_closes_the_open_one(api, m
     assert latest.json()["rejectionReason"] == "Repeated abuse"
     assert client.get("/api/v1/admin/appeals/latest", params={"userId": "nobody"}).json() is None
 
-    fresh = client.post("/api/v1/admin/appeals", json={"userId": "u-2", "message": "again"})
+    fresh = client.post("/api/v1/admin/internal/appeals", json={"userId": "u-2", "message": "again"})
     assert fresh.status_code == 201
     assert fresh.json()["id"] != appeal_id
 

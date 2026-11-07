@@ -32,21 +32,30 @@ test("suspended login, reports and appeals with isolated User PostgreSQL and an 
     let mode = "ok";
     adminServer = createServer(async (req, res) => {
       const chunks = []; for await (const chunk of req) chunks.push(chunk);
-      const body = JSON.parse(Buffer.concat(chunks).toString());
+      const text = Buffer.concat(chunks).toString();
+      const body = text ? JSON.parse(text) : undefined;
       calls.push({ path: req.url, method: req.method, headers: req.headers, body });
       if (mode === "hang") return;
       if (mode === "error") { res.writeHead(500); res.end("private upstream failure"); return; }
-      if (mode === "malformed") { res.writeHead(201); res.end("{}"); return; }
+      if (mode === "malformed") { res.writeHead(req.method === "GET" ? 200 : 201); res.end("{}"); return; }
+      if (req.method === "GET") {
+        const url = new URL(req.url, "http://admin-fixture");
+        assert.equal(url.pathname, "/api/v1/admin/appeals/latest");
+        let record = appeals.get(url.searchParams.get("userId")) ?? null;
+        if (mode === "wrong-owner") record = { ...record, userId: randomUUID() };
+        if (mode === "bad-reason") record = { ...record, rejectionReason: "x".repeat(4001) };
+        res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(record)); return;
+      }
       const common = { id: randomUUID(), status: "open", createdAt: new Date().toISOString(), closedAt: null, closedByAdminId: null };
       let record;
-      if (req.url === "/api/v1/admin/reports") {
+      if (req.url === "/api/v1/admin/internal/reports") {
         const key = body.reporterUserId + ":" + body.reportedUserId;
         if (!reports.has(key)) reports.set(key, { ...common, reporterUserId: body.reporterUserId,
           reportedUserId: body.reportedUserId, comment: body.comment });
         record = reports.get(key);
       } else {
-        assert.equal(req.url, "/api/v1/admin/appeals");
-        if (!appeals.has(body.userId)) appeals.set(body.userId, { ...common, userId: body.userId, message: body.message });
+        assert.equal(req.url, "/api/v1/admin/internal/appeals");
+        if (!appeals.has(body.userId)) appeals.set(body.userId, { ...common, userId: body.userId, message: body.message, rejectionReason: null });
         record = appeals.get(body.userId);
       }
       res.writeHead(201, { "content-type": "application/json" }); res.end(JSON.stringify(record));
@@ -73,9 +82,11 @@ test("suspended login, reports and appeals with isolated User PostgreSQL and an 
     const sessionCount = await prisma.authSession.count();
     const correct = await post("/login", { email: suspended.email, password });
     assert.equal(correct.status, 403); assert.equal(correct.body.code, "ACCOUNT_SUSPENDED"); assert.equal(correct.cache, "no-store");
+    const lookupsBeforeWrong = calls.length;
     const wrong = await post("/login", { email: suspended.email, password: "WrongPassword1" });
     assert.equal(wrong.status, 401); assert.deepEqual(wrong.body, generic);
     assert.deepEqual((await post("/login", { email: "unknown@u.nus.edu", password })).body, generic);
+    assert.equal(calls.length, lookupsBeforeWrong);
     assert.equal(await prisma.authSession.count(), sessionCount);
     const validLogin = await post("/login", { email: a.email, password });
     assert.equal(validLogin.status, 200); assert.ok(validLogin.body.token);
@@ -104,7 +115,7 @@ test("suspended login, reports and appeals with isolated User PostgreSQL and an 
     assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: b.id } })).accessStatus, "ACTIVE");
     console.log("PASS: reports derive identity from session, validate target/text, relay201, preserve stored response and never auto-suspend");
 
-    const beforeAppeals = calls.length;
+    const beforeAppeals = calls.filter((c) => c.method === "POST").length;
     for (const body of [{ email: "unknown@u.nus.edu", password, message: "test" },
       { email: suspended.email, password: "WrongPassword1", message: "test" }]) {
       const response = await post("/appeals", body);
@@ -119,12 +130,13 @@ test("suspended login, reports and appeals with isolated User PostgreSQL and an 
       assert.equal((await post("/appeals", { email: unavailable.email, password, message: "test" })).status, 401);
       if (unavailable.lockedAt) assert.equal((await post("/login", { email: unavailable.email, password })).status, 403);
     }
-    assert.equal(calls.length, beforeAppeals);
+    assert.equal(calls.filter((c) => c.method === "POST").length, beforeAppeals);
     const beforeAppealSessions = await prisma.authSession.count();
     const appeal = await post("/appeals", { email: suspended.email.toUpperCase(), password, message: " Review my suspension ", userId: b.id });
     assert.equal(appeal.status, 201); assert.equal(appeal.cache, "no-store");
     assert.equal(appeal.body.userId, suspended.id);
-    assert.deepEqual(Object.keys(appeal.body).sort(), ["id", "userId", "message", "status", "createdAt", "closedAt", "closedByAdminId"].sort());
+    assert.deepEqual(Object.keys(appeal.body).sort(), ["id", "userId", "message", "status", "rejectionReason", "createdAt", "closedAt", "closedByAdminId"].sort());
+    assert.equal(appeal.body.rejectionReason, null);
     assert.deepEqual(calls.at(-1).body, { userId: suspended.id, message: "Review my suspension" });
     assert.equal(calls.at(-1).headers.authorization, undefined);
     const simultaneous = await Promise.all(Array.from({ length: 4 }, () => post("/appeals", {
@@ -152,6 +164,49 @@ test("suspended login, reports and appeals with isolated User PostgreSQL and an 
     const unconfigured = `http://127.0.0.1:${unconfiguredServer.address().port}/api/v1/user`;
     assert.equal((await post("/reports", reportBody, a.token, {}, unconfigured)).body.code, "ADMIN_NOT_CONFIGURED");
     console.log("PASS: appeal throttling, timeout/malformed/failing Admin responses, missing configuration and sanitized errors fail closed");
+
+    const suspendedMessage = "Your account is suspended. You may submit an appeal";
+    const noNewSessions = await prisma.authSession.count();
+    const openLogin = await post("/login", { email: suspended.email, password });
+    assert.equal(openLogin.status, 403); assert.equal(openLogin.body.error, suspendedMessage);
+    const rejected = { ...appeal.body, status: "rejected", rejectionReason: "The explanation did not address repeated abuse",
+      closedAt: new Date().toISOString(), closedByAdminId: a.id };
+    appeals.set(suspended.id, rejected);
+    const rejectedLogin = await post("/login", { email: suspended.email, password });
+    assert.equal(rejectedLogin.status, 403); assert.equal(rejectedLogin.body.code, "ACCOUNT_SUSPENDED");
+    assert.match(rejectedLogin.body.error, /The explanation did not address repeated abuse/);
+    assert.match(rejectedLogin.body.error, /may submit another appeal/); assert.equal(rejectedLogin.cache, "no-store");
+    assert.equal(rejectedLogin.body.token, undefined);
+    const lookup = calls.at(-1);
+    assert.equal(lookup.method, "GET");
+    assert.equal(new URL(lookup.path, "http://fixture").searchParams.get("userId"), suspended.id);
+    assert.equal(lookup.body, undefined); assert.equal(lookup.headers.authorization, undefined);
+    const beforeWrong = calls.length;
+    assert.equal((await post("/login", { email: suspended.email, password: "wrong" })).status, 401);
+    assert.equal(calls.length, beforeWrong);
+    await prisma.user.update({ where: { id: suspended.id }, data: { lockedAt: new Date() } });
+    assert.match((await post("/login", { email: suspended.email, password })).body.error, /did not address repeated abuse/);
+    await prisma.user.update({ where: { id: suspended.id }, data: { lockedAt: null } });
+    for (const failureMode of ["error", "malformed", "hang", "wrong-owner", "bad-reason"]) {
+      mode = failureMode;
+      const fallback = await post("/login", { email: suspended.email, password });
+      assert.equal(fallback.status, 403); assert.equal(fallback.body.code, "ACCOUNT_SUSPENDED");
+      assert.equal(fallback.body.error, suspendedMessage); assert.equal(fallback.body.token, undefined);
+    }
+    mode = "ok";
+    for (const record of [{ ...rejected, rejectionReason: null }, { ...appeal.body, rejectionReason: "must not display while open" }, null]) {
+      if (record) appeals.set(suspended.id, record); else appeals.delete(suspended.id);
+      assert.equal((await post("/login", { email: suspended.email, password })).body.error, suspendedMessage);
+    }
+    const expiredUser = await user({ accessStatus: "SUSPENDED", scheduledDeletionAt: new Date(Date.now() - 1000) });
+    const beforeExpiredLogin = calls.length;
+    assert.equal((await post("/login", { email: expiredUser.email, password })).status, 401);
+    assert.equal(calls.length, beforeExpiredLogin);
+    const unconfiguredLogin = await post("/login", { email: suspended.email, password }, undefined, {}, unconfigured);
+    assert.equal(unconfiguredLogin.status, 403); assert.equal(unconfiguredLogin.body.error, suspendedMessage);
+    // The expired-user fixture deliberately adds one synthetic session.
+    assert.equal(await prisma.authSession.count(), noNewSessions + 1);
+    console.log("PASS: suspended login privately reads latest rejection only after correct password; no session; malformed/unavailable/wrong-owner/null/open replies safely fall back");
   } finally {
     for (const listener of [server, unconfiguredServer, adminServer]) if (listener) {
       listener.closeAllConnections();

@@ -45,6 +45,12 @@
   border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* The short label only shows where the bar runs out of room (media query below). */
+.tabShort {
+  display: none;
 }
 
 .tab:hover {
@@ -144,9 +150,19 @@
   text-decoration: none;
 }
 
+/*
+ * Desktop only (the mobile menu has its own). The button is a full-height
+ * touch target, so hovering anywhere over it lights the pill; the slim pill
+ * inside is only the drawing. A 32px button left the rows above and below it,
+ * and its rounded corners, to the bar, so the pill came and went.
+ */
 .signOut {
+  display: inline-flex;
+  align-items: center;
   min-height: var(--touch-target);
-  padding: 0 var(--space-2);
+  padding: 0;
+  /* Into the bar's right padding, so the pill sits nearer the edge than the bare text did. */
+  margin-right: calc(-1 * var(--space-3));
   border: none;
   background: transparent;
   color: var(--color-text-muted);
@@ -156,20 +172,45 @@
   white-space: nowrap;
 }
 
-.signOut:hover {
-  color: var(--color-text);
+.signOutPill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  /* Transparent until hover, so the darker border appearing does not shift the layout. */
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+}
+
+.signOut:focus-visible {
+  outline: none;
+}
+
+/* A solid accent pill on hover, so leaving reads as a deliberate action. */
+.signOut:hover .signOutPill,
+.signOut:focus-visible .signOutPill {
+  background: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 60%, #000);
+  color: var(--color-accent-contrast);
+}
+
+.signOut:focus-visible .signOutPill {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .creditsShort {
   display: none;
 }
 
+/* The colours here are the fallback; the bubble takes the user's own (lib/avatar.ts). */
 .avatar {
   width: 32px;
   height: 32px;
-  background: var(--color-surface-raised);
-  color: var(--color-text);
+  background: var(--color-danger-bg);
+  color: var(--color-accent);
   font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
 }
 
 .avatar:hover {
@@ -195,6 +236,41 @@
 }
 
 /* UI FR20.1.2: below the breakpoint, tabs collapse into the hamburger menu. */
+/*
+ * Between the phone layout and a wide window the tabs and actions do not all
+ * fit at full size, and the tab labels used to wrap onto two lines. Tighter
+ * spacing keeps the bar on one line here.
+ */
+@media (min-width: 768px) and (max-width: 1099px) {
+  .nav {
+    gap: var(--space-3);
+    padding: 0 var(--space-4);
+  }
+
+  .tab {
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .actions {
+    gap: var(--space-1);
+  }
+}
+
+/*
+ * Only an admin's bar (four tabs) runs out of room, needing about 783px with
+ * "Browse requests"; 820px leaves space for a four-digit balance. Everyone
+ * else's fits down to the phone layout, so their label never shortens.
+ */
+@media (min-width: 768px) and (max-width: 819px) {
+  .tabsWithAdmin .tabLong {
+    display: none;
+  }
+
+  .tabsWithAdmin .tabShort {
+    display: inline;
+  }
+}
+
 @media (max-width: 767px) {
   .nav {
     padding: 0 var(--space-3);
@@ -203,7 +279,6 @@
 
   .tabs,
   .creditsLong,
-  .chevron,
   .signOut {
     display: none;
   }
@@ -250,6 +325,14 @@
   .menuLinkActive {
     background: var(--color-surface-raised);
     color: var(--color-text);
+  }
+
+  /* Every row turns accent while touched or focused, like Log out's desktop pill. */
+  .menuLink:hover,
+  .menuLink:active,
+  .menuLink:focus-visible {
+    background: var(--color-accent);
+    color: var(--color-accent-contrast);
   }
 
 }

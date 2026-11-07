@@ -42,7 +42,7 @@ describe("private Admin intake HTTP client", () => {
     let calls = 0;
     const client = new HttpAdminIntake("http://admin:8084", 5000, async (url, options) => {
       calls++;
-      assert.equal(String(url), "http://admin:8084/api/v1/admin/reports");
+      assert.equal(String(url), "http://admin:8084/api/v1/admin/internal/reports");
       assert.equal(options?.method, "POST"); assert.equal(options?.redirect, "error");
       assert.deepEqual(JSON.parse(options?.body as string), input);
       assert.equal(new Headers(options?.headers).get("authorization"), null);
@@ -52,10 +52,10 @@ describe("private Admin intake HTTP client", () => {
     assert.equal(calls, 1);
   });
   it("passes the stored appeal record back without forwarding credentials", async () => {
-    const appeal = { id: randomUUID(), userId: input.reporterUserId, message: "Stored appeal", status: "open",
+    const appeal = { id: randomUUID(), userId: input.reporterUserId, message: "Stored appeal", status: "open", rejectionReason: null,
       createdAt: stored.createdAt, closedAt: null, closedByAdminId: null };
     const client = new HttpAdminIntake("http://admin:8084", 5000, async (url, options) => {
-      assert.equal(String(url), "http://admin:8084/api/v1/admin/appeals");
+      assert.equal(String(url), "http://admin:8084/api/v1/admin/internal/appeals");
       assert.deepEqual(JSON.parse(options?.body as string), { userId: input.reporterUserId, message: "New appeal" });
       return new Response(JSON.stringify(appeal), { status: 201 });
     });
@@ -85,7 +85,7 @@ describe("private Admin intake HTTP client", () => {
   it("matches the camelCase OpenAPI response fields", () => {
     assert.deepEqual(Object.keys(accountSupportSchemas.UserReportRecord.properties).sort(), Object.keys(stored).sort());
     assert.deepEqual([...accountSupportSchemas.UserReportRecord.required].sort(), Object.keys(stored).sort());
-    const appealKeys = ["id", "userId", "message", "status", "createdAt", "closedAt", "closedByAdminId"].sort();
+    const appealKeys = ["id", "userId", "message", "status", "rejectionReason", "createdAt", "closedAt", "closedByAdminId"].sort();
     assert.deepEqual(Object.keys(accountSupportSchemas.SuspensionAppealRecord.properties).sort(), appealKeys);
     assert.deepEqual([...accountSupportSchemas.SuspensionAppealRecord.required].sort(), appealKeys);
   });
@@ -103,11 +103,46 @@ describe("private Admin intake HTTP client", () => {
     const report = { ...stored, ...closure, status: "dismissed" };
     const reportClient = new HttpAdminIntake("http://admin:8084", 5000, async () => new Response(JSON.stringify(report), { status: 201 }));
     assert.deepEqual(await reportClient.report(input), report);
-    const appeal = { id: randomUUID(), userId: input.reporterUserId, message: "Appeal", status: "rejected",
+    const appeal = { id: randomUUID(), userId: input.reporterUserId, message: "Appeal", status: "rejected", rejectionReason: "Review did not change the outcome",
       createdAt: stored.createdAt, ...closure };
     const client = new HttpAdminIntake("http://admin:8084", 5000, async () => new Response(JSON.stringify(appeal), { status: 201 }));
     assert.deepEqual(await client.appeal({ userId: input.reporterUserId, message: "Appeal" }), appeal);
     await assert.rejects(() => client.appeal({ userId: randomUUID(), message: "Appeal" }),
       (e: unknown) => e instanceof AppError && e.code === "ADMIN_INVALID_RESPONSE");
+  });
+});
+
+describe("private latest-appeal lookup", () => {
+  const appeal = { id: randomUUID(), userId: input.reporterUserId, message: "My appeal", status: "rejected",
+    rejectionReason: "The explanation was insufficient", createdAt: stored.createdAt, closedAt: stored.createdAt, closedByAdminId: randomUUID() };
+  it("uses a bounded private GET without bearer credentials and returns only matching allowed fields", async () => {
+    const client = new HttpAdminIntake("http://admin:8084", 100, async (url, options) => {
+      const parsed = new URL(String(url));
+      assert.equal(parsed.pathname, "/api/v1/admin/appeals/latest");
+      assert.equal(parsed.searchParams.get("userId"), appeal.userId);
+      assert.equal(options?.method, "GET"); assert.equal(options?.redirect, "error"); assert.ok(options?.signal);
+      assert.equal(new Headers(options?.headers).get("authorization"), null);
+      assert.equal(options?.body, undefined);
+      return new Response(JSON.stringify({ ...appeal, passwordHash: "private" }));
+    });
+    assert.deepEqual(await client.latestAppeal(appeal.userId), appeal);
+    assert.equal(await new HttpAdminIntake("http://admin:8084", 100, async () => new Response("null")).latestAppeal(appeal.userId), null);
+  });
+  it("rejects mismatched owners and invalid/oversized rejection data instead of exposing it", async () => {
+    for (const value of [{ ...appeal, userId: randomUUID() }, { ...appeal, rejectionReason: "x".repeat(4001) },
+      { ...appeal, rejectionReason: "   " }, { ...appeal, rejectionReason: 4 }, { ...appeal, rejectionReason: undefined },
+      { ...appeal, status: "unknown" }, { ...appeal, createdAt: "invalid" }, [], "x".repeat(33000)]) {
+      const client = new HttpAdminIntake("http://admin:8084", 100, async () => new Response(JSON.stringify(value)));
+      await assert.rejects(client.latestAppeal(appeal.userId), (e: unknown) => e instanceof AppError && e.code === "ADMIN_INVALID_RESPONSE");
+    }
+  });
+  it("sanitizes unavailable, unconfigured, malformed and unsuccessful replies", async () => {
+    await assert.rejects(new HttpAdminIntake("").latestAppeal(appeal.userId), (e: unknown) => e instanceof AppError && e.code === "ADMIN_NOT_CONFIGURED");
+    for (const response of [new Response("private", { status: 500 }), new Response("private", { status: 403 }), new Response("bad json")]) {
+      const client = new HttpAdminIntake("http://admin:8084", 100, async () => response);
+      await assert.rejects(client.latestAppeal(appeal.userId), (e: unknown) => e instanceof AppError && !e.message.includes("private"));
+    }
+    const client = new HttpAdminIntake("http://admin:8084", 100, async () => { throw new Error("private network credentials"); });
+    await assert.rejects(client.latestAppeal(appeal.userId), (e: unknown) => e instanceof AppError && e.code === "ADMIN_UNAVAILABLE");
   });
 });

@@ -5,16 +5,19 @@
 # tunnel stays up until Ctrl-C, then the pod is deleted. Local Floci: db-relay.sh.
 #
 #   export AWS_PROFILE=cs3219-dev; unset KUBECONFIG
-#   deploy/db-relay-dev.sh                 # admin login, every service database
-#   deploy/db-relay-dev.sh admin dev_order # admin login, straight into dev_order
-#   deploy/db-relay-dev.sh credit          # credit's own login (its database only)
+#   deploy/db-relay-dev.sh                  # master login, starts in dev_user
+#   deploy/db-relay-dev.sh master dev_order # master login, straight into dev_order
+#   deploy/db-relay-dev.sh credit           # credit's own login (its database only)
+#   deploy/db-relay-dev.sh admin            # admin-service's login (dev_admin)
 #
 # Logins:
-#   admin   RDS master (foc_admin, Secret foc-db-admin). Member of every
+#   master  RDS master (foc_admin, Secret foc-db-admin). Member of every
 #           dev_<service> role, so it can read and write all their tables.
 #           One connection = one database: dev_user, dev_credit, dev_order,
-#           dev_supplier, dev_admin (switch with \c in psql).
+#           dev_supplier, dev_admin (switch with \c in psql). The `postgres`
+#           database exists too but holds no app tables.
 #   <svc>   that service's login (Secret <svc>-db): only its own database.
+#           admin = admin-service, like any other service.
 #
 #   RELAY_PORT   local port (default 15433; db-relay.sh uses 15432 for local)
 #
@@ -28,18 +31,18 @@ NS="${NS:-foc-dev}"
 RELAY_PORT="${RELAY_PORT:-15433}"
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-who="${1:-admin}"
+who="${1:-master}"
 ctx="$(kubectl config current-context 2>/dev/null)" || die "kubectl has no current context"
 [[ "$ctx" == *eks* ]] || die "kubectl points at '$ctx', not EKS. Unset KUBECONFIG (and export AWS_PROFILE=cs3219-dev)."
 
 # Secret → its keys, decoded. Both kinds hold PGHOST/PGPORT/PGUSER/PGPASSWORD.
-if [[ "$who" == admin ]]; then secret=foc-db-admin; else secret="$who-db"; fi
+if [[ "$who" == master ]]; then secret=foc-db-admin; else secret="$who-db"; fi
 data="$(kubectl -n "$NS" get secret "$secret" -o json 2>/dev/null)" ||
-  die "no Secret $secret in $NS. Logins: admin, $(kubectl -n "$NS" get secrets -o name | sed -n 's#secret/\(.*\)-db$#\1#p' | tr '\n' ' ')"
+  die "no Secret $secret in $NS. Logins: master, $(kubectl -n "$NS" get secrets -o name | sed -n 's#secret/\(.*\)-db$#\1#p' | tr '\n' ' ')"
 get() { jq -r --arg k "$1" '.data[$k] // empty | @base64d' <<<"$data"; }
 host="$(get PGHOST)" port="$(get PGPORT)" user="$(get PGUSER)" password="$(get PGPASSWORD)"
 [[ -n "$host" && -n "$password" ]] || die "Secret $secret is missing PGHOST/PGPASSWORD"
-if [[ "$who" == admin ]]; then db="${2:-postgres}"; else db="${2:-$(get PGDATABASE)}"; fi
+if [[ "$who" == master ]]; then db="${2:-dev_user}"; else db="${2:-$(get PGDATABASE)}"; fi
 
 pod="db-relay-$(whoami | tr -c 'a-z0-9\n' '-')"
 cleanup() { kubectl -n "$NS" delete pod "$pod" --ignore-not-found --wait=false >/dev/null 2>&1 || true; }

@@ -49,7 +49,7 @@ variables cannot be used inside media queries, so `767px` is written literally.
   in development the User Service prints it in its log), `/forgot-password`,
   `/reset-password?token=`
 - Signed in: `/browse`, `/my-requests`, `/my-deliveries`, `/requests/new`,
-  `/orders/:orderId`, `/suppliers`, `/suppliers/new`, `/profile`, `/account-status`
+  `/orders/:orderId`, `/suppliers`, `/suppliers/new`, `/profile`, `/friends`
 - Admin: `/admin`, `/admin/suppliers`, `/admin/users`, `/admin/escalations`, `/admin/ratings`
 
 ## Backends

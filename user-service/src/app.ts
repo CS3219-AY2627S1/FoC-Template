@@ -35,9 +35,9 @@ export function createApp(eventPublisher?: UserEventPublisher, emailSender?: Ema
     }),
   );
 
-  app.use("/api/v1/user", createUsersRouter(emailSender, eventPublisher));
+  app.use("/api/v1/user", createUsersRouter(emailSender, eventPublisher, adminIntake));
   app.use("/api/v1/user", createUserIntegrationRouter());
-  app.use("/api/v1/user", createAdminUsersRouter());
+  app.use("/api/v1/user", createAdminUsersRouter(emailSender));
   app.use("/api/v1/user/friends", createFriendshipsRouter());
   app.use("/api/v1/user", createAccountSupportRouter(adminIntake));
 

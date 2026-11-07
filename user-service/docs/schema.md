@@ -1,14 +1,10 @@
 # User Service database schema
 
-A **schema** is the database blueprint: the tables, their columns, allowed values and relationships. A table is like a spreadsheet; a row is one record and a column is one field.
-
-We already have an executable schema in [prisma/schema.prisma](../prisma/schema.prisma). This guide explains it; documentation does not change the database. [Prisma migrations](../prisma/migrations) record the SQL changes applied to existing databases. See the [architecture guide](architecture.md) for how the database fits into the service.
+[schema.prisma](../prisma/schema.prisma) is authoritative for stored fields, types, defaults, relations and ordinary indexes; [migration SQL](../prisma/migrations) also defines custom database constraints. This guide explains the nine models for debugging. See [architecture](architecture.md) for flows, the [README](../README.md) for commands and [API_CONTRACT_UPDATES.txt](../API_CONTRACT_UPDATES.txt) for wire formats.
 
 ## Table relationships
 
-The executable schema has nine models, including `UserDeletedOutbox`. All belong to the User Service PostgreSQL database, not separate databases or containers. The diagram includes selected columns; the tables below explain the stored fields. The new deletion-outbox migration is required; normal local and cloud databases have not been migrated for this change.
-
-User report and suspension-appeal intake adds no User table or migration. Admin Service owns report/appeal records and review state in its own database; they are intentionally absent from this diagram. User checks accounts and forwards only the necessary UUIDs and trimmed text, never passwords or bearer tokens. Submission does not change suspension status or create a session. The appeal attempt limiter is bounded process memory keyed by normalized email hash, not a Prisma table; it resets on restart and is not distributed. Generic `/me/escalate` and Created-account verification help still need an agreed API.
+All nine models belong to User's PostgreSQL database. Admin owns report/appeal records and review decisions in its own database, so they are absent here. Appeal rate limits are process memory, not a table.
 
 ```mermaid
 erDiagram
@@ -19,273 +15,137 @@ erDiagram
     User ||--o| UserVerifiedOutbox : queues
     User ||--o{ Friendship : sends
     User ||--o{ Friendship : receives
-
     User {
         uuid id PK
         string email UK
-        string name
-        string passwordHash
         string telegramHandle UK
         string telegramUserId UK "nullable"
-        datetime emailVerifiedAt "nullable"
-        datetime telegramVerifiedAt "nullable"
-        UserRole role
         AccessStatus accessStatus
     }
     Friendship {
-        uuid id PK "API requestId"
+        uuid id PK "requestId"
         uuid senderId FK
         uuid recipientId FK
         FriendshipStatus status
-        datetime createdAt
-        datetime updatedAt
     }
     EmailVerificationOtp {
         uuid id PK
         uuid userId FK
         string otpHash
-        datetime expiresAt
     }
     AuthSession {
         uuid id PK
         uuid userId FK
         string tokenHash UK
-        datetime expiresAt
     }
     PasswordResetToken {
         uuid id PK
         uuid userId FK
         string tokenHash UK
-        datetime expiresAt
     }
     TelegramVerificationChallenge {
         uuid id PK
         uuid userId FK
         string linkHash UK
-        string otpHash "nullable"
-        datetime expiresAt
     }
     UserVerifiedOutbox {
-        uuid id PK
+        uuid id PK "eventId"
         uuid userId FK,UK
-        datetime publishedAt "nullable"
+        string email
     }
     UserDeletedOutbox {
         uuid id PK "eventId"
-        uuid userId UK "not a foreign key"
-        datetime createdAt "deletion event time"
+        uuid userId UK "no FK"
+        datetime createdAt "deletion time"
         datetime publishedAt "nullable"
     }
     UserAuditLog {
         uuid id PK
-        uuid actorUserId "nullable; not a foreign key"
-        uuid targetUserId "not a foreign key"
+        uuid actorUserId "nullable; no FK"
+        uuid targetUserId "no FK"
         string action
         string reason
-        datetime createdAt
     }
 ```
 
-- **PK (primary key):** uniquely identifies a row. Every table uses an application-generated UUID `id`.
-- **FK (foreign key):** a database-enforced reference to another row. Five child tables use `userId` to reference `User.id`; `Friendship` references `User.id` twice, through `senderId` and `recipientId`.
-- **UK (unique key):** prevents duplicate values. Nullable unique fields allow multiple rows with no value, but not duplicate non-null values.
-- **Nullable:** the field can be empty (`null`), usually meaning an action has not happened yet.
-- **One-to-many:** one user may have zero or many OTPs, sessions, reset tokens and Telegram challenges. A user may also send and receive many friendship rows; each friendship has exactly one sender and one distinct recipient.
-- **One-to-zero-or-one:** one user may have at most one verification-outbox row, enforced by its unique `userId`.
+The diagram shows selected fields. Every model has a UUID primary key `id` and a `createdAt` timestamp defaulting to creation time. Cleanup explicitly supplies deletion-event `createdAt`. Prisma relation properties such as `User.sessions` are navigation helpers, not stored copies of child rows. Below, `?` means nullable; other fields are required.
 
-`UserAuditLog` and `UserDeletedOutbox` intentionally have no relationship line: their user UUID references are **not foreign keys**. This lets both the minimal audit record and deletion event survive account removal. Unique `UserDeletedOutbox.userId` allows at most one final-removal event row per user UUID without requiring the account to exist. UUIDs still identify records and should be treated as sensitive, not as anonymous data.
+## Stored fields by model
 
-## Common types and conventions
+| Model | Fields beyond common `id` / `createdAt` | Debugging notes |
+| --- | --- | --- |
+| `User` | Identity: `email`, `name`, `passwordHash`, `telegramHandle`, `telegramUserId?`. Verification: `emailVerifiedAt?`, `telegramVerifiedAt?`. Access: `role`, `accessStatus`, `failedLoginAttempts`, `lockedAt?`, `authVersion`. Lifecycle: `lastLoginAt?`, `deletionRequestedAt?`, `scheduledDeletionAt?`, `suspendedAt?`, `suspensionReason?`, `updatedAt`. | Email, handle and linked Telegram ID are unique. Defaults: `USER`, `ACTIVE`, zero attempts/version. `updatedAt` is Prisma-maintained. |
+| `Friendship` | `senderId`, `recipientId`, `status`, `updatedAt`. | Both IDs are cascading User FKs. Status defaults to `PENDING`; accepted relationships are mutual despite retaining sender/recipient. `id` is the API request ID. |
+| `EmailVerificationOtp` | `userId`, `otpHash`, `expiresAt`, `attemptCount`, `usedAt?`, `revokedAt?`. | Cascading User FK; attempts default to zero. OTP HMAC-SHA-256 binds the code to normalized email and the server secret. |
+| `AuthSession` | `userId`, `tokenHash`, `expiresAt`, `revokedAt?`, `lastUsedAt?`. | Cascading User FK; unique SHA-256 token hash. Multiple sessions per user are allowed. |
+| `PasswordResetToken` | `userId`, `tokenHash`, `expiresAt`, `usedAt?`, `revokedAt?`. | Cascading User FK; unique SHA-256 reset-link token hash. Reset consumes the token, clears lockout and revokes sessions. |
+| `TelegramVerificationChallenge` | `userId`, `linkHash`, `otpHash?`, `telegramUserId?`, `expiresAt`, `sentAt?`, `attemptCount`, `usedAt?`, `revokedAt?`. | Cascading User FK; unique deep-link hash, attempts default zero. Sender ID here is historical, not unique; linked identity uniqueness is on `User`. |
+| `UserVerifiedOutbox` | `userId`, `email`, `publishedAt?`. | Unique cascading User FK: at most one row per account. Email is an event snapshot containing personal data. |
+| `UserDeletedOutbox` | `userId`, `publishedAt?`. | Unique deleted-user UUID, deliberately **no FK**. Contains no profile fields and survives account removal. |
+| `UserAuditLog` | `actorUserId?`, `targetUserId`, `action`, `reason`. | UUID references have **no FKs**. Survives removal; bootstrap's actor is null. Keep secrets/personal data out of free-text reasons. |
 
-Prisma `String @db.Uuid` is a PostgreSQL UUID; ordinary `String` fields are text. `DateTime` records timestamps and `Int` stores whole numbers. See the schema and migration SQL for exact database types and defaults.
+### Account and credential interpretation
 
-Every table has `id` (UUID, primary key, generated with `uuid()`) and `createdAt` (timestamp, normally defaults to creation time). For `UserDeletedOutbox`, cleanup explicitly supplies its deletion-event `now`, including a test-injected value, as `createdAt`; publication retries do not replace it. Each table section below lists its remaining stored fields. Prisma relation properties such as `User.sessions` are navigation helpers, not extra columns storing copies of child rows.
+Email and Telegram handle normalization, NUS-domain signup validation and trimmed name length (2–100 characters) are application rules. They are not database domain/length constraints. `passwordHash` is encoded salted scrypt, including cost parameters, salt and derived hash; it is not recoverable encryption. Telegram IDs are stored as text, distinct from handles.
 
-### User: the account
+Raw bearer/reset/deep-link tokens and OTPs are not stored. A credential row alone proves neither validity nor access: handlers check expiry, consumption/revocation, attempts and account restrictions. Pressing Telegram Start only prepares the challenge; authenticated OTP submission completes verification. Expired/used/revoked rows can remain; expiry is not automatic physical deletion.
 
-| Field | Meaning / rule |
-| --- | --- |
-| `email` | Required unique normalized email. Signup accepts configured NUS domains. |
-| `name` | Required display name. The API trims it and enforces 2-100 characters; it is not derived from the email prefix. |
-| `passwordHash` | Required encoded scrypt value containing algorithm, cost, random salt and derived hash. Not a recoverable encrypted password. |
-| `telegramHandle` | Required unique normalized username, without the leading `@`. |
-| `emailVerifiedAt` | Nullable timestamp; set after successful email verification. |
-| `telegramVerifiedAt` | Nullable timestamp; set after successful Telegram verification. |
-| `telegramUserId` | Nullable unique Telegram account ID, stored as text. Linked during real bot verification; distinct from the username. |
-| `role` | `USER` or `ADMIN`; defaults to `USER`. |
-| `accessStatus` | `ACTIVE` or `SUSPENDED`; defaults to `ACTIVE`. This is not the public Created/Verified/Suspended status. |
-| `failedLoginAttempts` | Required counter, defaults to `0`; used for login lockout. |
-| `lockedAt` | Nullable timestamp indicating login lockout; password reset clears it. |
-| `lastLoginAt` | Nullable timestamp of the most recent successful login. |
-| `deletionRequestedAt` | Nullable timestamp of a deletion request. |
-| `scheduledDeletionAt` | Nullable removal deadline, normally six calendar months after the request. |
-| `suspendedAt` | Nullable suspension timestamp. |
-| `suspensionReason` | Nullable stored suspension reason. |
-| `authVersion` | Integer starting at `0`, incremented by credential/administrative changes. It is not a JWT version claim or the sole revocation mechanism; sessions are explicitly revoked too. |
-| `updatedAt` | Timestamp maintained by Prisma on account updates. |
+`authVersion` increments on credential/administrative changes, alongside explicit session revocation; it is not a JWT claim or the sole revocation mechanism. Password reset clears login lockout. Reinstatement clears suspension, not missing verification or lockout.
 
-The name/email/handle rules are application validation; the schema does not impose a 100-character database limit on `name` or a database email-domain check. Required/unique fields, UUID types, enums and foreign keys are database constraints.
+## Computed public status
 
-### Friendship: invitations, accepted friends and history
+[status.ts](../src/status.ts) derives the public label; no `Created`/`Verified` column exists.
 
-| Field | Meaning / rule |
-| --- | --- |
-| `senderId` | Required UUID FK to `User.id`; relation role `FriendshipSender`. Physical sender deletion cascades the row. |
-| `recipientId` | Required UUID FK to `User.id`; relation role `FriendshipRecipient`. Physical recipient deletion cascades the row. |
-| `status` | `FriendshipStatus`: `PENDING` (default), `ACCEPTED`, `REJECTED` or `REMOVED`. API responses use lowercase. |
-| `updatedAt` | Timestamp maintained by Prisma when the row changes. |
-
-The common `id` is the API's `requestId`; `createdAt` records the invitation's creation. `User.sentFriendships` and `User.receivedFriendships` are Prisma navigation properties for the two roles, not additional account columns. An accepted friendship is mutual even though its original sender/recipient remain stored.
-
-The [20261027000000_friendships migration](../prisma/migrations/20261027000000_friendships/migration.sql) adds two custom SQL constraints that Prisma 5 cannot fully express:
-
-- `Friendship_not_self` CHECK enforces `senderId <> recipientId`.
-- `Friendship_active_pair_key` is a unique index on `(LEAST(senderId, recipientId), GREATEST(senderId, recipientId))` only where status is `PENDING` or `ACCEPTED`. This enforces at most one active relation for the unordered pair, including crossed/concurrent requests.
-
-Rejected/removed rows do not occupy the active-pair index, so history can coexist with a later invitation. Resending inserts a new row with a fresh UUID; it never repurposes an old request ID. A crossed request conflicts instead of auto-accepting. The application permits `PENDING` to become `ACCEPTED` or `REJECTED`, and removal changes only `ACCEPTED` to `REMOVED`. These transition/actor rules are application checks; the enum alone does not enforce them. Same-action accept/reject retries are idempotent while the resulting state remains current; removal never cancels a pending request.
-
-Only an active caller with no deletion requested/scheduled may use friendship APIs; completed email/Telegram verification is not an additional requirement. Suspended/deleting peers are excluded from friend/request lists and send targets. Acceptance requires an available sender, including retries; rejection/removal can operate on an existing relation with an unavailable peer. These availability rules filter/check account rows rather than deleting friendship history or changing its status. API user summaries expose only `id`/`name`, never email, Telegram, role or credentials.
-
-### EmailVerificationOtp: email verification attempts
-
-| Field | Meaning / rule |
-| --- | --- |
-| `userId` | Required FK to the account. |
-| `otpHash` | Required HMAC-SHA-256 digest bound to the normalized email and server OTP secret; not the six-digit code itself. |
-| `expiresAt` | Required expiry timestamp. |
-| `attemptCount` | Failed-attempt counter, defaults to `0`. |
-| `usedAt` | Nullable timestamp marking a consumed code. |
-| `revokedAt` | Nullable timestamp marking an invalidated code. |
-
-Historical rows can remain after use, expiry or revocation. The verification handler selects/checks eligible records; row existence does not mean a code is valid.
-
-### AuthSession: successful logins
-
-| Field | Meaning / rule |
-| --- | --- |
-| `userId` | Required FK to the account. |
-| `tokenHash` | Required unique SHA-256 hash of a random bearer token; not the raw client token. |
-| `expiresAt` | Required session expiry. |
-| `revokedAt` | Nullable timestamp; set to invalidate a session before expiry. |
-| `lastUsedAt` | Nullable timestamp updated during authentication. |
-
-One account can have multiple sessions, such as separate browser logins. Authentication also checks current account restrictions; a stored row is not proof of usable access.
-
-### PasswordResetToken: password-recovery links
-
-| Field | Meaning / rule |
-| --- | --- |
-| `userId` | Required FK to the account. |
-| `tokenHash` | Required unique SHA-256 hash of the random token in the reset link. |
-| `expiresAt` | Required expiry timestamp. |
-| `usedAt` | Nullable timestamp; a successful reset consumes the token. |
-| `revokedAt` | Nullable timestamp; invalidates replaced or cancelled links. |
-
-The raw reset token is delivered in the link, not stored in this table. A successful reset changes the password, clears login lockout and revokes existing sessions.
-
-### TelegramVerificationChallenge: linking and verifying Telegram
-
-| Field | Meaning / rule |
-| --- | --- |
-| `userId` | Required FK to the account. |
-| `linkHash` | Required unique hash of the random token in the bot deep link. |
-| `otpHash` | Nullable HMAC digest; set when an OTP is prepared for the matching Telegram sender. |
-| `telegramUserId` | Nullable Telegram sender ID, stored as text. The unique linked-account constraint is on `User.telegramUserId`, not this history field. |
-| `expiresAt` | Required challenge/code expiry. |
-| `sentAt` | Nullable timestamp recording OTP sending. |
-| `attemptCount` | Failed-attempt counter, defaults to `0`. |
-| `usedAt` | Nullable timestamp marking successful consumption. |
-| `revokedAt` | Nullable timestamp invalidating the challenge. |
-
-The bot checks the sender against the registered handle. The user then submits the OTP through the authenticated application. Merely pressing Start does not finish verification. The local development logger is a separate testing path, not proof of real Telegram ownership.
-
-### UserVerifiedOutbox: reliable intention to publish verification
-
-| Field | Meaning / rule |
-| --- | --- |
-| `userId` | Required unique FK to the account: at most one outbox record per user. |
-| `email` | Required email snapshot included in the verification event. This table contains personal data. |
-| `publishedAt` | Nullable timestamp. `null` means pending; otherwise Kafka acknowledged publication and the marker was saved. |
-
-The common `id` becomes `eventId`, and `createdAt` becomes `occurredAt` in the event. They remain stable on retries. The outbox row is saved in the same transaction as completion of verification, so an event intention is not lost between those database writes.
-
-The worker publishes to `foc.user.status` (configurable), keyed by user UUID, with `{ eventId, type: "UserVerified", occurredAt, data: { userId, email } }`. If publication succeeds but saving `publishedAt` fails, another delivery is possible. Consumers must handle duplicates. A published marker does not prove Credit has finished processing. This is an event outbox, not an email-delivery queue or the full verification history.
-
-### UserDeletedOutbox: final-removal event
-
-This ninth model is independent of `User`; there is no FK or cascading relationship.
-
-| Field | Meaning / rule |
-| --- | --- |
-| `id` | UUID primary key; becomes the stable `eventId`. |
-| `userId` | Required unique UUID of the deleted account, deliberately not an FK. |
-| `createdAt` | Deletion event timestamp supplied from cleanup's `now`, including test injection; becomes the stable `occurredAt`. |
-| `publishedAt` | Nullable timestamp; pending until Kafka acknowledgement and successful marker persistence. |
-
-Cleanup inserts this row and the deletion audit record and physically deletes `User` in the same transaction. Failure rolls back all three operations. Scheduling deletion and login cancellation insert no deletion event. `UserDeleted` means final removal, not a request or merely reaching the deadline. The existing `UserVerifiedOutbox.userId` FK remains cascading, so its rows are still removed with the account.
-
-The dispatcher retries every five seconds when Kafka is configured, on the same configured `foc.user.status` topic keyed by user UUID. Its envelope is `{ eventId, type: "UserDeleted", occurredAt, data: { userId } }`; no email, name, Telegram or other profile PII is copied. IDs and event time remain unchanged across retries. Kafka being disabled/unavailable leaves rows pending. Saving `publishedAt` only after acknowledgement permits duplicate delivery if a send succeeds but the marker write fails or the process crashes. Consumers must deduplicate by `eventId`; delivery is at least once and eventual upon dispatcher/Kafka recovery, not synchronous downstream completion.
-
-There is no ordering guarantee against `UserVerified` already in flight across replicas. Credit should retain a user-UUID deletion tombstone and ignore late verification to prevent resurrection or another starting-credit grant. Its checked-in consumer currently ignores all types except `UserVerified`; deletion processing and balance/history retention rules are Credit owner handoffs, with integration/cloud acceptance unverified. See section 15 of the [shared-contract edit proposal](../API_CONTRACT_UPDATES.txt).
-
-### UserAuditLog: minimal administrative audit trail
-
-| Field | Meaning / rule |
-| --- | --- |
-| `actorUserId` | Nullable UUID of the acting administrator; not an FK. Bootstrap uses `null` because an operator runs it outside an application session. |
-| `targetUserId` | Required UUID of the affected account; not an FK. |
-| `action` | Required action identifier, such as `FIRST_ADMIN_BOOTSTRAPPED`. |
-| `reason` | Required reason text supplied by the operation. |
-
-The table has no dedicated email, name, Telegram or credential columns. It survives deletion and is not automatically cascaded away. Do not put personal data or secrets in free-text reasons. It is not a log of every login or every profile read, and it does not replace Admin Service's separate audit/event responsibilities.
-
-## Status is computed, not a single stored label
-
-The API's account status comes from [status.ts](../src/status.ts):
-
-| Stored account fields | Public status |
+| Stored state | Public label |
 | --- | --- |
 | `accessStatus = SUSPENDED` | `Suspended`, regardless of verification timestamps |
-| `accessStatus = ACTIVE` and both verification timestamps are set | `Verified` |
-| `accessStatus = ACTIVE` and either timestamp is missing | `Created` |
+| `ACTIVE` with both verification timestamps | `Verified` |
+| `ACTIVE` with either timestamp missing | `Created` |
 
-`ACTIVE` therefore does **not** mean fully verified. `role = ADMIN` is a separate question from verification or suspension.
+`role` (`USER`/`ADMIN`), `lockedAt`, pending deletion and session validity are separate from that label. Active `Created` accounts may use friendships without an Order-history check, provided they have a valid session and neither deletion requested nor scheduled.
 
-Login lockout (`lockedAt`) and pending deletion (`scheduledDeletionAt`) are also separate from this public label. A `Verified` label alone is not an access-control decision; session validity, account restrictions and operation-specific checks still apply. Reinstatement clears suspension, not missing verification or login lockout. The non-production verification override is a separately gated exception and is not a production onboarding path.
+Correct-password suspended login before the deletion deadline returns `403 ACCOUNT_SUSPENDED` even with `lockedAt`, creates no session and leaves the lock intact. A valid latest rejected appeal from Admin can enrich the message; failed/missing/invalid lookup falls back to generic suspension. Active locked login and locked appeal submission remain generic `401`. This behavior adds no stored state; details are in [architecture](architecture.md#reports-appeals-and-suspended-login).
 
-With the correct password before the deletion deadline, suspended login returns `403 ACCOUNT_SUSPENDED` even if `lockedAt` is set, without creating a session or clearing the lock. Active locked login remains generic `401`. Appeals also reject locked accounts with generic `401`; the existing password-reset flow must clear the lock before an appeal can proceed. These checks add no stored state or schema change.
+## Friendship constraints and history
 
-## Expiry, deletion and indexes
+The [friendship migration](../prisma/migrations/20261027000000_friendships/migration.sql) supplements Prisma 5 with:
 
-All six FK-linked child tables use `onDelete: Cascade`: physically deleting a `User` also deletes its OTPs, sessions, reset tokens, Telegram challenges, `UserVerifiedOutbox` row and friendships where it is sender or recipient. `UserDeletedOutbox` and existing audit records survive independently. Cleanup queues the deletion outbox row and audit record atomically with removal. Scheduling deletion is not immediate physical deletion and emits no `UserDeleted`. It revokes credentials, sets a deadline and lets cleanup remove the account after that deadline. Correct-password login before the deadline can cancel the request without a deletion event; it does not restore old revoked sessions.
+- `Friendship_not_self`: CHECK that `senderId <> recipientId`.
+- `Friendship_active_pair_key`: unique `(LEAST(senderId, recipientId), GREATEST(senderId, recipientId))` only for `PENDING`/`ACCEPTED` rows. This prevents simultaneous active relations in either direction, including concurrent/crossed requests.
 
-There is no automatic retention sweep for all expired OTP/session/reset/challenge rows described by this schema. Expiry makes a credential unusable through application checks; it does not by itself delete its row. Audit retention and any future cleanup policy need separate operational decisions.
+Application rules allow recipient-only `PENDING → ACCEPTED/REJECTED` and `ACCEPTED → REMOVED`; the enum alone does not enforce actors/transitions. Rejected/removed history permits a new invitation with a fresh UUID. Same-action accept/reject retries are idempotent while the result remains current; removal does not cancel pending invitations.
 
-Explicit non-unique indexes are:
+Suspended/deleting peers are excluded from lists and new invitations. Acceptance requires an available sender, including retries; rejection/removal may still act on an unavailable peer. These checks do not rewrite history. Mutations lock accounts in UUID order and recheck the caller/session. Physical deletion of either participant cascades the friendship row.
 
-| Table | Indexed fields |
+## Deletion and outbox guarantees
+
+Scheduling deletion revokes sessions and temporary credentials and sets a deadline six calendar months later, clamped to the target month's last valid day. An eligible successful login before that deadline cancels deletion with a new session; old revoked sessions stay revoked. Neither scheduling nor restoration emits `UserDeleted`.
+
+Final cleanup inserts the deletion outbox, records the audit and deletes `User` in **one transaction**. Failure rolls back all three. All six FK-linked child models cascade: email OTPs, sessions, reset tokens, Telegram challenges, verification outbox and friendships. `UserDeletedOutbox` and audit records survive independently. Cleanup also protects the last available administrator.
+
+Both outboxes use `id` as stable `eventId`, `createdAt` as stable `occurredAt`, and nullable `publishedAt` as the acknowledgement marker. Verification completion and its outbox insertion commit together. Deletion occurrence time is cleanup's supplied `now`, not request/deadline/retry time. Deletion events carry only the user UUID; wire envelopes are in the [contract notes](../API_CONTRACT_UPDATES.txt).
+
+Configured dispatchers retry pending rows every five seconds on `foc.user.status` (configurable), keyed by user UUID. Kafka failure leaves rows pending. A successful send followed by marker failure/crash can duplicate delivery: consumers deduplicate by `eventId`. Publication is asynchronous and does not prove downstream completion.
+
+The verification FK still cascades; it cannot retract a verification send already in flight across replicas. Credit's checked-in consumer handles only `UserVerified`; future deletion handling needs a user-UUID tombstone to ignore late verification and agreed balance/history retention. Order already consumes `UserDeleted` to clean delivery-point associations. Neither outbox is an email queue.
+
+## Indexes and retention
+
+Besides primary/unique constraints and the custom friendship index, ordinary indexes cover:
+
+| Model | Indexed fields |
 | --- | --- |
 | `User` | `accessStatus`; `scheduledDeletionAt` |
 | `Friendship` | `(senderId, status, createdAt, id)`; `(recipientId, status, createdAt, id)` |
-| `EmailVerificationOtp` | `(userId, createdAt)`; `expiresAt` |
-| `AuthSession` | `userId`; `expiresAt` |
-| `PasswordResetToken` | `userId`; `expiresAt` |
-| `TelegramVerificationChallenge` | `(userId, createdAt)`; `expiresAt` |
-| `UserVerifiedOutbox` | `(publishedAt, createdAt)` |
+| `EmailVerificationOtp`, `TelegramVerificationChallenge` | `(userId, createdAt)`; `expiresAt` |
+| `AuthSession`, `PasswordResetToken` | `userId`; `expiresAt` |
+| Both outboxes | `(publishedAt, createdAt)` |
 | `UserAuditLog` | `(targetUserId, createdAt)` |
 
-An index helps PostgreSQL locate matching rows without scanning the whole table. Primary/unique constraints also create indexes. Indexes do not independently enforce code expiry or application permissions.
+Indexes speed lookups; they do not enforce expiry or permissions. There is no general retention sweep for expired credentials described here. Audit/outbox retention and Admin-owned report/appeal retention require separate policies.
 
-The custom unique `Friendship_active_pair_key` described above is additional to these non-unique indexes. Use the migration SQL to install it and the not-self CHECK; `prisma db push` alone does not reproduce those protections.
+## Changing the schema
 
-## Changing the schema safely
+Use versioned migrations for existing databases; `prisma db push` alone cannot reproduce the custom friendship CHECK/index. Required migrations include [20261027000000_friendships](../prisma/migrations/20261027000000_friendships/migration.sql) and [20261102000000_user_deleted_outbox](../prisma/migrations/20261102000000_user_deleted_outbox/migration.sql).
 
-`UserDeletedOutbox` requires migration `20261102000000_user_deleted_outbox` and a regenerated Prisma Client before the updated service runs. On 2 November 2026, Prisma generation/validation, build, 90 unit tests, focused event-test types/syntax and isolated lifecycle integration passed. Integration applied the migration only to a temporary PostgreSQL database, then removed it; its Kafka publisher was fake. Normal local/cloud databases have not been migrated and live Kafka/Credit acceptance remains unverified. Full coverage and the separate onboarding preflight limitation are recorded in the [README](../README.md#userdeleted-transactional-outbox). This change introduces no HTTP routes.
-
-Report/appeal intake itself leaves the executable User schema unchanged. The friendship migration `20261027000000_friendships` still needs deployment through the normal migration workflow; adding moderation forwarding does not install it. Admin's open-record deduplication keeps one open appeal per user and one open report per ordered reporter/target pair, preserving original text on retries; it is not a lifetime limit or a User database constraint. Admin-owned retention and account-deletion handling require their own contract, beyond User's existing cascades.
-
-Historical checks before the camelCase response fix, reported on 30 October 2026, passed: TypeScript build, Prisma generation/validation, 83/83 unit tests, all seven isolated integration suites (email, lifecycle, admin-bootstrap, admin-users, lockout, friendships and account-support), strict new-unit-test type checking and integration-script syntax checks. All temporary databases were cleaned up. Support integration used real User HTTP/PostgreSQL with an HTTP Admin stub, not the actual Admin application or database. The Node 20 production Docker build and network-isolated smoke test passed (Node 20.20.2, non-root, 256 MiB, no `.env`, health/OpenAPI checks; no database or real Admin exercised). The 183-package install audit and Docker `npm ci` reported zero vulnerabilities. No normal database was migrated, no real email/bot messages were sent and no cloud deployment occurred. Actual Admin, cloud/frontend, gateway/mesh, load and full cross-service acceptance remain unproven; infrastructure changes are handoff only.
-
-Changing documentation does not change PostgreSQL. A future structural change normally requires updating `schema.prisma`, generating/reviewing a migration, applying it to the intended database through the project's migration workflow, regenerating Prisma Client and testing the affected flows. Existing databases need migrations; rebuilding an application image alone is not enough.
-
-Keep this guide aligned with the executable schema and custom migration SQL. Friendship storage is implemented in this checkout by migration `20261027000000_friendships`. Reported validation on 27 October 2026 passed Prisma Client generation, `prisma validate`, the TypeScript build, 74/74 unit tests and the friendship integration script's `node --check`. All six isolated integration suites passed after the new migration/code: friendships, email, lifecycle, admin-bootstrap, admin-users and lockout. The friendship suite applied migrations to real local PostgreSQL in a disposable `user_friendships_it_<random>` database; it checked direct self/pair constraints, concurrency, fresh request IDs and cascades alongside HTTP behavior. All temporary test databases were cleaned up by their scripts. No normal database was migrated or normal account mutated, no real messages were sent, and the application container and Telegram poller were not started. Live/frontend, deployed, load and cross-service end-to-end acceptance remain unproven. Generic account-escalation storage remains unimplemented; implemented report/appeal storage is Admin-owned and absent from this User diagram. For setup and existing test commands, use the [README](../README.md) rather than copying credentials or duplicating command lists here.
+For structural changes, update the executable schema, generate/review migration SQL, apply migrations to the intended database, regenerate Prisma Client and check affected flows. Documentation edits or image rebuilds do not migrate data. Commands and validation procedures are maintained in the [README](../README.md).

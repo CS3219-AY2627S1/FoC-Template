@@ -18,7 +18,10 @@ type IconName =
   | 'chevronDown'
   | 'check'
   | 'eye'
-  | 'eyeOff';
+  | 'eyeOff'
+  | 'bag'
+  | 'lock'
+  | 'users';
 
 const PATHS: Record<IconName, string[]> = {
   menu: ['M4 6h16M4 12h16M4 18h16'],
@@ -36,6 +39,14 @@ const PATHS: Record<IconName, string[]> = {
     'M9.9 5.2A9.8 9.8 0 0112 5c6.5 0 10 7 10 7a17.6 17.6 0 01-3.2 4.2M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 005.4-1.6',
     'M9.9 9.9a3 3 0 004.2 4.2',
     'm3 3 18 18',
+  ],
+  bag: ['M5 8h14l-1 12H6z', 'M9 10V6a3 3 0 016 0v4'],
+  lock: ['M6 11h12v9H6z', 'M8.5 11V8a3.5 3.5 0 017 0v3'],
+  users: [
+    'M9 11a4 4 0 100-8 4 4 0 000 8z',
+    'M2 21v-1a6 6 0 016-6h2a6 6 0 016 6v1',
+    'M16 3.1a4 4 0 010 7.8',
+    'M22 21v-1a6 6 0 00-4-5.65',
   ],
 };
 

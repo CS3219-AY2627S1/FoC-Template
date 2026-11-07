@@ -14,9 +14,9 @@ month if dev is torn down when idle.
 
 > **Status (2026-10-22):** `infra/nonprod/aws` was first applied to the NUS
 > account on 2026-10-22. That run showed that NUS's service control policy
-> blocks per-pod AWS roles and GitHub OIDC (see "NUS AWS account limits"
-> below), so pods now use the node role, and images and the frontend are
-> pushed from a laptop.
+> blocks per-pod AWS roles (see "NUS AWS account limits" below), so pods use
+> the node role. GitHub OIDC does work (verified 2026-10-30): merges to `main`
+> deploy through `deploy-dev.yml` and `frontend-dev.yml`.
 
 > Already running? Day-to-day commands and troubleshooting are in
 > [`dev-deployment-guide.md`](dev-deployment-guide.md).
@@ -52,7 +52,7 @@ explicitly denies:
 |---|---|---|
 | `eks-auth:AssumeRoleForPodIdentity`, `sts:AssumeRoleWithWebIdentity` (Pod Identity, IRSA) | Pods can't have their own IAM roles | Pods use the **node role** (`infra/nonprod/aws/node-permissions.tf`). Every pod shares it; [ADR-0013](adr/0013-cloudfront-vpc-origin-and-external-secrets.md) has the trade-off and how to revert |
 | `sts:AssumeRole` from a role | External Secrets can't switch to a per-env role | Its stores use the node role too |
-| `sts:AssumeRoleWithWebIdentity` (GitHub OIDC) and `iam:CreateUser` | GitHub Actions can't log in to AWS: no OIDC role and no access keys | Steps 6 and 8 run **from a laptop** with your SSO login. `deploy-dev.yml` and `frontend-dev.yml` stay in the repo for an account without these limits. `ci.yml` (tests) needs no AWS and still works |
+| `iam:CreateUser` | No IAM users or access keys | Nothing needed: GitHub Actions uses OIDC (role `foc-ci`), which the policy allows. The trust policy must use the repo's immutable subject (`infra/global/github-oidc`) |
 
 Check an action yourself with IAM's policy simulator, which includes the SCP:
 ```bash
@@ -79,7 +79,7 @@ builds arm64 natively, which is what the t4g nodes need.
 |---|---|---|
 | State bucket | `infra/state` | local file (one-off) |
 | Image registry, shared by every env | `infra/global/ecr` | `global/ecr` |
-| CI role (GitHub OIDC). Unusable in the NUS account; apply it anyway, `nonprod/aws` reads its output | `infra/global/github-oidc` | `global/github-oidc` |
+| CI role (GitHub OIDC) for `deploy-dev.yml` and `frontend-dev.yml` | `infra/global/github-oidc` | `global/github-oidc` |
 | VPC, EKS, RDS, secrets, node-role permissions, SES, photos bucket, gateway NLB, CloudFront | `infra/nonprod/aws` | `nonprod/aws` |
 | Argo CD and the root app | `infra/nonprod/bootstrap` | `nonprod/bootstrap` |
 
@@ -136,8 +136,8 @@ B=foc-tfstate-$(aws sts get-caller-identity --query Account --output text)
    - The platform apps come up first. The env apps retry until the CRDs they
      need exist.
    - The services stay `Degraded` with `image.tag is required` until step 6.
-6. **Push the images from your laptop** with `deploy/push-dev.sh`. It does
-   what `deploy-dev.yml` would, which can't log in here:
+6. **Push the images.** Run **Actions → deploy-dev → Run workflow** on `main`,
+   or from your laptop with `deploy/push-dev.sh`:
    ```bash
    export AWS_PROFILE=cs3219-dev     # and `aws sso login` if the session expired
    deploy/push-dev.sh                # every image dev runs; or name some: deploy/push-dev.sh credit order
@@ -161,7 +161,7 @@ B=foc-tfstate-$(aws sts get-caller-identity --query Account --output text)
    kubectl -n foc-dev rollout restart deploy
    kubectl -n envoy-gateway-system rollout restart deploy
    ```
-8. **Publish the frontend from your laptop** (same as `frontend-dev.yml`):
+8. **Publish the frontend.** Run **Actions → frontend-dev**, or from your laptop:
    ```bash
    deploy/push-frontend-dev.sh   # builds, uploads to the bucket in .github/cloud/dev.env, invalidates CloudFront
    ```
@@ -184,9 +184,9 @@ B=foc-tfstate-$(aws sts get-caller-identity --query Account --output text)
       ```
    4. From then on, use the admin's verify endpoint for other testers.
 
-After this, rerun step 6 for a changed service (`deploy/push-dev.sh <svc>`) and
-step 8 for a frontend change. In an account without the NUS limits, the two
-workflows do this on every merge to `main`.
+After this, merging to `main` deploys: `deploy-dev.yml` builds changed services
+and commits their tags, and `frontend-dev.yml` publishes frontend changes. The
+laptop scripts remain a fallback.
 
 ## 4. Check it works
 
@@ -213,7 +213,7 @@ kubectl -n envoy-gateway-system get targetgroupbindings # gateway-dev present
 
 | Task | How |
 |---|---|
-| Deploy a service | Commit the change, run `deploy/push-dev.sh <svc>`, push, and merge to `main`. In an account without the NUS limits, merging to `main` runs deploy-dev instead. |
+| Deploy a service | Merge to `main`: deploy-dev builds it and commits the tag. Fallback: `deploy/push-dev.sh <svc>`, push, merge. |
 | Roll back | `git revert` the tag-bump commit. |
 | Argo CD UI | `kubectl -n argocd port-forward svc/argocd-server 8081:80`. The password is in Secret `argocd-initial-admin-secret`. |
 | Logs | `kubectl -n foc-dev logs deploy/<svc> -c <svc>` |

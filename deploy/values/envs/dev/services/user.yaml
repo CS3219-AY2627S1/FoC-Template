@@ -1,6 +1,15 @@
 image:
-  tag: "2ae335483a8608f2f5c77ad6c0b79b9e140fa3c0" # git SHA, set by deploy/push-dev.sh
-replicas: 1 # TELEGRAM_POLLING_ENABLED must stay on one replica only
+  tag: "a1e0a6ffaa6feffcba3a035870ce84a0ccc6015e" # git SHA, set by deploy/push-dev.sh
+# Only one replica may poll the Telegram bot: before adding a bot token, run
+# the poller separately and set TELEGRAM_POLLING_ENABLED=false here.
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 6
+  targetCPUUtilization: 70
+resources:
+  requests: {cpu: 250m}
+  limits: {cpu: "1"}
 env:
   APP_ENV: dev
   # Password-reset links point here.

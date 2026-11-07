@@ -11,6 +11,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Alert } from '../components/ui/Alert';
+import { CreditCell } from '../components/order/CreditCell';
+import { useFriendNames } from '../lib/friends';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { errorMessage } from '../lib/api';
 import { formatWhen } from '../lib/format';
@@ -93,6 +95,8 @@ export function MyRequestsPage() {
   );
 
   const rows = tab === 'active' ? active : history;
+  // Orders carry ids and Telegram handles only; a name is known once they are a friend.
+  const friendName = useFriendNames();
 
   return (
     <div className={styles.page}>
@@ -161,7 +165,7 @@ export function MyRequestsPage() {
             <span role="columnheader">Status</span>
             <span role="columnheader">Courier</span>
             <span role="columnheader" className={styles.rewardHead}>
-              Reward
+              Credits
             </span>
           </div>
 
@@ -180,15 +184,13 @@ export function MyRequestsPage() {
 
               <div className={styles.courier} role="cell">
                 <span className={styles.cellLabel}>Courier</span>
-                {/* TODO(order-service): the courier's name - orders carry ids only.
-                {row.courierName ?? '—'} */}
-                {row.courierId !== null ? 'Assigned' : '—'}
+                {row.courierId === null
+                  ? '—'
+                  : (friendName(row.courierId) ??
+                    (row.courierTelegramHandle !== null ? `@${row.courierTelegramHandle}` : 'Assigned'))}
               </div>
 
-              <div className={styles.reward} role="cell">
-                <span className={styles.cellLabel}>Reward</span>
-                {row.credits}
-              </div>
+              <CreditCell order={row} viewer="requester" label="Credits" />
             </Link>
           ))}
         </div>

@@ -18,6 +18,9 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
+import { FriendControl } from '../components/friends/FriendControl';
+import { useFriendName } from '../lib/friends';
+import { useOrderTrailStatus } from '../components/layout/orderTrail';
 import { ReportUser } from '../components/moderation/ReportUser';
 import { PickupDetail } from '../components/order/PickupDetail';
 import { StatusStepper } from '../components/order/StatusStepper';
@@ -35,6 +38,7 @@ import {
   PHOTO_MAX_BYTES,
   cancelOrder,
   collectOrder,
+  creditOutcome,
   deliverOrder,
   type Order,
 } from '../lib/orders';
@@ -149,6 +153,11 @@ export function CourierTaskPage() {
 }
 
 function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) => void }) {
+  // Orders carry the requester's id and Telegram handle, not their name; the
+  // name is known only once they are a friend.
+  const requesterName = useFriendName(task.requesterId);
+  // Desktop shows the status beside the reference in the nav trail.
+  useOrderTrailStatus(task.status);
   const accepted = task.status === 'Accepted';
   const collected = task.status === 'Collected';
   const delivered = task.status === 'Delivered';
@@ -246,6 +255,8 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
    * collected and delivered. The order carries deadlines only, not when each
    * step happened, so the subtitle says where you are instead.
    */
+  // Where the credits go for the courier; differs from task.credits only on a disputed order.
+  const payout = creditOutcome(task, 'courier');
   const subtitle = delivered
     ? `Delivered to ${task.dropoff.name}`
     : collected
@@ -278,9 +289,6 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
       <div className={styles.body}>
         <div className={styles.mainColumn}>
           <header className={styles.header}>
-            <span className={styles.desktopBadge}>
-              <StatusBadge status={task.status} />
-            </span>
             <h1 className={styles.title}>{task.item}</h1>
             <p className={styles.subtitle}>{subtitle}</p>
           </header>
@@ -310,9 +318,7 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
                 <div className={styles.detailBlock}>
                   <h2 className={styles.detailLabel}>Requester</h2>
                   <p className={styles.detailValue}>
-                    {/* TODO(order-service): the requester's name - orders carry ids only.
-                    {task.requesterName} &middot;{' '} */}
-                    @{task.requesterTelegramHandle}
+                    {requesterName ?? `@${task.requesterTelegramHandle}`}
                     {/*
                       TODO(order-service): the requester's rating, hidden for now.
                       Order Service has no Rating client yet: its stub stores 5.0
@@ -339,29 +345,12 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
             </section>
           ) : null}
 
-          {/*
-            TODO(order-service): photo evidence. Uploading works (the buttons
-            below), but no endpoint serves the images back, so viewing them is
-            commented out.
-
-          {collected || delivered ? (
-            <section className={styles.photoCard}>
-              <h2 className={styles.sectionTitle}>Photo evidence</h2>
-              <div className={styles.photoGrid}>
-                <PhotoSlot label="Before photo" url={beforePhotoUrl} caption="At collection" />
-                <PhotoSlot label="After photo" url={afterPhotoUrl} caption="At handover" />
-              </div>
-            </section>
-          ) : null}
-          */}
-
           {collected ? <DeliveryWindow task={task} /> : null}
 
           {collected || delivered ? (
             <section className={styles.personCard}>
-              {/* TODO(order-service): the requester's name and initials. */}
               <div className={styles.personText}>
-                <p className={styles.personName}>Requester</p>
+                <p className={styles.personName}>{requesterName ?? 'Requester'}</p>
                 <p className={styles.personNote}>
                   {delivered
                     ? 'Settle the item cost directly if not already done'
@@ -373,6 +362,7 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
           ) : null}
 
           {/* In the main column, not the status panel, which mobile hides. */}
+          <FriendControl userId={task.requesterId} role="requester" />
           <ReportUser userId={task.requesterId} role="requester" />
         </div>
 
@@ -381,12 +371,23 @@ function CourierTask({ task, onChange }: { task: Order; onChange: (task: Order) 
 
           <StatusStepper status={task.status} />
 
-          <p className={styles.earnings}>
-            <span>You&apos;ll earn</span>
-            <strong>
-              +{task.credits} <span className={styles.earningsUnit}>credits</span>
-            </strong>
-          </p>
+          {/* A disputed order pays out by Admin's verdict, not the usual way. */}
+          {task.disputed ? (
+            <p className={styles.earnings}>
+              <span>{payout.note}</span>
+              <strong>
+                {payout.amount === null ? '—' : `+${payout.amount}`}{' '}
+                <span className={styles.earningsUnit}>credits</span>
+              </strong>
+            </p>
+          ) : (
+            <p className={styles.earnings}>
+              <span>You&apos;ll earn</span>
+              <strong>
+                +{task.credits} <span className={styles.earningsUnit}>credits</span>
+              </strong>
+            </p>
+          )}
 
           <div className={styles.actions}>
             {uploadButton}

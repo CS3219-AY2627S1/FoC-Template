@@ -29,6 +29,21 @@ import { accountNextSteps, accountStatus } from "../status";
 import { requestTelegramVerification, verifyTelegramOtp } from "../telegram";
 import { enqueueUserVerified, lockVerificationUser, VerificationEventDispatcher } from "../verification-events";
 import { recordFailedLogin } from "../login-security";
+import { HttpAdminIntake, type AdminIntake } from "../admin-intake";
+
+async function suspendedLoginError(admin: Pick<AdminIntake, "latestAppeal">, userId: string): Promise<AppError> {
+  let message = "Your account is suspended. You may submit an appeal";
+  try {
+    const appeal = await admin.latestAppeal(userId);
+    if (appeal?.status === "rejected" && appeal.rejectionReason) {
+      message = `Your appeal was rejected. Reason: ${appeal.rejectionReason}. You may submit another appeal.`;
+    }
+  } catch {
+    // Admin lookup is best-effort: a missing/unavailable/invalid reply must
+    // never issue a session or replace the suspension with an upstream error.
+  }
+  return new AppError(403, "ACCOUNT_SUSPENDED", message);
+}
 
 function requiredString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
@@ -37,6 +52,7 @@ function requiredString(value: unknown): string | null {
 export function createUsersRouter(
   emailSender: EmailSender = createEmailSender(config.email),
   eventPublisher?: UserEventPublisher,
+  admin: Pick<AdminIntake, "latestAppeal"> = new HttpAdminIntake(config.admin.baseUrl, config.admin.timeoutMs),
 ): Router {
   const router = Router();
   const dummyPasswordHash = hashPassword("NotARealPassword123", config.passwordScryptCost);
@@ -401,7 +417,7 @@ export function createUsersRouter(
       }
 
       if (user.accessStatus === "SUSPENDED") {
-        throw new AppError(403, "ACCOUNT_SUSPENDED", "Your account is suspended. You may submit an appeal");
+        throw await suspendedLoginError(admin, user.id);
       }
       if (user.lockedAt) throw genericFailure;
 
@@ -440,6 +456,11 @@ export function createUsersRouter(
           },
         });
         return updated;
+      }).catch(async (error: unknown) => {
+        // A suspension may win the race after the initial account read. Look
+        // up its latest appeal only after the transaction releases its locks.
+        if (error instanceof AppError && error.code === "ACCOUNT_SUSPENDED") throw await suspendedLoginError(admin, user.id);
+        throw error;
       });
 
       response.json({

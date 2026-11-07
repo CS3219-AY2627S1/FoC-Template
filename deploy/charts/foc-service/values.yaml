@@ -8,8 +8,15 @@ image:
   tag: "" # git SHA in the cloud; anything locally
   pullPolicy: IfNotPresent
 
-replicas: 1
+replicas: 1 # ignored while autoscaling is enabled
 port: 3000
+
+# HPA on the app container's CPU (% of resources.requests.cpu), plus a PDB.
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilization: 70
 
 # Plain settings, exposed to the container as environment variables.
 env: {}
@@ -89,6 +96,11 @@ mesh:
   gateway:
     namespace: envoy-gateway-system
     serviceAccount: ""
+  # The identity that may read the proxy's /metrics (charts/kube-prometheus-stack).
+  metrics:
+    enabled: false
+    namespace: monitoring
+    serviceAccount: prometheus
 
 # HTTP health check path; "" disables the probes and the HTTP test.
 healthPath: /health

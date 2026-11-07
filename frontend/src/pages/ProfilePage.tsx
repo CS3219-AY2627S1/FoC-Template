@@ -15,6 +15,9 @@
  *
  * Your places card added with Claude Code (Claude Opus 5.5) on 2026-11-02:
  * Order's my-locations, with a nickname, edit and remove on each.
+ *
+ * Badges card added with Claude Code (Claude Opus 5.5) on 2026-11-03: GET
+ * /api/v1/badges/{userId}, earned and unearned, with progress (Badges F4).
  */
 
 import { useEffect, useState } from 'react';
@@ -28,6 +31,7 @@ import { PasswordRules } from '../components/ui/PasswordRules';
 import { TextField } from '../components/ui/TextField';
 import { TextAreaField } from '../components/ui/Inputs';
 import { errorMessage } from '../lib/api';
+import { avatarColours } from '../lib/avatar';
 import {
   deleteDeliveryPoint,
   deliveryPointLabel,
@@ -41,6 +45,7 @@ import { checkPasswordRules, isValidPassword } from '../lib/validation';
 import { useCreditBalance } from '../lib/credit';
 import { formatRating, initials } from '../lib/format';
 import { fetchUserRating, type UserRating } from '../lib/rating';
+import { fetchMyBadges, type BadgeRole, type UserBadges } from '../lib/badges';
 import styles from './ProfilePage.module.css';
 
 export function ProfilePage() {
@@ -81,7 +86,7 @@ export function ProfilePage() {
         <div className={styles.column}>
           <section className={styles.card}>
             <div className={styles.identity}>
-              <span className={styles.avatar} aria-hidden="true">
+              <span className={styles.avatar} style={avatarColours(user.userId)} aria-hidden="true">
                 {initials(user.name)}
               </span>
               <div className={styles.identityText}>
@@ -177,16 +182,7 @@ export function ProfilePage() {
         <div className={styles.column}>
           <RatingCard userId={user.userId} />
 
-          <section className={styles.card}>
-            <div className={styles.soonHead}>
-              <h2 className={styles.cardTitle}>Badges</h2>
-              <span className={styles.soonTag}>Coming soon</span>
-            </div>
-            <p className={styles.soonBody}>
-              Earned badges, and what is left to unlock the rest. Waiting on the Badges Service,
-              which needs order and rating counts that no endpoint provides yet.
-            </p>
-          </section>
+          <BadgesCard userId={user.userId} />
         </div>
       </div>
 
@@ -271,6 +267,109 @@ function RatingCard({ userId }: { userId: string }) {
         </p>
       )}
     </section>
+  );
+}
+
+/*
+ * Placeholder art until the catalogue's icons exist: the service names SVGs
+ * under /badges/ that the frontend does not have yet, so each badge gets a
+ * medallion by role instead (bag for courier, pin for requester, star for
+ * either), greyed with a lock until earned.
+ */
+const BADGE_ICONS: Record<BadgeRole, 'bag' | 'pin' | 'star'> = {
+  courier: 'bag',
+  requester: 'pin',
+  any: 'star',
+};
+
+const BADGE_TONES: Record<BadgeRole, string> = {
+  courier: styles.badgeCourier,
+  requester: styles.badgeRequester,
+  any: styles.badgeAny,
+};
+
+const earnedDate = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+
+/** Badges F4: every badge, earned or not, with what unlocks it and how close the user is. */
+function BadgesCard({ userId }: { userId: string }) {
+  const [badges, setBadges] = useState<UserBadges | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchMyBadges(userId)
+      .then((result) => {
+        if (!cancelled) setBadges(result);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  return (
+    <section className={styles.card}>
+      <div className={styles.soonHead}>
+        <h2 className={styles.cardTitle}>Badges</h2>
+        {badges !== null ? (
+          <span className={styles.soonTag}>
+            {badges.earnedCount} of {badges.totalCount} earned
+          </span>
+        ) : null}
+      </div>
+
+      {failed ? (
+        <p className={styles.rowNote}>Your badges could not be loaded. Try again later.</p>
+      ) : badges === null ? (
+        <p className={styles.rowNote}>Loading…</p>
+      ) : (
+        <ul className={styles.badges}>
+          {badges.badges.map((badge) => (
+            <li key={badge.badgeId} className={styles.badge}>
+              <span
+                className={`${styles.medallion} ${badge.earned ? BADGE_TONES[badge.targetRole] : styles.badgeLocked}`}
+                aria-hidden="true"
+              >
+                <Icon name={BADGE_ICONS[badge.targetRole]} size={22} />
+                {badge.earned ? null : (
+                  <span className={styles.medallionLock}>
+                    <Icon name="lock" size={12} />
+                  </span>
+                )}
+              </span>
+              <div className={styles.badgeText}>
+                <p className={styles.rowLabel}>
+                  {badge.title}
+                  <span className="visually-hidden">{badge.earned ? ', earned' : ', not earned yet'}</span>
+                </p>
+                <p className={styles.rowNote}>{badge.description}</p>
+                {badge.earned ? (
+                  badge.earnedAt !== null ? (
+                    <p className={styles.badgeEarned}>Earned {earnedDate.format(badge.earnedAt)}</p>
+                  ) : null
+                ) : badge.progress !== null ? (
+                  <BadgeProgress current={badge.progress.current} target={badge.progress.target} />
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function BadgeProgress({ current, target }: { current: number; target: number }) {
+  const shown = Math.min(current, target);
+  return (
+    <div className={styles.badgeProgress}>
+      <progress className={styles.progressBar} value={shown} max={target} />
+      <span className={styles.progressCount}>
+        {shown} / {target}
+      </span>
+    </div>
   );
 }
 

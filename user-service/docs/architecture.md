@@ -1,60 +1,48 @@
 # User Service architecture
 
-User Service owns account data and account-related decisions for Friends on Campus. This document describes the implementation in this checkout. It is not evidence that a particular cloud environment is running the same version or enforcing its policies.
-
-For setup, environment variables, commands and integration acceptance checks, see the [README](../README.md). For tables and fields, see the [database schema guide](schema.md). HTTP operations are defined in [OpenAPI](../src/openapi.ts), available at `/api-docs` when the service is running.
+User Service owns accounts, credentials, sessions, verification, friendships and account lifecycle decisions. For setup, configuration and test commands, use the [README](../README.md); for stored fields, use the [schema guide](schema.md). Exact HTTP/event payloads belong in [OpenAPI](../src/openapi.ts) and [API_CONTRACT_UPDATES.txt](../API_CONTRACT_UPDATES.txt).
 
 ## Service boundaries
 
 ```mermaid
 flowchart TB
-    browser[Frontend in the browser] --> gateway[API gateway]
-    gateway -->|Account and friendship API requests| user[User Service: Express and TypeScript]
-    gateway -->|Session authorization check| user
-    user -->|Prisma queries| db[(User PostgreSQL database)]
-    user -->|OTP, reset and lockout emails| ses[AWS SES]
-    ses --> inbox[User email inbox]
-    user <-->|Bot API: outbound calls and long polling| telegram[Telegram]
-    user -->|UserVerified and UserDeleted outboxes| kafka[Kafka]
-    kafka -->|Current UserVerified consumer only| credit[Credit Service: one-time starting credits]
-    order[Order Service] -->|Internal Telegram-handle lookup| user
-    admin[Admin Service] -->|Search, role and status APIs with admin bearer session| user
-    user -->|Private report and appeal intake POSTs| admin
-    admin -->|Owns report and appeal records| admindb[(Admin database)]
+    browser[Frontend] --> gateway[API gateway]
+    gateway -->|Account APIs and session authorization| user[User: Express and TypeScript]
+    user -->|Prisma| db[(User PostgreSQL)]
+    user -->|Account emails| ses[AWS SES]
+    user <-->|Bot calls and long polling| telegram[Telegram]
+    user -->|UserVerified and UserDeleted| kafka[Kafka]
+    kafka -->|UserVerified: starting credits| credit[Credit Service]
+    kafka -->|UserDeleted: delivery-point cleanup| order[Order Service]
+    order -->|Private Telegram lookup| user
+    admin[Admin Service] -->|Management APIs with admin bearer session| user
+    user -->|Report/appeal intake and latest-appeal lookup| admin
+    admin --> admindb[(Admin database)]
 ```
 
-- **User Service** validates input, checks credentials and permissions, and changes account records. Prisma is its database-access library, not a separate service or database.
-- **PostgreSQL** stores accounts, sessions, verification records, friendship requests/history and event outboxes. The independent deletion outbox survives account removal; it is shown in the schema guide. Other services should use User APIs or agreed events, not access these tables directly.
-- **SES** delivers account emails. It does not own our user accounts, passwords or verification decisions.
-- **Telegram** delivers verification messages through our bot. The bot code is inside User Service, not a separate container in the local Compose setup. Direct contact links open Telegram; User Service does not host or store chat messages.
-- **Kafka** carries account events asynchronously on the configured `foc.user.status` topic, keyed by user UUID. The existing Credit consumer handles only `UserVerified` and ignores other types; planned `UserDeleted` handling requires a Credit owner handoff. Credit owns balances, starting-credit grants and history rules; User Service does not write Credit's database.
-- **Order and Admin** consume User APIs. User also submits validated reports and suspension appeals to Admin, which owns their records, queues and review decisions in its own database. These arrows describe integration interfaces, not proof that every client or deployed policy has passed end-to-end testing.
+User accesses only its own database. Admin owns reports, appeals, rejection reasons and review decisions; Credit owns balances and credit history; Order owns delivery points. SES delivers email, while the Telegram bot runs inside User Service. Direct Telegram contact links do not create a chat-storage service.
 
-## Authentication and internal access
+## Authentication and access
 
-A successful login returns an opaque, randomly generated bearer token, **not a JWT**. The client keeps the raw token; User stores only its SHA-256 hash in `AuthSession`. A bearer token is a credential: do not put it in logs, screenshots or documentation examples with real values.
+Login issues a random opaque bearer token, not a JWT. Only its SHA-256 hash is stored in `AuthSession`; authentication checks expiry, revocation and current account restrictions. Passwords use salted scrypt, and OTP/reset/challenge records store hashes rather than usable credentials. Keep raw tokens and passwords out of logs.
 
-For protected gateway requests, the gateway calls `/api/v1/user/internal/authorize` with the client's bearer token. User checks the session and returns identity/permission headers: `x-user-id`, `x-is-admin` and `x-permitted-action`. The gateway must remove client-supplied copies before injecting trusted values. Each receiving service still has to enforce its own permissions. An authenticated but incompletely verified user receives `x-permitted-action: false`; endpoints requiring only authentication, including friendships, do not additionally require this flag to be true.
+For protected requests, the gateway calls User's private `/internal/authorize` endpoint and replaces client-supplied identity headers with trusted `x-user-id`, `x-is-admin` and `x-permitted-action`. Receiving services still enforce their own permissions. Public `Created`/`Verified`/`Suspended` status is computed from verification timestamps and `accessStatus`; role, lockout and pending deletion are separate checks.
 
-These integration interfaces have different authentication boundaries:
-
-| Interface | Required protection |
+| Interface | Access boundary |
 | --- | --- |
-| Gateway authorization check | The user's bearer session; the route is not publicly exposed. |
-| Order's Telegram-handle lookup | Private networking and the deployed Order-only Linkerd route policy. There is no application shared-token check. |
-| User-side Admin search/role/status operations | A real eligible administrator's bearer session, forwarded by Admin Service. Being inside the cluster is not sufficient. |
-| Friendship operations | A real user's bearer session and an active account with no deletion requested/scheduled. No additional verification or Order participation requirement. |
-| User report submission | Real bearer session; active reporter with neither deletion requested nor scheduled, with session/account rechecked before forwarding. |
-| Suspension appeal submission | Public email/password check; only a correctly authenticated suspended, unlocked account before its deletion deadline can proceed. No session is issued. |
-| User-to-Admin report/appeal intake | Private, route-specific caller access required. Admin currently trusts User's validation and does not authenticate intake at application level. |
+| Gateway session authorization | Real user bearer session; User internal routes are blocked publicly. |
+| Order Telegram lookup | Private networking and Order-only mesh route policy; no shared application token. |
+| User-side Admin search, role/status changes and rejection notices | Eligible administrator's real bearer session, forwarded by Admin. Identity headers alone are insufficient. |
+| Friendships | Active account, real session, neither deletion requested nor scheduled. Active `Created` accounts are allowed; no verification or Order-history check. |
+| Reports | Active reporter/session with no pending deletion; existing target before its deletion deadline. Suspended or future-deleting targets remain reportable. |
+| Appeals | Correct email/password for a suspended, unlocked account before its deletion deadline; no session issued. |
+| User-to-Admin intake and latest lookup | Private route-specific mesh access; Admin trusts User's validation without application-level intake authentication. |
 
-The public gateway must block `/api/v1/user/internal`. Linkerd mTLS identifies/encrypts service calls, but route authorization is also required to restrict callers. Without the mesh, any caller able to reach the Telegram lookup can use it. Local loopback binding is a development precaution, not a substitute for authentication or network policy. See the README for rollout and allow/deny acceptance tests.
+The gateway and frontend nginx block `/api/v1/admin/appeals/latest`; Admin's checked-in mesh rule admits only User there. See [gateway values](../../deploy/charts/foc-gateway/values.yaml), [nginx configuration](../../frontend/nginx.conf) and [Admin values](../../deploy/values/services/admin.yaml). Check that this source configuration is enforced in the target environment.
 
-The merged Order client has removed its outgoing lookup token and application token settings. Admin's merged user router forwards the administrator's `Authorization` header for search and role/status operations and handles downstream non-200 responses. Obsolete lookup-secret references remain in deployment values and Terraform; these need infrastructure cleanup. These source changes do not prove deployed caller access or successful end-to-end integration.
+## Signup and verification
 
-## Signup and verification flow
-
-The following is the normal successful path with real email and bot providers configured. Email and Telegram verification can happen in either order. Frontend-to-User arrows represent logical API calls; the gateway is omitted here for readability.
+Email and Telegram verification can complete in either order. This sequence shows email first; frontend calls pass through the gateway.
 
 ```mermaid
 sequenceDiagram
@@ -62,152 +50,68 @@ sequenceDiagram
     participant UI as Frontend
     participant U as User Service
     participant DB as PostgreSQL
-    participant SES as AWS SES
+    participant Mail as SES
     participant TG as Telegram
     participant K as Kafka
-    participant C as Credit Service
-    Person->>UI: Enter name, NUS email, password and Telegram handle
+    Person->>UI: Sign up with name, email, password and handle
     UI->>U: Sign up
     U->>DB: Save account, password hash and email OTP hash
-    U->>SES: Send email OTP
-    SES-->>Person: Verification email
-    Person->>UI: Enter email OTP
-    UI->>U: Verify email
-    U->>DB: Validate OTP and save emailVerifiedAt
-    Person->>UI: Log in to finish onboarding
-    UI->>U: Log in
-    U->>DB: Save session token hash
+    U->>Mail: Send OTP
+    Mail-->>Person: Email OTP
+    UI->>U: Submit email OTP, then log in
+    U->>DB: Verify email; save session token hash
     U-->>UI: Raw bearer token
-    UI->>U: Request Telegram verification with bearer token
-    U->>DB: Save hashed challenge link
-    U-->>UI: Bot deep link
+    UI->>U: Request Telegram challenge with bearer token
+    U->>DB: Save hashed deep-link token
+    U-->>UI: Bot link
     Person->>TG: Open link and press Start
-    U->>TG: Poll bot updates
-    TG-->>U: Start message and sender identity
-    U->>DB: Save matching sender identity and OTP hash on challenge
-    U->>TG: Send Telegram OTP
-    TG-->>Person: Verification code
-    Person->>UI: Enter Telegram OTP
-    UI->>U: Verify Telegram with bearer token
-    U->>DB: Atomically save Telegram verification, linked identity and outbox row
-    U-->>UI: Account is Verified
-    Note over U,DB: When Kafka is configured, pending events are retried
-    U->>K: Publish UserVerified using stable event ID
-    K-->>U: Acknowledge send
-    U->>DB: Mark outbox row published
-    K->>C: Deliver verification event
-    C->>C: Grant starting credits once, handling duplicate delivery
+    U->>TG: Poll updates; check sender against registered handle
+    U->>DB: Save challenge sender and OTP hash
+    U->>TG: Send OTP
+    TG-->>Person: Telegram OTP
+    UI->>U: Submit Telegram OTP with bearer token
+    U->>DB: Atomically save linked identity, verification and outbox
+    U->>K: Publish UserVerified; mark published after acknowledgement
+    Note over U,K: Retry pending events with stable IDs
 ```
 
-Becoming verified does not mean credits have already arrived. They are updated by a different service after event delivery. If Kafka is unavailable or disabled, the account can still be verified while its outbox row remains pending.
+Credit grants starting credits asynchronously and handles repeated verification delivery. A verified account can therefore precede its credit grant. Failed email delivery may leave an unverified account; resend after fixing delivery. Development loggers and the gated non-production verification override are testing paths. Telegram long polling needs one active poller per bot token.
 
-In development, provider loggers can replace email/bot delivery; these are not production verification channels. Email delivery failure can leave a saved, unverified signup account: use the resend flow after resolving delivery. The non-production admin verification override is a separately gated load-test tool, not part of normal onboarding.
+## Friendship lifecycle
 
-## Friendship lifecycle and access
+Requests move from `PENDING` to recipient-only `ACCEPTED` or `REJECTED`; removal changes `ACCEPTED` to `REMOVED`. Rejected/removed rows remain history, and a later invitation gets a new request UUID. Matching accept/reject retries return `changed: false` while that resulting state remains current; removal is idempotent and never cancels a pending request. Crossed requests conflict rather than auto-accept.
 
-The `/api/v1/user/friends` router provides send, incoming/outgoing pending-request discovery, recipient-only accept/reject, accepted-friend listing and removal. The [README](../README.md#friendships) and [contract edit guide](../API_CONTRACT_UPDATES.txt) define exact paths and responses. The new `GET /friends/requests` operation lets recipients discover request IDs. Accept/reject use that request UUID; removal instead takes the other user's UUID. Every operation validates the actual bearer session rather than trusting caller-supplied identity headers.
+Mutations lock participant accounts in UUID order and recheck the caller/session inside the transaction. The database rejects self-relations and permits only one `PENDING`/`ACCEPTED` row per unordered pair through custom migration SQL. Suspended/deleting peers are hidden from lists and cannot receive invitations; acceptance requires an available sender even on retries. An available caller may still reject or remove a relationship with an unavailable peer.
 
-A `Friendship` row starts `PENDING` and may become `ACCEPTED` or `REJECTED`; removal changes `ACCEPTED` to `REMOVED`. Rejected/removed history is retained, and resending creates a new UUID. Actions on an old request cannot act on a later invitation. Repeating the same accept/reject action while its resulting state remains current returns `changed: false`; incompatible states return `409`. Removal is idempotent and does not cancel pending requests. Only the recipient may accept/reject; other callers receive `404` to avoid disclosing a private request.
+Lists return only IDs/names and necessary request metadata, with `Cache-Control: no-store`. Count/page use a repeatable-read transaction, ordered by creation descending then request UUID ascending. Accepted-friend search matches a case-insensitive literal name substring. Exact pagination/search validation and routes are in the contract notes.
 
-Mutations lock participant accounts in a consistent UUID order and recheck the caller's current session/account inside the transaction. These account locks coordinate with suspension/deletion. A SQL partial unique index separately guarantees at most one `PENDING` or `ACCEPTED` row per unordered participant pair, including crossed/concurrent requests. Crossed requests return a conflict instead of auto-accepting. A database CHECK rejects self-relations. These custom constraints are in [migration 20261027000000_friendships](../prisma/migrations/20261027000000_friendships/migration.sql), beyond what Prisma 5 expresses in `schema.prisma`.
+## Reports, appeals and suspended login
 
-Suspended peers and peers with deletion requested/scheduled are excluded from both paginated lists and cannot receive new invitations. Accepting also requires the sender to remain available, including retries. An available caller may reject an existing invitation from an unavailable sender or remove an accepted relationship with an unavailable peer. Neither completed verifications nor an Order participation lookup is required. Responses expose only user IDs/names and necessary request metadata, with `Cache-Control: no-store`; no passwords, emails, Telegram details or roles are returned.
+User validates report/appeal input, rechecks account eligibility under locks, then calls Admin outside those locks without forwarding passwords or tokens. Admin deduplicates open reports per reporter/target and open appeals per user, preserving original text; this is not a lifetime submission limit. User validates UUID-matched camelCase responses and returns only allowed fields. These records add no User model or outbox.
 
-Lists order by creation time descending and request UUID ascending. Each list reads its matching count and page in a repeatable-read transaction, returning `items`, `page`, `pageSize` and `total`. Defaults are page `1` and page size `20`, with a maximum page size of `100`. Physical deletion of either participant cascades all their friendship rows; scheduling deletion only changes availability until cleanup removes the account.
+With a correct password before the deletion deadline, suspended login returns `403 ACCOUNT_SUSPENDED` even when `lockedAt` is set. It creates no session and does not clear the lock. Only then does a private latest-appeal lookup run outside database locks: a valid same-user rejected appeal adds its reason to the message. Missing configuration, lookup failure, invalid/mismatched data or other appeal states retain the generic suspension message. Wrong passwords never trigger the lookup. Active locked login and locked appeal submission remain generic `401`; password reset clears lockout.
 
-The migration must be applied to the intended database before the updated service runs; `db push` alone cannot install its custom SQL constraints. Reported validation on 27 October 2026 passed Prisma Client generation, `prisma validate`, the TypeScript build, 74/74 unit tests and the friendship integration script's `node --check`. All six isolated integration suites passed after the new migration/code: friendships, email, lifecycle, admin-bootstrap, admin-users and lockout. The friendship suite applied migrations to real local PostgreSQL in a disposable `user_friendships_it_<random>` database. It exercised all six HTTP endpoints, access/privacy rules, idempotency/re-invitation, concurrency, direct SQL constraints, session rechecks, pagination and cascades. All temporary test databases were cleaned up by their scripts. Only the Compose database service was started; the friendship suite used its own ephemeral HTTP server. No normal database was migrated or normal account mutated, no real messages were sent, and the application container and Telegram poller were not started. Live/frontend, deployed, load and cross-service end-to-end acceptance remain unproven.
+The Admin client uses bounded timeouts/responses, rejects redirects and does not automatically retry. Intake failures return sanitized errors; lookup failures fall back as above. Appeals also have a bounded process-local email-hash limiter, reset on restart and not shared across replicas. Admin-requested rejection email runs after Admin commits its decision; email failure does not undo rejection, and a retry can duplicate the notice. Email has no durable delivery queue. Generic `/me/escalate` and Created-account verification help remain outside the implemented API.
 
-## Reports, suspension appeals and login
+## Account deletion and events
 
-User's `POST /api/v1/user/reports` derives the reporter from a real session, validates `{ reportedUserId, comment }`, rejects self-reporting and requires an existing target before its deletion deadline. Suspended targets and targets awaiting future deletion remain reportable. Comment/message text is trimmed to 1–4000 characters. User's public `POST /api/v1/user/appeals` accepts `{ email, password, message }`, normalizes email and trims/verifies the password as login does. Unknown/wrong/locked/deletion-expired credentials receive generic `401 INVALID_CREDENTIALS`; correct credentials for an active account receive `409 ACCOUNT_NOT_SUSPENDED`. The account is rechecked under a lock before forwarding, and no account lock is held over HTTP.
+Deletion requests revoke sessions and temporary credentials, then schedule removal **six calendar months** later, clamping to the last valid day of the target month. An eligible successful login before the deadline cancels deletion and creates a new session; revoked sessions stay revoked. Suspension/lockout checks still apply. Cleanup skips removal of the last available administrator.
 
-Login returns `403 ACCOUNT_SUSPENDED` after a correct password for a suspended account before its deletion deadline, even when `lockedAt` is set: suspension precedes lockout. No session is issued and the lock is not cleared. Unknown accounts, wrong passwords, active locked accounts and expired deletion retain generic `401`. Appeals still reject locked accounts with generic `401`; password reset must clear the lock first. This is the explicitly approved exception to the backlog's generic-error rule. Appeals issue no session and do not reinstate or cancel deletion. Existing suspension/reinstatement operations are unchanged. Generic `/me/escalate` and Created-account verification help still need an agreed API.
+Final cleanup atomically inserts `UserDeletedOutbox`, writes the audit record and physically deletes `User`; any failure rolls back all three. FK-linked credentials, friendships and `UserVerifiedOutbox` cascade. The deletion outbox and audit have no User FK, so they survive. Scheduling/cancelling deletion emits no `UserDeleted`.
 
-User forwards camelCase `{ reporterUserId, reportedUserId, comment }` or `{ userId, message }` to Admin's respective `POST /api/v1/admin/reports` and `/api/v1/admin/appeals`. Passwords/tokens are never forwarded. A strictly validated, UUID-matched, allowlisted camelCase Admin record is returned with `201` and `Cache-Control: no-store`, with no legacy snake_case fallback; exact DTOs and errors are in the README. The required `closedAt` and `closedByAdminId` fields may be `null`. Request payloads are unchanged. Admin retains the original text when returning an existing open report for a reporter/target pair or an existing open appeal for a user. Deduplication applies while open, not for the user's lifetime. Submission itself performs no suspension/reinstatement. Report/appeal storage belongs to Admin and adds no User migration or outbox. The ninth User model described below is solely for final account deletion events.
+Both outboxes publish on configurable `foc.user.status`, keyed by user UUID. Their row IDs/timestamps become stable event IDs/occurrence times; deletion time comes from cleanup's `now`. With Kafka configured, dispatchers retry pending events every five seconds and mark publication only after acknowledgement. A crash between send and marker persistence can duplicate delivery; consumers must deduplicate by `eventId`. Kafka unavailability leaves rows pending, and acknowledgement does not mean downstream work is complete.
 
-The Admin client defaults to a 5-second timeout (configurable up to 30 seconds), rejects redirects, bounds responses to 32 KiB and does not retry automatically. An empty `ADMIN_SERVICE_BASE_URL` leaves other account APIs usable but makes eligible intake return `503 ADMIN_NOT_CONFIGURED`. A configured value must be an HTTP(S) origin without credentials, path beyond `/`, query or fragment. Network errors, timeouts and upstream `429`/`5xx` become sanitized `503`; rejected/invalid responses become `502`, and upstream conflicts become `409 ADMIN_CONFLICT`. Raw errors and payloads are not logged or returned.
-
-Appeals use a bounded process-local limiter keyed by normalized email hash: 10 attempts per 15 minutes, including unknown emails, at most 10,000 entries, returning `429` at the attempt/capacity limit. Restart resets it and replicas do not share it. Ingress throttling remains required. This guard is not a durable or distributed attempt counter.
-
-Deployment handoff remains outstanding: allow the exact public User appeal POST without bearer preauthorization, retain bearer protection for User reports, configure `ADMIN_SERVICE_BASE_URL=http://admin:8084`, and permit User-to-Admin traffic only to intake POSTs. Current Admin mesh callers allow gateway/order and deny User. Block external Admin intake POSTs, including FastAPI trailing-slash redirect variants, while preserving authenticated Admin GET queues/detail and review routes. Admin intake trusts User and must not be publicly reachable as a bypass. Frontend report/appeal forms, login `403` handling and friendship UI belong to their owner. This User Service PR makes no infrastructure, Admin or frontend edits.
-
-The global error handler adds `Cache-Control: no-store`, maps malformed/oversized JSON to `400 INVALID_JSON` / `413 REQUEST_TOO_LARGE` (32 KiB request limit), and avoids logging raw parser/database errors. Unexpected `500` failures log only a constant message, protecting credentials and request bodies.
-
-Historical checks before the camelCase response fix, reported on 30 October 2026, passed: TypeScript build, Prisma generation/validation, 83/83 unit tests, all seven isolated integration suites (email, lifecycle, admin-bootstrap, admin-users, lockout, friendships and account-support), strict new-unit-test type checking and integration-script syntax checks. All temporary databases were cleaned up. Support integration used real User HTTP/PostgreSQL with an HTTP Admin stub, not the actual Admin application or database. The Node 20 production Docker build and network-isolated smoke test passed (Node 20.20.2, non-root, 256 MiB, no `.env`, health/OpenAPI checks; no database or real Admin exercised). The 183-package install audit and Docker `npm ci` reported zero vulnerabilities. No normal database was migrated, no real email/bot messages were sent and no cloud deployment occurred. Actual Admin, cloud/frontend, gateway/mesh, load and full cross-service acceptance remain unproven; infrastructure changes are handoff only.
-
-## Final account removal and UserDeleted
-
-The existing deletion request schedules a deadline and revokes credentials; correct-password login before the deadline can cancel it. Neither scheduling nor cancellation queues `UserDeleted`. The event signals final physical removal by cleanup, not the request or deadline alone. No HTTP route, body or response changes are proposed.
-
-The cleanup transaction queues `UserDeletedOutbox`, records the deletion audit and deletes `User`. All three commit or roll back together. Unlike `UserVerifiedOutbox`, whose User FK still cascades on deletion, `UserDeletedOutbox.userId` is a unique UUID with no FK. It remains publishable after the account and its FK-linked records are gone. The independent table is the ninth schema model, shown without a User relationship line in the [schema diagram](schema.md#table-relationships).
-
-The event envelope is `{ eventId, type: "UserDeleted", occurredAt, data: { userId } }`, on the same configured `foc.user.status` topic keyed by user UUID. `eventId` is the row's UUID `id`; `occurredAt` is its `createdAt`, set from cleanup's deletion-event `now` (including a test-injected value), not the request time, deadline or retry time. The event contains no profile PII such as email, name or Telegram details; UUIDs remain sensitive identifiers.
-
-When Kafka is configured, the dispatcher retries pending rows every five seconds, keeping their IDs and occurrence times. `publishedAt` is nullable and is saved only after Kafka acknowledgement. Disabled/unavailable Kafka leaves rows pending. A successful send followed by a crash or failed marker write can repeat an event. This provides at-least-once, eventual delivery when the dispatcher and Kafka recover; consumers must deduplicate by `eventId`. The database transaction does not include Kafka or any consumer, and an acknowledgement does not establish Credit processing.
-
-The shared UUID key does not guarantee ordering against verification already in flight across replicas. Deleting the verification outbox row cannot retract a send already in progress. Credit should persist a deletion tombstone keyed by user UUID and ignore late `UserVerified` events so deletion cannot be followed by account recreation or another starting grant. Credit's checked-in consumer currently ignores every type except `UserVerified`; its owner must implement deletion handling and agree balance and transaction-history retention rules. Credit integration and cloud delivery have not been verified. The [contract edit guide, section 15](../API_CONTRACT_UPDATES.txt) proposes the shared Doc entry; this documentation update does not edit that Doc or other services.
-
-Migration `20261102000000_user_deleted_outbox` is required before the updated service runs; normal local and cloud databases have not been migrated. On 2 November 2026, build, Prisma checks, 90 unit tests, focused event-test types/syntax and isolated lifecycle integration passed. That integration used real User HTTP/PostgreSQL with a fake Kafka publisher and removed its temporary database. The separate onboarding suite stopped at preflight because the full app container was not running. See the [README deletion section](../README.md#userdeleted-transactional-outbox) for coverage and limitations. Live Kafka/Credit and cloud acceptance remain unverified.
+Checked-in Credit consumes only `UserVerified`; Order already consumes `UserDeleted` for delivery-point association cleanup. Deleting a verification outbox cannot retract a send already in flight across replicas. Future Credit deletion handling needs a user-UUID tombstone that ignores late verification, plus agreed balance/history retention rules. See the [contract notes](../API_CONTRACT_UPDATES.txt).
 
 ## Why these choices?
 
-| Choice | Reason and trade-off |
+| Choice | Reason / trade-off |
 | --- | --- |
-| Express and TypeScript | Explicit HTTP handlers with types for application code. Runtime validation is still needed for untrusted inputs. |
-| PostgreSQL and Prisma | Relational constraints and transactions fit linked account/security records. Prisma provides typed database access and versioned migrations; it does not replace database backups or operational management. |
-| Salted scrypt password hashes | Passwords can be checked without storing recoverable plaintext. The encoded value includes its random salt and cost so future logins can verify it. |
-| Database-backed opaque sessions | Sessions can be revoked and current account data checked without relying on old claims embedded in a token. This requires database work during authentication. |
-| Separate short-lived OTP/reset/session records | Supports expiry, attempts, single use and revocation without putting every temporary credential on the account row. Only hashes are stored. |
-| Transactional account-event outboxes | Verification and its event intention commit together. Final deletion, audit and an independent deletion-event row also commit together. Retries may duplicate events; consumers need deduplication and Credit needs deletion tombstones against late verification. |
-| Row/advisory locks for sensitive mutations | Coordinate concurrent verification, failed logins, admin changes and last-admin checks. Locking details belong in the implementation and tests. |
-| Friendship history plus an active-pair partial unique index | Fresh request UUIDs preserve invitation identity after rejection/removal; the unordered-pair SQL constraint prevents duplicate active relations across both directions. |
-| Telegram long polling | The service fetches bot updates with outbound requests, so no public webhook is needed. Only one active poller may use a bot token; replicas/environments need coordinated configuration. |
-| Operator-only first-admin command | Resolves initial admin setup without exposing an open promotion endpoint. It promotes an existing fully verified eligible account and records an audit entry. |
+| Express + TypeScript | Explicit handlers and typed code; incoming data still needs runtime validation. |
+| PostgreSQL + Prisma | Relational constraints, transactions and typed access; custom SQL supplements Prisma's schema. |
+| Opaque sessions + hashed credentials | Revocation and current-account checks without storing usable secrets; authentication needs database access. |
+| Transactional outboxes | Account changes and publication intent commit together; consumers handle duplicate delivery. |
+| Locks + friendship history/index | Coordinate account changes and concurrent invitations while preserving old request identities. |
+| Operator first-admin bootstrap | Establishes the first eligible admin with an audit record, without a public promotion endpoint. |
 
-## Containers, databases and configuration
-
-Locally, [Docker Compose](../docker-compose.yml) runs **two containers** for this service: the Node application and PostgreSQL. The database uses a named Docker volume so ordinary container replacement does not erase its data. Removing the volume can erase it; a volume is not a backup.
-
-| Connection | Local address |
-| --- | --- |
-| Browser or host tools to User API | `http://localhost:8080` (Compose binds the API to `127.0.0.1`) |
-| Host database tools to PostgreSQL | `localhost:5554` |
-| Application container to PostgreSQL | `db:5432` on the Compose network |
-
-`localhost` inside a container means that container, not the host or another container. A port selects the listening application at an address; it is not the database itself. The database host-port publication is development-only and should not be exposed on an untrusted network.
-
-The [Dockerfile](../Dockerfile) builds TypeScript into JavaScript and supplies separate migration and runtime stages. The production runtime runs compiled JavaScript as a non-root user; local Compose selects the build stage and runs the development server plus migrations.
-
-For deployment, the application and database remain separate. `DATABASE_URL` chooses the target PostgreSQL database, which may run outside the application container. Database provisioning, network access, migrations, backups and credentials must also be configured; changing the URL alone does not create or move a database. Git commits and image rebuilds do not migrate existing account data automatically.
-
-Local `.env` values are not committed or included in the image. Deployment supplies its own environment configuration and secrets, including database access, OTP secret and Telegram credentials. SES also needs approved AWS permissions. Never copy personal credentials into these guides. Configuration being present in source does not establish that the live environment uses it.
-
-Repository values now wire the optional `user-telegram` Secret's token/username keys, with dev mapping from Secrets Manager `foc/dev/user-telegram` and one polling replica. Terraform initializes empty placeholders. Real bot credentials, deployed configuration and delivery remain unverified; see the README's Telegram setup notes.
-
-## Current boundaries and remaining work
-
-Implemented areas include signup, both verifications, login/session authorization, profile/status, password recovery/change, login lockout notifications, scheduled account deletion, first-admin bootstrap, User-side Admin management APIs, friendships, user reports and suspension appeals. The [schema guide](schema.md) explains User-owned records; Admin owns report/appeal storage.
-
-Still outstanding or requiring separate acceptance:
-
-- Generic `/me/escalate` and Created-account verification help still need an agreed API. Reports and suspension appeals passed the recorded service checks using an HTTP Admin stub. Actual Admin integration, frontend and deployed acceptance remain unproven, as does live/frontend friendship acceptance.
-- Emails are not a durable job queue. A delivery failure or process crash can lose a lockout warning; the verification outbox covers Kafka events, not email sending.
-- Cross-service flows and live gateway/mesh enforcement need acceptance tests in the intended environment. Service-level tests do not prove deployed integration.
-- The `UserDeleted` producer passed the recorded local checks. Deployment needs its migration, the shared-contract update and Credit deletion/tombstone/balance/history handling. Normal local/cloud migration and end-to-end delivery are unverified.
-- Load acceptance is unproven: no User load suite/report was found for NFR3 (60,000 accounts, 95% of auth/lookups under 1 second) or NFR6 (100 concurrent users, 95% under 2 seconds). The verification override is test setup, not evidence that these targets pass.
-- Direct Telegram contact links are not a bot-mediated chat service. Any broader chat requirement needs a separately agreed scope.
-
-## Implementation map
-
-| Area | Source |
-| --- | --- |
-| HTTP application and API operations | [app.ts](../src/app.ts), [routes](../src/routes), [openapi.ts](../src/openapi.ts) |
-| Password/token helpers and sessions | [security.ts](../src/security.ts), [auth.ts](../src/auth.ts) |
-| Computed status and authorization headers | [status.ts](../src/status.ts), [authorization.ts](../src/authorization.ts) |
-| Email and Telegram | [email.ts](../src/email.ts), [telegram.ts](../src/telegram.ts) |
-| Event outboxes and Kafka | [verification-events.ts](../src/verification-events.ts), [deletion-events.ts](../src/deletion-events.ts), [kafka.ts](../src/kafka.ts) |
-| Login lockout and account deletion | [login-security.ts](../src/login-security.ts), [account-lifecycle.ts](../src/account-lifecycle.ts) |
-| Administrator operations | [admin-users.ts](../src/admin-users.ts), [admin-bootstrap.ts](../src/admin-bootstrap.ts) |
-| Friendship lifecycle and HTTP routes | [friendships.ts](../src/friendships.ts), [friendship routes](../src/routes/friendships.ts) |
-| Report/appeal validation, limiter and Admin client | [account-support.ts](../src/account-support.ts), [support routes](../src/routes/account-support.ts), [admin-intake.ts](../src/admin-intake.ts) |
-| Schema and database changes | [schema.prisma](../prisma/schema.prisma), [migrations](../prisma/migrations) |
+Local [Compose](../docker-compose.yml) runs the application and PostgreSQL separately, with a persistent database volume. The [Dockerfile](../Dockerfile) separates migration/runtime stages. Deployment supplies its own secrets and database configuration; rebuilding the image does not migrate an existing database. Follow the [schema migration notes](schema.md#changing-the-schema) and README commands.

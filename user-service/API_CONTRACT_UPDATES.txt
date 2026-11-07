@@ -1,604 +1,228 @@
-FRIENDS ON CAMPUS - USER SERVICE CONTRACT EDITS
-Based on the API contract pasted on 18 October 2026.
-
-This is a copy-and-paste edit guide, not a replacement for the whole team's
-contract. These instructions are manual edits for the shared Google Docs
-contract; this repository update has NOT edited that document. No other service's
-endpoint is changed by these edits. Swagger at /api-docs documents the API.
-
-1. UPDATE AUTH UNDER "Conventions"
-------------------------------------------------------------
-Replace the existing Auth line with:
-
-Auth: every endpoint (except explicitly marked public or service-authenticated)
-requires Authorization: Bearer <token>, validated via User Service
-POST /api/v1/user/internal/authorize over private service DNS.
-
-Then add:
-
-User Service auth exceptions: POST /api/v1/user/signup, /verify-email,
-/resend-verification, /login, /forgot-password, /reset-password, and /appeals are public
-(all suffixes above are relative to /api/v1/user). Telegram verification and
-profile operations require the user's bearer session. User Service issues
-opaque session tokens, not JWTs. The internal Telegram lookup instead relies on
-Linkerd mTLS and an enforced Order-only route policy, with no application shared
-token; it is blocked at the public gateway. No token/mesh mode setting is needed.
-The load-test verification override requires a verified admin bearer
-session and the non-production feature flag described below.
-The public appeal endpoint checks email/password and suspension itself; it does
-not issue a session. Reports still require the reporter's real bearer session.
-
-2. IN "1. User Service", REPLACE SIGNUP'S PURPOSE
-------------------------------------------------------------
-Keep method, endpoint and body unchanged. Replace the purpose with:
-
-F1. Public. Validates NUS email domain (F1.1) and password complexity (F1.2),
-and requests an email verification OTP (F1.3). name is required and must contain
-2-100 characters after trimming. Accepts u.nus.edu and nus.edu.sg. Returns
-201 { userId, email, status, nextSteps }. Account starts as Created and becomes
-Verified only after BOTH email and Telegram verification succeed.
-
-Implementation note: SES delivery is implemented when EMAIL_PROVIDER=ses and
-the sender, region and AWS access are configured. Local development logging is
-still available. Manual local frontend signup/OTP, Telegram verification, login
-and emailed password recovery passed on 20 October 2026. Deployed-environment
-configuration and acceptance still need testing. Automated tests use fake SES
-clients and send no real messages. No endpoint or
-request-body change is required. Signup may return 503 EMAIL_DELIVERY_FAILED or
-EMAIL_NOT_CONFIGURED after saving an unverified account: use resend-verification
-after fixing delivery rather than repeating signup. Resend and forgot-password
-keep generic 202 responses even if sending fails, so account existence is not
-disclosed. No raw AWS errors, OTPs or reset links are logged in SES mode.
-
-3. REPLACE THE PURPOSE FOR POST /api/v1/user/verify-email
-------------------------------------------------------------
-Remove the accidental editing text beginning "Activates account via activation
-OTP" and replace the whole purpose with:
-
-F1.3.2/F1.3.3. Public. Verifies email using { email, otp }, where otp is a
-six-digit string. Returns 200 { status, nextSteps }. The account becomes
-Verified only after Telegram is also verified.
-
-4. INSERT THIS ROW IMMEDIATELY BEFORE /verify-telegram
-------------------------------------------------------------
-Method: POST
-Endpoint: /api/v1/user/request-telegram-verification
-Body / Params: No body. Authorization: Bearer <user-session-token>.
-Purpose: F1.4. Creates a Telegram verification challenge. Returns
-202 { telegramBotUrl, expiresAt }. With a configured bot, the user opens the
-link, presses Start in Telegram, and receives a six-digit OTP after their
-Telegram handle is checked. Requests have a resend cooldown. An already-verified
-account returns 202 with both fields null when delivery is configured. Errors
-include 401 (invalid session), 429 (cooldown), and 503 (verification unavailable).
-Local development without a bot returns a null
-telegramBotUrl and logs the OTP; that fallback cannot verify production users.
-
-Replace /verify-telegram's purpose with:
-
-F1.4. Requires the user's bearer session. Confirms the Telegram handle using
-{ otp }, a six-digit string from the preceding challenge. Returns
-200 { status, nextSteps }. The account becomes Verified only when both email
-and Telegram are verified. Queues UserVerified once when verification completes.
-
-5. MIGRATE THE /authorize ROW TO /internal/authorize
-------------------------------------------------------------
-Method: POST
-Endpoint: /api/v1/user/internal/authorize
-Body / Params: header only
-Purpose:
-F4. Internal authorization check, normally called by the gateway using the
-client's bearer token. Returns 200 { authenticated, userId, isAdmin,
-permittedAction } and response headers x-user-id, x-is-admin,
-x-permitted-action. All four JSON fields are present on success. Invalid,
-expired, revoked or suspended sessions, and accounts past their deletion
-deadline, return 401. The gateway may use the original request's HTTP method;
-the endpoint accepts any method. The gateway strips client-supplied identity
-headers before injecting trusted values. permittedAction=false is still a
-valid authenticated session: each backend must check permission for its own
-operations. This route is blocked at the public gateway, but services may call
-it over private service DNS. Tokens are opaque sessions, not JWTs.
-
-Migration: /api/v1/user/authorize remains a temporary, externally blocked
-compatibility alias with the same authentication and response, not a redirect.
-New callers must use /api/v1/user/internal/authorize. The Envoy and frontend
-nginx configurations in this checkout are updated to the new path; other
-branches and deployed configurations must migrate before removing the alias.
-The internal prefix is blocked at both public proxies. This authorization
-endpoint still requires a user bearer session after the Order lookup secret is removed.
-Roll out the updated User image FIRST, then update/reload Envoy and nginx.
-Switching callers while the old User image is running would break authorization.
-
-6. REPLACE DELETE /api/v1/user/me's PURPOSE
-------------------------------------------------------------
-Keep { confirm: true } as the body. Replace the purpose with:
-
-F5.1. Requires the account owner's bearer session and explicit boolean
-confirm=true. Returns 202 { message, scheduledDeletionAt }, scheduling deletion
-in six calendar months (clamping month-end dates where needed). Revokes all
-sessions, outstanding reset links and verification challenges immediately.
-Correct-password login before the deadline cancels deletion and creates a new
-session; old sessions stay revoked. After the deadline, login and authorization
-are rejected even before cleanup runs. A background worker permanently removes
-expired User Service records. The last active admin cannot request deletion:
-409 LAST_ADMIN. Missing confirmation: 400 CONFIRMATION_REQUIRED. Invalid
-session: 401 UNAUTHORIZED. This endpoint queues no UserDeleted event: it is only
-a deletion request. The final-removal event is queued by cleanup, not
-by scheduling or login cancellation (see section 15). Other services own their
-records and must agree their deletion/retention rules separately.
-
-7. ADD THESE TWO ROWS IN "1. User Service"
-------------------------------------------------------------
-Method: GET
-Endpoint: /api/v1/user/internal/users/{userId}/telegram
-Body / Params: userId (path); no body
-Purpose: Internal Order-to-User contact lookup. Returns
-200 { userId, telegramHandle } for a verified, non-suspended account that has
-not passed its deletion deadline. Handle has no leading @. Response is
-Cache-Control: no-store. Invalid UUID: 400 INVALID_USER_ID.
-Missing/suspended/expired account: 404 USER_NOT_FOUND.
-Unverified account: 409 USER_NOT_VERIFIED. No X-Service-Token or user bearer
-header is required by the application for this route. Deployed caller access
-MUST be enforced by Linkerd's Order-only policy, not caller-supplied identity
-headers. Without the mesh, any reachable local caller can perform lookups:
-isolated development only, never public exposure. Order authenticates its caller,
-derives the acting UUID from trusted identity, and enforces order participation.
-
-Method: POST
-Endpoint: /api/v1/user/admin/users/{userId}/verify
-Body / Params: userId is a UUID path parameter. { reason }, trimmed length
-3-500 characters. Authorization: Bearer <verified-admin-session-token>.
-Purpose: NON-PRODUCTION ONLY. Allows authenticated admins to verify synthetic
-load-test accounts without real email or Telegram OTPs. Disabled unless
-ENABLE_TEST_VERIFICATION=true and the configured environment is one of local,
-development, dev, test, staging, stg. APP_ENV selects the environment, falling
-back to NODE_ENV if absent; production and unknown values are denied. Returns
-200 { userId, status, nextSteps, changed }. Repeated verification is idempotent;
-the first change is audited with actor UUID, target UUID, reason and time, and
-UserVerified is queued through the existing outbox. Does not grant admin roles,
-unlock accounts, reinstate suspended users or fabricate Telegram identity IDs.
-Disabled feature or non-admin/invalid caller: 404 NOT_FOUND. Invalid UUID/reason:
-400 INVALID_USER_ID / INVALID_REASON. Missing/expired target: 404 USER_NOT_FOUND.
-Suspended target or target pending deletion: 409 USER_NOT_ELIGIBLE. A real admin
-account must already exist. No public admin bootstrap or inverse override is
-provided. Admin Service must forward its real administrator's bearer token.
-
-8. ADD AN IMPLEMENTATION-STATUS NOTE UNDER THE USER SERVICE TABLE
-------------------------------------------------------------
-The table includes planned requirements. Generic /me/escalate is not implemented;
-Created-account verification help still needs an agreed API. Separate user report
-and suspension-appeal intake is implemented as described in section 14.
-Friendship operations are implemented in this checkout as described in section
-13, including the new pending-request list. The friendship HTTP integration suite
-passed against disposable local PostgreSQL; live/frontend and deployed acceptance
-remain unproven. SES email delivery passed manual local frontend tests;
-deployed-environment setup/testing remains. Lockout notifications are implemented
-as described in section 12; real inbox delivery still needs a controlled check. Admin
-search/role/status endpoints are implemented as specified in section 11 below.
-The merged Admin relay now forwards real bearer credentials; deployed relay
-acceptance and frontend response mapping remain outstanding.
-
-9. EVENT CATALOG: CONFIRM WITH CREDIT SERVICE OWNER BEFORE CHANGING CONVENTIONS
-------------------------------------------------------------
-The top of the shared document requires { eventId, eventType, version,
-timestamp, payload }, but its later catalog requires flat Order messages.
-It also names User's event user.status.verified. These descriptions do not match
-the CURRENT User publisher and Credit consumer, which both use:
-
-Topic: foc.user.status
-Kafka key: userId (not orderId)
-Body: { eventId, type: "UserVerified", occurredAt, data: { userId, email } }
-Trigger: BOTH email and Telegram verification are complete.
-Delivery: durable outbox and retries; duplicate deliveries are possible, so
-Credit must handle repeated events idempotently.
-
-Proposed clarification for the shared document, to agree with the Credit Service owner:
-
-"The flat event format and orderId partition key in this catalog describe
-Order messages, not all services. User verification currently uses the
-UserVerified envelope specified below, keyed by userId. Admin/Rating message
-formats must be documented against their implementations separately. Do not
-rename or reshape UserVerified without coordinating User and Credit changes."
-
-Proposed current-implementation replacement for the catalog's user row:
-
-Event: UserVerified (current wire type; canonical rename pending agreement)
-Topic: foc.user.status
-Direction: User publishes, Credit consumes
-When: Both email and Telegram verification are complete
-Envelope: { eventId, type: "UserVerified", occurredAt, data: { userId, email } }
-Partition key: userId
-
-The existing UserVerified wire format is unchanged. Section 15 proposes a
-separate UserDeleted type on the same configured topic. Do not apply the Order
-format to these events by documentation alone; coordinate consumer changes.
-
-10. TEAM HANDOFF / DEPLOYMENT CHECKLIST
-------------------------------------------------------------
-Order Service owner: the merged Order client now calls the private Telegram
-lookup without X-Service-Token; its lookup-token application configuration,
-Compose entry and example environment settings have been removed. Continue
-using trusted caller identity and order access checks. Do not trust a
-frontend-supplied acting UUID. Live lookup/mesh acceptance remains outstanding.
-
-Infrastructure owner: verify the exact lookup route's Order-only Linkerd policy
-allows Order and denies gateway/unmeshed/unlisted clients, with no public-port
-bypass, BEFORE deploying this image. Rebuild User and run its normal migration
-Job; token removal requires no new migration. Remove obsolete lookup-secret
-references from User/Order values and environment secret wiring before deleting
-any shared secret resource. Those references still exist in repository deployment
-values/environment wiring and Terraform. There is no token/mesh switch to set.
-These documentation edits do not change Helm values or delete secrets.
-Telegram deployment wiring now maps token/username from user-telegram, with dev
-Secrets Manager source foc/dev/user-telegram and one polling replica. Terraform
-seeds empty placeholders; real secret values and live delivery are unverified.
-Without a bot token outside development, challenges return 503 TELEGRAM_NOT_CONFIGURED.
-Only for load tests,
-set APP_ENV to the real non-production
-environment and ENABLE_TEST_VERIFICATION=true. Keep production disabled.
-The first real admin can now be established through the deployment-only command
-node dist/bootstrap-admin.js --user-id <verified-user-uuid> --confirm
-Run it only against the intended environment with approved operator access and
-existing migrations applied. It rejects existing admins or a previous bootstrap
-audit marker, audits the promotion and revokes the target's old sessions/reset
-links. The promoted account must sign in again. This is not an HTTP endpoint;
-there is no new bootstrap route to add to the contract. See the README for the
-full operational procedure. Normal role-management APIs are in section 11.
-
-Admin Service owner: merged Admin code now forwards the real inbound admin
-Authorization header on User search/promote/demote/suspend/reinstate calls and
-explicitly handles downstream non-200 responses. User independently checks
-current admin/session state. Deployment values select http://user:8080; live
-relay acceptance remains outstanding. There is no test-verification relay route
-in admin-service/app/routers/users.py; any future caller of the override must
-also forward a real admin bearer session. See section 11 and the README's Admin
-integration notes; no mock admin-* tokens are accepted.
-
-Frontend owner: the actual signup/email/Telegram/login/password-reset flow
-passed local manual tests on 20 October. Do not merge the older proposal over
-the current pages. For admin lists, reconcile result.items (not content), id
-(not userId), and role === "admin" (not isAdmin), plus page/total pagination.
-No frontend source is changed here. Review logout discoverability separately.
-
-Together: run real sign-in through Envoy, both verification steps, Credit
-onboarding, and Order create/accept with the Telegram lookup. Check ordinary
-users cannot call admin operations and public requests cannot reach the private
-lookup. Local service tests do not prove the complete deployed journey.
-
-11. ADMIN USER MANAGEMENT - ADD THREE ROWS (22 OCTOBER 2026)
-------------------------------------------------------------
-All three require Authorization: Bearer <real-admin-session-token>. Admin must
-forward this header on its outbound calls. UUID-only / x-is-admin headers are
-not administrator credentials. Invalid/non-admin callers
-get 404; each mutation rechecks current actor/session state inside its transaction.
-
-Method: GET
-Endpoint: /api/v1/user/search
-Body / Params: ?q=&page= ; admin bearer header
-Purpose: Search account name/email case-insensitively or exact UUID. q max 100
-characters, page 1-100000 (default 1), page size 20. Returns 200
-{ items: [{ id, name, email, role, status }], page, total }. role is admin/user;
-status is Created/Verified/Suspended. Stable ordering, expired deletion records
-excluded, Cache-Control: no-store. Passwords/tokens/private Telegram IDs omitted.
-Malformed query: 400 INVALID_QUERY or INVALID_PAGE.
-
-Method: POST
-Endpoint: /api/v1/user/{userId}/role
-Body / Params: { role: "admin" | "user" } ; UUID path parameter; admin bearer header
-Purpose: Persist promotion/demotion. Returns 200 { userId, role, status, changed }.
-Only active unlocked fully verified targets can be promoted. Self-demotion is
-rejected; last available admin cannot be demoted. Actual changes atomically
-update the role, increment authVersion, revoke sessions/reset links and record
-User audit. Unchanged retries return changed:false. The target logs in again.
-
-Method: POST
-Endpoint: /api/v1/user/{userId}/status
-Body / Params: { status: "suspended" | "verified" } ; UUID path parameter; admin bearer header
-Purpose: Persist suspension/reinstatement. Returns 200
-{ userId, role, status, changed }. The body value "verified" means remove
-suspension, NOT mark verification complete. An unfinished user returns Created;
-timestamps and password lockout are preserved. Actual changes revoke sessions
-and reset links; suspension additionally revokes OTP/Telegram challenges. No
-extra credit event/grant is produced. Last available admin cannot be suspended.
-
-Mutation errors: 400 INVALID_USER_ID / INVALID_ROLE / INVALID_STATUS /
-SELF_DEMOTION_FORBIDDEN; 404 USER_NOT_FOUND or hidden caller denial;
-409 LAST_ADMIN / USER_NOT_ELIGIBLE / USER_PENDING_DELETION.
-
-These use the requested admin-authorized paths, not new unauthenticated internal
-APIs. User stores its transactional audit; Admin still owns its own audit/events
-after 200. This is not a distributed transaction. Admin relay forwarding is
-implemented; frontend items/id/role mapping still needs updating. No shared
-contract file, Admin/frontend source or deployed mesh setting is edited here.
-See the README's Admin integration instructions and deployment acceptance checklist.
-
-12. UPDATE LOGIN'S PURPOSE (F2.3)
-------------------------------------------------------------
-Keep POST /api/v1/user/login and { email, password } unchanged. Use:
-
-F2/F2.2/F2.3. Public. Success returns
-{ token, tokenType, expiresAt, user: { id, name, email, status } }.
-Locks the account after five failed password attempts by default and attempts
-one warning email on the transition into lockout. Counters are serialized under
-a user-row lock; concurrent/repeated attempts cannot each trigger a warning for
-the same lockout. Correct login before the threshold resets failed attempts.
-The warning directs the owner to the frontend forgot-password page. Successful
-password reset unlocks the account and revokes existing sessions. Suspended,
-already-locked and deletion-expired accounts do not trigger repeated warnings.
-Unknown accounts, wrong passwords, active locked accounts and deletion-expired accounts
-return 401 INVALID_CREDENTIALS with the same generic message, including when
-sending fails. With the correct password and before the deletion deadline, a
-suspended account returns 403 ACCOUNT_SUSPENDED even when lockedAt is set:
-suspension is checked before lockout. No session is issued and no lock cleared.
-Appeals still reject locked accounts with generic 401; password reset must clear
-the lock before an appeal can proceed. This is the approved exception to the backlog's
-generic-login-error rule, enabling the separate public suspension appeal route.
-Existing suspension/reinstatement operations remain unchanged.
-
-Delivery note: uses the existing SES/development/disabled provider, not the
-Kafka outbox. A failed warning is not queued for retry; the account stays locked. A crash
-after saving lockout may lose the warning. SDK retries may cause duplicate
-delivery after an ambiguous network response. There is no exactly-once delivery
-guarantee or backfill for accounts locked before deployment. Existing SES and
-FRONTEND_BASE_URL settings apply; no new endpoint/body, migration, dependency or
-AWS permission is introduced. Automated checks use fake SES; actual lockout
-email receipt remains a deployment acceptance check. The shared contract itself
-has not been edited by this guide.
-
-13. FRIENDSHIPS - UPDATE FIVE ROWS AND ADD REQUEST LIST (27 OCTOBER 2026)
-------------------------------------------------------------
-Apply these changes manually to the User Service table in the shared Google
-Docs contract. This guide is not evidence that the external document was edited.
-Update the existing send/accept/reject/list/remove rows, and ADD the new
-GET /api/v1/user/friends/requests row so recipients can discover request IDs.
-
-All six endpoints require Authorization: Bearer <real-user-session-token>.
-The actual session and current account state are checked; x-user-id or other
-identity headers alone are not credentials. Callers must be active, with neither
-deletion requested nor scheduled. Following the contract's auth-only rule,
-completed email/Telegram verification and permittedAction=true are not additional
-requirements. There is no Order participation lookup. All responses use
-Cache-Control: no-store. Friendship user summaries contain only id/name; no
-passwords, email, Telegram details or role are returned.
-
-Method: POST
-Endpoint: /api/v1/user/friends/request
-Body / Params: { targetUserId }; target account UUID; bearer header
-Purpose: Send an invitation. Returns 201
-{ requestId, senderId, recipientId, status: "pending", createdAt }.
-Rejects self-requests. The target must exist, be active and have no pending
-deletion. At most one pending or accepted row may exist per unordered pair,
-including crossed/concurrent sends; conflicts return 409, never auto-accept.
-
-Method: GET
-Endpoint: /api/v1/user/friends/requests
-Body / Params: ?direction=incoming|outgoing&page=1&pageSize=20 ; bearer header
-Purpose: NEW ROW. Discover pending incoming (default) or outgoing invitations.
-Returns 200 { items: [{ requestId, status: "pending", createdAt,
-sender: { id, name }, recipient: { id, name } }], page, pageSize, total }.
-Only pending rows with an available peer are returned; rejected/removed history
-is not exposed by this list.
-
-Method: POST
-Endpoint: /api/v1/user/friends/{requestId}/accept
-Body / Params: requestId UUID in path; no body; bearer header
-Purpose: Recipient only. Returns 200
-{ requestId, status: "accepted", changed }. Pending becomes accepted with
-changed:true; repeating acceptance while still accepted returns changed:false.
-The sender must remain available, including on a retry. A sender or unrelated
-caller receives 404; incompatible state receives 409.
-
-Method: POST
-Endpoint: /api/v1/user/friends/{requestId}/reject
-Body / Params: requestId UUID in path; no body; bearer header
-Purpose: Recipient only. Returns 200
-{ requestId, status: "rejected", changed }. Pending becomes rejected with
-changed:true; repeating rejection while still rejected returns changed:false.
-An available recipient may reject even when the sender is suspended or pending
-deletion. A sender or unrelated caller receives 404; incompatible state is 409.
-
-Method: GET
-Endpoint: /api/v1/user/friends
-Body / Params: ?page=1&pageSize=20 ; bearer header
-Purpose: List accepted friends in either direction. Returns 200
-{ items: [{ id, name }], page, pageSize, total }. Suspended peers and peers with
-deletion requested/scheduled are excluded, as they are from the request list.
-
-Method: DELETE
-Endpoint: /api/v1/user/friends/{friendUserId}
-Body / Params: other user's UUID in path (NOT requestId); no body; bearer header
-Purpose: Changes an accepted relationship to REMOVED. Returns 204 with no body;
-idempotent even if no accepted relationship exists. Does not cancel a pending
-invitation. An available caller may remove an unavailable peer.
-
-Both lists: page defaults to 1 (integer 1-100000); pageSize defaults to 20
-(integer 1-100). Stable order is createdAt descending, then request UUID
-ascending. total counts matching visible rows before pagination.
-
-Errors: 400 INVALID_USER_ID for missing/malformed UUIDs (including requestId),
-SELF_FRIEND_REQUEST for sending to self, INVALID_PAGINATION or INVALID_DIRECTION
-for malformed list queries; 401 UNAUTHORIZED for unusable session/account;
-404 USER_NOT_FOUND for missing/unavailable send target or
-FRIEND_REQUEST_NOT_FOUND for missing request/wrong actor;
-409 FRIENDSHIP_ALREADY_EXISTS for an active unordered relation,
-FRIEND_REQUEST_NOT_PENDING for incompatible accept/reject state, or
-USER_NOT_AVAILABLE when the acceptance sender is unavailable.
-
-Storage: Friendship.id is requestId; status is PENDING/ACCEPTED/REJECTED/REMOVED
-in PostgreSQL and lowercase on the wire. Rejected/removed rows remain history;
-resending creates a fresh UUID, so an old request cannot accept a new invitation.
-Both User foreign keys cascade on physical account deletion. Migration
-20261027000000_friendships adds a not-self CHECK and a custom partial unique
-index on the unordered pair while PENDING/ACCEPTED. These SQL constraints are
-not fully represented by Prisma 5's schema; use the migration workflow rather
-than relying on db push. This guide claims no normal-database migration or
-deployment. Reported validation on 27 October 2026: Prisma Client generation,
-prisma validate, TypeScript build, 74/74 unit tests and
-node --check scripts/friendships.integration.cjs passed.
-test:integration:friendships passed
-against real local PostgreSQL in a disposable user_friendships_it_<random>
-database, which was dropped afterward. It covered all six HTTP endpoints,
-auth denials/spoofing, input bounds, discovery/privacy, bidirectionality and
-idempotency, fresh IDs on re-invitation, concurrent crossed sends/accept-reject,
-direct database self/pair constraints, transactional revoked-session checks,
-pagination and cascades. All five existing isolated regression suites also
-passed after the new migration/code: email, lifecycle, admin-bootstrap,
-admin-users and lockout (six isolated suites total). All temporary test databases
-were cleaned up by their scripts. Only the Compose db service was started; no
-normal database was migrated or normal account mutated, no real messages were
-sent, and the application container and Telegram poller were not started.
-Generic /me/escalate remains unimplemented; live/frontend friendship acceptance,
-load acceptance and the complete cross-service end-to-end flow remain unproven.
-
-14. USER REPORTS AND SUSPENSION APPEALS (30 OCTOBER 2026)
-------------------------------------------------------------
-Add these User Service rows; the shared Google Docs contract itself has not been
-edited. Generic /api/v1/user/me/escalate is not implemented. Created-account
-verification help still needs an agreed API; this feature handles user reports
-and suspension appeals only.
-
-Method: POST
-Endpoint: /api/v1/user/reports
-Body / Params: { reportedUserId, comment }; real user bearer header
-Purpose: Derives reporterUserId from the actual session, never body IDs or
-spoofed identity headers. Reporter must be active with neither deletion requested
-nor scheduled; session/account are rechecked transactionally. reportedUserId must be
-a UUID (400 INVALID_USER_ID), must not be self (400 SELF_REPORT), and must exist
-before its deletion deadline (404 USER_NOT_FOUND otherwise). Suspended targets
-and accounts awaiting a future deletion deadline remain reportable. comment is
-trimmed to 1-4000 characters (400 INVALID_SUPPORT_TEXT). Invalid/unusable reporter
-session/account: 401 UNAUTHORIZED. Submission does not suspend anyone.
-Forwards only { reporterUserId, reportedUserId, comment } to private Admin
-POST /api/v1/admin/reports. Returns 201 with a validated, identity-matched,
-allowlisted Admin record, preserving its camelCase fields:
-{ id, reporterUserId, reportedUserId, comment, status, createdAt,
-closedAt, closedByAdminId }.
-status: open | dismissed | actioned. closedAt/closedByAdminId are required but may be null.
-
-Method: POST
-Endpoint: /api/v1/user/appeals
-Body / Params: { email, password, message }; PUBLIC, no bearer session needed
-Purpose: Normalizes email and trims/verifies the password as login does.
-message is trimmed to 1-4000 characters (400 INVALID_SUPPORT_TEXT). With valid
-input, unknown account, wrong password, locked account or passed deletion
-deadline returns generic 401 INVALID_CREDENTIALS. Correct credentials for an
-active account return 409 ACCOUNT_NOT_SUSPENDED. The account/password state is
-rechecked under an account lock before forwarding. A suspended account with
-valid credentials forwards only { userId, message } to private Admin
-POST /api/v1/admin/appeals; no password or bearer token is forwarded by either
-intake call. No session is created, no deletion cancelled, and no reinstatement
-performed. Returns 201 with the validated, identity-matched, allowlisted record:
-{ id, userId, message, status, createdAt, closedAt, closedByAdminId }.
-status: open | rejected | reinstated. closedAt/closedByAdminId are required but may be null.
-
-Both responses are strictly validated against camelCase fields and matched to
-the submitted user UUIDs; only allowlisted fields are returned. There is no
-legacy snake_case fallback. Request payloads are unchanged.
-Both routes set Cache-Control: no-store. Admin owns persistence and review.
-Admin keeps one OPEN appeal per user and one OPEN report per ordered
-reporter/target pair; a retry returns the original record and original text.
-This is not a lifetime submission limit; closure allows a later submission.
-User holds no account locks during the HTTP call. There are no new User tables
-or migrations for reports/appeals; the friendship migration still needs normal
-deployment. Existing suspend/reinstate operations are unchanged.
-
-Public appeal throttling: best-effort process-local AppealAttemptLimiter uses
-normalized email hashes, including unknown emails, with 10 attempts per
-15 minutes and at most 10,000 entries. Attempt/capacity exhaustion returns
-429 TOO_MANY_APPEAL_ATTEMPTS. Expired entries are reclaimed; it resets on restart
-and is not distributed across replicas. Ingress rate limiting is still needed.
-
-ADMIN_SERVICE_BASE_URL defaults to empty: eligible submissions return
-503 ADMIN_NOT_CONFIGURED, while other account APIs remain usable. A configured
-value must be an HTTP(S) origin without credentials, non-root path, query or
-fragment. .env.example uses http://localhost:8084 and User local Compose defaults
-to http://host.docker.internal:8084. No real .env was edited. The request timeout
-ADMIN_REQUEST_TIMEOUT_MS defaults to 5000 and is capped at 30000 ms. The client
-rejects redirects, bounds responses to 32 KiB and performs no automatic retry.
-Network/timeout errors or Admin 429/5xx: 503 ADMIN_UNAVAILABLE.
-Invalid/oversized/malformed response: 502 ADMIN_INVALID_RESPONSE.
-Other rejected upstream status: 502 ADMIN_REQUEST_REJECTED.
-Upstream 409: 409 ADMIN_CONFLICT.
-Errors are sanitized, without logging raw upstream errors or payloads. A failed
-response can follow persistence; a manual retry uses open-record deduplication.
-
-HANDOFF ONLY - USER SERVICE PR; NO INFRASTRUCTURE/ADMIN/FRONTEND EDITS
-Gateway owner: add exact public POST /api/v1/user/appeals without bearer
-preauthorization, retain bearer protection for POST /api/v1/user/reports, and
-add ingress rate limiting for appeal credential attempts.
-Infrastructure owner: set ADMIN_SERVICE_BASE_URL=http://admin:8084 and allow
-private User-to-Admin access only to the two intake POST routes. Current Admin
-mesh callers allow gateway/order and deny User; this requires a policy update.
-Gateway/mesh owners: block external POST /api/v1/admin/reports and
-POST /api/v1/admin/appeals, including trailing-slash requests that FastAPI can
-redirect to intake. Keep authenticated Admin GET queues/detail and review routes
-accessible. Admin intake currently has no application authentication and trusts
-User; direct public intake must not bypass User's checks.
-Frontend owner: add appeal/report forms and login 403 ACCOUNT_SUSPENDED handling;
-friendship UI is separate owner work. No such source changes are made here.
-
-Shared request errors: malformed JSON returns 400 INVALID_JSON; a request body
-over the 32 KiB parser limit returns 413 REQUEST_TOO_LARGE. The global handler
-sets Cache-Control: no-store and never logs raw parser/database errors; an
-unexpected 500 INTERNAL_ERROR logs only a constant message, not credentials/body.
-
-Historical checks before the camelCase response fix, reported on 30 October 2026, passed: TypeScript build, Prisma generation/validation, 83/83 unit tests, all seven isolated integration suites (email, lifecycle, admin-bootstrap, admin-users, lockout, friendships and account-support), strict new-unit-test type checking and integration-script syntax checks. All temporary databases were cleaned up. Support integration used real User HTTP/PostgreSQL with an HTTP Admin stub, not the actual Admin application or database. The Node 20 production Docker build and network-isolated smoke test passed (Node 20.20.2, non-root, 256 MiB, no `.env`, health/OpenAPI checks; no database or real Admin exercised). The 183-package install audit and Docker `npm ci` reported zero vulnerabilities. No normal database was migrated, no real email/bot messages were sent and no cloud deployment occurred. Actual Admin, cloud/frontend, gateway/mesh, load and full cross-service acceptance remain unproven; infrastructure changes are handoff only.
-
-15. ADD UserDeleted EVENT CATALOG ROW (PROPOSED SHARED CONTRACT)
-------------------------------------------------------------
-Manual proposal for the shared Google Doc, to agree with the Credit owner.
-This repository update has not edited that Doc. No HTTP routes, request bodies
-or responses change; the existing UserVerified envelope remains unchanged.
-
-Event: UserDeleted
-Topic: same configured user-status topic, default foc.user.status
-Direction: User publishes; Credit deletion consumption requires owner work
-When: Cleanup commits final physical User removal, not the deletion request,
-the deadline alone, or login cancellation
-Envelope: { eventId, type: "UserDeleted", occurredAt, data: { userId } }
-Partition key: userId UUID
-Data: userId only; no email, name, Telegram details or other profile PII.
-UUIDs remain sensitive identifiers and are not anonymous data.
-
-Implemented producer/storage:
-- UserDeletedOutbox is the ninth User schema model. id is a UUID primary
-  key and eventId; userId is a required unique UUID with no User foreign key,
-  so the row survives account deletion. createdAt is the deletion event time
-  supplied from cleanup's now (including a test-injected value); it becomes
-  occurredAt. publishedAt is nullable and starts pending.
-- The same database transaction queues the outbox row, writes the deletion
-  audit and deletes User. Any failure rolls back all three. Scheduling deletion
-  and cancelling through login queue no UserDeleted event. Existing
-  UserVerifiedOutbox rows still cascade on physical User deletion.
-- With Kafka configured, dispatch retries pending rows every five seconds;
-  disabled/unavailable Kafka leaves them pending. Save publishedAt only after
-  acknowledgement. Preserve eventId, userId and occurredAt across retries.
-  An acknowledged send followed by a crash or failed marker write may repeat
-  delivery. Consumers must deduplicate by eventId. Delivery is at least once
-  and eventual when Kafka/dispatch recover, not synchronous consumer completion.
-- The shared UUID key does not guarantee ordering against already in-flight
-  UserVerified sends across replicas; deletion cannot retract such a send.
-
-Credit owner handoff:
-- The checked-in consumer currently ignores every type except UserVerified;
-  UserDeleted consumption is not integrated or verified. Agree the new contract
-  before relying on downstream deletion handling.
-- Implement idempotent UserDeleted handling and retain a durable deletion
-  tombstone keyed by user UUID. Ignore late UserVerified for tombstoned users
-  to prevent account resurrection or another starting-credit grant.
-- Agree balance handling and transaction-history retention rules with the
-  team. User does not decide those rules or delete Credit-owned records.
-- Verify duplicate/replayed deletion and verification-after-deletion behavior
-  in the integration environment. A Kafka acknowledgement proves neither
-  consumer processing nor correct balance/history handling.
-
-Migration: 20261102000000_user_deleted_outbox must run before the updated
-service. Normal local and cloud databases have not been migrated.
-
-Checks on 2 November 2026 passed: Prisma generation/validation, build, 90 unit
-tests, focused event-test type checking, lifecycle-script syntax and isolated
-lifecycle integration (real User HTTP/PostgreSQL, fake Kafka publisher).
-The migration applied only to the temporary test database, then removed.
-The separate onboarding suite stopped at preflight because the full app
-container was not running; no onboarding assertions ran. See README's deletion
-section for coverage. Live Kafka/Credit and cloud acceptance remain unverified.
-No Credit, infrastructure, frontend or Admin files were changed.
+FRIENDS ON CAMPUS - USER SERVICE API CONTRACT
+
+Current User Service reference for synchronising the shared team contract.
+This file does not update the external Google Doc. Swagger/OpenAPI is the
+executable HTTP reference: /api-docs and /api-docs.json.
+
+CONVENTIONS
+Base path: /api/v1/user (all User paths below are relative to this).
+Bodies and responses are JSON. Errors: { error, code }. UUIDs identify users
+and requests; timestamps are ISO 8601. Maximum JSON request size is 32 KiB.
+Malformed JSON: 400 INVALID_JSON; oversized body: 413 REQUEST_TOO_LARGE.
+Auth means Authorization: Bearer <opaque-session-token>, not a JWT.
+Status: Suspended if accessStatus=SUSPENDED; otherwise Verified when both
+email/Telegram timestamps are set, or Created when either is missing.
+Role is independent: admin/user in API responses, ADMIN/USER in storage.
+
+PUBLIC ACCOUNT ENDPOINTS
+Method | Path | Body / Params | Success / purpose
+POST | /signup | { name, email, password, telegramHandle } | 201 { userId, email, status, nextSteps }
+POST | /verify-email | { email, otp } | 200 { status, nextSteps }
+POST | /resend-verification | { email } | 202 { message }
+POST | /login | { email, password } | 200 { token, tokenType, expiresAt, user: { id, name, email, status } }
+POST | /forgot-password | { email } | 202 { message }
+POST | /reset-password | { token, newPassword } | 200 { message }
+POST | /appeals | { email, password, message } | 201 AppealRecord; no session
+
+Signup requires a trimmed display name of 2-100 characters, a configured NUS
+email domain (u.nus.edu or nus.edu.sg by default), a valid Telegram handle and
+a password of at least 10 characters with uppercase, lowercase and a digit.
+Telegram handles are 5-32 letters/digits/underscores, starting with a letter;
+handles are normalised to lowercase without a leading @. Status starts as Created. OTPs are
+six-digit strings; both email and Telegram verification are required for Verified.
+Duplicate email/handle: 409. Invalid fields/domain/password/OTP: 400.
+
+Signup email failure can return 503 EMAIL_DELIVERY_FAILED or EMAIL_NOT_CONFIGURED
+after the unverified account is saved. Recover with resend-verification.
+Resend/forgot-password return generic 202 for supplied emails even on delivery
+failure; they do not reveal whether an account exists.
+Reset links expire after 30 minutes by default, replace older links and are
+single-use. Successful reset unlocks login and revokes existing sessions.
+
+LOGIN
+Unknown user, wrong password, active-account lockout or expired deletion:
+401 INVALID_CREDENTIALS, error="Wrong password or user not found".
+Five failed passwords lock the account by default and attempt one warning
+email on the lockout transition. Email is not durably queued.
+Correct password on a suspended account before its deletion deadline:
+403 ACCOUNT_SUSPENDED without a session, including when also locked.
+User privately asks Admin for the latest appeal after that password check.
+For a rejected appeal with a valid reason, error is:
+"Your appeal was rejected. Reason: <reason>. You may submit another appeal."
+Otherwise, including a failed lookup, keep:
+"Your account is suspended. You may submit an appeal".
+Wrong-password requests never perform the Admin lookup.
+
+AUTHENTICATED ACCOUNT ENDPOINTS
+Method | Path | Body / Params | Success / purpose
+GET | /me | header only | 200 { id, name, email, telegramHandle, status, isAdmin }
+GET | /me/status | header only | 200 { status, nextSteps }
+PATCH | /me/password | { newPassword } | 200 { message }; keeps current session, revokes others
+POST | /request-telegram-verification | header only | 202 { telegramBotUrl, expiresAt }
+POST | /verify-telegram | { otp } | 200 { status, nextSteps }
+DELETE | /me | { confirm: true } | 202 { message, scheduledDeletionAt }
+POST | /reports | { reportedUserId, comment } | 201 ReportRecord
+
+nextSteps uses VERIFY_EMAIL, VERIFY_TELEGRAM, CONTACT_ADMIN and
+CANCEL_PENDING_DELETION as applicable. Created accounts can log in for onboarding.
+Telegram request cooldown defaults to 60 seconds (429); missing real bot in a
+non-development environment returns 503. Already-verified request replies use
+null link/expiry. Telegram account already linked elsewhere: 409.
+
+Deletion sets a six-calendar-month deadline and revokes sessions, reset links
+and verification challenges. Successful login before the deadline cancels it;
+old sessions stay revoked. Past the deadline, login/authorization fail even
+before cleanup runs. Cleanup queues UserDeleted and removes the account in one
+transaction. Scheduling/cancelling deletion queues no deletion event.
+Missing confirmation: 400 CONFIRMATION_REQUIRED. Last active admin: 409 LAST_ADMIN.
+
+FRIENDSHIPS (AUTHENTICATED)
+Method | Path | Body / Params | Success
+POST | /friends/request | { targetUserId } | 201 { requestId, senderId, recipientId, status: pending, createdAt }
+GET | /friends/requests | ?direction=incoming&page=1&pageSize=20 | 200 { items: [PendingRequest], page, pageSize, total }
+POST | /friends/{requestId}/accept | header only | 200 { requestId, status: accepted, changed }
+POST | /friends/{requestId}/reject | header only | 200 { requestId, status: rejected, changed }
+GET | /friends | ?q=&page=1&pageSize=20 | 200 { items: [{ id, name }], page, pageSize, total }
+DELETE | /friends/{friendUserId} | header only | 204; no response body
+
+PendingRequest: { requestId, status: pending, createdAt,
+                  sender: { id, name }, recipient: { id, name } }.
+direction is incoming (default) or outgoing. page is 1-100000 (default 1),
+pageSize is 1-100 (default 20). Ordering: createdAt descending, request ID ascending.
+q on /friends is one string, at most 100 JavaScript UTF-16 code units before
+trimming. Missing/blank means all; otherwise match a case-insensitive literal
+substring of the friend's name. %, _ and backslash are literal characters.
+Invalid/repeated/nested/oversized q or invalid paging: 400 INVALID_PAGINATION.
+total counts filtered visible rows before pagination. q does not filter requests.
+
+Caller must be active with no pending deletion; completed verification is not
+an extra requirement. User Service does not check shared-order history.
+Only the recipient accepts/rejects; unrelated callers receive 404.
+Accepted friendships are mutual. Same-action retries return changed=false;
+incompatible state or an existing pending/accepted pair returns 409.
+Reject/remove retains history; a later invitation gets a new request UUID.
+Removal is idempotent and does not cancel a pending invitation.
+Suspended/deleting peers are hidden and cannot receive requests. Acceptance
+also requires an available sender; rejecting/removing an existing relationship
+with an unavailable peer remains possible. Summaries expose only id/name.
+Invalid/self target: 400; missing/unavailable target: 404; invalid session: 401.
+
+ADMIN-AUTHENTICATED USER ENDPOINTS
+Admin Service must forward the real eligible administrator's bearer session.
+Caller-supplied identity headers alone do not authenticate an admin.
+Missing/ineligible admin sessions return hidden 404.
+
+Method | Path | Body / Params | Success / purpose
+GET | /search | ?q=&page=1&status=Suspended (status optional) | 200 { items: [{ id, name, email, role, status }], page, total }
+POST | /{userId}/role | { role: admin|user } | 200 { userId, role, status, changed }
+POST | /{userId}/status | { status: suspended|verified } | 200 { userId, role, status, changed }
+POST | /{userId}/appeal-rejected | { reason } | 200 { message: "Appeal rejection notification sent" }
+POST | /admin/users/{userId}/verify | { reason } | 200 { userId, status, nextSteps, changed }; non-production only
+
+Search: q max 100 characters, matching name/email case-insensitively or exact
+UUID. page 1-100000, fixed page size 20; newest-first, then UUID ascending.
+Optional status accepts exactly Created, Verified or Suspended. OMIT it for all
+statuses; blank/unknown/repeated/nested status returns 400 INVALID_STATUS.
+total is the filtered count. Expired-deletion accounts are excluded.
+Invalid q/page: 400 INVALID_QUERY/INVALID_PAGE. Responses are no-store.
+
+Role/status changes persist with a User audit and revoke sessions/reset links;
+suspension also revokes verification challenges. Retries return changed=false.
+Promotion requires a verified, active, unlocked target. Self-demotion is rejected.
+Last-admin protection is transactional. Pending-deletion targets are rejected.
+status=verified means REINSTATE: it does not manufacture verification or clear
+login lockout. An incompletely verified target therefore returns Created.
+Mutation errors: 400 INVALID_USER_ID/INVALID_ROLE/INVALID_STATUS/
+SELF_DEMOTION_FORBIDDEN; 404 USER_NOT_FOUND; 409 LAST_ADMIN/USER_NOT_ELIGIBLE/
+USER_PENDING_DELETION.
+
+Appeal-rejected: reason is a string trimmed to 1-4000 characters; otherwise
+400 INVALID_REASON. Bad UUID: 400 INVALID_USER_ID; missing/deletion-expired
+target: 404 USER_NOT_FOUND. Email uses the stored address and includes the
+reason plus permission to appeal again. Sending occurs outside database locks.
+Email failure: 503 EMAIL_DELIVERY_FAILED or EMAIL_NOT_CONFIGURED. Admin keeps
+its already-stored rejection. No User/session state changes; retries can repeat
+email, and a 200 is not proof of inbox delivery.
+
+Test verification: requires ENABLE_TEST_VERIFICATION=true, an allowed
+non-production APP_ENV, a verified admin bearer and a 3-500 character reason.
+It sets missing verification timestamps, audits the change and queues
+UserVerified once. It does not grant roles, unlock, reinstate or fabricate a
+Telegram ID. Disabled/unauthorised: 404; invalid input: 400; ineligible target: 409.
+
+REPORTS AND APPEALS (ADMIN OWNS STORAGE)
+/reports derives reporterUserId from the session, never from the body. Reject
+self-report (400 SELF_REPORT), unavailable reporter (401), missing/expired
+target (404), and blank/oversized comment (400 INVALID_SUPPORT_TEXT).
+/appeals checks email/password itself, requires suspension and never issues
+a session. Wrong/unknown/locked/deletion-expired: generic 401. Correct active
+account: 409 ACCOUNT_NOT_SUSPENDED. message/comment trim to 1-4000 characters.
+The per-process appeal limiter allows 10 attempts per normalised email hash
+per 15 minutes; excess/capacity returns 429. Distributed throttling is separate.
+
+ReportRecord: { id, reporterUserId, reportedUserId, comment, status,
+                createdAt, closedAt, closedByAdminId }
+  status: open | dismissed | actioned
+AppealRecord: { id, userId, message, status, rejectionReason,
+                createdAt, closedAt, closedByAdminId }
+  status: open | rejected | reinstated
+closedAt/closedByAdminId are required but nullable. rejectionReason is required
+and nullable; null while open. Responses use camelCase and match submitted UUIDs.
+Admin keeps one OPEN appeal per user and one OPEN report per reporter/target
+pair. Repeating an open submission returns the stored record and original text;
+closure permits a later submission. Reporting does not suspend automatically.
+
+Private Admin calls via ADMIN_SERVICE_BASE_URL:
+POST /api/v1/admin/internal/reports { reporterUserId, reportedUserId, comment }
+POST /api/v1/admin/internal/appeals { userId, message }
+GET  /api/v1/admin/appeals/latest?userId=<UUID> -> 200 AppealRecord or null
+No user passwords or bearer credentials are forwarded. The latest lookup is
+used only after correct suspended login credentials. These Admin-owned routes
+have no application authentication and must be restricted by gateway/mesh.
+Repository policies block public intake/latest and allow User on those paths.
+
+Admin origin must be HTTP(S) without embedded credentials, query or a path.
+Default request timeout: 5000 ms (max 30000); responses max 32 KiB; no redirects
+or automatic retries. Intake: unconfigured -> 503 ADMIN_NOT_CONFIGURED;
+network/timeout/429/5xx -> 503 ADMIN_UNAVAILABLE; malformed -> 502
+ADMIN_INVALID_RESPONSE; unexpected status -> 502 ADMIN_REQUEST_REJECTED;
+upstream conflict -> 409 ADMIN_CONFLICT. Latest lookup failures keep the default
+suspended-login message. No raw upstream errors are exposed.
+
+INTERNAL USER ENDPOINTS
+Any method /internal/authorize | bearer header | 200 { authenticated, userId, isAdmin, permittedAction }
+GET /internal/users/{userId}/telegram | userId path parameter | 200 { userId, telegramHandle }
+
+Authorization also returns x-user-id, x-is-admin, x-permitted-action headers and
+Cache-Control: no-store. Invalid/revoked/expired/suspended/deletion-expired
+sessions return 401. permittedAction requires an active, fully verified account.
+The gateway strips spoofed client identity headers before injecting its result.
+Legacy /authorize is a temporary private alias, omitted from Swagger.
+
+Telegram lookup has no application token check: Linkerd allows Order only;
+public gateway/nginx must block it. Invalid UUID: 400 INVALID_USER_ID;
+missing/suspended/deletion-expired user: 404; unverified: 409 USER_NOT_VERIFIED.
+Handle has no leading @. Order enforces its caller's order participation.
+
+GET /health is public and outside the User base path:
+200 { service: "user-service", status: "ok" }.
+
+ACCOUNT EVENTS
+Topic: KAFKA_USER_STATUS_TOPIC, default foc.user.status. Key: userId.
+UserVerified: { eventId, type: "UserVerified", occurredAt, data: { userId, email } }
+UserDeleted:  { eventId, type: "UserDeleted", occurredAt, data: { userId } }
+
+UserVerified queues when both verification steps complete. UserDeleted queues
+only with final physical account removal. Event IDs/times persist across retries.
+With Kafka configured, workers retry pending rows every five seconds and mark
+published only after acknowledgement. Disabled/unavailable Kafka leaves rows
+pending. Delivery may repeat; consumers must deduplicate by eventId.
+Deletion outbox rows survive account removal. Already-in-flight verification
+can arrive late across replicas; deletion consumers should retain a deleted-user
+marker to prevent recreation/regranting credits. Credit currently handles only
+UserVerified; deletion consumption and balance/history retention need agreement.
+
+NO HTTP BOOTSTRAP / UNIMPLEMENTED SCOPE
+First-admin bootstrap is a privileged command; see README. No public bootstrap
+or inverse verification override exists. Generic /me/escalate and account-status
+help beyond suspension appeals still need an agreed API.

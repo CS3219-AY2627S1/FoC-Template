@@ -6,6 +6,7 @@ export interface EmailSender {
   sendVerificationOtp(email: string, otp: string, expiresInMinutes: number): Promise<void>;
   sendPasswordResetLink(email: string, link: string, expiresInMinutes: number): Promise<void>;
   sendAccountLocked(email: string, recoveryUrl: string): Promise<void>;
+  sendAppealRejected(email: string, reason: string): Promise<void>;
 }
 
 export interface SesEmailClient {
@@ -28,6 +29,11 @@ export class SesEmailSender implements EmailSender {
   async sendAccountLocked(email: string, recoveryUrl: string): Promise<void> {
     await this.send(email, "Friends on Campus - Account locked",
       `Your Friends on Campus account has been locked after repeated failed login attempts.\n\nReset your password to unlock it: ${recoveryUrl}\n\nIf these attempts were not yours, do not share any verification codes or reset links.`, "account-lockout");
+  }
+
+  async sendAppealRejected(email: string, reason: string): Promise<void> {
+    await this.send(email, "Friends on Campus - Suspension appeal rejected",
+      `Your Friends on Campus suspension appeal was rejected.\n\nReason: ${reason}\n\nYour account remains suspended. You may submit another appeal.`, "appeal-rejection");
   }
 
   private async send(email: string, subject: string, text: string, kind: string): Promise<void> {
@@ -57,6 +63,7 @@ class DisabledEmailSender implements EmailSender {
   async sendVerificationOtp(): Promise<void> { this.unavailable(); }
   async sendPasswordResetLink(): Promise<void> { this.unavailable(); }
   async sendAccountLocked(): Promise<void> { this.unavailable(); }
+  async sendAppealRejected(): Promise<void> { this.unavailable(); }
   private unavailable(): never {
     throw new AppError(503, "EMAIL_NOT_CONFIGURED", "Email delivery is not configured.");
   }
@@ -75,6 +82,9 @@ export function createEmailSender(settings: EmailConfiguration): EmailSender {
 }
 
 export class DevelopmentEmailSender implements EmailSender {
+  async sendAppealRejected(email: string, reason: string): Promise<void> {
+    console.log(`[development email] Appeal rejected for ${JSON.stringify(email)}: ${JSON.stringify(reason)}. You may submit another appeal.`);
+  }
   async sendAccountLocked(): Promise<void> {
     console.log("[development email] Account-lockout notification requested");
   }

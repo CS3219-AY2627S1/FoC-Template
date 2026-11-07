@@ -15,6 +15,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Alert } from '../components/ui/Alert';
+import { CreditCell } from '../components/order/CreditCell';
+import { useFriendNames } from '../lib/friends';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { errorMessage } from '../lib/api';
 import { formatWhen } from '../lib/format';
@@ -86,6 +88,8 @@ export function MyDeliveriesPage() {
   }, []);
 
   const rows = tab === 'active' ? active : history;
+  // Orders carry ids and Telegram handles only; a name is known once they are a friend.
+  const friendName = useFriendNames();
 
   return (
     <div className={styles.page}>
@@ -167,15 +171,11 @@ export function MyDeliveriesPage() {
 
               <div className={styles.courier} role="cell">
                 <span className={styles.cellLabel}>Requester</span>
-                {/* TODO(order-service): the requester's name - orders carry ids
-                    and Telegram handles only. */}
-                {row.requesterTelegramHandle !== null ? `@${row.requesterTelegramHandle}` : '—'}
+                {friendName(row.requesterId) ??
+                  (row.requesterTelegramHandle !== null ? `@${row.requesterTelegramHandle}` : '—')}
               </div>
 
-              <div className={styles.reward} role="cell">
-                <span className={styles.cellLabel}>Earn</span>
-                {row.credits}
-              </div>
+              <CreditCell order={row} viewer="courier" label="Earn" />
             </Link>
           ))}
         </div>

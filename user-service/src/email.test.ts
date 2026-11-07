@@ -40,7 +40,8 @@ describe("email configuration", () => {
     const disabled = createEmailSender({ provider: "disabled" });
     for (const call of [() => disabled.sendVerificationOtp("recipient@example.com", "123456", 10),
       () => disabled.sendPasswordResetLink("recipient@example.com", "https://example.com/reset-password?token=secret", 30),
-      () => disabled.sendAccountLocked("recipient@example.com", "https://example.com/forgot-password")]) {
+      () => disabled.sendAccountLocked("recipient@example.com", "https://example.com/forgot-password"),
+      () => disabled.sendAppealRejected("recipient@example.com", "Rejected reason")]) {
       await assert.rejects(call, (error: unknown) => error instanceof AppError && error.status === 503 && error.code === "EMAIL_NOT_CONFIGURED");
     }
   });
@@ -109,5 +110,23 @@ describe("SES email delivery without real emails", () => {
       assert.equal(JSON.parse(requestBody).FromEmailAddress, "sender@gmail.com");
       assert.match(requestBody, /654321/);
     } finally { client.destroy(); }
+  });
+  it("includes the rejection reason and another-appeal guidance without logging them in SES mode", async (context) => {
+    const logs: unknown[][] = [];
+    const commands: SendEmailCommand[] = [];
+    context.mock.method(console, "log", (...args: unknown[]) => { logs.push(args); });
+    const reason = "The supplied explanation did not resolve the issue.";
+    const sender = new SesEmailSender("sender@example.com", { send: async (command) => { commands.push(command); } });
+    await sender.sendAppealRejected("recipient@example.com", reason);
+    assert.deepEqual(commands[0].input.Destination?.ToAddresses, ["recipient@example.com"]);
+    assert.match(commands[0].input.Content!.Simple!.Body!.Text!.Data!, /did not resolve the issue/);
+    assert.match(commands[0].input.Content!.Simple!.Body!.Text!.Data!, /may submit another appeal/);
+    assert.ok(!JSON.stringify(logs).includes(reason));
+    const failure = new SesEmailSender("sender@example.com", { send: async () => { throw new Error("private"); } });
+    context.mock.method(console, "error", () => undefined);
+    await assert.rejects(failure.sendAppealRejected("recipient@example.com", reason), (e: unknown) => e instanceof AppError && e.code === "EMAIL_DELIVERY_FAILED");
+    await new DevelopmentEmailSender().sendAppealRejected("recipient@example.com", reason);
+    assert.ok(JSON.stringify(logs).includes(reason));
+    assert.match(JSON.stringify(logs), /may submit another appeal/);
   });
 });

@@ -18,6 +18,10 @@ from app.services.moderation import CloseOutcome, create_appeal, create_report, 
 
 reports = APIRouter(prefix="/api/v1/admin/reports", tags=["admin-reports"])
 appeals = APIRouter(prefix="/api/v1/admin/appeals", tags=["admin-appeals"])
+# User Service's report and appeal intake. Under /internal so the gateway never
+# forwards it and the mesh lets only User call it (ADR-0012).
+internal_reports = APIRouter(prefix="/api/v1/admin/internal/reports", tags=["admin-intake"])
+internal_appeals = APIRouter(prefix="/api/v1/admin/internal/appeals", tags=["admin-intake"])
 
 
 def _parse(enum_cls, value: str | None):
@@ -38,10 +42,11 @@ def _closed(outcome: CloseOutcome, current, noun: str):
     )
 
 
-@reports.post("", response_model=ReportDetail, status_code=201)
+@internal_reports.post("", response_model=ReportDetail, status_code=201)
 async def open_report(body: CreateReportRequest, db: AsyncSession = Depends(get_db)):
     """
-    No auth. User Service calls this the way Order calls conflict intake.
+    No admin session: only User Service may call this (mesh policy), the way
+    Order calls conflict intake.
     Idempotent while the pair has an open report: a retry returns that row.
     """
     return await create_report(db, body.reporterUserId, body.reportedUserId, body.comment)
@@ -75,10 +80,11 @@ async def dismiss(report_id: uuid.UUID, admin: CurrentAdmin = AdminDep, db: Asyn
     return row
 
 
-@appeals.post("", response_model=AppealDetail, status_code=201)
+@internal_appeals.post("", response_model=AppealDetail, status_code=201)
 async def open_appeal(body: CreateAppealRequest, db: AsyncSession = Depends(get_db)):
     """
-    No auth. User Service calls this after it has checked the password and
+    No admin session: only User Service may call this (mesh policy), after it
+    has checked the password and
     confirmed the account is suspended. It does not reinstate the user.
     Idempotent while that user has an open appeal.
     """

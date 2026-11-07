@@ -17,7 +17,7 @@ Downstream calls, as a share of that traffic:
 | Supplier | Order validates **pickup only** (`fromLocation`) on create. Search re-checks that pickup id. |
 | Order DB | Dropoff is Order-owned: create sends `deliveryPointId` (seeded campus catalogue from Flyway `V6`). |
 | Credit | Order reserves 1 credit on create. Acknowledge publishes `credit.reservation.release`. The credit consumer has to be running for that second call to land. |
-| Admin | Escalate calls `POST /api/v1/admin/conflicts`. About 1 in 20 closes. |
+| Admin | Escalate calls `POST /api/v1/admin/internal/conflicts`. About 1 in 20 closes. |
 | Rating | Order reads `GET /api/v1/rating/{userId}` on create and accept. Deliver and acknowledge publish `rating.permission.granted` on `foc.rating.commands` for Rating Service to grant the modal. |
 | MinIO / S3 | Collect and deliver store the PNG. |
 
@@ -96,3 +96,11 @@ Use the same `VUS` and `REQUESTER_SHARE` for seed and k6. Re-running the seed re
 | `ESCALATE_EVERY` | `20` | k6 |
 | `PICKUP_ID` | `2` | k6 — Supplier approved place id (`fromLocation`) |
 | `DROPOFF_ID` | `1` | k6 — Order `delivery_point.id` (`deliveryPointId`) |
+
+## Metrics tags (Prometheus / Grafana)
+
+Order ids appear in real request paths (`/orders/{id}/accept`, …). For streamed
+metrics, `load.js` sets a stable `tags.name` per endpoint (`accept`, `collect`,
+`get_order`, …) and omits the built-in `url` system tag so those UUIDs do not
+create one time series per order. Thresholds still filter on custom `op`
+(`create` / `read` / `fulfill` / `close`).

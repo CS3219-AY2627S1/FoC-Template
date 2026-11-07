@@ -237,6 +237,121 @@
   color: var(--color-text-subtle);
 }
 
+.badges {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.badge {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.badge:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.medallion {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-pill);
+}
+
+/* Same hues as the order timeline: courier steps warm, requester cool. */
+.badgeCourier {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.badgeRequester {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+}
+
+.badgeAny {
+  background: var(--color-danger-bg);
+  color: var(--color-accent);
+}
+
+.badgeLocked {
+  background: var(--color-disabled-bg);
+  color: var(--color-disabled-text);
+}
+
+.medallionLock {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.badgeText {
+  flex: 1;
+  min-width: 0;
+}
+
+.badgeEarned {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-success);
+}
+
+.badgeProgress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.progressBar {
+  flex: 1;
+  height: 6px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--color-disabled-bg);
+  overflow: hidden;
+  appearance: none;
+}
+
+.progressBar::-webkit-progress-bar {
+  background: var(--color-disabled-bg);
+}
+
+.progressBar::-webkit-progress-value {
+  background: var(--color-accent);
+  border-radius: var(--radius-pill);
+}
+
+.progressBar::-moz-progress-bar {
+  background: var(--color-accent);
+  border-radius: var(--radius-pill);
+}
+
+.progressCount {
+  flex: none;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* FR12.3.2: one stacked column below the breakpoint. */
 @media (max-width: 767px) {
   .page {

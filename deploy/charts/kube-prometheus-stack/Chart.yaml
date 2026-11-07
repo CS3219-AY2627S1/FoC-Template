@@ -1,0 +1,12 @@
+apiVersion: v2
+name: kube-prometheus-stack
+description: >-
+  Wrapper around the official kube-prometheus-stack chart (vendored under
+  charts/): Prometheus, Grafana, kube-state-metrics, node-exporter. Cloud
+  clusters only, namespace monitoring.
+type: application
+version: 0.1.0
+dependencies:
+  - name: kube-prometheus-stack
+    version: 92.20.0
+    repository: oci://ghcr.io/prometheus-community/charts

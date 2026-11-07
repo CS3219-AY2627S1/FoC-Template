@@ -38,6 +38,11 @@
   color: var(--color-info);
 }
 
+.lime {
+  background: var(--color-lime-bg);
+  color: var(--color-lime);
+}
+
 .neutral {
   background: var(--color-disabled-bg);
   color: var(--color-text-muted);
