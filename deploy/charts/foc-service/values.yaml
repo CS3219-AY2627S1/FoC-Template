@@ -86,7 +86,8 @@ secretStore:
 mesh:
   enabled: true
   # Callers allowed on every path not matched under `internal`: "gateway" (the
-  # Envoy Gateway proxies, charts/foc-gateway) or another service's name.
+  # Envoy Gateway proxies, charts/foc-gateway), another service's name, or
+  # <namespace>/<serviceaccount> for a caller outside this namespace.
   callers: [gateway]
   # Path prefixes with their own, narrower caller list, e.g.
   #   - { path: /api/v1/credit/internal, callers: [order] }

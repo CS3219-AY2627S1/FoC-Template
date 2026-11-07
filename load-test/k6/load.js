@@ -9,7 +9,7 @@
 // Metrics cardinality (Prometheus / Grafana Cloud):
 // Paths like /orders/${id}/accept would otherwise make one series per order via the
 // default `url` (and default `name`=URL) tags. Fix: set tags.name to a stable endpoint
-// id, and omit `url` from systemTags (name alone does not clear the url label).
+// id (k6 then also sets `url` to it); `url` is left out of systemTags as well.
 
 import encoding from "k6/encoding";
 import http from "k6/http";

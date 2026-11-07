@@ -66,6 +66,12 @@ variable "burst_node_max" {
   default     = 5
 }
 
+variable "loadgen_instance_types" {
+  description = "Spot pools for the loadgen node group (eks.tf), all arm64 with 8 vCPU / 32 GiB."
+  type        = list(string)
+  default     = ["m7g.2xlarge", "m6g.2xlarge"]
+}
+
 variable "databases" {
   description = "Services that get their own Postgres database and login (ADR-0010). Same as infra/local/aws."
   type        = list(string)

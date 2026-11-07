@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: load-test-scripts
+data:
+  load.js: |-
+{{ .Files.Get "k6/load.js" | indent 4 }}
+  roster.mjs: |-
+{{ .Files.Get "setup/roster.mjs" | indent 4 }}
+  seed-users.mjs: |-
+{{ .Files.Get "setup/seed-users.mjs" | indent 4 }}

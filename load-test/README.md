@@ -52,35 +52,56 @@ k6 run -e VUS=30 -e DURATION=30s load-test/k6/load.js
 
 `--apply` uses Docker exec against `user-service-db-1` and `credit-postgres`. Override with `USER_DB_CONTAINER` / `CREDIT_DB_CONTAINER` if the names differ.
 
-### EC2 against EKS
+### In the cluster (dev)
 
-Services are in the cluster. This folder runs on the EC2 box.
+This folder is also a Helm chart. Argo CD app `load-test-dev` deploys it into
+namespace `foc-load`: three suspended CronJobs that only run when you start
+them. Each Job regenerates the seed files itself (user ids are deterministic),
+so nothing is copied between Jobs.
 
-1. Install Node and [k6](https://k6.io/docs/get-started/installation/) on the EC2 host.
-2. Clone the repo (or copy `load-test/`).
-3. Reach the User and Credit databases (RDS / port-forward / bastion, same as how you run `psql` today).
-4. Generate the seed files:
+| CronJob | What it does |
+| --- | --- |
+| `load-setup` | Seeds 9600 users into the User and Credit databases. Re-run to reset balances. |
+| `load-run-smoke` | k6, 30 VUs for 1 minute, on the normal nodes. |
+| `load-run-full` | k6, 9600 VUs for 10 minutes, on the `loadgen` node (one 8 vCPU / 32 GiB Spot node, added by Cluster Autoscaler, removed ~10 min after). |
 
-```bash
-export VUS=9600
-node load-test/setup/seed-users.mjs
-```
+k6 calls `http://order.foc-dev.svc.cluster.local:8083` as mesh identity
+`foc-load/k6`, which dev's Order admits. Results stream to Prometheus, tagged
+`testid=<Job name>`. Nothing is cleaned up: load users and orders stay in the
+dev databases.
 
-5. Apply the SQL to each database:
-
-```bash
-psql "$USER_DATABASE_URL" -v ON_ERROR_STOP=1 -f load-test/data/users.sql
-psql "$CREDIT_DATABASE_URL" -v ON_ERROR_STOP=1 -f load-test/data/credits.sql
-```
-
-6. Confirm Supplier pickup id `2` is approved, and Order has migrated delivery points (seed id `1` exists).
-7. Hit Order inside the cluster (public gateway URL with identity headers only if your gateway forwards them; otherwise a cluster-internal URL from the EC2 network, or `kubectl port-forward svc/order 8083:8083`):
+Before a full run, raise RDS to `db.m7g.xlarge` (and back afterwards).
 
 ```bash
-k6 run -e ORDER_URL=http://order.foc.svc.cluster.local:8083 load-test/k6/load.js
+export AWS_PROFILE=cs3219-dev
+kubectl -n foc-load create job load-setup-$(date +%H%M) --from=cronjob/load-setup
+kubectl -n foc-load logs -f job/load-setup-<HHMM>        # "Seeded 9600 users"
+
+kubectl -n foc-load create job smoke-$(date +%H%M) --from=cronjob/load-run-smoke
+kubectl -n foc-load create job full-$(date +%H%M) --from=cronjob/load-run-full
 ```
 
-Use the same `VUS` and `REQUESTER_SHARE` for seed and k6. Re-running the seed resets balances on the same ids.
+Or in the Argo CD UI: app `load-test-dev` → the CronJob → ⋮ → **Create Job**.
+
+Results:
+
+- `kubectl -n foc-load logs -f job/<name> -c k6` prints k6's end-of-run summary.
+  A failed threshold makes the Job **Failed**.
+- Grafana (`kubectl -n monitoring port-forward svc/kps-grafana 3000:80`):
+  dashboard **k6 Prometheus (Native Histograms)**, pick the run under `testid`.
+  The Linkerd `response_total` metrics and the Kubernetes dashboards show the
+  services' side.
+- `kubectl -n foc-dev get hpa -w` while it runs.
+
+Change VUs, duration or resources in `values.yaml` (`runs:`).
+
+### EC2 or laptop against EKS
+
+Generate the seed with `node load-test/setup/seed-users.mjs`, apply
+`data/users.sql` / `data/credits.sql` with `psql`, then run k6 with
+`-e ORDER_URL=...` against a port-forward (`kubectl -n foc-dev port-forward
+svc/order 8083:8083`). Order's mesh policy refuses unmeshed callers, so a
+plain port-forward from outside the mesh gets 403; prefer the in-cluster Jobs.
 
 ## Env
 
@@ -101,6 +122,6 @@ Use the same `VUS` and `REQUESTER_SHARE` for seed and k6. Re-running the seed re
 
 Order ids appear in real request paths (`/orders/{id}/accept`, …). For streamed
 metrics, `load.js` sets a stable `tags.name` per endpoint (`accept`, `collect`,
-`get_order`, …) and omits the built-in `url` system tag so those UUIDs do not
-create one time series per order. Thresholds still filter on custom `op`
+`get_order`, …), which k6 also copies into `url`, so those UUIDs do not create
+one time series per order. `url` is left out of `systemTags` as well. Thresholds still filter on custom `op`
 (`create` / `read` / `fulfill` / `close`).
