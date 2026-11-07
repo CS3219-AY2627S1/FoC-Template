@@ -4,8 +4,8 @@ image:
 # the poller separately and set TELEGRAM_POLLING_ENABLED=false here.
 autoscaling:
   enabled: true
-  # min 2 so Order create (Telegram lookup) is not single-pod cold under load.
-  minReplicas: 2
+  # Full-run create looks up users; floor above 2 so HPA lag does not stall Order.
+  minReplicas: 4
   maxReplicas: 12
   targetCPUUtilization: 70
 resources:

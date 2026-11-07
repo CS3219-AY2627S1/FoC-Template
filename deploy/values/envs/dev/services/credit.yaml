@@ -2,8 +2,8 @@ image:
   tag: "7aaf9d5f1beb52bfb3af2eb4e2565484ffda46dc" # git SHA, set by deploy/push-dev.sh
 autoscaling:
   enabled: true
-  # min 2 so Order reserve on create is not single-pod cold under load.
-  minReplicas: 2
+  # Full-run create reserves credit on every order; keep a warm floor.
+  minReplicas: 4
   maxReplicas: 8
   targetCPUUtilization: 70
 resources:
