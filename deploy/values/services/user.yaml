@@ -32,6 +32,8 @@ secretEnv:
 mesh: # who may call user (ADR-0012)
   callers: [gateway, admin] # admin: list / promote / suspend / reinstate users
   internal:
-    # Envoy's /internal/authorize check.
-    - { path: /api/v1/user/internal, callers: [gateway] }
+    # Envoy authorize + Order telegram lookup. Order must be on the broader
+    # /internal prefix too: overlapping PathPrefix routes can otherwise pick
+    # the gateway-only rule and Order create fails with USER_FAILED 503.
+    - { path: /api/v1/user/internal, callers: [gateway, order] }
     - { path: /api/v1/user/internal/users, callers: [order] } # Telegram lookup

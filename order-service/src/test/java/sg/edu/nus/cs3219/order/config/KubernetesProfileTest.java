@@ -82,6 +82,12 @@ class KubernetesProfileTest {
         assertEquals("/app/photos", properties.getPhotos().getDirectory());
     }
 
+    @Test
+    void peerClientTimeoutIsRaisedForMeshHiccups() throws IOException {
+        OrderProperties properties = k8sProfile(chartEnv()).bind("order", OrderProperties.class).get();
+        assertEquals(java.time.Duration.ofSeconds(5), properties.getClients().getTimeout());
+    }
+
     private static MockEnvironment chartEnv() {
         return new MockEnvironment()
                 .withProperty("KAFKA_BROKERS", "kafka-kafka-bootstrap:9093")

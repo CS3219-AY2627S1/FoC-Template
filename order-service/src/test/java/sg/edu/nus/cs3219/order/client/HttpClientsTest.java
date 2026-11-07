@@ -166,7 +166,8 @@ class HttpClientsTest {
         assertEquals("ada-id", lastUser.get());
         assertEquals(null, clients.ratingFor("00000000-0000-0000-0000-000000000000", ada));
         assertEquals(HttpStatus.BAD_REQUEST, assertThrows(ApiException.class, () -> clients.ratingFor("not-a-uuid", ada)).getStatus());
-        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, assertThrows(ApiException.class, () -> clients.ratingFor("down", ada)).getStatus());
+        // Rating outages must not fail create/accept — column is nullable.
+        assertEquals(null, clients.ratingFor("down", ada));
     }
 
     @Test
@@ -224,7 +225,7 @@ class HttpClientsTest {
         assertThrows(ApiException.class, () -> down.returnReserved(orderId, ada));
         assertThrows(ApiException.class, () -> down.requirePlace("2", ada));
         assertThrows(ApiException.class, () -> down.telegramHandle("11111111-1111-1111-1111-111111111111"));
-        assertThrows(ApiException.class, () -> down.ratingFor("11111111-1111-1111-1111-111111111111", ada));
+        assertEquals(null, down.ratingFor("11111111-1111-1111-1111-111111111111", ada));
         assertThrows(ApiException.class, () -> down.openConflict(orderId, "ada-id", "wrong item", java.util.List.of()));
     }
 
