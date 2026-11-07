@@ -26,16 +26,16 @@ const dropoffId = Number(__ENV.DROPOFF_ID || 1);
 const escalateEvery = intEnv("ESCALATE_EVERY", 20);
 const think = Number(__ENV.THINK_SECONDS || 1);
 
-const seeded = new SharedArray("users", () => {
-  const data = JSON.parse(open("../data/users.json"));
-  return [{ requesters: data.requesters, couriers: data.couriers }];
-});
+// One user per element: SharedArray re-parses an element on every access, so a
+// single element holding every user would parse the whole file each iteration.
+const requesters = new SharedArray("requesters", () => JSON.parse(open("../data/users.json")).requesters);
+const couriers = new SharedArray("couriers", () => JSON.parse(open("../data/users.json")).couriers);
 
 const photo = encoding.b64decode(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=",
 );
 
-if (seeded[0].requesters.length < requesterVus || seeded[0].couriers.length < courierVus) {
+if (requesters.length < requesterVus || couriers.length < courierVus) {
   throw new Error("users.json is smaller than this VUS. Re-run setup/seed-users.mjs with the same VUS.");
 }
 
@@ -63,10 +63,10 @@ export const options = {
 
 export function traffic() {
   if (__VU <= requesterVus) {
-    requester(seeded[0].requesters[(__VU - 1) % seeded[0].requesters.length].id);
+    requester(requesters[(__VU - 1) % requesters.length].id);
   } else {
     const index = __VU - requesterVus - 1;
-    courier(seeded[0].couriers[index % seeded[0].couriers.length].id);
+    courier(couriers[index % couriers.length].id);
   }
   sleep(think);
 }
