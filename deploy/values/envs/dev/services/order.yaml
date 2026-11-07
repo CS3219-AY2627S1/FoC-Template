@@ -3,14 +3,18 @@ image:
 mesh:
   # k6 (load-test/) calls Order directly with the identity headers.
   callers: [gateway, foc-load/k6]
+  # Full-run k6 OOMs the default ~64Mi sidecar; keep this durable for Argo.
+  proxy:
+    memoryRequest: 256Mi
+    memoryLimit: 512Mi
 autoscaling:
   enabled: true
   minReplicas: 2
-  maxReplicas: 16
+  maxReplicas: 24
   targetCPUUtilization: 70
 resources:
-  requests: {cpu: 500m, memory: 512Mi}
-  limits: {cpu: "2", memory: 1Gi}
+  requests: {cpu: "1", memory: 1Gi}
+  limits: {cpu: "2", memory: 2Gi}
 env:
   # Photos in S3 instead of the pod's disk; the node role may write to this
   # bucket only (infra/nonprod/aws/photos.tf, node-permissions.tf). No keys:

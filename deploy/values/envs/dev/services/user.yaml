@@ -4,8 +4,9 @@ image:
 # the poller separately and set TELEGRAM_POLLING_ENABLED=false here.
 autoscaling:
   enabled: true
-  minReplicas: 1
-  maxReplicas: 6
+  # min 2 so Order create (Telegram lookup) is not single-pod cold under load.
+  minReplicas: 2
+  maxReplicas: 12
   targetCPUUtilization: 70
 resources:
   requests: {cpu: 250m}

@@ -27,11 +27,16 @@ management:
     health:
       group:
         # Every FoC service answers GET /health on its own port: the chart's
-        # probes, and peers' `helm test` checks of their *_SERVICE_URL, call it.
-        # Same status as /actuator/health, which still works.
+        # readiness probe, and peers' `helm test` checks of their *_SERVICE_URL.
+        # Same status as /actuator/health, which still works. Includes DB, so
+        # do not use this path for liveness under load.
         platform:
           include: "*"
           additional-path: "server:/health"
+        # Ping only: kubelet liveness. Saturated Tomcat/DB must not kill the JVM.
+        live:
+          include: ping
+          additional-path: "server:/live"
 
 order:
   photos:
