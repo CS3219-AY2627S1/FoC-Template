@@ -22,6 +22,7 @@ from app.services.lifecycle import OrderStatus
 def delivery(monkeypatch):
     order = SimpleNamespace(
         order_id="order-1",
+        name="Lunch pickup",
         requester_id="requester-1",
         courier_id="courier-1",
         status=OrderStatus.PICKED_UP,
@@ -59,6 +60,7 @@ async def test_delivery_transitions_order_and_records_event(delivery):
         "courier-1",
     )
     assert event.timestamp.tzinfo == UTC
+    assert event.order_name == "Lunch pickup"
     assert delivery.order.awaiting_approval_at == event.timestamp
 
 

@@ -96,6 +96,7 @@ async def process_transfer_result(session: AsyncSession, event: CreditTransferRe
                 requester_id=task.requester_id,
                 courier_id=task.courier_id,
                 timestamp=datetime.now(UTC),
+                order_name=order.name,
             ),
         )
         return True

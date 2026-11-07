@@ -8,12 +8,16 @@ import {
   Burger,
   Drawer,
   Group,
+  Indicator,
+  Menu,
   NavLink as MantineNavLink,
+  ScrollArea,
   Stack,
   Text,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import {
+  IconBell,
   IconBuildingStore,
   IconClipboardList,
   IconLogout,
@@ -25,8 +29,9 @@ import {
 } from "@tabler/icons-react";
 import React, { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { BalanceResponse, creditsApi } from "../lib/api";
+import { BalanceResponse, creditsApi, parseUtcDate } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useNotifications } from "../lib/useNotifications";
 
 interface NavItem {
   to: string;
@@ -41,6 +46,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/errands", label: "Errands", icon: <IconShoppingBag size={18} /> },
   { to: "/orders/mine", label: "My requests", icon: <IconClipboardList size={18} /> },
   { to: "/deliveries", label: "My deliveries", icon: <IconTruck size={18} /> },
+  { to: "/notifications", label: "Notifications", icon: <IconBell size={18} /> },
   {
     to: "/admin/suppliers",
     label: "Manage Suppliers",
@@ -61,6 +67,94 @@ function initials(name: string | undefined, email: string | undefined): string {
     return (parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "");
   }
   return (email?.[0] ?? "?").toUpperCase();
+}
+
+function NotificationBell() {
+  const navigate = useNavigate();
+  const { items, unreadCount, markOneRead, markAllRead } = useNotifications(10);
+
+  const handleClick = (orderId: string, notificationId: string, unread: boolean) => {
+    if (unread) void markOneRead(notificationId);
+    navigate(`/orders/${orderId}`);
+  };
+
+  return (
+    <Menu position="bottom-end" width={320} shadow="md">
+      <Menu.Target>
+        <Indicator
+          color="red"
+          size={16}
+          label={unreadCount > 99 ? "99+" : unreadCount}
+          disabled={unreadCount === 0}
+          offset={4}
+        >
+          <ActionIcon variant="subtle" color="gray" aria-label="Notifications">
+            <IconBell size={20} />
+          </ActionIcon>
+        </Indicator>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Group justify="space-between" px="sm" py={4} wrap="nowrap">
+          <Text fw={600} size="sm">
+            Notifications
+          </Text>
+          <ActionIcon
+            variant="subtle"
+            size="sm"
+            disabled={unreadCount === 0}
+            onClick={(e) => {
+              e.stopPropagation();
+              void markAllRead();
+            }}
+            aria-label="Mark all as read"
+          >
+            <Text size="xs">Mark all</Text>
+          </ActionIcon>
+        </Group>
+        <Menu.Divider />
+        {items.length === 0 ? (
+          <Menu.Item disabled>No notifications</Menu.Item>
+        ) : (
+          <ScrollArea.Autosize mah={360}>
+            {items.map((n) => {
+              const unread = n.read_at === null;
+              return (
+                <Menu.Item
+                  key={n.notification_id}
+                  onClick={() =>
+                    handleClick(n.order_id, n.notification_id, unread)
+                  }
+                  style={
+                    unread
+                      ? { backgroundColor: "var(--mantine-color-blue-light)" }
+                      : undefined
+                  }
+                >
+                  <Group justify="space-between" wrap="nowrap" gap="xs">
+                    <Text size="sm" fw={unread ? 700 : 500} lineClamp={1}>
+                      {n.title}
+                    </Text>
+                    <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap" }}>
+                      {parseUtcDate(n.created_at).toLocaleDateString()}
+                    </Text>
+                  </Group>
+                  <Text size="xs" c="dimmed" lineClamp={2}>
+                    {n.body}
+                  </Text>
+                </Menu.Item>
+              );
+            })}
+          </ScrollArea.Autosize>
+        )}
+        <Menu.Divider />
+        <Menu.Item onClick={() => navigate("/notifications")}>
+          <Text size="sm" ta="center">
+            View all
+          </Text>
+        </Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
+  );
 }
 
 export function AppLayout() {
@@ -131,6 +225,7 @@ export function AppLayout() {
                 {balance.available_balance} avail / {balance.reserved_balance} rsv
               </Badge>
             )}
+            <NotificationBell />
             <Avatar radius="xl" color="brand" size="sm" visibleFrom="sm">
               {initials(user?.display_name, user?.email)}
             </Avatar>
