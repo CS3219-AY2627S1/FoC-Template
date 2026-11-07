@@ -4,10 +4,10 @@
 
 | Share | VUs | What they do |
 | --- | --- | --- |
-| 30% requesters | 2880 | Keep up to 3 open orders. Create at 1 credit, then acknowledge a delivered order. Every 20th close escalates instead. |
+| 30% requesters | 2880 | Peak-lunch shape: each places up to **2 orders for the whole run** (1 credit each), then polls and acknowledges when delivered. Every 20th close escalates instead. Override with `MAX_ORDERS_PER_REQUESTER`. |
 | 70% couriers | 6720 | Read the open pool, accept one order, upload a 1×1 PNG for collect, then the same for deliver. |
 
-Reads are mixed in. Requesters also call `/requests/active`, `/requests/past`, `/mine`, and `/alerts`. Couriers also call `/deliveries/active`, `/deliveries/past`, and `/search`.
+9600 VUs is already about **2×** expected peak headcount; capping creates per requester models “food + drink” rather than a continuous create soak. Reads are mixed in. Requesters also call `/requests/active`, `/requests/past`, `/mine`, and `/alerts`. Couriers also call `/deliveries/active`, `/deliveries/past`, and `/search`.
 
 Downstream calls, as a share of that traffic:
 
@@ -21,7 +21,7 @@ Downstream calls, as a share of that traffic:
 | Rating | Order reads `GET /api/v1/rating/{userId}` on create and accept. Deliver and acknowledge publish `rating.permission.granted` on `foc.rating.commands` for Rating Service to grant the modal. |
 | MinIO / S3 | Collect and deliver store the PNG. |
 
-Default duration is 10 minutes. A requester holds at most 3 orders so create rate follows how fast couriers finish. Accept collisions return 409 and count as normal contention. Defaults: Supplier pickup id `2` (approved), Order delivery-point id `1` (seeded `kent-ridge-mrt`).
+Default duration is 10 minutes. Create traffic is front-loaded (each requester’s 1–2 orders), then the run is mostly fulfill/close/read while the pool drains. Accept collisions return 409 and count as normal contention. Defaults: Supplier pickup id `2` (approved), Order delivery-point id `1` (seeded `kent-ridge-mrt`).
 
 ## Setup, then load
 
@@ -264,6 +264,7 @@ and merge to `main`.
 | `ORDER_URL` | `http://localhost:8083` | k6 |
 | `DURATION` | `10m` | k6 |
 | `THINK_SECONDS` | `1` | k6 |
+| `MAX_ORDERS_PER_REQUESTER` | `2` | k6 — successful creates per requester for the whole run |
 | `ESCALATE_EVERY` | `20` | k6 |
 | `PICKUP_ID` | `2` | k6 — Supplier approved place id (`fromLocation`) |
 | `DROPOFF_ID` | `1` | k6 — Order `delivery_point.id` (`deliveryPointId`) |

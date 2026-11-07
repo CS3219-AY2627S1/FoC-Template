@@ -25,6 +25,9 @@ const pickupId = __ENV.PICKUP_ID || "2";
 const dropoffId = Number(__ENV.DROPOFF_ID || 1);
 const escalateEvery = intEnv("ESCALATE_EVERY", 20);
 const think = Number(__ENV.THINK_SECONDS || 1);
+// Lunch-peak shape: each requester places a small number of orders for the whole
+// run (not a continuous refill). 9600 VUs is already ~2× expected peak headcount.
+const maxOrdersPerRequester = intEnv("MAX_ORDERS_PER_REQUESTER", 2);
 
 // One user per element: SharedArray re-parses an element on every access, so a
 // single element holding every user would parse the whole file each iteration.
@@ -39,7 +42,9 @@ if (requesters.length < requesterVus || couriers.length < courierVus) {
   throw new Error("users.json is smaller than this VUS. Re-run setup/seed-users.mjs with the same VUS.");
 }
 
+// Per-VU state (each VU has its own JS runtime).
 const openOrders = [];
+let createdCount = 0;
 
 export const options = {
   // systemTags only lists built-in tags. Custom `op` still comes from request tags.
@@ -72,10 +77,13 @@ export function traffic() {
 }
 
 function requester(userId) {
-  if (openOrders.length < 3) {
+  // At most maxOrdersPerRequester successful creates for the entire run; retries
+  // on failure so a transient blip does not leave the VU with zero lunch orders.
+  if (createdCount < maxOrdersPerRequester && openOrders.length < maxOrdersPerRequester) {
     const created = createOrder(userId);
     if (created) {
       openOrders.push(created);
+      createdCount += 1;
     }
   }
   for (let index = openOrders.length - 1; index >= 0; index -= 1) {
