@@ -9,14 +9,15 @@ mesh:
     memoryLimit: 512Mi
 autoscaling:
   enabled: true
-  # Full-run traffic is I/O-bound: CPU HPA stays low and never scales. Pin a
-  # high floor so 9600 VUs are not served by ~6 pods.
-  minReplicas: 16
+  # Full-run traffic is I/O-bound: CPU HPA stays ~0% and scales DOWN mid-run
+  # ("All metrics below target"), which caused k6 status=0 timeouts. Pin
+  # min=max so Argo cannot shed pods during a 9600 VU run.
+  minReplicas: 24
   maxReplicas: 24
   targetCPUUtilization: 70
 resources:
-  # Request 500m so minReplicas=16 can schedule without waiting on burst nodes
-  # (1 CPU × 16 often hit Insufficient cpu). Limit stays 2 for load spikes.
+  # Request 500m so a high replica floor can schedule without waiting on burst
+  # nodes (1 CPU × N often hit Insufficient cpu). Limit stays 2 for spikes.
   requests: {cpu: 500m, memory: 1Gi}
   limits: {cpu: "2", memory: 2Gi}
 env:
