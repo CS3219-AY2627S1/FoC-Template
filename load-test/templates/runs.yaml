@@ -53,7 +53,7 @@ spec:
               resources:
                 {{- toYaml $run.resources | nindent 16 }}
               volumeMounts:
-                - { name: k6, mountPath: /work/k6 }
+                - { name: scripts, mountPath: /work/k6/load.js, subPath: load.js }
                 - { name: data, mountPath: /work/data }
           volumes:
             {{- include "load-test.scriptVolumes" $ | nindent 12 }}

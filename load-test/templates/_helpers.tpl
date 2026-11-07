@@ -1,15 +1,8 @@
-{{/* Scripts from k6/ and setup/, laid out as in the repo so load.js finds ../data. */}}
+{{/* Scripts from k6/ and setup/, laid out as in the repo so they find ../data. */}}
 {{- define "load-test.scriptVolumes" -}}
-- name: k6
+- name: scripts
   configMap:
     name: load-test-scripts
-    items: [{ key: load.js, path: load.js }]
-- name: setup
-  configMap:
-    name: load-test-scripts
-    items:
-      - { key: roster.mjs, path: roster.mjs }
-      - { key: seed-users.mjs, path: seed-users.mjs }
 - name: data
   emptyDir: {}
 {{- end }}
@@ -24,7 +17,10 @@
   resources:
     requests: { cpu: 200m, memory: 256Mi }
     limits: { cpu: "1", memory: 512Mi }
+  # subPath: plain files. A directory mount is symlinks into ..<timestamp>/,
+  # which Node resolves, so the script would look for ../data in the wrong place.
   volumeMounts:
-    - { name: setup, mountPath: /work/setup }
+    - { name: scripts, mountPath: /work/setup/roster.mjs, subPath: roster.mjs }
+    - { name: scripts, mountPath: /work/setup/seed-users.mjs, subPath: seed-users.mjs }
     - { name: data, mountPath: /work/data }
 {{- end }}
