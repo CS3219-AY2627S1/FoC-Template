@@ -13,6 +13,9 @@ resources:
   limits: {cpu: "1"}
 env:
   APP_ENV: dev
+  # minReplicas=4 for load: only one process may poll a bot. Polling spam was
+  # starving User under smoke and Order create returned 503 USER_FAILED.
+  TELEGRAM_POLLING_ENABLED: "false"
   # Password-reset links point here.
   FRONTEND_BASE_URL: https://djj7vqja8at5u.cloudfront.net
   # OTP and reset emails through SES; the node role may send only as this

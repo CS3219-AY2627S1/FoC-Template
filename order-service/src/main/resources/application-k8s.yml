@@ -55,6 +55,9 @@ management:
           additional-path: "management:/live"
 
 order:
+  # Peer calls (User/Rating/…) under mesh; 2s was tight when User pods hiccup.
+  clients:
+    timeout: 5s
   photos:
     mode: file
     # Created by the Dockerfile and owned by the app user. Pod-local, so photos

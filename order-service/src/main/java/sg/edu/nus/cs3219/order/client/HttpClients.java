@@ -24,7 +24,6 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
     private static final String NOT_APPROVED = "That location is not an approved supplier";
     private static final String USER_FAILED = "User service could not complete the request";
     private static final String ADMIN_FAILED = "Admin service could not complete the request";
-    private static final String RATING_FAILED = "Rating service could not complete the request";
 
     private final RestClient credits;
     private final RestClient suppliers;
@@ -75,20 +74,31 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
 
     @Override
     public String telegramHandle(String userId) {
-        try {
-            TelegramResponse response = users.get()
-                    .uri("/api/v1/user/internal/users/{userId}/telegram", userId)
-                    .retrieve()
-                    .body(TelegramResponse.class);
-            if (response == null || response.telegramHandle() == null || response.telegramHandle().isBlank()) {
-                throw ApiException.unavailable(USER_FAILED);
+        ApiException lastUnavailable = null;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                TelegramResponse response = users.get()
+                        .uri("/api/v1/user/internal/users/{userId}/telegram", userId)
+                        .retrieve()
+                        .body(TelegramResponse.class);
+                if (response == null || response.telegramHandle() == null || response.telegramHandle().isBlank()) {
+                    throw ApiException.unavailable(USER_FAILED);
+                }
+                return response.telegramHandle();
+            } catch (RestClientResponseException exception) {
+                ApiException mapped = userFailure(exception);
+                if (!isTransientUnavailable(mapped) || attempt == 3) {
+                    throw mapped;
+                }
+                lastUnavailable = mapped;
+            } catch (ResourceAccessException exception) {
+                lastUnavailable = ApiException.unavailable("User service did not respond in time");
+                if (attempt == 3) {
+                    throw lastUnavailable;
+                }
             }
-            return response.telegramHandle();
-        } catch (RestClientResponseException exception) {
-            throw userFailure(exception);
-        } catch (ResourceAccessException exception) {
-            throw ApiException.unavailable("User service did not respond in time");
         }
+        throw lastUnavailable != null ? lastUnavailable : ApiException.unavailable(USER_FAILED);
     }
 
     @Override
@@ -119,7 +129,8 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
                     .retrieve()
                     .body(RatingResponse.class);
             if (response == null) {
-                throw ApiException.unavailable(RATING_FAILED);
+                // Rating is optional on the order row; don't fail create/accept.
+                return null;
             }
             return response.average();
         } catch (RestClientResponseException exception) {
@@ -127,9 +138,10 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
             if (status == 400) {
                 throw ApiException.badRequest("A valid user id is required");
             }
-            throw ApiException.unavailable(RATING_FAILED);
+            // Mesh/Rating blips were failing ~20% of creates; rating is nullable.
+            return null;
         } catch (ResourceAccessException exception) {
-            throw ApiException.unavailable("Rating service did not respond in time");
+            return null;
         }
     }
 
@@ -164,6 +176,10 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
             case "INVALID_USER_ID" -> ApiException.badRequest("A valid user id is required");
             default -> ApiException.unavailable(USER_FAILED);
         };
+    }
+
+    private static boolean isTransientUnavailable(ApiException exception) {
+        return exception.getStatus() == org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE;
     }
 
     private static ApiException creditFailure(RestClientResponseException exception) {
