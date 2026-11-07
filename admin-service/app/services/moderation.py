@@ -37,11 +37,15 @@ async def _open_report(db: AsyncSession, reporter: str, reported: str) -> UserRe
     )
 
 
-async def create_report(db: AsyncSession, reporter: str, reported: str, comment: str) -> UserReport:
-    """The open report for this pair. A repeat returns that row and keeps its comment."""
+async def create_report(db: AsyncSession, reporter: str, reported: str, comment: str) -> tuple[UserReport, bool]:
+    """The open report for this pair, and whether this call inserted it.
+
+    A repeat returns the existing row and keeps its comment. Only a new row
+    should queue an AI assessment.
+    """
     existing = await _open_report(db, reporter, reported)
     if existing:
-        return existing
+        return existing, False
 
     row = UserReport(
         reporter_user_id=reporter,
@@ -57,13 +61,17 @@ async def create_report(db: AsyncSession, reporter: str, reported: str, comment:
         await db.rollback()
         existing = await _open_report(db, reporter, reported)
         if existing:
-            return existing
+            return existing, False
         raise
-    return row
+    return row, True
 
 
-async def create_appeal(db: AsyncSession, user_id: str, message: str) -> SuspensionAppeal:
-    """The open appeal for this user. A repeat returns that row and keeps its message."""
+async def create_appeal(db: AsyncSession, user_id: str, message: str) -> tuple[SuspensionAppeal, bool]:
+    """The open appeal for this user, and whether this call inserted it.
+
+    A repeat returns the existing row and keeps its message. Only a new row
+    should queue an AI assessment.
+    """
     existing = await db.scalar(
         select(SuspensionAppeal).where(
             SuspensionAppeal.user_id == user_id,
@@ -71,7 +79,7 @@ async def create_appeal(db: AsyncSession, user_id: str, message: str) -> Suspens
         )
     )
     if existing:
-        return existing
+        return existing, False
 
     row = SuspensionAppeal(
         user_id=user_id,
@@ -92,9 +100,9 @@ async def create_appeal(db: AsyncSession, user_id: str, message: str) -> Suspens
             )
         )
         if existing:
-            return existing
+            return existing, False
         raise
-    return row
+    return row, True
 
 
 async def dismiss_report(db: AsyncSession, report_id: uuid.UUID, admin_id: str) -> tuple[CloseOutcome, UserReport | None]:

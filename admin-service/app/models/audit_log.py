@@ -19,7 +19,7 @@ class AuditLog(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     admin_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
-    action: Mapped[str] = mapped_column(String, nullable=False)  # promote | demote | suspend | reinstate | review_conflict | reassess_conflict | resolve_conflict | dismiss_report | reject_appeal
+    action: Mapped[str] = mapped_column(String, nullable=False)  # promote | demote | suspend | reinstate | review_conflict | reassess_conflict | resolve_conflict | dismiss_report | reassess_report | reject_appeal | reassess_appeal
     target_id: Mapped[str] = mapped_column(String, index=True, nullable=False)  # user_id or case_id
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)

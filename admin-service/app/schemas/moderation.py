@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.models.moderation import AppealStatus, ReportStatus
+from app.models.moderation import AppealRecommendation, AppealStatus, ReportRecommendation, ReportStatus
 from app.schemas.camel import CamelModel
 
 
@@ -51,6 +51,10 @@ class ReportDetail(CamelModel):
     reported_user_id: str
     comment: str
     status: ReportStatus
+    ai_recommendation: ReportRecommendation | None = None
+    ai_confidence: float | None = None
+    ai_reasoning: str | None = None
+    ai_completed_at: datetime | None = None
     created_at: datetime
     closed_at: datetime | None
     closed_by_admin_id: str | None
@@ -73,6 +77,13 @@ class AppealDetail(CamelModel):
     message: str
     status: AppealStatus
     rejection_reason: str | None = None
+    ai_recommendation: AppealRecommendation | None = None
+    ai_confidence: float | None = None
+    ai_reasoning: str | None = None
+    ai_completed_at: datetime | None = None
     created_at: datetime
     closed_at: datetime | None
     closed_by_admin_id: str | None
+    # Reports about this user, any status. Empty on intake, where User Service
+    # ignores fields it does not store. The admin queue fills this in.
+    reports: list[ReportDetail] = Field(default_factory=list)
