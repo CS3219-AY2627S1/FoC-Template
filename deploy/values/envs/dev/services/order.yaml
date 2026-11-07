@@ -15,7 +15,9 @@ autoscaling:
   maxReplicas: 24
   targetCPUUtilization: 70
 resources:
-  requests: {cpu: "1", memory: 1Gi}
+  # Request 500m so minReplicas=16 can schedule without waiting on burst nodes
+  # (1 CPU × 16 often hit Insufficient cpu). Limit stays 2 for load spikes.
+  requests: {cpu: 500m, memory: 1Gi}
   limits: {cpu: "2", memory: 2Gi}
 env:
   # Photos in S3 instead of the pod's disk; the node role may write to this

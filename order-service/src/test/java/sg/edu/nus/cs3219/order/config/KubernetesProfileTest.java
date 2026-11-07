@@ -69,9 +69,9 @@ class KubernetesProfileTest {
         assertEquals(List.of("*"), binder.bind(platform + "include", Bindable.listOf(String.class)).get());
         // Kubelet probes use the management port (own thread pool).
         String ready = "management.endpoint.health.group.ready.";
-        assertEquals("/health", binder.bind(ready + "additional-path", String.class).get());
+        assertEquals("management:/health", binder.bind(ready + "additional-path", String.class).get());
         String live = "management.endpoint.health.group.live.";
-        assertEquals("/live", binder.bind(live + "additional-path", String.class).get());
+        assertEquals("management:/live", binder.bind(live + "additional-path", String.class).get());
         assertEquals(List.of("ping"), binder.bind(live + "include", Bindable.listOf(String.class)).get());
     }
 
