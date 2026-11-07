@@ -29,6 +29,58 @@ def schedule_ai_reassessment(case_id: str) -> None:
     )
 
 
+def schedule_appeal_reassessment(appeal_id: str) -> None:
+    """One-off job from the appeal queue. Replaces a rerun that has not started yet."""
+    scheduler.add_job(
+        "app.jobs.appeal_jobs:rerun_appeal_evaluation",
+        "date",
+        run_date=datetime.now(timezone.utc),
+        args=[appeal_id],
+        id=f"appeal-rerun-{appeal_id}",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
+
+def schedule_report_reassessment(report_id: str) -> None:
+    """One-off job from the report queue. Replaces a rerun that has not started yet."""
+    scheduler.add_job(
+        "app.jobs.report_jobs:rerun_report_evaluation",
+        "date",
+        run_date=datetime.now(timezone.utc),
+        args=[report_id],
+        id=f"report-rerun-{report_id}",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
+
+def schedule_report_evaluation(report_id: str) -> None:
+    """One-off durable job: assess the report right after it is saved."""
+    scheduler.add_job(
+        "app.jobs.report_jobs:run_report_evaluation",
+        "date",
+        run_date=datetime.now(timezone.utc),
+        args=[report_id],
+        id=f"report-ai-{report_id}",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
+
+def schedule_appeal_evaluation(appeal_id: str) -> None:
+    """One-off durable job: assess the appeal right after it is saved."""
+    scheduler.add_job(
+        "app.jobs.appeal_jobs:run_appeal_evaluation",
+        "date",
+        run_date=datetime.now(timezone.utc),
+        args=[appeal_id],
+        id=f"appeal-ai-{appeal_id}",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
+
 def schedule_ai_evaluation(case_id: str) -> None:
     """One-off durable job: run the AI right after creation (survives restarts)."""
     scheduler.add_job(

@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Enum, Index, String, Text, text
+from sqlalchemy import DateTime, Enum, Float, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,10 +19,26 @@ class ReportStatus(str, enum.Enum):
     actioned = "actioned"    # admin suspended the reported user
 
 
+class ReportRecommendation(str, enum.Enum):
+    """Advisory only. Dismiss and suspend stay a human decision."""
+
+    dismiss = "dismiss"
+    suspend = "suspend"
+    unsure = "unsure"
+
+
 class AppealStatus(str, enum.Enum):
     open = "open"
     rejected = "rejected"      # admin left the suspension in place
     reinstated = "reinstated"  # admin reinstated the user
+
+
+class AppealRecommendation(str, enum.Enum):
+    """Advisory only. Reject and reinstate stay a human decision."""
+
+    uphold = "uphold"
+    reinstate = "reinstate"
+    unsure = "unsure"
 
 
 def _enum(e):
@@ -47,6 +63,13 @@ class UserReport(Base):
     reporter_user_id: Mapped[str] = mapped_column(String, nullable=False)
     reported_user_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
     comment: Mapped[str] = mapped_column(Text, nullable=False)
+    # Filled by the background job. Null recommendation with a completed time means the model failed.
+    ai_recommendation: Mapped[ReportRecommendation | None] = mapped_column(
+        _enum(ReportRecommendation), nullable=True
+    )
+    ai_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ai_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[ReportStatus] = mapped_column(_enum(ReportStatus), default=ReportStatus.open, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -70,6 +93,13 @@ class SuspensionAppeal(Base):
     user_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Filled by the background job. Null recommendation with a completed time means the model failed.
+    ai_recommendation: Mapped[AppealRecommendation | None] = mapped_column(
+        _enum(AppealRecommendation), nullable=True
+    )
+    ai_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ai_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[AppealStatus] = mapped_column(_enum(AppealStatus), default=AppealStatus.open, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -90,10 +90,63 @@ def _extract_text(payload: dict) -> str:
     )
 
 
-async def get_fault_recommendation(
-    photos: list[EvidencePhoto], comment: str
-) -> AIRecommendation | None:
-    """Returns None on ANY failure (HTTP, timeout, unparseable, invalid enum/confidence)."""
+_APPEAL_CHOICES = {"uphold", "reinstate", "unsure"}
+
+_APPEAL_PROMPT = (
+    "You are advising an admin on a suspension appeal. You do not change the account.\n"
+    "Each report below was filed about this user. The user's appeal follows them.\n"
+    "Recommend 'uphold' when the reports still justify leaving the suspension in place, "
+    "'reinstate' when the appeal answers those reports well enough to lift it, "
+    "or 'unsure' when the material is missing, contradictory, or too thin to lean either way.\n"
+    "Reply with ONLY a JSON object, no prose, no code fences:\n"
+    '{"recommendation": "uphold|reinstate|unsure", "confidence": <0.0-1.0>, "reasoning": "<short>"}\n'
+)
+
+_APPEAL_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "recommendation": {"type": "STRING", "enum": ["uphold", "reinstate", "unsure"]},
+        "confidence": {"type": "NUMBER"},
+        "reasoning": {"type": "STRING"},
+    },
+    "required": ["recommendation", "confidence", "reasoning"],
+}
+
+
+class AppealAssessment:
+    def __init__(self, recommendation: str, confidence: float, reasoning: str):
+        self.recommendation = recommendation
+        self.confidence = confidence
+        self.reasoning = reasoning
+
+
+def appeal_parts(reports: list[tuple[str, str]], message: str) -> list[dict]:
+    """One text part: every report comment, then the appeal."""
+    lines = [_APPEAL_PROMPT, "Reports:"]
+    if not reports:
+        lines.append("(none)")
+    else:
+        for status, comment in reports:
+            lines.append(f"- ({status}) {comment}")
+    lines.append("Appeal:")
+    lines.append(message)
+    return [{"text": "\n".join(lines)}]
+
+
+def parse_appeal_assessment(text: str) -> AppealAssessment | None:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.strip("`").removeprefix("json").strip()
+    data = json.loads(text)
+    recommendation = data["recommendation"]
+    confidence = float(data["confidence"])
+    if recommendation not in _APPEAL_CHOICES or not 0.0 <= confidence <= 1.0:
+        return None
+    return AppealAssessment(recommendation, confidence, str(data.get("reasoning", "")))
+
+
+async def _generate(parts: list[dict], schema: dict, label: str) -> str | None:
+    """Model text, or None on any HTTP or timeout failure. Does not parse it."""
     if not settings.ai_provider_api_key:
         logger.error("AI_PROVIDER_API_KEY is not set")
         return None
@@ -102,13 +155,11 @@ async def get_fault_recommendation(
     endpoint = (
         f"{settings.ai_provider_base_url.rstrip('/')}/v1beta/models/{model}:generateContent"
     )
-    parts = content_parts(photos, comment)
-
     payload = {
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {
             "responseMimeType": "application/json",
-            "responseSchema": _RESPONSE_SCHEMA,
+            "responseSchema": schema,
             "maxOutputTokens": 1024,
             "temperature": 0,
             "thinkingConfig": {"thinkingLevel": "low"},
@@ -126,7 +177,7 @@ async def get_fault_recommendation(
                         json=payload,
                     )
                 except httpx.TimeoutException:
-                    logger.warning("Gemini fault recommendation timed out (attempt %s)", attempt + 1)
+                    logger.warning("Gemini %s timed out (attempt %s)", label, attempt + 1)
                     resp = None
                 if resp is not None and resp.status_code not in (429, 503):
                     break
@@ -138,17 +189,114 @@ async def get_fault_recommendation(
             if resp is None:
                 return None
             if resp.status_code >= 400:
-                logger.error(
-                    "Gemini fault recommendation failed: %s %s",
-                    resp.status_code,
-                    resp.text[:500],
-                )
+                logger.error("Gemini %s failed: %s %s", label, resp.status_code, resp.text[:500])
                 return None
-            text = _extract_text(resp.json())
-            rec = _parse(text)
-            if rec is None:
-                logger.error("Gemini returned an unusable fault recommendation: %s", text[:500])
-            return rec
+            return _extract_text(resp.json())
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        logger.exception("AI %s failed", label)
+        return None
+
+
+async def get_fault_recommendation(
+    photos: list[EvidencePhoto], comment: str
+) -> AIRecommendation | None:
+    """Returns None on ANY failure (HTTP, timeout, unparseable, invalid enum/confidence)."""
+    text = await _generate(content_parts(photos, comment), _RESPONSE_SCHEMA, "fault recommendation")
+    if text is None:
+        return None
+    try:
+        rec = _parse(text)
+    except (ValueError, KeyError, TypeError):
         logger.exception("AI fault recommendation failed")
         return None
+    if rec is None:
+        logger.error("Gemini returned an unusable fault recommendation: %s", text[:500])
+    return rec
+
+
+async def get_appeal_recommendation(
+    reports: list[tuple[str, str]], message: str
+) -> AppealAssessment | None:
+    """
+    Advisory only. `reports` is (status, comment) for every report about the
+    appellant, which may be empty. None on any failure.
+    """
+    text = await _generate(appeal_parts(reports, message), _APPEAL_SCHEMA, "appeal recommendation")
+    if text is None:
+        return None
+    try:
+        assessment = parse_appeal_assessment(text)
+    except (ValueError, KeyError, TypeError):
+        logger.exception("AI appeal recommendation failed")
+        return None
+    if assessment is None:
+        logger.error("Gemini returned an unusable appeal recommendation: %s", text[:500])
+    return assessment
+
+
+_REPORT_CHOICES = {"dismiss", "suspend", "unsure"}
+
+_REPORT_PROMPT = (
+    "You are advising an admin on a user report. You do not change the account.\n"
+    "Each comment below was filed about the same person. There is no reply from that person yet.\n"
+    "Recommend 'dismiss' when the comments are thin, personal, or not a reason to suspend, "
+    "'suspend' when they describe conduct that warrants suspending the account, "
+    "or 'unsure' when the material is missing, contradictory, or too thin to lean either way.\n"
+    "Reply with ONLY a JSON object, no prose, no code fences:\n"
+    '{"recommendation": "dismiss|suspend|unsure", "confidence": <0.0-1.0>, "reasoning": "<short>"}\n'
+)
+
+_REPORT_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "recommendation": {"type": "STRING", "enum": ["dismiss", "suspend", "unsure"]},
+        "confidence": {"type": "NUMBER"},
+        "reasoning": {"type": "STRING"},
+    },
+    "required": ["recommendation", "confidence", "reasoning"],
+}
+
+
+class ReportAssessment:
+    def __init__(self, recommendation: str, confidence: float, reasoning: str):
+        self.recommendation = recommendation
+        self.confidence = confidence
+        self.reasoning = reasoning
+
+
+def report_parts(reports: list[tuple[str, str]]) -> list[dict]:
+    """One text part: every report comment about this person."""
+    lines = [_REPORT_PROMPT, "Reports:"]
+    if not reports:
+        lines.append("(none)")
+    else:
+        for status, comment in reports:
+            lines.append(f"- ({status}) {comment}")
+    return [{"text": "\n".join(lines)}]
+
+
+def parse_report_assessment(text: str) -> ReportAssessment | None:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.strip("`").removeprefix("json").strip()
+    data = json.loads(text)
+    recommendation = data["recommendation"]
+    confidence = float(data["confidence"])
+    if recommendation not in _REPORT_CHOICES or not 0.0 <= confidence <= 1.0:
+        return None
+    return ReportAssessment(recommendation, confidence, str(data.get("reasoning", "")))
+
+
+async def get_report_recommendation(reports: list[tuple[str, str]]) -> ReportAssessment | None:
+    """Advisory only. `reports` is (status, comment) about one person. None on any failure."""
+    text = await _generate(report_parts(reports), _REPORT_SCHEMA, "report recommendation")
+    if text is None:
+        return None
+    try:
+        assessment = parse_report_assessment(text)
+    except (ValueError, KeyError, TypeError):
+        logger.exception("AI report recommendation failed")
+        return None
+    if assessment is None:
+        logger.error("Gemini returned an unusable report recommendation: %s", text[:500])
+    return assessment

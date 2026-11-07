@@ -42,15 +42,17 @@ admin-service/
 │   ├── services/
 │   │   ├── kafka_producer.py     # shared event envelope + topic publishes
 │   │   ├── kafka_consumer.py     # listener; no topics subscribed yet
-│   │   ├── ai_client.py          # Gemini Flash fault recommendation
+│   │   ├── ai_client.py          # Gemini Flash fault and appeal recommendations
 │   │   ├── order_photos.py       # fetch evidence bytes from Order Service
 │   │   ├── audit.py              # single write path into audit_logs
 │   │   ├── moderation.py         # report and appeal intake, dismiss, reject
 │   │   ├── conflict_resolution.py# the only resolve path (manual + auto)
 │   │   └── scheduler.py          # job registration / cancel (APScheduler)
 │   └── jobs/
+│       ├── appeal_jobs.py       # advisory appeal assessment (own DB session)
+│       ├── report_jobs.py       # advisory report assessment (own DB session)
 │       └── conflict_jobs.py      # AI eval, reminder, auto-resolve (own DB session)
-├── alembic/                      # migrations through 0005_appeal_rejection_reason
+├── alembic/                      # migrations through 0007_report_ai
 ├── tests/
 ├── mock_user_service.py          # local stub for User Service
 ├── docker-compose.yml            # Postgres, mock User Service, app (Kafka is Order's)
@@ -122,7 +124,9 @@ POST /api/v1/admin/internal/reports
 }
 ```
 
-Returns **201**. While that pair has an open report, a retry returns the same row and keeps the original comment. A user cannot report themselves (**422**).
+Returns **201**. While that pair has an open report, a retry returns the same row and keeps the original comment. A user cannot report themselves (**422**). A new row queues a Gemini assessment after commit. A retry does not queue another one.
+
+The assessment is advisory. It reads this comment and every other report about the same person, then stores `aiRecommendation` (`dismiss`, `suspend`, or `unsure`), `aiConfidence`, `aiReasoning`, and `aiCompletedAt`. It does not dismiss or suspend. A failed first pass sets `aiCompletedAt` and leaves the recommendation null. A failed rerun keeps the previous verdict. The appeal assessment still reads the human comments only.
 
 **Admin:**
 
@@ -130,6 +134,7 @@ Returns **201**. While that pair has an open report, a retry returns the same ro
 |---|---|---|
 | GET | `/api/v1/admin/reports?status=` | `open`, `dismissed`, or `actioned` |
 | GET | `/api/v1/admin/reports/{report_id}` | Detail |
+| POST | `/api/v1/admin/reports/{report_id}/reassess` | **202.** Runs Gemini again on an open report. Audit action `reassess_report`. **409** if it is not open. The report stays open |
 | POST | `/api/v1/admin/reports/{report_id}/dismiss` | `open` → `dismissed`. Does not suspend. **409** if it is not open |
 
 ### Appeals — `/api/v1/admin/appeals`
@@ -147,18 +152,21 @@ POST /api/v1/admin/internal/appeals
 }
 ```
 
-Returns **201**. While that user has an open appeal, a retry returns the same row and keeps the original message.
+Returns **201**. While that user has an open appeal, a retry returns the same row and keeps the original message. A new row queues a Gemini assessment after commit. A retry does not queue another one.
+
+The assessment is advisory. It reads the appeal message and every report comment about that user, then stores `aiRecommendation` (`uphold`, `reinstate`, or `unsure`), `aiConfidence`, `aiReasoning`, and `aiCompletedAt`. It does not reject or reinstate. A failed first pass sets `aiCompletedAt` and leaves the recommendation null. A failed rerun keeps the previous verdict.
 
 **Admin:**
 
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/v1/admin/appeals/latest?userId=` | **No auth.** That user's latest appeal, or JSON `null`. Empty or oversized `userId` is **422**. Registered before `/{appeal_id}` |
-| GET | `/api/v1/admin/appeals?status=` | `open`, `rejected`, or `reinstated` |
-| GET | `/api/v1/admin/appeals/{appeal_id}` | Detail |
+| GET | `/api/v1/admin/appeals?status=` | `open`, `rejected`, or `reinstated`. Each row includes `reports`, every report about that user |
+| GET | `/api/v1/admin/appeals/{appeal_id}` | Detail, including `reports` |
+| POST | `/api/v1/admin/appeals/{appeal_id}/reassess` | **202.** Runs Gemini again on an open appeal. Audit action `reassess_appeal`. **409** if it is not open. The appeal stays open |
 | POST | `/api/v1/admin/appeals/{appeal_id}/reject` | `open` → `rejected`. Body `{ "reason": "..." }`, trimmed, 1–4000 characters. Blank or missing is **422**. The reason is stored as `rejectionReason` and on the `reject_appeal` audit `detail`. The suspension stays. **409** if it is not open. After commit, Admin calls User Service `POST /api/v1/user/{userId}/appeal-rejected` with the same reason and the admin's `Authorization` header (2s). A failure there does not undo the rejection |
 
-An appeal response includes `rejectionReason` (`null` while the appeal is open).
+An appeal response includes `rejectionReason` (`null` while the appeal is open) and the AI fields above (`null` until the job finishes).
 
 ### Conflicts — `/api/v1/admin/conflicts`
 
@@ -330,7 +338,9 @@ and the Kafka login (no live stack).
 `tests/test_order_photos.py` covers the S3 key read and the Gemini `inline_data`
 layout with a fake bucket (no live stack).
 `tests/test_moderation.py` covers report and appeal intake, dismiss, reject,
-and the suspend/reinstate close, with an in-memory session (no live stack).
+the suspend/reinstate close, and queueing an appeal assessment, with an in-memory session (no live stack).
+`tests/test_appeal_ai.py` covers the appeal job with Gemini stubbed.
+`tests/test_report_ai.py` covers the report job with Gemini stubbed.
 `tests/test_conflict.py` and `tests/test_user.py` call the Compose stack and
 skip when Admin Service is not reachable at `http://localhost:8084`. Admin
 calls send `x-user-id`, `x-is-admin`, and `x-permitted-action`.
