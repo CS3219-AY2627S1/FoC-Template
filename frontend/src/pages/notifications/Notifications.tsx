@@ -32,6 +32,7 @@ export default function Notifications() {
 
   const [items, setItems] = useState<Notification[]>([]);
   const [total, setTotal] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +50,7 @@ export default function Notifications() {
           offset,
         });
         setTotal(list.total);
+        setUnreadCount(list.unread_count);
         setItems((prev) => (first ? list.items : [...prev, ...list.items]));
       } catch (err) {
         setError(
@@ -66,8 +68,6 @@ export default function Notifications() {
     void load(0);
   }, [load]);
 
-  const unreadCount = items.filter((n) => n.read_at === null).length;
-
   async function handleOpen(n: Notification) {
     if (n.read_at === null && userId) {
       setItems((prev) =>
@@ -77,6 +77,7 @@ export default function Notifications() {
             : item,
         ),
       );
+      setUnreadCount((c) => Math.max(0, c - 1));
       try {
         await notificationsApi.markRead(userId, n.notification_id);
       } catch {
@@ -94,6 +95,7 @@ export default function Notifications() {
     } catch {
       // ignore
     }
+    setUnreadCount(0);
     window.dispatchEvent(new Event("notifications-changed"));
     void load(0);
   }

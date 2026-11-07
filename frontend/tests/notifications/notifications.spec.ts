@@ -82,6 +82,27 @@ test.describe("notifications", () => {
     await expect(page.locator(INDICATOR)).toHaveCount(0);
   });
 
+  test("mark all stays enabled when unread sit on an unloaded page", async ({
+    page,
+  }) => {
+    await seedToken(page);
+    await mockApi(page, {
+      [`GET ${NLIST}`]: () => ({
+        body: {
+          items: [notif({ read_at: "2026-11-06T11:00:00" })],
+          unread_count: 2,
+          total: 20,
+        },
+      }),
+    });
+
+    await page.goto("/notifications");
+
+    await expect(
+      page.getByRole("button", { name: "Mark all as read" }),
+    ).toBeEnabled();
+  });
+
   test("clicking a notification marks it read and navigates to the order", async ({
     page,
   }) => {
