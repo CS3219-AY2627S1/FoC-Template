@@ -32,6 +32,10 @@ spec:
         config.linkerd.io/proxy-memory-limit: {{ . | quote }}
         {{- end }}
         {{- end }}
+        {{- with .Values.managementPort }}
+        # Kubelet probes hit this port directly (see probes below).
+        config.linkerd.io/skip-inbound-ports: {{ . | quote }}
+        {{- end }}
         {{- end }}
     spec:
       serviceAccountName: {{ include "foc-service.name" . }}
@@ -45,6 +49,10 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.port }}
+            {{- with .Values.managementPort }}
+            - name: management
+              containerPort: {{ . }}
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "foc-service.name" . }}
@@ -111,7 +119,7 @@ spec:
           readinessProbe:
             httpGet:
               path: {{ $readiness }}
-              port: http
+              port: {{ if .Values.managementPort }}management{{ else }}http{{ end }}
             periodSeconds: 10
             timeoutSeconds: 5
           {{- end }}
@@ -119,7 +127,7 @@ spec:
           livenessProbe:
             httpGet:
               path: {{ $liveness }}
-              port: http
+              port: {{ if .Values.managementPort }}management{{ else }}http{{ end }}
             initialDelaySeconds: 10
             periodSeconds: 20
             timeoutSeconds: 5

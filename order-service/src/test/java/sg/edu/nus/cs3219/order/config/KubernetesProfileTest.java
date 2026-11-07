@@ -61,14 +61,17 @@ class KubernetesProfileTest {
 
     @Test
     void healthIsAlsoServedAtThePlatformsHealthPath() throws IOException {
-        // Readiness (+ peers' helm test) use /health with full checks including DB.
         Binder binder = k8sProfile(chartEnv());
+        assertEquals(8084, binder.bind("management.server.port", Integer.class).get());
+        // Peers' helm test still hits the main Service port.
         String platform = "management.endpoint.health.group.platform.";
         assertEquals("server:/health", binder.bind(platform + "additional-path", String.class).get());
         assertEquals(List.of("*"), binder.bind(platform + "include", Bindable.listOf(String.class)).get());
-        // Liveness uses /live (ping only) so load cannot kill the JVM via DB health.
+        // Kubelet probes use the management port (own thread pool).
+        String ready = "management.endpoint.health.group.ready.";
+        assertEquals("/health", binder.bind(ready + "additional-path", String.class).get());
         String live = "management.endpoint.health.group.live.";
-        assertEquals("server:/live", binder.bind(live + "additional-path", String.class).get());
+        assertEquals("/live", binder.bind(live + "additional-path", String.class).get());
         assertEquals(List.of("ping"), binder.bind(live + "include", Bindable.listOf(String.class)).get());
     }
 

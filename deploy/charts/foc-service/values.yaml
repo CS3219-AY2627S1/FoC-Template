@@ -113,6 +113,9 @@ mesh:
 healthPath: /health
 readinessPath: ""
 livenessPath: ""
+# When set, probes use this container port (e.g. Spring management.server.port)
+# and Linkerd skips inbound on it so kubelet is not meshed onto a busy proxy.
+managementPort: ""
 
 # `helm test` pods (not used by Argo CD).
 tests:

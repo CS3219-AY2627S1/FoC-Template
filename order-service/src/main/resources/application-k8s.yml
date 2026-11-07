@@ -7,6 +7,10 @@ spring:
     url: jdbc:postgresql://${PGHOST}:${PGPORT}/${PGDATABASE}?sslmode=${PGSSLMODE:require}
     username: ${PGUSER}
     password: ${PGPASSWORD}
+    hikari:
+      # Full-run create/read is I/O heavy; default 10 stalls Tomcat workers.
+      # 16 pods × 30 ≈ 480; RDS db.m7g.xlarge allows ~1800.
+      maximum-pool-size: 30
   kafka:
     # KAFKA_* are set by the chart for KafkaUser "order" (ADR-0004): the TLS
     # listener with SCRAM-SHA-512, and the cluster CA as a mounted PEM file.
@@ -22,21 +26,31 @@ spring:
       # Topics are owned by charts/foc-kafka; the order user can't create them.
       auto-create: false
 
+server:
+  tomcat:
+    threads:
+      # Default 200 fills under 9600 VUs per few pods; workers block on DB/HTTP.
+      max: 400
+
 management:
+  # Separate connector/thread pool so kubelet probes are not starved by API load.
+  server:
+    port: 8084
   endpoint:
     health:
       group:
-        # Every FoC service answers GET /health on its own port: the chart's
-        # readiness probe, and peers' `helm test` checks of their *_SERVICE_URL.
-        # Same status as /actuator/health, which still works. Includes DB, so
-        # do not use this path for liveness under load.
+        # Peers' helm test still hits the main Service port (*_SERVICE_URL/health).
         platform:
           include: "*"
           additional-path: "server:/health"
-        # Ping only: kubelet liveness. Saturated Tomcat/DB must not kill the JVM.
+        # Kubelet readiness on the management port (own thread pool).
+        ready:
+          include: "*"
+          additional-path: "/health"
+        # Ping only on the management port — must not share API Tomcat workers.
         live:
           include: ping
-          additional-path: "server:/live"
+          additional-path: "/live"
 
 order:
   photos:

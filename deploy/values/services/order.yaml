@@ -3,9 +3,10 @@ name: order
 image:
   name: foc/order-service
 port: 8083 # server.port in order-service/src/main/resources/application.yml
-healthPath: /health # readiness + helm test; DOWN if the database is unreachable
-readinessPath: /health
-livenessPath: /live # ping only (application-k8s.yml); must not check DB under load
+healthPath: /health # peers' helm test on the main Service port (server:/health)
+readinessPath: /health # kubelet on managementPort (application-k8s.yml ready group)
+livenessPath: /live # kubelet on managementPort (ping only)
+managementPort: 8084 # separate Tomcat; probes must not share API worker threads
 database:
   enabled: true # Secret order-db (charts/foc-database, ADR-0010); read via secretEnv below
 kafka:
