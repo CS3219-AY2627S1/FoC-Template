@@ -9,7 +9,9 @@ mesh:
     memoryLimit: 512Mi
 autoscaling:
   enabled: true
-  minReplicas: 2
+  # Full-run traffic is I/O-bound: CPU HPA stays low and never scales. Pin a
+  # high floor so 9600 VUs are not served by ~6 pods.
+  minReplicas: 16
   maxReplicas: 24
   targetCPUUtilization: 70
 resources:
