@@ -52,56 +52,206 @@ k6 run -e VUS=30 -e DURATION=30s load-test/k6/load.js
 
 `--apply` uses Docker exec against `user-service-db-1` and `credit-postgres`. Override with `USER_DB_CONTAINER` / `CREDIT_DB_CONTAINER` if the names differ.
 
-### In the cluster (dev)
-
-This folder is also a Helm chart. Argo CD app `load-test-dev` deploys it into
-namespace `foc-load`: three suspended CronJobs that only run when you start
-them. Each Job regenerates the seed files itself (user ids are deterministic),
-so nothing is copied between Jobs.
-
-| CronJob | What it does |
-| --- | --- |
-| `load-setup` | Seeds 9600 users into the User and Credit databases. Re-run to reset balances. |
-| `load-run-smoke` | k6, 30 VUs for 1 minute, on the normal nodes. |
-| `load-run-full` | k6, 9600 VUs for 10 minutes, on the `loadgen` node (one 8 vCPU / 32 GiB Spot node, added by Cluster Autoscaler, removed ~10 min after). |
-
-k6 calls `http://order.foc-dev.svc.cluster.local:8083` as mesh identity
-`foc-load/k6`, which dev's Order admits. Results stream to Prometheus, tagged
-`testid=<Job name>`. Nothing is cleaned up: load users and orders stay in the
-dev databases.
-
-Before a full run, raise RDS to `db.m7g.xlarge` (and back afterwards).
-
-```bash
-export AWS_PROFILE=cs3219-dev
-kubectl -n foc-load create job load-setup-$(date +%H%M) --from=cronjob/load-setup
-kubectl -n foc-load logs -f job/load-setup-<HHMM>        # "Seeded 9600 users"
-
-kubectl -n foc-load create job smoke-$(date +%H%M) --from=cronjob/load-run-smoke
-kubectl -n foc-load create job full-$(date +%H%M) --from=cronjob/load-run-full
-```
-
-Or in the Argo CD UI: app `load-test-dev` → the CronJob → ⋮ → **Create Job**.
-
-Results:
-
-- `kubectl -n foc-load logs -f job/<name> -c k6` prints k6's end-of-run summary.
-  A failed threshold makes the Job **Failed**.
-- Grafana (`kubectl -n monitoring port-forward svc/kps-grafana 3000:80`):
-  dashboard **k6 Prometheus (Native Histograms)**, pick the run under `testid`.
-  The Linkerd `response_total` metrics and the Kubernetes dashboards show the
-  services' side.
-- `kubectl -n foc-dev get hpa -w` while it runs.
-
-Change VUs, duration or resources in `values.yaml` (`runs:`).
-
 ### EC2 or laptop against EKS
 
 Generate the seed with `node load-test/setup/seed-users.mjs`, apply
 `data/users.sql` / `data/credits.sql` with `psql`, then run k6 with
 `-e ORDER_URL=...` against a port-forward (`kubectl -n foc-dev port-forward
 svc/order 8083:8083`). Order's mesh policy refuses unmeshed callers, so a
-plain port-forward from outside the mesh gets 403; prefer the in-cluster Jobs.
+plain port-forward from outside the mesh gets 403; use [Testing in EKS](#testing-in-eks) instead.
+
+## Testing in EKS
+
+The load test runs inside the dev cluster (`foc-nonprod`). This folder is also
+a Helm chart: Argo CD app `load-test-dev` deploys it into namespace `foc-load`
+as three **suspended CronJobs**. They never run on a schedule; you start each
+one by hand, which creates a one-off Job.
+
+| CronJob | What it does | Runs on |
+| --- | --- | --- |
+| `load-setup` | Seeds 9600 users into the User and Credit databases. Re-run to reset credit balances. | normal nodes |
+| `load-run-smoke` | k6, 30 VUs for 1 minute. Checks the whole path works. | normal nodes |
+| `load-run-full` | k6, 9600 VUs for 10 minutes. The real test. | the `loadgen` node: one 8 vCPU / 32 GiB Spot node, added for the run and removed ~10 min after |
+
+k6 calls Order directly at `http://order.foc-dev.svc.cluster.local:8083` with
+the gateway's identity headers, as mesh identity `foc-load/k6` (dev's Order
+admits it). Every run streams to Prometheus, tagged `testid=<Job name>`.
+Nothing is cleaned up: load users and orders stay in the dev databases.
+
+### 1. One-time setup (AWS and kubectl)
+
+1. **Install the AWS CLI v2 and kubectl** if you haven't. Check with
+   `aws --version` (needs `aws-cli/2.x`) and `kubectl version --client`.
+
+   | OS | AWS CLI v2 | kubectl |
+   | --- | --- | --- |
+   | macOS | `brew install awscli` | `brew install kubectl` |
+   | Windows | `winget install Amazon.AWSCLI` | `winget install Kubernetes.kubectl` |
+   | Linux | [AWS CLI install guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | [kubectl install guide](https://kubernetes.io/docs/tasks/tools/) |
+
+   Terraform is only needed for the RDS resize in step 5. Use the version in
+   `infra/.terraform-version`, e.g. `brew install tfenv`, then `cd infra &&
+   tfenv install`.
+
+2. **Get into the NUS AWS account.** Ask whoever owns the project to add you to
+   account `474265880628`. Sign in once at
+   <https://nus-aws-cloud.awsapps.com/start> to check you can see it.
+3. **Create the AWS profile:**
+
+   ```bash
+   aws configure sso
+   ```
+
+   | Prompt | Answer |
+   | --- | --- |
+   | SSO session name | `nus-sso` |
+   | SSO start URL | `https://nus-aws-cloud.awsapps.com/start` |
+   | SSO region | `ap-southeast-1` |
+   | SSO registration scopes | press Enter (`sso:account:access`) |
+   | Account / role (browser opens) | `474265880628`, role `nusisb_IsbUsersPS` |
+   | Default client region | `ap-southeast-1` |
+   | Output format | press Enter |
+   | Profile name | `cs3219-dev` |
+
+4. **Point kubectl at the cluster:**
+
+   ```bash
+   unset KUBECONFIG     # don't merge EKS into the local Floci kubeconfig
+   aws eks update-kubeconfig --name foc-nonprod --region ap-southeast-1 --profile cs3219-dev
+   kubectl -n foc-load get cronjobs     # lists the three CronJobs
+   ```
+
+   Everyone signed in with role `nusisb_IsbUsersPS` gets cluster access. With a
+   different role, kubectl says `Unauthorized`: the project owner adds your
+   role's ARN to `cluster_admin_arns` in `infra/nonprod/aws`.
+
+### 2. Every new terminal
+
+```bash
+export AWS_PROFILE=cs3219-dev
+aws sso login            # when a command says the session or token expired
+unset KUBECONFIG
+kubectl config current-context    # …:cluster/foc-nonprod
+```
+
+### 3. Seed the users (once, or to reset balances)
+
+Steps 3, 4 and 5 each start a Job from a CronJob, either from the terminal or
+from the Argo CD UI. Both do the same thing. To open the UI, see
+[step 6](#6-argo-cd-ui-start-and-watch-runs).
+
+| Way | Start | Follow |
+| --- | --- | --- |
+| **Terminal** | `kubectl -n foc-load create job load-setup-$(date +%H%M) --from=cronjob/load-setup` | `kubectl -n foc-load logs -f job/load-setup-<HHMM> -c psql` |
+| **Argo CD UI** | app `load-test-dev` → CronJob **`load-setup`** → **⋮** → **Create Job** | the new pod → **Logs** → container `psql` |
+
+The log ends with `Seeded 9600 users`. Seeding takes about 15 seconds. Smoke
+and full runs reuse the same users, so seed again only to reset credit
+balances. Each requester starts with 5000 credits and each order spends 1.
+
+### 4. Smoke run
+
+| Way | Start | Follow |
+| --- | --- | --- |
+| **Terminal** | `kubectl -n foc-load create job smoke-$(date +%H%M) --from=cronjob/load-run-smoke` | `kubectl -n foc-load logs -f job/smoke-<HHMM> -c k6` |
+| **Argo CD UI** | app `load-test-dev` → CronJob **`load-run-smoke`** → **⋮** → **Create Job** | the new pod → **Logs** → container `k6` |
+
+It takes about 1.5 minutes. The Job ends **Complete** if every threshold passed
+(under 5% failed requests per operation) and **Failed** otherwise. Do this
+before every full run; it costs nothing extra.
+
+### 5. Full run
+
+**Resize RDS first.** All seven services share one Postgres instance, normally
+`db.t4g.micro`. That only allows about 80–90 connections, and during a full run
+the services scale out (Order to 16 pods, User and Rating to 6, Credit and
+Supplier to 4), each pod with its own connection pool. The pool connections
+run out first, then the micro's burstable CPU credits, so requests fail
+because of the database rather than the services. `db.m7g.xlarge` allows about
+1,800 connections on 4 dedicated vCPUs (~$0.47/h).
+
+```bash
+terraform -chdir=infra/nonprod/aws init -backend-config="bucket=foc-tfstate-474265880628"   # once per machine
+terraform -chdir=infra/nonprod/aws apply \
+  -var state_bucket=foc-tfstate-474265880628 \
+  -var ses_from_email=donleehh420@gmail.com \
+  -var rds_instance_class=db.m7g.xlarge
+```
+
+The plan should show only `~ instance_class` on `aws_db_instance.foc`. The
+resize takes about 10 minutes and the database is **unavailable for a few
+minutes** in that time, so tell the team first. Wait until it reports
+`available`:
+
+```bash
+aws rds describe-db-instances --db-instance-identifier foc-nonprod \
+  --query 'DBInstances[0].[DBInstanceClass,DBInstanceStatus]' --output text
+```
+
+Then start the run:
+
+| Way | Start | Follow |
+| --- | --- | --- |
+| **Terminal** | `kubectl -n foc-load create job full-$(date +%H%M) --from=cronjob/load-run-full` | `kubectl -n foc-load get pods -w` until Running, then `kubectl -n foc-load logs -f job/full-<HHMM> -c k6` |
+| **Argo CD UI** | app `load-test-dev` → CronJob **`load-run-full`** → **⋮** → **Create Job** | the new pod (Pending, then Running) → **Logs** → container `k6` |
+
+The pod stays Pending for 3–5 minutes while the loadgen node starts.
+
+**Afterwards, scale RDS back** by running the same `apply` without
+`-var rds_instance_class=…`. Leaving it on xlarge costs about $340 a month.
+
+### 6. Argo CD UI (start and watch runs)
+
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+kubectl -n argocd port-forward svc/argocd-server 8081:80
+```
+
+Open <http://localhost:8081> and log in as `admin`.
+
+- **Start a run:** app `load-test-dev` → click a CronJob (`load-setup`,
+  `load-run-smoke`, `load-run-full`) → **⋮** → **Create Job**. This does the
+  same as the `kubectl create job` commands in steps 3–5.
+- **Follow it:** the new Job and its pod appear under the CronJob. Click the
+  pod → **Logs** and pick container `k6` (`seed` and `psql` for setup). A green
+  heart means it passed; a broken heart means it failed.
+- **The services' side:** apps `dev-order`, `dev-user`, `dev-credit` and so on
+  show pods being added as the autoscalers react, and any restarts.
+
+Argo CD doesn't own the Jobs you create, so it never deletes them. Kubernetes
+removes each finished Job and its logs after 24 hours.
+
+### 7. Results in Grafana
+
+```bash
+aws secretsmanager get-secret-value --secret-id foc/dev/grafana-admin --query SecretString --output text   # user: admin
+kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
+```
+
+Open <http://localhost:3000> and log in as `admin`.
+
+- **k6's view:** **Dashboards** → **k6 Prometheus (Native Histograms)**. Pick
+  the run under **testid** (the Job name, e.g. `full-1430`) and set the time
+  range to cover it, e.g. *Last 30 minutes*. It shows requests per second,
+  latency per endpoint (`create`, `accept`, `get_order`, `collect`, …), failed
+  requests and VUs.
+- **Services' CPU and memory:** **Dashboards** → **Kubernetes / Compute
+  Resources / Namespace (Pods)**, namespace `foc-dev`.
+- **Per-service traffic** from the Linkerd proxies: **Explore**, data source
+  Prometheus:
+
+  ```promql
+  sum by (app_kubernetes_io_name) (rate(response_total{namespace="foc-dev", direction="inbound"}[1m]))
+  ```
+
+- **Nodes:** **Kubernetes / Compute Resources / Node (Pods)** shows the
+  `loadgen` and `burst` nodes.
+
+Prometheus keeps results for 7 days; pausing dev (`deploy/eks-down.sh`) deletes
+them. k6's end-of-run summary stays in the Job logs for 24 hours.
+
+To change VUs, duration or k6's CPU and memory, edit `runs:` in `values.yaml`
+and merge to `main`.
 
 ## Env
 

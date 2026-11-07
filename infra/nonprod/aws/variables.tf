@@ -72,6 +72,12 @@ variable "loadgen_instance_types" {
   default     = ["m7g.2xlarge", "m6g.2xlarge"]
 }
 
+variable "rds_instance_class" {
+  description = "RDS size. For a full load test (load-test/README.md) apply with db.m7g.xlarge (~$0.47/h, ~1,800 connections), then apply again without it."
+  type        = string
+  default     = "db.t4g.micro"
+}
+
 variable "databases" {
   description = "Services that get their own Postgres database and login (ADR-0010). Same as infra/local/aws."
   type        = list(string)
