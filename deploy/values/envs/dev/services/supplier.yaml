@@ -2,8 +2,8 @@ image:
   tag: "5ec616ba9b86e8ead4eaae928dd4c7fa15d6de66" # git SHA, set by deploy/push-dev.sh
 autoscaling:
   enabled: true
-  # min 2 so Order pickup validation on create is not single-pod cold under load.
-  minReplicas: 2
+  # Full-run create validates pickup; keep a warm floor.
+  minReplicas: 4
   maxReplicas: 8
   targetCPUUtilization: 70
 resources:

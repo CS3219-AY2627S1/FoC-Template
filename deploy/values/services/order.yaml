@@ -4,7 +4,9 @@ image:
   name: foc/order-service
 port: 8083 # server.port in order-service/src/main/resources/application.yml
 healthPath: /health # peers' helm test on the main Service port (server:/health)
-readinessPath: /health # kubelet on managementPort (application-k8s.yml ready group)
+# Ping-only readiness: DB /health times out under full-run load and pulls pods
+# out of the Service (death spiral). Keep /health for monitoring / helm tests.
+readinessPath: /live # kubelet on managementPort (application-k8s.yml live group)
 livenessPath: /live # kubelet on managementPort (ping only)
 managementPort: 8084 # separate Tomcat; probes must not share API worker threads
 database:

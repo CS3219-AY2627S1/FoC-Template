@@ -43,12 +43,13 @@ management:
         platform:
           include: "*"
           additional-path: "server:/health"
-        # Kubelet readiness on the management port (own thread pool).
+        # Full health on management for scrapes / manual checks (not kubelet readiness).
         # Spring Boot 4 requires namespace:path (management: or server:), not a bare path.
         ready:
           include: "*"
           additional-path: "management:/health"
-        # Ping only on the management port — must not share API Tomcat workers.
+        # Ping only — kubelet readiness+liveness (deploy/values/services/order.yaml).
+        # Must not share API Tomcat workers or trip on slow DB under full-run load.
         live:
           include: ping
           additional-path: "management:/live"
