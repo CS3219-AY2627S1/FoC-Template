@@ -9,6 +9,15 @@ from app.services import ai_client, order_photos
 from app.services.order_photos import EvidencePhoto
 
 
+def test_key_for_role_rejects_anything_not_stored_on_the_case():
+    refs = ["order-1/collection.jpg", "order-1/dispute.webp"]
+    assert order_photos.key_for_role(refs, "collection") == "order-1/collection.jpg"
+    assert order_photos.key_for_role(refs, "dispute") == "order-1/dispute.webp"
+    assert order_photos.key_for_role(refs, "delivery") is None
+    assert order_photos.key_for_role(refs, "../secrets") is None
+    assert order_photos.key_for_role(None, "collection") is None
+
+
 def test_role_comes_from_the_object_key():
     assert order_photos.role_of("3f1c/collection.jpg") == "collection"
     assert order_photos.role_of("3f1c/delivery.png") == "delivery"

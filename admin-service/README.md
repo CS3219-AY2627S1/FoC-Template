@@ -50,7 +50,7 @@ admin-service/
 │   │   └── scheduler.py          # job registration / cancel (APScheduler)
 │   └── jobs/
 │       └── conflict_jobs.py      # AI eval, reminder, auto-resolve (own DB session)
-├── alembic/                      # migrations through 0004_user_reports_and_appeals
+├── alembic/                      # migrations through 0005_appeal_rejection_reason
 ├── tests/
 ├── mock_user_service.py          # local stub for User Service
 ├── docker-compose.yml            # Postgres, mock User Service, app (Kafka is Order's)
@@ -100,7 +100,7 @@ Health (no auth): `GET /health` → `{ "status": "ok" }`.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/v1/admin/users?search=&page=1` | Relays to User Service search |
+| GET | `/api/v1/admin/users?search=&page=1&status=` | Relays to User Service `GET /api/v1/user/search`. `status` is optional: `Created`, `Verified`, or `Suspended`. Omitted means every user. An unknown value is **422**. `total` is whatever User Service returns for that filter |
 | POST | `/api/v1/admin/users/{user_id}/promote` | Relays role=`admin`; audits; Kafka `UserPromoted` |
 | POST | `/api/v1/admin/users/{user_id}/demote` | Cannot demote self; role=`user`; `UserDemoted` |
 | POST | `/api/v1/admin/users/{user_id}/suspend` | Relays status=`suspended`; closes open reports against that user as `actioned`; `UserSuspended` |
@@ -153,9 +153,12 @@ Returns **201**. While that user has an open appeal, a retry returns the same ro
 
 | Method | Path | Notes |
 |---|---|---|
+| GET | `/api/v1/admin/appeals/latest?userId=` | **No auth.** That user's latest appeal, or JSON `null`. Empty or oversized `userId` is **422**. Registered before `/{appeal_id}` |
 | GET | `/api/v1/admin/appeals?status=` | `open`, `rejected`, or `reinstated` |
 | GET | `/api/v1/admin/appeals/{appeal_id}` | Detail |
-| POST | `/api/v1/admin/appeals/{appeal_id}/reject` | `open` → `rejected`. The suspension stays. **409** if it is not open |
+| POST | `/api/v1/admin/appeals/{appeal_id}/reject` | `open` → `rejected`. Body `{ "reason": "..." }`, trimmed, 1–4000 characters. Blank or missing is **422**. The reason is stored as `rejectionReason` and on the `reject_appeal` audit `detail`. The suspension stays. **409** if it is not open. After commit, Admin calls User Service `POST /api/v1/user/{userId}/appeal-rejected` with the same reason and the admin's `Authorization` header (2s). A failure there does not undo the rejection |
+
+An appeal response includes `rejectionReason` (`null` while the appeal is open).
 
 ### Conflicts — `/api/v1/admin/conflicts`
 
@@ -342,6 +345,10 @@ calls send `x-user-id`, `x-is-admin`, and `x-permitted-action`.
 - A failed Kafka publish is only logged. The database commits first, and if
   Kafka is down the API still succeeds. There is no outbox to retry that event
   later.
+- User Service search does not yet apply `status`, so the forwarded filter is
+  ignored until that service does. `POST /api/v1/user/{userId}/appeal-rejected`
+  is called after a reject; User Service does not implement it yet, and the
+  stored rejection still stands when that call fails.
 - Intake has no application auth: it relies on the gateway block and the
   mesh policy (`deploy/values/services/admin.yaml`). Outside the cluster (Compose,
   `uvicorn` on a laptop) anything that can reach the port can call it.

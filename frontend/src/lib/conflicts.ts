@@ -12,7 +12,8 @@
  * enough.
  */
 
-import { api } from './api';
+import { ApiError, UNAUTHORIZED_EVENT, api } from './api';
+import { clearToken, getToken } from './session';
 
 /**
  * created: waiting for the AI. ai_evaluated / ai_failed: ready to claim.
@@ -45,8 +46,9 @@ export interface ConflictSummary {
 export interface ConflictDetail extends ConflictSummary {
   comment: string;
   /**
-   * Keys in Order's private photo bucket. The Admin Service reads them for the
-   * AI; nothing serves them to a browser, so the page only counts them.
+   * Keys in Order's private photo bucket (`{orderId}/collection.jpg` and the
+   * same for delivery and dispute). The page asks the Admin Service for the
+   * bytes; the keys themselves are not URLs.
    */
   evidencePhotoUrls: string[];
   aiReasoning: string | null;
@@ -69,12 +71,57 @@ export async function fetchConflict(caseId: string): Promise<ConflictDetail> {
   return api.get<ConflictDetail>(`/admin/conflicts/${encodeURIComponent(caseId)}`);
 }
 
+export const EVIDENCE_ROLES = ['collection', 'delivery', 'dispute'] as const;
+export type EvidenceRole = (typeof EVIDENCE_ROLES)[number];
+
+const ROLE_SET = new Set<string>(EVIDENCE_ROLES);
+
+/** Roles actually stored on the case, in collection / delivery / dispute order. */
+export function evidenceRoles(keys: string[]): EvidenceRole[] {
+  const found = new Set<EvidenceRole>();
+  for (const key of keys) {
+    const name = key.trim().split('/').pop() ?? '';
+    const stem = name.split('.')[0]?.toLowerCase() ?? '';
+    if (ROLE_SET.has(stem)) found.add(stem as EvidenceRole);
+  }
+  return EVIDENCE_ROLES.filter((role) => found.has(role));
+}
+
+/** Image bytes for one role. 404 once the case is resolved or the object is gone. */
+export async function fetchConflictPhoto(caseId: string, role: EvidenceRole): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token !== null) headers.authorization = `Bearer ${token}`;
+
+  const response = await fetch(
+    `/api/v1/admin/conflicts/${encodeURIComponent(caseId)}/photos/${role}`,
+    { headers, credentials: 'include' },
+  );
+  if (response.status === 401) {
+    clearToken();
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, 'UNKNOWN', 'Could not load this photo.');
+  }
+  return response.blob();
+}
+
 /**
  * Claims the case for this admin. Order then marks the order Under Review.
  * 409 when another admin claimed it first, or it is not ready to claim.
  */
 export async function claimConflict(caseId: string): Promise<void> {
   await api.post(`/admin/conflicts/${encodeURIComponent(caseId)}/review`);
+}
+
+/**
+ * Asks for a new AI verdict on a case this admin is reviewing. Returns as soon
+ * as the job is queued; the page re-reads the case until `aiCompletedAt` changes.
+ * 409 when this admin is not the one reviewing it.
+ */
+export async function reassessConflict(caseId: string): Promise<void> {
+  await api.post(`/admin/conflicts/${encodeURIComponent(caseId)}/reassess`);
 }
 
 /**

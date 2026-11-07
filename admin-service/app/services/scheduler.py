@@ -16,6 +16,19 @@ def start() -> None:
     scheduler.start()
 
 
+def schedule_ai_reassessment(case_id: str) -> None:
+    """One-off job from the review dialog. Replaces a rerun that has not started yet."""
+    scheduler.add_job(
+        "app.jobs.conflict_jobs:rerun_ai_evaluation",
+        "date",
+        run_date=datetime.now(timezone.utc),
+        args=[case_id],
+        id=f"ai-rerun-{case_id}",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
+
 def schedule_ai_evaluation(case_id: str) -> None:
     """One-off durable job: run the AI right after creation (survives restarts)."""
     scheduler.add_job(
