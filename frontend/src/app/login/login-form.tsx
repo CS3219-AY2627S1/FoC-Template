@@ -34,6 +34,9 @@ function describeError(error: unknown): string {
   if (error instanceof Error && error.message === "EMAIL_NOT_VERIFIED") {
     return "Email is not verified."
   }
+  if (error instanceof Error && error.message == "EMAIL_NOT_NUS") {
+    return "Please use your NUS email address (@u.nus.edu)."
+  }
   if (error instanceof FirebaseError) {
     // Include the code for anything unexpected so it can be diagnosed.
     return FIREBASE_MESSAGES[error.code] ?? `Sign-in failed (${error.code}). Please try again.`
