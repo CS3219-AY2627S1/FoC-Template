@@ -6,10 +6,10 @@ Everyone is **dual-role** (same as the product): one seeded user per VU. Each it
 
 | Choice | Probability | What they do |
 | --- | --- | --- |
-| Request | `REQUEST_PROBABILITY` (default **0.3**, alias `REQUESTER_SHARE`) | Requester reads + maybe create. Extra reads: `/requests/active`, `/alerts`, `/mine`, `/requests/past`. |
+| Request | `REQUEST_PROBABILITY` (default **0.4**, alias `REQUESTER_SHARE`) | Requester reads + maybe create. Extra reads: `/requests/active`, `/alerts`, `/mine`, `/requests/past`. |
 | Deliver | `1 −` that | With `COURIER_BROWSE_PROBABILITY` (default **0.2**) browse the open pool and maybe accept (409 on own/taken is OK), then collect + deliver PNGs. Otherwise idle think-time. List/search reads every 10th iteration. |
 
-**Peak creates** are gated once per VU: with probability `REQUEST_PROBABILITY` that VU creates at all; of those, `TWO_ORDERS_PROBABILITY` (default **0.6**) place `MAX_ORDERS_PER_REQUESTER` (default **2**) and the rest place one fewer. Expected creates ≈ `0.3 × 9600 × (0.6×2 + 0.4×1)` (~4.6k). Each planned create is due at a random time in the first `CREATE_SPREAD_SECONDS` of that VU’s life (default **240** on peak, **20** on soak). Failed closes stay in the VU’s open list and retry; create attempts stop after budget+3.
+**Peak creates** are gated once per VU: with probability `REQUEST_PROBABILITY` that VU creates at all; of those, `TWO_ORDERS_PROBABILITY` (default **0.6**) place `MAX_ORDERS_PER_REQUESTER` (default **2**) and the rest place one fewer. Expected creates ≈ `0.4 × 9600 × (0.6×2 + 0.4×1)` (~6.1k). Each planned create is due at a random time in the first `CREATE_SPREAD_SECONDS` of that VU’s life (default **240** on peak, **20** on soak). Failed closes stay in the VU’s open list and retry; create attempts stop after budget+3.
 
 Downstream calls, as a share of that traffic:
 
@@ -261,8 +261,8 @@ and merge to `main`.
 | --- | --- | --- |
 | `VUS` | `9600` | seed + k6 peak / soak size |
 | `PROFILE` | `peak` | k6 — `peak` = ramping-vus (~15m); `soak` = flat `DURATION` |
-| `REQUEST_PROBABILITY` | `0.3` | k6 — P(request this iteration); falls back to `REQUESTER_SHARE` |
-| `REQUESTER_SHARE` | `0.3` | seed roster split + k6 alias for `REQUEST_PROBABILITY` |
+| `REQUEST_PROBABILITY` | `0.4` | k6 — P(request this iteration) + P(VU creates this run); falls back to `REQUESTER_SHARE` |
+| `REQUESTER_SHARE` | `0.4` | seed roster split + k6 alias for `REQUEST_PROBABILITY` |
 | `CREDIT_BALANCE` | `5000` | seed (every user; dual-role) |
 | `ORDER_URL` | `http://localhost:8083` | k6 |
 | `DURATION` | `10m` | k6 — used only when `PROFILE=soak` |

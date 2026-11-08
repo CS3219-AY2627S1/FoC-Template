@@ -3,7 +3,7 @@
 
 export function rosterFromEnv(env = process.env) {
   const total = positiveInt(env.VUS, 9600);
-  const share = Number(env.REQUESTER_SHARE ?? 0.3);
+  const share = Number(env.REQUESTER_SHARE ?? 0.4);
   if (!(share > 0) || !(share < 1)) {
     throw new Error("REQUESTER_SHARE must be between 0 and 1");
   }
