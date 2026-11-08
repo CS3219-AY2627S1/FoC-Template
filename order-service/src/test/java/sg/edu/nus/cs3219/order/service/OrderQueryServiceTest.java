@@ -153,6 +153,23 @@ class OrderQueryServiceTest {
         assertEquals("11111111-1111-1111-1111-111111111111", alert.getRequesterId());
         assertTrue(alert.isNotifyRequester());
         assertTrue(service.alerts(requester, 0, 0).content().isEmpty());
+
+        AlertEntity courierAlert = new AlertEntity();
+        courierAlert.setId(UUID.randomUUID());
+        courierAlert.setOrderId(id);
+        courierAlert.setRequesterId("11111111-1111-1111-1111-111111111111");
+        courierAlert.setCourierId(courier.userId());
+        courierAlert.setFromStatus("ESCALATED");
+        courierAlert.setToStatus("UNDER_REVIEW");
+        courierAlert.setNotifyRequester(true);
+        courierAlert.setNotifyCourier(true);
+        courierAlert.setCreatedAt(now);
+        when(alerts.findVisibleToUser(eq(courier.userId()), any()))
+                .thenReturn(new PageImpl<>(List.of(courierAlert)));
+        AlertResponse asCourier = AlertResponse.from(
+                service.alerts(courier, 0, 20).content().getFirst(), courier.userId());
+        assertTrue(asCourier.asCourier());
+        assertEquals("UNDER_REVIEW", asCourier.toStatus());
     }
 
     private OrderEntity order() {

@@ -85,18 +85,14 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
         if (cached != null && cached.fresh()) {
             return cached.value();
         }
+        return fetchTelegramWithRetry(userId);
+    }
+
+    private String fetchTelegramWithRetry(String userId) {
         ApiException lastUnavailable = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
             try {
-                TelegramResponse response = users.get()
-                        .uri("/api/v1/user/internal/users/{userId}/telegram", userId)
-                        .retrieve()
-                        .body(TelegramResponse.class);
-                if (response == null || response.telegramHandle() == null || response.telegramHandle().isBlank()) {
-                    throw ApiException.unavailable(USER_FAILED);
-                }
-                putTelegram(userId, response.telegramHandle());
-                return response.telegramHandle();
+                return fetchAndCacheTelegram(userId);
             } catch (RestClientResponseException exception) {
                 ApiException mapped = userFailure(exception);
                 if (!isTransientUnavailable(mapped) || attempt == 3) {
@@ -111,6 +107,18 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
             }
         }
         throw lastUnavailable != null ? lastUnavailable : ApiException.unavailable(USER_FAILED);
+    }
+
+    private String fetchAndCacheTelegram(String userId) {
+        TelegramResponse response = users.get()
+                .uri("/api/v1/user/internal/users/{userId}/telegram", userId)
+                .retrieve()
+                .body(TelegramResponse.class);
+        if (response == null || response.telegramHandle() == null || response.telegramHandle().isBlank()) {
+            throw ApiException.unavailable(USER_FAILED);
+        }
+        putTelegram(userId, response.telegramHandle());
+        return response.telegramHandle();
     }
 
     @Override

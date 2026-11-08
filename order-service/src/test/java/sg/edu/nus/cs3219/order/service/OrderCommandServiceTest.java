@@ -491,12 +491,20 @@ class OrderCommandServiceTest {
 
         OrderEntity escalated = openOrder();
         escalated.setStatus(OrderStatus.ESCALATED);
+        escalated.setCourierId(courier.userId());
         escalated.setCollectionPhotoRef("photo");
         when(processedEvents.existsById("event-4")).thenReturn(false);
         when(orders.lockById(id)).thenReturn(Optional.of(escalated));
         service.applyAdminEvent("event-4", "admin.review.started", id, "case-1", null);
         assertEquals(OrderStatus.UNDER_REVIEW, escalated.getStatus());
         assertEquals("case-1", escalated.getCaseId());
+        ArgumentCaptor<AlertEntity> reviewAlert = ArgumentCaptor.forClass(AlertEntity.class);
+        verify(alerts, atLeastOnce()).save(reviewAlert.capture());
+        AlertEntity underReview = reviewAlert.getAllValues().getLast();
+        assertEquals("UNDER_REVIEW", underReview.getToStatus());
+        assertTrue(underReview.isNotifyRequester());
+        assertTrue(underReview.isNotifyCourier());
+        assertEquals(courier.userId(), underReview.getCourierId());
 
         OrderEntity created = openOrder();
         when(processedEvents.existsById("event-5")).thenReturn(false);
