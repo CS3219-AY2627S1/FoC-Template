@@ -78,4 +78,6 @@ EXPOSED_ROUTES: tuple[tuple[str, str], ...] = (
     ("GET", "/api/credits/{user_id}/transactions"),
     # notification-service
     ("GET", "/api/notifications/{user_id}"),
+    ("POST", "/api/notifications/{user_id}/{notification_id}/read"),
+    ("POST", "/api/notifications/{user_id}/read-all"),
 )

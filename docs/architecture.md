@@ -19,7 +19,7 @@ internally **layered** (`api/routes` → `services` → `repositories`).
 | supplier-service | Supplier CRUD, discovery, seeding | supplier-db | sync |
 | order-service | Errand lifecycle + state machine | order-db | sync + publishes events |
 | credit-service | Closed credit economy | credit-db | sync + consumes events |
-| notification-service | User notifications | notification-db | consumes events |
+| notification-service | User notifications from order events; read API for the bell | notification-db | consumes events + sync (HTTP read API) |
 | frontend | Responsive SPA (requester/courier/admin) | — | sync (HTTP) |
 | rabbitmq | Event broker | — | async |
 
@@ -88,7 +88,7 @@ flowchart TB
 
     ORD -.->|"publishes order events<br/>on foc.order.events (topic, PR #5)"| MQ
     MQ -.->|"consumes order events (PR #5)"| CR
-    MQ -.->|"consumes order events (PR #5)"| NOT
+    MQ -.->|"consumes order events<br/>-> builds notifications"| NOT
 
     ORD -.->|"GET /suppliers/id<br/>validate supplier (PR #5)"| SUP
     ORD -.->|"POST /credits/reservations<br/>reserve credits (PR #5)"| CR
@@ -146,6 +146,13 @@ flowchart TB
   `implementation/order-service` branch (`app/clients/suppliers.py`,
   `app/clients/credits.py`). They are shown for context but are not yet on
   `main`.
+- **`notification-service` consumes order events.** On this branch the
+  notification-service binds a durable queue to `foc.order.events` and turns
+  each order fact into a per-recipient notification (`app/services/consumer.py`,
+  `app/services/rules.py`), then serves them over `/api/notifications/*` for the
+  frontend bell. The `MQ -> notification-service` edge is drawn as an active
+  consume path, not a pending one. See
+  [`notification-service/docs/architecture.md`](../notification-service/docs/architecture.md).
 
 ### Supplier Service (C4 Level 3 — Component)
 
@@ -180,7 +187,12 @@ supplier-deactivation cascade). State is persisted to the service-owned
 
 The system-level Container (C4 L2) view above shows how this service fits
 among the others. TODO (other services): add matching component diagrams for
-user-, order-, credit-, and notification-service. Related design views:
+user-, order-, and credit-service. The notification-service component view is
+done: see
+[`notification-service/docs/architecture.md`](../notification-service/docs/architecture.md)
+and its
+[`notification-service-architecture.svg`](../notification-service/docs/notification-service-architecture.svg).
+Related design views:
 [`rbac.md`](./rbac.md) (role → capability matrix + supplier-write sequence),
 `user-service/docs/architecture.md` (user_db data model), and
 `supplier-service/docs/data-model.md` (supplier_db data model).

@@ -77,12 +77,13 @@ gate:
 1. Provision the infrastructure:
 
    ```
-   cd infra/terraform
-   terraform init
-   terraform apply
+   export AWS_PROFILE=nusisb_IsbUsersPS-986918902548
+   aws sso login
+   terraform -chdir=infra/terraform init
+   terraform -chdir=infra/terraform apply
    ```
 
-   This allocates the Elastic IP and the backups bucket.
+   Terraform state is shared in S3 (see [`infra/terraform/README.md`](../terraform/README.md)), so `init` configures that backend and `apply` reconciles the existing stack rather than recreating it. A fresh clone does not start from empty state. This allocates the Elastic IP and the backups bucket.
 
 2. Render the EC2 values from the Terraform outputs, then commit:
 

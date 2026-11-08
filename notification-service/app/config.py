@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://foc:foc@notification-db:5432/notification_db"
     rabbitmq_url: str = "amqp://guest:guest@rabbitmq:5672/"
     order_events_exchange: str = "foc.order.events"
+    order_events_queue: str = "notification-service.order-events"
 
 
 settings = Settings()

@@ -112,12 +112,20 @@ jobs:
           fi
 
       - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.5"
 
       - name: terraform fmt + validate
         run: |
           terraform -chdir=infra/terraform fmt -check
           terraform -chdir=infra/terraform init -backend=false
           terraform -chdir=infra/terraform validate
+
+      - name: terraform fmt + validate (bootstrap)
+        run: |
+          terraform -chdir=infra/terraform-bootstrap fmt -check
+          terraform -chdir=infra/terraform-bootstrap init -backend=false
+          terraform -chdir=infra/terraform-bootstrap validate
 
       - name: Install actionlint
         run: |
