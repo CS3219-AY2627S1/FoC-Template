@@ -12,8 +12,8 @@ autoscaling:
   # Full-run traffic is I/O-bound: CPU HPA stays ~0% and scales DOWN mid-run
   # ("All metrics below target"), which caused k6 status=0 timeouts. Pin
   # min=max so Argo cannot shed pods during a 9600 VU run.
-  minReplicas: 24
-  maxReplicas: 24
+  minReplicas: 32
+  maxReplicas: 32
   targetCPUUtilization: 70
 resources:
   # Request 500m so a high replica floor can schedule without waiting on burst

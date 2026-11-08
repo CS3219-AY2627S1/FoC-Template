@@ -265,6 +265,9 @@ class HttpClientsTest {
         properties.getClients().setRatingBaseUrl(baseUrl);
         properties.getClients().setAdminBaseUrl(baseUrl);
         properties.getClients().setUserBaseUrl(baseUrl);
+        // Tests assert live peer behaviour; keep caches off.
+        properties.getClients().setSupplierCacheTtl(java.time.Duration.ZERO);
+        properties.getClients().setTelegramCacheTtl(java.time.Duration.ZERO);
         return new HttpClients(properties);
     }
 }

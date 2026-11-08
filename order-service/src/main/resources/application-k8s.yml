@@ -9,7 +9,7 @@ spring:
     password: ${PGPASSWORD}
     hikari:
       # Full-run create/read is I/O heavy; default 10 stalls Tomcat workers.
-      # 16 pods × 30 ≈ 480; RDS db.m7g.xlarge allows ~1800.
+      # 32 pods × 30 ≈ 960; RDS db.m7g.xlarge allows ~1800.
       maximum-pool-size: 30
   kafka:
     # KAFKA_* are set by the chart for KafkaUser "order" (ADR-0004): the TLS
@@ -58,6 +58,10 @@ order:
   # Peer calls (User/Rating/…) under mesh; 2s was tight when User pods hiccup.
   clients:
     timeout: 5s
+    # Approved pickup catalogue (5m) and telegram (fixed after signup → 1h);
+    # skip peer round-trips on create/accept. Credit reserve is never cached.
+    supplier-cache-ttl: 5m
+    telegram-cache-ttl: 1h
   photos:
     mode: file
     # Created by the Dockerfile and owned by the app user. Pod-local, so photos

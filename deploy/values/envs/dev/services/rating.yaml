@@ -2,9 +2,9 @@ image:
   tag: "b945b74b04e08ab97301412532ce48a1ce671a7b" # git SHA, set by deploy/push-dev.sh
 autoscaling:
   enabled: true
-  # Full-run close path hammers Rating; 1 pod → Linkerd "service unavailable".
-  minReplicas: 4
-  maxReplicas: 6
+  # Create/accept read rating (soft-null on failure); pin warm under peak.
+  minReplicas: 8
+  maxReplicas: 8
   targetCPUUtilization: 70
 resources:
   requests: {cpu: 250m}
