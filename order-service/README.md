@@ -203,7 +203,9 @@ moves it from `PICKED_UP` to `AWAITING_APPROVAL`. It accepts gateway-injected
 `client` and `admin` roles, but the caller's `X-User-Id` must match the
 assigned courier. A multipart `photo` file is optional. When supplied, it must
 contain a valid JPEG, PNG, or WebP image, at most 5 MiB and 20 million pixels,
-and is uploaded to a private S3 bucket. Its object key, the order update,
+and is rebuilt from its pixels before upload to remove EXIF/GPS and other
+embedded metadata. EXIF rotation is applied first so phone photos stay upright.
+The rebuilt image is uploaded to a private S3 bucket. Its object key, the order update,
 and the `OrderDelivered` outbox record commit in one database transaction with
 `awaiting_approval_at`, which starts the 24-hour approval clock. Without a
 photo, delivery skips S3 and the photo key remains null. The event worker
@@ -217,7 +219,9 @@ private photo bucket. Run `alembic upgrade head` to add the nullable photo key
 column. `GET /orders/{order_id}` returns the image as a base64 data URI in
 `proof_of_delivery_photo` to the requester or assigned courier. It returns
 `null` when no photo was supplied and uses `Cache-Control: private, no-store`. Order
-listings omit photo bytes and the private S3 key is never returned.
+listings omit photo bytes and the private S3 key is never returned. Retrieval also
+removes metadata from photos stored before this change; existing S3 objects are
+not rewritten by a read.
 
 At runtime, FastAPI also serves the live specification at `/openapi.json` and
 interactive documentation at `/docs`.

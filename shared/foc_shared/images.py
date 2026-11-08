@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import boto3
 from botocore.config import Config
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_IMAGE_PIXELS = 20_000_000
@@ -50,9 +50,32 @@ def validate_image(data: bytes, claimed_type: str | None) -> ImageData:
             if actual_type != claimed_type:
                 raise InvalidImageError("The photo type does not match its contents.")
             image.load()
-    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+            oriented = ImageOps.exif_transpose(image)
+            mode = (
+                "RGBA"
+                if actual_type != "image/jpeg"
+                and ("A" in oriented.getbands() or "transparency" in oriented.info)
+                else "RGB"
+            )
+            pixels = oriented.convert(mode)
+            clean = Image.new(mode, pixels.size)
+            clean.paste(pixels)
+            output = BytesIO()
+            clean.save(output, format=image.format)
+            sanitized = output.getvalue()
+    except InvalidImageError:
+        raise
+    except (
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+        SyntaxError,
+        Image.DecompressionBombError,
+    ) as exc:
         raise InvalidImageError("The photo is not a valid image.") from exc
-    return ImageData(data, claimed_type)
+    if len(sanitized) > MAX_IMAGE_BYTES:
+        raise InvalidImageError("The photo must be 5 MiB or smaller.")
+    return ImageData(sanitized, claimed_type)
 
 
 class PrivateImageStore:
@@ -102,7 +125,10 @@ class PrivateImageStore:
                 or content_type not in {item[0] for item in IMAGE_FORMATS.values()}
             ):
                 raise ImageStorageError("Stored image is invalid.")
-            return ImageData(data, content_type)
+            try:
+                return validate_image(data, content_type)
+            except InvalidImageError as exc:
+                raise ImageStorageError("Stored image is invalid.") from exc
 
         try:
             return await asyncio.to_thread(read_object)
