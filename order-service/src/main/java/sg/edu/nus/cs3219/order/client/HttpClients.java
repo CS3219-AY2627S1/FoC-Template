@@ -17,6 +17,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class HttpClients implements CreditClient, SupplierClient, UserClient, AdminClient, RatingClient {
@@ -30,6 +31,10 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
     private final RestClient users;
     private final RestClient admins;
     private final RestClient ratings;
+    private final Duration supplierCacheTtl;
+    private final Duration telegramCacheTtl;
+    private final ConcurrentHashMap<String, CacheEntry<Place>> placeCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CacheEntry<String>> telegramCache = new ConcurrentHashMap<>();
 
     public HttpClients(OrderProperties properties) {
         Duration timeout = properties.getClients().getTimeout();
@@ -38,6 +43,8 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
         this.users = client(properties.getClients().getUserBaseUrl(), timeout);
         this.admins = client(properties.getClients().getAdminBaseUrl(), timeout);
         this.ratings = client(properties.getClients().getRatingBaseUrl(), timeout);
+        this.supplierCacheTtl = nullToZero(properties.getClients().getSupplierCacheTtl());
+        this.telegramCacheTtl = nullToZero(properties.getClients().getTelegramCacheTtl());
     }
 
     @Override
@@ -74,6 +81,10 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
 
     @Override
     public String telegramHandle(String userId) {
+        CacheEntry<String> cached = telegramCache.get(userId);
+        if (cached != null && cached.fresh()) {
+            return cached.value();
+        }
         ApiException lastUnavailable = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
             try {
@@ -84,6 +95,7 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
                 if (response == null || response.telegramHandle() == null || response.telegramHandle().isBlank()) {
                     throw ApiException.unavailable(USER_FAILED);
                 }
+                putTelegram(userId, response.telegramHandle());
                 return response.telegramHandle();
             } catch (RestClientResponseException exception) {
                 ApiException mapped = userFailure(exception);
@@ -147,6 +159,10 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
 
     @Override
     public Place requirePlace(String locationId, UserAccount caller) {
+        CacheEntry<Place> cached = placeCache.get(locationId);
+        if (cached != null && cached.fresh()) {
+            return cached.value();
+        }
         try {
             SupplierResponse supplier = suppliers.get()
                     .uri("/api/v1/supplier/{id}", locationId)
@@ -157,7 +173,9 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
                     || !"approved".equals(supplier.status())) {
                 throw ApiException.badRequest(NOT_APPROVED);
             }
-            return new Place(supplier.id().toString(), supplier.name(), supplier.latitude(), supplier.longitude());
+            Place place = new Place(supplier.id().toString(), supplier.name(), supplier.latitude(), supplier.longitude());
+            putPlace(locationId, place);
+            return place;
         } catch (RestClientResponseException exception) {
             int status = exception.getStatusCode().value();
             if (status == 400 || status == 404) {
@@ -166,6 +184,30 @@ public class HttpClients implements CreditClient, SupplierClient, UserClient, Ad
             throw ApiException.unavailable("Supplier service could not complete the request");
         } catch (ResourceAccessException exception) {
             throw ApiException.unavailable("Supplier service did not respond in time");
+        }
+    }
+
+    private void putPlace(String locationId, Place place) {
+        if (supplierCacheTtl.isZero() || supplierCacheTtl.isNegative()) {
+            return;
+        }
+        placeCache.put(locationId, new CacheEntry<>(place, System.currentTimeMillis() + supplierCacheTtl.toMillis()));
+    }
+
+    private void putTelegram(String userId, String handle) {
+        if (telegramCacheTtl.isZero() || telegramCacheTtl.isNegative()) {
+            return;
+        }
+        telegramCache.put(userId, new CacheEntry<>(handle, System.currentTimeMillis() + telegramCacheTtl.toMillis()));
+    }
+
+    private static Duration nullToZero(Duration duration) {
+        return duration == null ? Duration.ZERO : duration;
+    }
+
+    private record CacheEntry<T>(T value, long expiresAtMs) {
+        boolean fresh() {
+            return System.currentTimeMillis() < expiresAtMs;
         }
     }
 

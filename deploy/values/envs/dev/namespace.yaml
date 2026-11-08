@@ -1,15 +1,15 @@
 # dev and stg share the non-prod nodes; each gets half-ish of them.
 # Fits every HPA at maxReplicas plus Kafka, proxies, Jobs and rollout surge.
 # Raise a maxReplicas → raise these, or the extra pods are refused.
-# Order maxReplicas=24 × (1Gi+256Mi req / 2Gi+512Mi lim) plus User/Credit/…
-# peers; 24Gi/48Gi capped Order at ~21 mid full-run.
+# Order maxReplicas=32 × (500m+1Gi req / 2+2Gi lim) plus pinned peers at 8.
+# 28/40Gi refused the 32-pod Order floor; keep headroom for Kafka and Jobs.
 quota:
-  requests.cpu: "28"
-  requests.memory: 40Gi
-  limits.cpu: "96"
-  limits.memory: 80Gi
+  requests.cpu: "40"
+  requests.memory: 64Gi
+  limits.cpu: "120"
+  limits.memory: 120Gi
   persistentvolumeclaims: "10"
-  pods: "80"
+  pods: "100"
 networkPolicy:
   # Envoy proxies (charts/foc-gateway) route traffic in and call User's /authorize.
   # Prometheus scrapes the Linkerd proxies (charts/kube-prometheus-stack).

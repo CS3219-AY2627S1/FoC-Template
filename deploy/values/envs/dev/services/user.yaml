@@ -4,9 +4,10 @@ image:
 # the poller separately and set TELEGRAM_POLLING_ENABLED=false here.
 autoscaling:
   enabled: true
-  # Full-run create looks up users; floor above 2 so HPA lag does not stall Order.
-  minReplicas: 4
-  maxReplicas: 12
+  # Create path looks up telegram on every order; CPU HPA is blind to that I/O.
+  # Pin min=max so peers stay warm under 9600 VU peak (same pattern as Order).
+  minReplicas: 8
+  maxReplicas: 8
   targetCPUUtilization: 70
 resources:
   requests: {cpu: 250m}
