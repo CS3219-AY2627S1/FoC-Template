@@ -7,7 +7,7 @@ Everyone is **dual-role** (same as the product): one seeded user per VU. Each it
 | Choice | Probability | What they do |
 | --- | --- | --- |
 | Request | `REQUEST_PROBABILITY` (default **0.3**, alias `REQUESTER_SHARE`) | Requester reads + maybe create. Extra reads: `/requests/active`, `/alerts`, `/mine`, `/requests/past`. |
-| Deliver | `1 −` that | Read the open pool, accept one order (409 on own/taken is OK), collect + deliver PNGs. Extra reads: `/deliveries/active`, `/deliveries/past`, `/search`. |
+| Deliver | `1 −` that | With `COURIER_BROWSE_PROBABILITY` (default **0.2**) browse the open pool and maybe accept (409 on own/taken is OK), then collect + deliver PNGs. Otherwise idle think-time. List/search reads every 10th iteration. |
 
 **Lunch creates** are gated once per VU: with probability `REQUEST_PROBABILITY` that VU may place up to `MAX_ORDERS_PER_REQUESTER` (default **2**) orders for the whole run. That keeps total creates ≈ `0.3 × 9600 × 2` (~5.7k), same as the old fixed-requester roster. Giving every VU a create budget under dual-role blew write volume to ~19k and failed creates retried forever. Create attempts stop after budget+3 so a saturated Order cannot spiral. Own open orders are always polled/closed on deliver iterations so they do not stall.
 
@@ -267,6 +267,7 @@ and merge to `main`.
 | `DURATION` | `10m` | k6 |
 | `THINK_SECONDS` | `1` | k6 |
 | `MAX_ORDERS_PER_REQUESTER` | `2` | k6 — max successful creates for a VU that drew a lunch create budget |
+| `COURIER_BROWSE_PROBABILITY` | `0.2` | k6 — on a deliver iteration, P(pool read + maybe accept) |
 | `ESCALATE_EVERY` | `20` | k6 |
 | `PICKUP_ID` | `2` | k6 — Supplier approved place id (`fromLocation`) |
 | `DROPOFF_ID` | `1` | k6 — Order `delivery_point.id` (`deliveryPointId`) |

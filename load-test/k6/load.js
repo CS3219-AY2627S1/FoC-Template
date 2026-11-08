@@ -22,6 +22,9 @@ import { SharedArray } from "k6/data";
 const total = intEnv("VUS", 9600);
 // Chance this iteration acts as requester (else courier). Matches product: anyone can do both.
 const requestProbability = Number(__ENV.REQUEST_PROBABILITY || __ENV.REQUESTER_SHARE || 0.3);
+// On a deliver iteration, P(browse pool + maybe accept). Real couriers do not
+// refresh/accept every second; 1.0 caused empty-pool read storms.
+const courierBrowseProbability = Number(__ENV.COURIER_BROWSE_PROBABILITY || 0.2);
 const orderUrl = __ENV.ORDER_URL || "http://localhost:8083";
 const pickupId = __ENV.PICKUP_ID || "2";
 const dropoffId = Number(__ENV.DROPOFF_ID || 1);
@@ -50,6 +53,9 @@ if (users.length < total) {
 }
 if (!(requestProbability > 0) || !(requestProbability < 1)) {
   throw new Error("REQUEST_PROBABILITY must be between 0 and 1");
+}
+if (!(courierBrowseProbability > 0) || courierBrowseProbability > 1) {
+  throw new Error("COURIER_BROWSE_PROBABILITY must be in (0, 1]");
 }
 
 // Per-VU state (each VU has its own JS runtime).
@@ -143,34 +149,38 @@ function requesterReads(userId) {
 }
 
 function courier(userId) {
-  const pool = readJson(userId, `${orderUrl}/api/v1/orders?page=0&size=20`, "pool");
-  const content = pool && pool.content ? pool.content : [];
-  // Never accept our own request — Order returns 409 and that is a real reject.
-  // Race "already taken" 409 from another courier is expected and counts as OK.
-  const candidates = content.filter(
-    (order) =>
-      order &&
-      order.id &&
-      String(order.requesterId || "").toLowerCase() !== String(userId).toLowerCase() &&
-      !openOrders.includes(order.id),
-  );
-  if (candidates.length > 0) {
-    const order = candidates[Math.floor(Math.random() * candidates.length)];
-    const accepted = http.post(
-      `${orderUrl}/api/v1/orders/${order.id}/accept`,
-      null,
-      // 409 = already claimed (expected contention), not a threshold failure.
-      params(userId, "fulfill", "accept", [200, 409]),
+  // Most deliver iterations are idle think-time; only a share browses the pool.
+  if (Math.random() < courierBrowseProbability) {
+    const pool = readJson(userId, `${orderUrl}/api/v1/orders?page=0&size=20`, "pool");
+    const content = pool && pool.content ? pool.content : [];
+    // Never accept our own request — Order returns 409 and that is a real reject.
+    // Race "already taken" 409 from another courier is expected and counts as OK.
+    const candidates = content.filter(
+      (order) =>
+        order &&
+        order.id &&
+        String(order.requesterId || "").toLowerCase() !== String(userId).toLowerCase() &&
+        !openOrders.includes(order.id),
     );
-    check(accepted, {
-      "accept claimed or already taken": (response) => response.status === 200 || response.status === 409,
-    });
-    if (accepted.status === 200) {
-      upload(userId, order.id, "collect");
-      upload(userId, order.id, "deliver");
+    if (candidates.length > 0) {
+      const order = candidates[Math.floor(Math.random() * candidates.length)];
+      const accepted = http.post(
+        `${orderUrl}/api/v1/orders/${order.id}/accept`,
+        null,
+        // 409 = already claimed (expected contention), not a threshold failure.
+        params(userId, "fulfill", "accept", [200, 409]),
+      );
+      check(accepted, {
+        "accept claimed or already taken": (response) => response.status === 200 || response.status === 409,
+      });
+      if (accepted.status === 200) {
+        upload(userId, order.id, "collect");
+        upload(userId, order.id, "deliver");
+      }
     }
   }
-  if (__ITER % 5 === 0) {
+  // Occasional courier list/search — not every browse, not every idle tick.
+  if (__ITER % 10 === 0) {
     readJson(userId, `${orderUrl}/api/v1/orders/deliveries/active?page=0&size=20`, "deliveries_active");
     readJson(userId, `${orderUrl}/api/v1/orders/deliveries/past?page=0&size=20`, "deliveries_past");
     readJson(
