@@ -64,15 +64,23 @@ jobs:
           ACTIONLINT_VERSION: "1.7.12"
           # Published in actionlint_<version>_checksums.txt for the linux_amd64 archive.
           ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          # The same release's Docker Hub image, pinned by digest. Used when GitHub's release
+          # downloads are down: on 2026-11-08 they returned 504 for most of an hour, which blocked
+          # every PR and the staging deploy.
+          ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         run: |
           # Download the pinned release with retries (a single network blip used to fail CI),
-          # verify it, and only then run it.
+          # verify it, and only then run it. If the download fails, run the pinned image instead.
           archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o "$archive" \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"
-          echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum --check --strict
-          tar -xzf "$archive" actionlint
-          ./actionlint -color
+          if curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o "$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"; then
+            echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum --check --strict
+            tar -xzf "$archive" actionlint
+            ./actionlint -color
+          else
+            echo "::warning title=actionlint::GitHub release download failed; running ${ACTIONLINT_IMAGE} instead."
+            docker run --rm -v "$PWD:/repo" -w /repo "$ACTIONLINT_IMAGE" -color
+          fi
       - name: Validate compose.yaml (must work on a fresh clone, without a .env)
         run: docker compose -f compose.yaml config --quiet
       - name: Ensure no credentials are committed
