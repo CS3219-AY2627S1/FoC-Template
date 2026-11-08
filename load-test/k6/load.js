@@ -5,7 +5,7 @@
 //   k6 run -e PROFILE=soak -e VUS=30 -e DURATION=30s load-test/k6/load.js
 //
 // VUS must match setup/seed-users.mjs. Every seeded user can request and deliver;
-// each iteration picks a role with REQUEST_PROBABILITY (default 0.3).
+// each iteration picks a role with REQUEST_PROBABILITY (default 0.4).
 // Peak creates are gated separately so dual-role does not 3× write volume vs the
 // old fixed requester roster (~REQUEST_PROBABILITY × VUS × MAX_ORDERS).
 // PROFILE=peak (default): ramping-vus warm → peak hold → cool. PROFILE=soak: flat DURATION.
@@ -24,7 +24,7 @@ import { SharedArray } from "k6/data";
 const total = intEnv("VUS", 9600);
 const profile = String(__ENV.PROFILE || "peak").toLowerCase();
 // Chance this iteration acts as requester (else courier). Matches product: anyone can do both.
-const requestProbability = Number(__ENV.REQUEST_PROBABILITY || __ENV.REQUESTER_SHARE || 0.3);
+const requestProbability = Number(__ENV.REQUEST_PROBABILITY || __ENV.REQUESTER_SHARE || 0.4);
 // On a deliver iteration, P(browse pool + maybe accept). Real couriers do not
 // refresh/accept every second; 1.0 caused empty-pool read storms.
 const courierBrowseProbability = Number(__ENV.COURIER_BROWSE_PROBABILITY || 0.2);
