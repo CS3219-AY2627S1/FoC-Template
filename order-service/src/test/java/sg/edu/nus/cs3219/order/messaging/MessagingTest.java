@@ -21,6 +21,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -49,9 +50,11 @@ class MessagingTest {
         order.setCourierId("22222222-2222-2222-2222-222222222222");
         JsonNode accepted = mapper.readTree(messages.statusChanged(order, OrderStatus.CREATED, OrderStatus.ACCEPTED, true, now));
         assertEquals("22222222-2222-2222-2222-222222222222", accepted.get("courierId").asText());
+        assertFalse(accepted.get("notifyCourier").asBoolean());
         JsonNode resolved = mapper.readTree(messages.statusChanged(
-                order, OrderStatus.UNDER_REVIEW, OrderStatus.COMPLETED, true, "no-fault", now));
+                order, OrderStatus.UNDER_REVIEW, OrderStatus.COMPLETED, true, true, "no-fault", now));
         assertEquals("no-fault", resolved.get("faultParty").asText());
+        assertTrue(resolved.get("notifyCourier").asBoolean());
 
         JsonNode returned = mapper.readTree(messages.creditReturn(order, now));
         assertEquals("EXPIRED", returned.get("reason").asText());

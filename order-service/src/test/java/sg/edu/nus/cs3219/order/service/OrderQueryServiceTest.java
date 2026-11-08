@@ -26,6 +26,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -143,11 +144,12 @@ class OrderQueryServiceTest {
         alert.setToStatus("ACCEPTED");
         alert.setNotifyRequester(true);
         alert.setCreatedAt(now);
-        when(alerts.findByRequesterIdAndNotifyRequesterTrueOrderByCreatedAtDesc(eq("11111111-1111-1111-1111-111111111111"), any()))
+        when(alerts.findVisibleToUser(eq("11111111-1111-1111-1111-111111111111"), any()))
                 .thenReturn(new PageImpl<>(List.of(alert)));
         PageResponse<AlertEntity> page = service.alerts(requester, 0, 20);
-        AlertResponse response = AlertResponse.from(page.content().getFirst());
+        AlertResponse response = AlertResponse.from(page.content().getFirst(), requester.userId());
         assertEquals("ACCEPTED", response.toStatus());
+        assertFalse(response.asCourier());
         assertEquals("11111111-1111-1111-1111-111111111111", alert.getRequesterId());
         assertTrue(alert.isNotifyRequester());
         assertTrue(service.alerts(requester, 0, 0).content().isEmpty());

@@ -54,6 +54,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.lenient;
@@ -356,6 +357,12 @@ class OrderCommandServiceTest {
         OrderEntity escalated = service.escalate(requester, id, "wrong item", photo);
         assertEquals(id + "/dispute.png", escalated.getDisputePhotoRef());
         verify(admins).openConflict(id, requester.userId(), "wrong item", java.util.List.of(id + "/dispute.png"));
+        ArgumentCaptor<AlertEntity> alertCaptor = ArgumentCaptor.forClass(AlertEntity.class);
+        verify(alerts, atLeastOnce()).save(alertCaptor.capture());
+        AlertEntity disputeAlert = alertCaptor.getAllValues().getLast();
+        assertTrue(disputeAlert.isNotifyRequester());
+        assertTrue(disputeAlert.isNotifyCourier());
+        assertEquals("22222222-2222-2222-2222-222222222222", disputeAlert.getCourierId());
     }
 
     @Test

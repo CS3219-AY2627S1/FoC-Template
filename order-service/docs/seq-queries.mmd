@@ -24,4 +24,4 @@ sequenceDiagram
     Caller->>Orders: GET /api/v1/orders/requests/past
     Orders->>DB: requester ACKNOWLEDGED, UNACKNOWLEDGED, COMPLETED, EXPIRED, CANCELLED rows, newest request_time first
     Caller->>Orders: GET /api/v1/orders/alerts
-    Orders->>DB: caller alerts with notify_requester true, newest first
+    Orders->>DB: caller alerts (notify_requester or notify_courier), newest first

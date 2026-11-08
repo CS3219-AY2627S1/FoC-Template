@@ -180,10 +180,7 @@ public class OrderQueryService {
         if (size == 0) {
             return PageResponse.empty(page, size);
         }
-        Page<AlertEntity> result = alerts.findByRequesterIdAndNotifyRequesterTrueOrderByCreatedAtDesc(
-                actor.userId(),
-                PageRequest.of(page, size)
-        );
+        Page<AlertEntity> result = alerts.findVisibleToUser(actor.userId(), PageRequest.of(page, size));
         return PageResponse.of(result.getContent(), page, size, result.getTotalElements());
     }
 
