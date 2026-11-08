@@ -284,3 +284,98 @@ metrics, `load.js` sets a stable `tags.name` per endpoint (`accept`, `collect`,
 `get_order`, …), which k6 also copies into `url`, so those UUIDs do not create
 one time series per order. `url` is left out of `systemTags` as well. Thresholds still filter on custom `op`
 (`create` / `read` / `fulfill` / `close`).
+
+## Scale up / scale down (full-run footprint)
+
+**Required for a full 9600 VU run.** The Git values under
+`deploy/values/envs/dev/services/` are the **idle** floors. Leaving them idle
+and only bumping RDS will **not** pass — create-path traffic is I/O-bound, CPU
+HPA stays near 0%, and a low pin (or `min` < `max`) sheds pods mid-run. Scale
+**up in Git (or paused kubectl) before** the full Job; scale **back down after**
+so burst Spot and RDS xlarge do not idle-bill.
+
+### Idle (what Git should hold day-to-day) vs peak (`full-1520`)
+
+| Knob | Idle (committed default) | Peak (set before full run, revert after) |
+| --- | --- | --- |
+| Order `minReplicas` / `maxReplicas` | **2 / 2** | **32 / 32** |
+| User, Credit, Supplier, Rating | **1 / 1** each | **8 / 8** each |
+| `foc-dev` ResourceQuota | keep **40** CPU / **64Gi** / **100** pods (already sized for peak) | same — raise further only if you go above 32/8 |
+| Terraform `burst_node_max` | default **3** | apply with **`-var burst_node_max=8`** |
+| RDS | `db.t4g.micro` (Terraform default) | apply with **`-var rds_instance_class=db.m7g.xlarge`** |
+
+Files: `deploy/values/envs/dev/services/{order,user,credit,supplier,rating}.yaml`,
+`deploy/values/envs/dev/namespace.yaml`, `infra/nonprod/aws` (`burst_node_max`,
+`rds_instance_class`). Argo syncs service values from **`main` only**.
+
+### Scale up (before a full run)
+
+1. **Edit service YAML to the peak pins** (Order `32`/`32`, peers `8`/`8`).
+   Quota in `namespace.yaml` already fits that footprint; only raise it if you
+   go higher. Merge to `main`, then Refresh/sync `dev-order`, `dev-user`,
+   `dev-credit`, `dev-supplier`, `dev-rating`. Wait until Desired = Ready.
+2. **Burst capacity** — apply with a higher max so Order×32 can schedule:
+
+   ```bash
+   terraform -chdir=infra/nonprod/aws apply \
+     -var state_bucket=foc-tfstate-474265880628 \
+     -var ses_from_email=donleehh420@gmail.com \
+     -var burst_node_max=8 \
+     -var rds_instance_class=db.m7g.xlarge
+   ```
+
+   Always pass the usual `-var`s on every apply. Wait until RDS is `available`
+   (see [step 5](#5-full-run)), then start the full Job. Cluster Autoscaler
+   adds Spot burst nodes when pods are Pending.
+
+3. If pods stay `Pending` with `Insufficient cpu` or “max node group size
+   reached”, confirm `burst_node_max=8` applied and watch
+   `kubectl get nodes -l foc.io/pool=burst`.
+
+Optional without waiting on Git: **pause** the Argo apps, `kubectl -n foc-dev`
+patch HPA `minReplicas`/`maxReplicas` (and scale deploys) to the peak pins,
+run the test, then unpause **only after Git matches** (otherwise self-heal
+reverts you). Prefer Git for anything reproducible.
+
+### Scale down (after the run)
+
+Do this soon after the k6 Job finishes.
+
+1. **Revert service YAML to idle** (Order `2`/`2`, peers `1`/`1`), merge to
+   `main`, sync the Argo apps. If you scaled with `kubectl` first, **pause
+   Argo** beforehand; an unpaused sync restores whatever is on `main`.
+2. **RDS + burst max back to idle** (DB blips for a few minutes — tell the
+   team):
+
+   ```bash
+   terraform -chdir=infra/nonprod/aws apply \
+     -var state_bucket=foc-tfstate-474265880628 \
+     -var ses_from_email=donleehh420@gmail.com
+   # omits rds_instance_class → db.t4g.micro; omits burst_node_max → 3
+   ```
+
+   Confirm:
+
+   ```bash
+   aws rds describe-db-instances --db-instance-identifier foc-nonprod \
+     --query 'DBInstances[0].[DBInstanceClass,DBInstanceStatus]' --output text
+   aws eks describe-nodegroup --cluster-name foc-nonprod --nodegroup-name burst \
+     --query 'nodegroup.scalingConfig' --output json
+   ```
+
+3. **Burst nodes**: once replica requests drop, Cluster Autoscaler removes idle
+   burst nodes (often several minutes). No manual drain required.
+4. **Quota**: leave the higher quota; it is harmless headroom. Never leave
+   floors above what the quota allows.
+
+### Check that scale-up actually stuck
+
+```bash
+kubectl -n foc-dev get hpa
+kubectl -n foc-dev get deploy order user credit supplier rating
+kubectl -n foc-dev describe pod -l app.kubernetes.io/name=order | findstr /i "Insufficient Pending"
+# or on macOS/Linux: … | grep -Ei 'Insufficient|Pending'
+```
+
+Argo can overwrite a live `kubectl scale` on the next sync — if Desired snaps
+back, the env values on `main` still have the old floors.

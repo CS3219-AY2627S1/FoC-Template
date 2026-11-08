@@ -61,11 +61,12 @@ variable "burst_instance_types" {
 }
 
 variable "burst_node_max" {
-  # Order×32 + peers×8 packs ~8 nodes (default max 3 + burst max 5); seed/Jobs
-  # then hit Insufficient cpu with "max node group size reached".
+  # Idle default. A 9600 VU full run (Order×32 + peers×8) needs ~8 — apply with
+  # -var burst_node_max=8, then apply again without it after the run. See
+  # load-test/README.md "Scale up / scale down".
   description = "Most burst nodes Cluster Autoscaler may add (mind the Spot vCPU quota)."
   type        = number
-  default     = 8
+  default     = 3
 }
 
 variable "loadgen_instance_types" {
