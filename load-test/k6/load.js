@@ -16,6 +16,7 @@
 // id (k6 then also sets `url` to it); `url` is left out of systemTags as well.
 
 import encoding from "k6/encoding";
+import exec from "k6/execution";
 import http from "k6/http";
 import { check, sleep } from "k6";
 import { SharedArray } from "k6/data";
@@ -37,10 +38,13 @@ const think = Number(__ENV.THINK_SECONDS || 1);
 const maxOrdersPerRequester = intEnv("MAX_ORDERS_PER_REQUESTER", 2);
 const twoOrdersProbability = Number(__ENV.TWO_ORDERS_PROBABILITY || 0.6);
 // Spread each VU's creates uniformly over this window from VU start (not all at t≈0).
+// Peak default 4m so creates finish before cool-down (close drain), not into it.
 const createSpreadSeconds = intEnv(
   "CREATE_SPREAD_SECONDS",
-  profile === "peak" ? 360 : 20,
+  profile === "peak" ? 240 : 20,
 );
+// Must match trafficScenario peak stages before cool-down (2+2+2+4)m.
+const peakBusyEndsMs = (2 + 2 + 2 + 4) * 60 * 1000;
 
 // One user per element: SharedArray re-parses an element on every access, so a
 // single element holding every user would parse the whole file each iteration.
@@ -115,7 +119,7 @@ function trafficScenario() {
       exec: "traffic",
     };
   }
-  // Compressed peak: warm → climb → hold → cool → drain (~12m).
+  // Compressed peak: warm → climb → hold → close-drain at half → ramp to 0 (~15m).
   const peak = total;
   const quarter = Math.max(1, Math.round(peak * 0.25));
   const half = Math.max(1, Math.round(peak * 0.5));
@@ -127,10 +131,10 @@ function trafficScenario() {
       { duration: "2m", target: half },
       { duration: "2m", target: peak },
       { duration: "4m", target: peak },
-      { duration: "2m", target: half },
+      { duration: "3m", target: half },
       { duration: "2m", target: 0 },
     ],
-    gracefulRampDown: "30s",
+    gracefulRampDown: "1m",
     exec: "traffic",
   };
 }
@@ -154,6 +158,11 @@ export function traffic() {
   const userId = users[(__VU - 1) % users.length].id;
   // Always advance own open orders so courier iterations do not strand them.
   pollAndCloseOwn(userId);
+  // After peak hold: only close/poll so acknowledges are not racing create/browse cool-down.
+  if (inCloseDrain()) {
+    sleep(think);
+    return;
+  }
   if (Math.random() < requestProbability) {
     maybeCreate(userId);
     requesterReads(userId);
@@ -163,8 +172,15 @@ export function traffic() {
   sleep(think);
 }
 
+function inCloseDrain() {
+  return profile === "peak" && exec.instance.currentTestRunDuration >= peakBusyEndsMs;
+}
+
 function maybeCreate(userId) {
   if (peakCreateBudget === 0) {
+    return;
+  }
+  if (inCloseDrain()) {
     return;
   }
   if (createdCount >= peakCreateBudget || createAttempts >= maxCreateAttempts) {
@@ -189,8 +205,10 @@ function pollAndCloseOwn(userId) {
   for (let index = openOrders.length - 1; index >= 0; index -= 1) {
     const status = orderStatus(userId, openOrders[index]);
     if (status === "DELIVERED") {
-      closeOrder(userId, openOrders[index]);
-      openOrders.splice(index, 1);
+      // Keep the id if close fails so the next iteration can retry (cool-down drain).
+      if (closeOrder(userId, openOrders[index])) {
+        openOrders.splice(index, 1);
+      }
     } else if (
       status === "ACKNOWLEDGED" ||
       status === "ESCALATED" ||
@@ -286,15 +304,18 @@ function closeOrder(userId, orderId) {
       JSON.stringify({ disputeText: "Load test dispute" }),
       params(userId, "close", "escalate", [200, 409]),
     );
-    check(response, { "escalated or already closed": (body) => body.status === 200 || body.status === 409 });
-    return;
+    const ok = response.status === 200 || response.status === 409;
+    check(response, { "escalated or already closed": () => ok });
+    return ok;
   }
   const response = http.post(
     `${orderUrl}/api/v1/orders/${orderId}/acknowledge`,
     null,
     params(userId, "close", "acknowledge", [200, 409]),
   );
-  check(response, { "acknowledged or already closed": (body) => body.status === 200 || body.status === 409 });
+  const ok = response.status === 200 || response.status === 409;
+  check(response, { "acknowledged or already closed": () => ok });
+  return ok;
 }
 
 function upload(userId, orderId, action) {

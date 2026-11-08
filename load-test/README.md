@@ -9,7 +9,7 @@ Everyone is **dual-role** (same as the product): one seeded user per VU. Each it
 | Request | `REQUEST_PROBABILITY` (default **0.3**, alias `REQUESTER_SHARE`) | Requester reads + maybe create. Extra reads: `/requests/active`, `/alerts`, `/mine`, `/requests/past`. |
 | Deliver | `1 −` that | With `COURIER_BROWSE_PROBABILITY` (default **0.2**) browse the open pool and maybe accept (409 on own/taken is OK), then collect + deliver PNGs. Otherwise idle think-time. List/search reads every 10th iteration. |
 
-**Peak creates** are gated once per VU: with probability `REQUEST_PROBABILITY` that VU creates at all; of those, `TWO_ORDERS_PROBABILITY` (default **0.6**) place `MAX_ORDERS_PER_REQUESTER` (default **2**) and the rest place one fewer. Expected creates ≈ `0.3 × 9600 × (0.6×2 + 0.4×1)` (~4.6k). Each planned create is due at a random time in the first `CREATE_SPREAD_SECONDS` of that VU’s life (default **360** on peak, **20** on soak), so orders arrive through the rush instead of all at VU start. Create attempts stop after budget+3 so a saturated Order cannot spiral. Own open orders are always polled/closed on deliver iterations so they do not stall.
+**Peak creates** are gated once per VU: with probability `REQUEST_PROBABILITY` that VU creates at all; of those, `TWO_ORDERS_PROBABILITY` (default **0.6**) place `MAX_ORDERS_PER_REQUESTER` (default **2**) and the rest place one fewer. Expected creates ≈ `0.3 × 9600 × (0.6×2 + 0.4×1)` (~4.6k). Each planned create is due at a random time in the first `CREATE_SPREAD_SECONDS` of that VU’s life (default **240** on peak, **20** on soak). Failed closes stay in the VU’s open list and retry; create attempts stop after budget+3.
 
 Downstream calls, as a share of that traffic:
 
@@ -23,7 +23,7 @@ Downstream calls, as a share of that traffic:
 | Rating | Order reads `GET /api/v1/rating/{userId}` on create and accept. Deliver and acknowledge publish `rating.permission.granted` on `foc.rating.commands` for Rating Service to grant the modal. |
 | MinIO / S3 | Collect and deliver store the PNG. |
 
-**Full** uses `PROFILE=peak`: a ~12 minute VU ramp (0 → 25% → 50% → peak → 4m hold → cool → 0), not a flat soak. **Smoke** stays `PROFILE=soak` (flat `DURATION`). Creates are front-loaded per VU once that VU is running; then fulfill/close/read while the pool drains. Couriers **skip their own orders** in the pool (accepting those fails for real). **409 already taken** from another courier is expected contention and counts as success for fulfill thresholds. Defaults: Supplier pickup id `2` (approved), Order delivery-point id `1` (seeded `kent-ridge-mrt`).
+**Full** uses `PROFILE=peak`: a ~15 minute VU ramp (0 → 25% → 50% → peak → 4m hold → 3m close-drain at half → 0), not a flat soak. After the busy window, VUs only poll/acknowledge so closes are not racing new creates/browses. **Smoke** stays `PROFILE=soak` (flat `DURATION`). Couriers **skip their own orders** in the pool (accepting those fails for real). **409 already taken** from another courier is expected contention and counts as success for fulfill thresholds. Defaults: Supplier pickup id `2` (approved), Order delivery-point id `1` (seeded `kent-ridge-mrt`).
 
 ## Setup, then load
 
@@ -73,7 +73,7 @@ one by hand, which creates a one-off Job.
 | --- | --- | --- |
 | `load-setup` | Seeds 9600 users into the User and Credit databases. Re-run to reset credit balances. | normal nodes |
 | `load-run-smoke` | k6 soak, 30 VUs for 1 minute. Checks the whole path works. | normal nodes |
-| `load-run-full` | k6 peak ramp, 9600 VUs over ~12 minutes. The real test. | the `loadgen` node: one 8 vCPU / 32 GiB Spot node, added for the run and removed shortly after |
+| `load-run-full` | k6 peak ramp, 9600 VUs over ~15 minutes. The real test. | the `loadgen` node: one 8 vCPU / 32 GiB Spot node, added for the run and removed shortly after |
 
 k6 calls Order directly at `http://order.foc-dev.svc.cluster.local:8083` with
 the gateway's identity headers, as mesh identity `foc-load/k6` (dev's Order
@@ -260,7 +260,7 @@ and merge to `main`.
 | Variable | Default | Used by |
 | --- | --- | --- |
 | `VUS` | `9600` | seed + k6 peak / soak size |
-| `PROFILE` | `peak` | k6 — `peak` = ramping-vus (~12m); `soak` = flat `DURATION` |
+| `PROFILE` | `peak` | k6 — `peak` = ramping-vus (~15m); `soak` = flat `DURATION` |
 | `REQUEST_PROBABILITY` | `0.3` | k6 — P(request this iteration); falls back to `REQUESTER_SHARE` |
 | `REQUESTER_SHARE` | `0.3` | seed roster split + k6 alias for `REQUEST_PROBABILITY` |
 | `CREDIT_BALANCE` | `5000` | seed (every user; dual-role) |
@@ -269,7 +269,7 @@ and merge to `main`.
 | `THINK_SECONDS` | `1` | k6 |
 | `MAX_ORDERS_PER_REQUESTER` | `2` | k6 — max successful creates for a VU that creates this run |
 | `TWO_ORDERS_PROBABILITY` | `0.6` | k6 — among creators, P(place the max); else place max−1 |
-| `CREATE_SPREAD_SECONDS` | `360` / `20` | k6 — per-VU window to schedule creates (peak / soak defaults) |
+| `CREATE_SPREAD_SECONDS` | `240` / `20` | k6 — per-VU window to schedule creates (peak / soak defaults) |
 | `COURIER_BROWSE_PROBABILITY` | `0.2` | k6 — on a deliver iteration, P(pool read + maybe accept) |
 | `ESCALATE_EVERY` | `20` | k6 |
 | `PICKUP_ID` | `2` | k6 — Supplier approved place id (`fromLocation`) |
