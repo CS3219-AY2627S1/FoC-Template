@@ -16,6 +16,7 @@ prometheusUrl: http://kps-prometheus.monitoring:9090/api/v1/write
 # One suspended CronJob per entry: load-run-<name>.
 runs:
   smoke:
+    profile: soak
     vus: 30
     duration: 1m
     resources:
@@ -23,8 +24,10 @@ runs:
       limits: { cpu: "1", memory: 1Gi }
     proxy: { cpu: 200m, memory: 128Mi }
   full:
+    # Peak ramp in load.js (~12m); duration is unused when profile=peak.
+    profile: peak
     vus: 9600
-    duration: 10m
+    duration: 12m
     # The loadgen node group (infra/nonprod/aws/eks.tf), 8 vCPU / 32 GiB.
     nodePool: loadgen
     resources:

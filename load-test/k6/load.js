@@ -2,12 +2,13 @@
 // Order then calls User, Supplier, Credit, and, on escalate, Admin.
 //
 //   k6 run load-test/k6/load.js
-//   k6 run -e VUS=30 -e DURATION=30s load-test/k6/load.js
+//   k6 run -e PROFILE=soak -e VUS=30 -e DURATION=30s load-test/k6/load.js
 //
 // VUS must match setup/seed-users.mjs. Every seeded user can request and deliver;
 // each iteration picks a role with REQUEST_PROBABILITY (default 0.3).
-// Lunch creates are gated separately so dual-role does not 3× write volume vs the
+// Peak creates are gated separately so dual-role does not 3× write volume vs the
 // old fixed requester roster (~REQUEST_PROBABILITY × VUS × MAX_ORDERS).
+// PROFILE=peak (default): ramping-vus warm → peak hold → cool. PROFILE=soak: flat DURATION.
 //
 // Metrics cardinality (Prometheus / Grafana Cloud):
 // Paths like /orders/${id}/accept would otherwise make one series per order via the
@@ -20,6 +21,7 @@ import { check, sleep } from "k6";
 import { SharedArray } from "k6/data";
 
 const total = intEnv("VUS", 9600);
+const profile = String(__ENV.PROFILE || "peak").toLowerCase();
 // Chance this iteration acts as requester (else courier). Matches product: anyone can do both.
 const requestProbability = Number(__ENV.REQUEST_PROBABILITY || __ENV.REQUESTER_SHARE || 0.3);
 // On a deliver iteration, P(browse pool + maybe accept). Real couriers do not
@@ -30,7 +32,7 @@ const pickupId = __ENV.PICKUP_ID || "2";
 const dropoffId = Number(__ENV.DROPOFF_ID || 1);
 const escalateEvery = intEnv("ESCALATE_EVERY", 20);
 const think = Number(__ENV.THINK_SECONDS || 1);
-// Lunch-peak shape: ~requestProbability of VUs place this many orders for the run.
+// Peak create shape: ~requestProbability of VUs place this many orders for the run.
 // 9600 VUs is already ~2× expected peak headcount.
 const maxOrdersPerRequester = intEnv("MAX_ORDERS_PER_REQUESTER", 2);
 
@@ -57,27 +59,54 @@ if (!(requestProbability > 0) || !(requestProbability < 1)) {
 if (!(courierBrowseProbability > 0) || courierBrowseProbability > 1) {
   throw new Error("COURIER_BROWSE_PROBABILITY must be in (0, 1]");
 }
+if (profile !== "peak" && profile !== "soak") {
+  throw new Error("PROFILE must be peak or soak");
+}
 
 // Per-VU state (each VU has its own JS runtime).
 const openOrders = [];
 let createdCount = 0;
 let createAttempts = 0;
-// Once per VU: keep lunch create volume ≈ share × VUS × maxOrders (not every VU × maxOrders).
-const lunchCreateBudget = Math.random() < requestProbability ? maxOrdersPerRequester : 0;
+// Once per VU: keep peak create volume ≈ share × VUS × maxOrders (not every VU × maxOrders).
+const peakCreateBudget = Math.random() < requestProbability ? maxOrdersPerRequester : 0;
 // Small retry allowance only — unlimited retries on failure starve Order (create death spiral).
-const maxCreateAttempts = lunchCreateBudget > 0 ? lunchCreateBudget + 3 : 0;
+const maxCreateAttempts = peakCreateBudget > 0 ? peakCreateBudget + 3 : 0;
+
+function trafficScenario() {
+  if (profile === "soak") {
+    return {
+      executor: "constant-vus",
+      vus: total,
+      duration: __ENV.DURATION || "10m",
+      exec: "traffic",
+    };
+  }
+  // Compressed peak: warm → climb → hold → cool → drain (~12m).
+  const peak = total;
+  const quarter = Math.max(1, Math.round(peak * 0.25));
+  const half = Math.max(1, Math.round(peak * 0.5));
+  return {
+    executor: "ramping-vus",
+    startVUs: 0,
+    stages: [
+      { duration: "2m", target: quarter },
+      { duration: "2m", target: half },
+      { duration: "2m", target: peak },
+      { duration: "4m", target: peak },
+      { duration: "2m", target: half },
+      { duration: "2m", target: 0 },
+    ],
+    gracefulRampDown: "30s",
+    exec: "traffic",
+  };
+}
 
 export const options = {
   // systemTags only lists built-in tags. Custom `op` still comes from request tags.
   // Must not include `url` — that label keeps the full path with order UUIDs.
   systemTags: ["status", "method", "name", "expected_response", "scenario", "group", "check"],
   scenarios: {
-    traffic: {
-      executor: "constant-vus",
-      vus: total,
-      duration: __ENV.DURATION || "10m",
-      exec: "traffic",
-    },
+    traffic: trafficScenario(),
   },
   thresholds: {
     "http_req_failed{op:create}": ["rate<0.05"],
@@ -101,13 +130,13 @@ export function traffic() {
 }
 
 function maybeCreate(userId) {
-  if (lunchCreateBudget === 0) {
+  if (peakCreateBudget === 0) {
     return;
   }
-  if (createdCount >= lunchCreateBudget || createAttempts >= maxCreateAttempts) {
+  if (createdCount >= peakCreateBudget || createAttempts >= maxCreateAttempts) {
     return;
   }
-  if (openOrders.length >= lunchCreateBudget) {
+  if (openOrders.length >= peakCreateBudget) {
     return;
   }
   createAttempts += 1;
