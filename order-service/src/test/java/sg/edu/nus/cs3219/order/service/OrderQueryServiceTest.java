@@ -26,6 +26,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -143,14 +144,32 @@ class OrderQueryServiceTest {
         alert.setToStatus("ACCEPTED");
         alert.setNotifyRequester(true);
         alert.setCreatedAt(now);
-        when(alerts.findByRequesterIdAndNotifyRequesterTrueOrderByCreatedAtDesc(eq("11111111-1111-1111-1111-111111111111"), any()))
+        when(alerts.findVisibleToUser(eq("11111111-1111-1111-1111-111111111111"), any()))
                 .thenReturn(new PageImpl<>(List.of(alert)));
         PageResponse<AlertEntity> page = service.alerts(requester, 0, 20);
-        AlertResponse response = AlertResponse.from(page.content().getFirst());
+        AlertResponse response = AlertResponse.from(page.content().getFirst(), requester.userId());
         assertEquals("ACCEPTED", response.toStatus());
+        assertFalse(response.asCourier());
         assertEquals("11111111-1111-1111-1111-111111111111", alert.getRequesterId());
         assertTrue(alert.isNotifyRequester());
         assertTrue(service.alerts(requester, 0, 0).content().isEmpty());
+
+        AlertEntity courierAlert = new AlertEntity();
+        courierAlert.setId(UUID.randomUUID());
+        courierAlert.setOrderId(id);
+        courierAlert.setRequesterId("11111111-1111-1111-1111-111111111111");
+        courierAlert.setCourierId(courier.userId());
+        courierAlert.setFromStatus("ESCALATED");
+        courierAlert.setToStatus("UNDER_REVIEW");
+        courierAlert.setNotifyRequester(true);
+        courierAlert.setNotifyCourier(true);
+        courierAlert.setCreatedAt(now);
+        when(alerts.findVisibleToUser(eq(courier.userId()), any()))
+                .thenReturn(new PageImpl<>(List.of(courierAlert)));
+        AlertResponse asCourier = AlertResponse.from(
+                service.alerts(courier, 0, 20).content().getFirst(), courier.userId());
+        assertTrue(asCourier.asCourier());
+        assertEquals("UNDER_REVIEW", asCourier.toStatus());
     }
 
     private OrderEntity order() {

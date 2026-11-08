@@ -25,14 +25,26 @@ public class OrderMessageFactory {
     }
 
     public String statusChanged(OrderEntity order, OrderStatus from, OrderStatus to, boolean notify, Instant occurredAt) {
-        return statusChanged(order, from, to, notify, null, occurredAt);
+        return statusChanged(order, from, to, notify, false, null, occurredAt);
     }
 
     public String statusChanged(
             OrderEntity order,
             OrderStatus from,
             OrderStatus to,
-            boolean notify,
+            boolean notifyRequester,
+            String faultParty,
+            Instant occurredAt
+    ) {
+        return statusChanged(order, from, to, notifyRequester, false, faultParty, occurredAt);
+    }
+
+    public String statusChanged(
+            OrderEntity order,
+            OrderStatus from,
+            OrderStatus to,
+            boolean notifyRequester,
+            boolean notifyCourier,
             String faultParty,
             Instant occurredAt
     ) {
@@ -49,7 +61,8 @@ public class OrderMessageFactory {
             node.put("fromStatus", from.name());
         }
         node.put("toStatus", to.name());
-        node.put("notifyRequester", notify);
+        node.put("notifyRequester", notifyRequester);
+        node.put("notifyCourier", notifyCourier);
         if (faultParty == null || faultParty.isBlank()) {
             node.putNull("faultParty");
         } else {

@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -27,6 +28,7 @@ class HttpClientsTest {
     private final AtomicReference<String> lastPath = new AtomicReference<>();
     private final AtomicReference<String> lastBody = new AtomicReference<>();
     private final AtomicReference<String> lastUser = new AtomicReference<>();
+    private final AtomicInteger telegramFlakyHits = new AtomicInteger();
     private final UserAccount ada = new UserAccount("ada-id");
 
     @BeforeEach
@@ -77,6 +79,13 @@ class HttpClientsTest {
                 case "/api/v1/user/internal/users/down/telegram" -> {
                     status = 500;
                     yield "{\"error\":\"nope\",\"code\":\"INTERNAL_ERROR\"}".getBytes(StandardCharsets.UTF_8);
+                }
+                case "/api/v1/user/internal/users/flaky/telegram" -> {
+                    if (telegramFlakyHits.incrementAndGet() < 2) {
+                        status = 503;
+                        yield "{\"error\":\"busy\",\"code\":\"INTERNAL_ERROR\"}".getBytes(StandardCharsets.UTF_8);
+                    }
+                    yield "{\"userId\":\"flaky\",\"telegramHandle\":\"retry_ok\"}".getBytes(StandardCharsets.UTF_8);
                 }
                 case "/api/v1/admin/internal/conflicts" -> {
                     if (requestBody.contains("\"comment\":\"\"")) {
@@ -157,6 +166,23 @@ class HttpClientsTest {
         assertEquals(HttpStatus.CONFLICT, assertThrows(ApiException.class, () -> clients.telegramHandle("unverified")).getStatus());
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, assertThrows(ApiException.class, () -> clients.telegramHandle("blank")).getStatus());
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, assertThrows(ApiException.class, () -> clients.telegramHandle("down")).getStatus());
+    }
+
+    @Test
+    void cachesTelegramHandles() {
+        HttpClients cached = clients(
+                "http://127.0.0.1:" + server.getAddress().getPort(), java.time.Duration.ofMinutes(5));
+        assertEquals("ada_tan", cached.telegramHandle("11111111-1111-1111-1111-111111111111"));
+        lastPath.set(null);
+        assertEquals("ada_tan", cached.telegramHandle("11111111-1111-1111-1111-111111111111"));
+        assertEquals(null, lastPath.get());
+    }
+
+    @Test
+    void retriesTransientTelegramFailures() {
+        telegramFlakyHits.set(0);
+        assertEquals("retry_ok", clients.telegramHandle("flaky"));
+        assertTrue(telegramFlakyHits.get() >= 2);
     }
 
     @Test
@@ -258,6 +284,10 @@ class HttpClientsTest {
     }
 
     private static HttpClients clients(String baseUrl) {
+        return clients(baseUrl, java.time.Duration.ZERO);
+    }
+
+    private static HttpClients clients(String baseUrl, java.time.Duration telegramCacheTtl) {
         OrderProperties properties = new OrderProperties();
         properties.getClients().setTimeout(java.time.Duration.ofSeconds(1));
         properties.getClients().setCreditBaseUrl(baseUrl);
@@ -265,9 +295,9 @@ class HttpClientsTest {
         properties.getClients().setRatingBaseUrl(baseUrl);
         properties.getClients().setAdminBaseUrl(baseUrl);
         properties.getClients().setUserBaseUrl(baseUrl);
-        // Tests assert live peer behaviour; keep caches off.
+        // Default tests assert live peer behaviour; keep caches off unless asked.
         properties.getClients().setSupplierCacheTtl(java.time.Duration.ZERO);
-        properties.getClients().setTelegramCacheTtl(java.time.Duration.ZERO);
+        properties.getClients().setTelegramCacheTtl(telegramCacheTtl);
         return new HttpClients(properties);
     }
 }

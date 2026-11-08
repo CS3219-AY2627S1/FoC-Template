@@ -10,12 +10,15 @@ FROM eclipse-temurin:21-jre
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl libfreetype6 libpng16-16t64 libbrotli1 \
+    && apt-get install -y --only-upgrade apt libapt-pkg7.0 \
     && rm -rf /var/lib/apt/lists/* \
     && dpkg --compare-versions "$(dpkg-query -W curl | cut -f2)" ge 8.18.0-1ubuntu2.8 \
     && dpkg --compare-versions "$(dpkg-query -W libcurl4t64 | cut -f2)" ge 8.18.0-1ubuntu2.8 \
     && dpkg --compare-versions "$(dpkg-query -W libfreetype6 | cut -f2)" ge 2.14.2+dfsg-1ubuntu0.2 \
     && dpkg --compare-versions "$(dpkg-query -W libpng16-16t64 | cut -f2)" ge 1.6.57-1ubuntu0.1 \
-    && dpkg --compare-versions "$(dpkg-query -W libbrotli1 | cut -f2)" ge 1.2.0-3ubuntu0.1
+    && dpkg --compare-versions "$(dpkg-query -W libbrotli1 | cut -f2)" ge 1.2.0-3ubuntu0.1 \
+    && dpkg --compare-versions "$(dpkg-query -W apt | cut -f2)" ge 3.2.1ubuntu0.1 \
+    && dpkg --compare-versions "$(dpkg-query -W libapt-pkg7.0 | cut -f2)" ge 3.2.1ubuntu0.1
 COPY --from=build /app/target/app.jar /app/app.jar
 RUN groupadd --system app && useradd --system --gid app app \
     && mkdir -p /app/photos \

@@ -25,6 +25,6 @@ public class AlertController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        return queries.alerts(caller, page, size).map(AlertResponse::from);
+        return queries.alerts(caller, page, size).map(alert -> AlertResponse.from(alert, caller.userId()));
     }
 }
