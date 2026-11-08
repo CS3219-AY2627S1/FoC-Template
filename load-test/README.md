@@ -6,10 +6,10 @@ Everyone is **dual-role** (same as the product): one seeded user per VU. Each it
 
 | Choice | Probability | What they do |
 | --- | --- | --- |
-| Request | `REQUEST_PROBABILITY` (default **0.3**, alias `REQUESTER_SHARE`) | Place up to **2 orders for the whole run** (1 credit each), poll/ack when delivered (every 20th close escalates). Extra reads: `/requests/active`, `/alerts`, `/mine`, `/requests/past`. |
+| Request | `REQUEST_PROBABILITY` (default **0.3**, alias `REQUESTER_SHARE`) | Requester reads + maybe create. Extra reads: `/requests/active`, `/alerts`, `/mine`, `/requests/past`. |
 | Deliver | `1 −` that | Read the open pool, accept one order (409 on own/taken is OK), collect + deliver PNGs. Extra reads: `/deliveries/active`, `/deliveries/past`, `/search`. |
 
-Own open orders are always polled/closed even on deliver iterations so they do not stall. 9600 VUs is already about **2×** expected peak headcount; the create cap models “food + drink” rather than a continuous create soak.
+**Lunch creates** are gated once per VU: with probability `REQUEST_PROBABILITY` that VU may place up to `MAX_ORDERS_PER_REQUESTER` (default **2**) orders for the whole run. That keeps total creates ≈ `0.3 × 9600 × 2` (~5.7k), same as the old fixed-requester roster. Giving every VU a create budget under dual-role blew write volume to ~19k and failed creates retried forever. Create attempts stop after budget+3 so a saturated Order cannot spiral. Own open orders are always polled/closed on deliver iterations so they do not stall.
 
 Downstream calls, as a share of that traffic:
 
@@ -266,7 +266,7 @@ and merge to `main`.
 | `ORDER_URL` | `http://localhost:8083` | k6 |
 | `DURATION` | `10m` | k6 |
 | `THINK_SECONDS` | `1` | k6 |
-| `MAX_ORDERS_PER_REQUESTER` | `2` | k6 — successful creates per VU for the whole run |
+| `MAX_ORDERS_PER_REQUESTER` | `2` | k6 — max successful creates for a VU that drew a lunch create budget |
 | `ESCALATE_EVERY` | `20` | k6 |
 | `PICKUP_ID` | `2` | k6 — Supplier approved place id (`fromLocation`) |
 | `DROPOFF_ID` | `1` | k6 — Order `delivery_point.id` (`deliveryPointId`) |

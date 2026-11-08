@@ -6,6 +6,8 @@
 //
 // VUS must match setup/seed-users.mjs. Every seeded user can request and deliver;
 // each iteration picks a role with REQUEST_PROBABILITY (default 0.3).
+// Lunch creates are gated separately so dual-role does not 3× write volume vs the
+// old fixed requester roster (~REQUEST_PROBABILITY × VUS × MAX_ORDERS).
 //
 // Metrics cardinality (Prometheus / Grafana Cloud):
 // Paths like /orders/${id}/accept would otherwise make one series per order via the
@@ -25,7 +27,7 @@ const pickupId = __ENV.PICKUP_ID || "2";
 const dropoffId = Number(__ENV.DROPOFF_ID || 1);
 const escalateEvery = intEnv("ESCALATE_EVERY", 20);
 const think = Number(__ENV.THINK_SECONDS || 1);
-// Lunch-peak shape: each VU places a small number of orders for the whole run.
+// Lunch-peak shape: ~requestProbability of VUs place this many orders for the run.
 // 9600 VUs is already ~2× expected peak headcount.
 const maxOrdersPerRequester = intEnv("MAX_ORDERS_PER_REQUESTER", 2);
 
@@ -53,6 +55,11 @@ if (!(requestProbability > 0) || !(requestProbability < 1)) {
 // Per-VU state (each VU has its own JS runtime).
 const openOrders = [];
 let createdCount = 0;
+let createAttempts = 0;
+// Once per VU: keep lunch create volume ≈ share × VUS × maxOrders (not every VU × maxOrders).
+const lunchCreateBudget = Math.random() < requestProbability ? maxOrdersPerRequester : 0;
+// Small retry allowance only — unlimited retries on failure starve Order (create death spiral).
+const maxCreateAttempts = lunchCreateBudget > 0 ? lunchCreateBudget + 3 : 0;
 
 export const options = {
   // systemTags only lists built-in tags. Custom `op` still comes from request tags.
@@ -88,14 +95,20 @@ export function traffic() {
 }
 
 function maybeCreate(userId) {
-  // At most maxOrdersPerRequester successful creates for the entire run; retries
-  // on failure so a transient blip does not leave the VU with zero lunch orders.
-  if (createdCount < maxOrdersPerRequester && openOrders.length < maxOrdersPerRequester) {
-    const created = createOrder(userId);
-    if (created) {
-      openOrders.push(created);
-      createdCount += 1;
-    }
+  if (lunchCreateBudget === 0) {
+    return;
+  }
+  if (createdCount >= lunchCreateBudget || createAttempts >= maxCreateAttempts) {
+    return;
+  }
+  if (openOrders.length >= lunchCreateBudget) {
+    return;
+  }
+  createAttempts += 1;
+  const created = createOrder(userId);
+  if (created) {
+    openOrders.push(created);
+    createdCount += 1;
   }
 }
 
