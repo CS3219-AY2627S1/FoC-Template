@@ -9,7 +9,7 @@ Everyone is **dual-role** (same as the product): one seeded user per VU. Each it
 | Request | `REQUEST_PROBABILITY` (default **0.3**, alias `REQUESTER_SHARE`) | Requester reads + maybe create. Extra reads: `/requests/active`, `/alerts`, `/mine`, `/requests/past`. |
 | Deliver | `1 −` that | With `COURIER_BROWSE_PROBABILITY` (default **0.2**) browse the open pool and maybe accept (409 on own/taken is OK), then collect + deliver PNGs. Otherwise idle think-time. List/search reads every 10th iteration. |
 
-**Peak creates** are gated once per VU: with probability `REQUEST_PROBABILITY` that VU may place up to `MAX_ORDERS_PER_REQUESTER` (default **2**) orders for the whole run. That keeps total creates ≈ `0.3 × 9600 × 2` (~5.7k), same as the old fixed-requester roster. Giving every VU a create budget under dual-role blew write volume to ~19k and failed creates retried forever. Create attempts stop after budget+3 so a saturated Order cannot spiral. Own open orders are always polled/closed on deliver iterations so they do not stall.
+**Peak creates** are gated once per VU: with probability `REQUEST_PROBABILITY` that VU creates at all; of those, `TWO_ORDERS_PROBABILITY` (default **0.6**) place `MAX_ORDERS_PER_REQUESTER` (default **2**) and the rest place one fewer. Expected creates ≈ `0.3 × 9600 × (0.6×2 + 0.4×1)` (~4.6k). Each planned create is due at a random time in the first `CREATE_SPREAD_SECONDS` of that VU’s life (default **360** on peak, **20** on soak), so orders arrive through the rush instead of all at VU start. Create attempts stop after budget+3 so a saturated Order cannot spiral. Own open orders are always polled/closed on deliver iterations so they do not stall.
 
 Downstream calls, as a share of that traffic:
 
@@ -267,7 +267,9 @@ and merge to `main`.
 | `ORDER_URL` | `http://localhost:8083` | k6 |
 | `DURATION` | `10m` | k6 — used only when `PROFILE=soak` |
 | `THINK_SECONDS` | `1` | k6 |
-| `MAX_ORDERS_PER_REQUESTER` | `2` | k6 — max successful creates for a VU that drew a peak create budget |
+| `MAX_ORDERS_PER_REQUESTER` | `2` | k6 — max successful creates for a VU that creates this run |
+| `TWO_ORDERS_PROBABILITY` | `0.6` | k6 — among creators, P(place the max); else place max−1 |
+| `CREATE_SPREAD_SECONDS` | `360` / `20` | k6 — per-VU window to schedule creates (peak / soak defaults) |
 | `COURIER_BROWSE_PROBABILITY` | `0.2` | k6 — on a deliver iteration, P(pool read + maybe accept) |
 | `ESCALATE_EVERY` | `20` | k6 |
 | `PICKUP_ID` | `2` | k6 — Supplier approved place id (`fromLocation`) |

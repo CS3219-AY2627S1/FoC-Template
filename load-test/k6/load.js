@@ -32,9 +32,15 @@ const pickupId = __ENV.PICKUP_ID || "2";
 const dropoffId = Number(__ENV.DROPOFF_ID || 1);
 const escalateEvery = intEnv("ESCALATE_EVERY", 20);
 const think = Number(__ENV.THINK_SECONDS || 1);
-// Peak create shape: ~requestProbability of VUs place this many orders for the run.
-// 9600 VUs is already ~2× expected peak headcount.
+// Peak create shape: ~requestProbability of VUs place orders; of those, some take the
+// max (TWO_ORDERS_PROBABILITY) and the rest place one fewer. 9600 VUs ≈ 2× peak headcount.
 const maxOrdersPerRequester = intEnv("MAX_ORDERS_PER_REQUESTER", 2);
+const twoOrdersProbability = Number(__ENV.TWO_ORDERS_PROBABILITY || 0.6);
+// Spread each VU's creates uniformly over this window from VU start (not all at t≈0).
+const createSpreadSeconds = intEnv(
+  "CREATE_SPREAD_SECONDS",
+  profile === "peak" ? 360 : 20,
+);
 
 // One user per element: SharedArray re-parses an element on every access, so a
 // single element holding every user would parse the whole file each iteration.
@@ -62,15 +68,43 @@ if (!(courierBrowseProbability > 0) || courierBrowseProbability > 1) {
 if (profile !== "peak" && profile !== "soak") {
   throw new Error("PROFILE must be peak or soak");
 }
+if (!(twoOrdersProbability >= 0) || twoOrdersProbability > 1) {
+  throw new Error("TWO_ORDERS_PROBABILITY must be in [0, 1]");
+}
 
 // Per-VU state (each VU has its own JS runtime).
 const openOrders = [];
 let createdCount = 0;
 let createAttempts = 0;
-// Once per VU: keep peak create volume ≈ share × VUS × maxOrders (not every VU × maxOrders).
-const peakCreateBudget = Math.random() < requestProbability ? maxOrdersPerRequester : 0;
+// Once per VU: ~requestProbability create at all; of those, twoOrdersProbability take max
+// (else max-1). Each planned create gets a random due time in [vuStart, vuStart+spread].
+const peakCreateBudget = drawPeakCreateBudget();
+const vuStartedAt = Date.now();
+const createDueAt = planCreateTimes(peakCreateBudget, vuStartedAt, createSpreadSeconds * 1000);
 // Small retry allowance only — unlimited retries on failure starve Order (create death spiral).
 const maxCreateAttempts = peakCreateBudget > 0 ? peakCreateBudget + 3 : 0;
+
+function drawPeakCreateBudget() {
+  if (Math.random() >= requestProbability) {
+    return 0;
+  }
+  if (maxOrdersPerRequester <= 1) {
+    return maxOrdersPerRequester;
+  }
+  if (Math.random() < twoOrdersProbability) {
+    return maxOrdersPerRequester;
+  }
+  return maxOrdersPerRequester - 1;
+}
+
+function planCreateTimes(budget, startedAt, spreadMs) {
+  const times = [];
+  for (let i = 0; i < budget; i += 1) {
+    times.push(startedAt + Math.floor(Math.random() * (spreadMs + 1)));
+  }
+  times.sort((left, right) => left - right);
+  return times;
+}
 
 function trafficScenario() {
   if (profile === "soak") {
@@ -137,6 +171,10 @@ function maybeCreate(userId) {
     return;
   }
   if (openOrders.length >= peakCreateBudget) {
+    return;
+  }
+  // Wait until this create's scheduled time; retries stay on the same slot after failures.
+  if (Date.now() < createDueAt[createdCount]) {
     return;
   }
   createAttempts += 1;
