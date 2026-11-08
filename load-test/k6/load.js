@@ -4,7 +4,8 @@
 //   k6 run load-test/k6/load.js
 //   k6 run -e VUS=30 -e DURATION=30s load-test/k6/load.js
 //
-// VUS and REQUESTER_SHARE must match setup/seed-users.mjs.
+// VUS must match setup/seed-users.mjs. Every seeded user can request and deliver;
+// each iteration picks a role with REQUEST_PROBABILITY (default 0.3).
 //
 // Metrics cardinality (Prometheus / Grafana Cloud):
 // Paths like /orders/${id}/accept would otherwise make one series per order via the
@@ -17,29 +18,36 @@ import { check, sleep } from "k6";
 import { SharedArray } from "k6/data";
 
 const total = intEnv("VUS", 9600);
-const share = Number(__ENV.REQUESTER_SHARE || 0.3);
-const requesterVus = Math.round(total * share);
-const courierVus = total - requesterVus;
+// Chance this iteration acts as requester (else courier). Matches product: anyone can do both.
+const requestProbability = Number(__ENV.REQUEST_PROBABILITY || __ENV.REQUESTER_SHARE || 0.3);
 const orderUrl = __ENV.ORDER_URL || "http://localhost:8083";
 const pickupId = __ENV.PICKUP_ID || "2";
 const dropoffId = Number(__ENV.DROPOFF_ID || 1);
 const escalateEvery = intEnv("ESCALATE_EVERY", 20);
 const think = Number(__ENV.THINK_SECONDS || 1);
-// Lunch-peak shape: each requester places a small number of orders for the whole
-// run (not a continuous refill). 9600 VUs is already ~2× expected peak headcount.
+// Lunch-peak shape: each VU places a small number of orders for the whole run.
+// 9600 VUs is already ~2× expected peak headcount.
 const maxOrdersPerRequester = intEnv("MAX_ORDERS_PER_REQUESTER", 2);
 
 // One user per element: SharedArray re-parses an element on every access, so a
 // single element holding every user would parse the whole file each iteration.
-const requesters = new SharedArray("requesters", () => JSON.parse(open("../data/users.json")).requesters);
-const couriers = new SharedArray("couriers", () => JSON.parse(open("../data/users.json")).couriers);
+const users = new SharedArray("users", () => {
+  const data = JSON.parse(open("../data/users.json"));
+  if (Array.isArray(data.users) && data.users.length > 0) {
+    return data.users;
+  }
+  return [...data.requesters, ...data.couriers];
+});
 
 const photo = encoding.b64decode(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=",
 );
 
-if (requesters.length < requesterVus || couriers.length < courierVus) {
+if (users.length < total) {
   throw new Error("users.json is smaller than this VUS. Re-run setup/seed-users.mjs with the same VUS.");
+}
+if (!(requestProbability > 0) || !(requestProbability < 1)) {
+  throw new Error("REQUEST_PROBABILITY must be between 0 and 1");
 }
 
 // Per-VU state (each VU has its own JS runtime).
@@ -67,16 +75,19 @@ export const options = {
 };
 
 export function traffic() {
-  if (__VU <= requesterVus) {
-    requester(requesters[(__VU - 1) % requesters.length].id);
+  const userId = users[(__VU - 1) % users.length].id;
+  // Always advance own open orders so courier iterations do not strand them.
+  pollAndCloseOwn(userId);
+  if (Math.random() < requestProbability) {
+    maybeCreate(userId);
+    requesterReads(userId);
   } else {
-    const index = __VU - requesterVus - 1;
-    courier(couriers[index % couriers.length].id);
+    courier(userId);
   }
   sleep(think);
 }
 
-function requester(userId) {
+function maybeCreate(userId) {
   // At most maxOrdersPerRequester successful creates for the entire run; retries
   // on failure so a transient blip does not leave the VU with zero lunch orders.
   if (createdCount < maxOrdersPerRequester && openOrders.length < maxOrdersPerRequester) {
@@ -86,15 +97,28 @@ function requester(userId) {
       createdCount += 1;
     }
   }
+}
+
+function pollAndCloseOwn(userId) {
   for (let index = openOrders.length - 1; index >= 0; index -= 1) {
     const status = orderStatus(userId, openOrders[index]);
     if (status === "DELIVERED") {
       closeOrder(userId, openOrders[index]);
       openOrders.splice(index, 1);
-    } else if (status === "ACKNOWLEDGED" || status === "ESCALATED" || status === "UNDER_REVIEW" || status === "COMPLETED" || status === "CANCELLED" || status === "EXPIRED") {
+    } else if (
+      status === "ACKNOWLEDGED" ||
+      status === "ESCALATED" ||
+      status === "UNDER_REVIEW" ||
+      status === "COMPLETED" ||
+      status === "CANCELLED" ||
+      status === "EXPIRED"
+    ) {
       openOrders.splice(index, 1);
     }
   }
+}
+
+function requesterReads(userId) {
   if (__ITER % 5 === 0) {
     readJson(userId, `${orderUrl}/api/v1/orders/requests/active?page=0&size=20`, "requests_active");
     readJson(userId, `${orderUrl}/api/v1/orders/alerts?page=0&size=20`, "alerts");
@@ -108,14 +132,26 @@ function requester(userId) {
 function courier(userId) {
   const pool = readJson(userId, `${orderUrl}/api/v1/orders?page=0&size=20`, "pool");
   const content = pool && pool.content ? pool.content : [];
-  if (content.length > 0) {
-    const order = content[Math.floor(Math.random() * content.length)];
+  // Never accept our own request — Order returns 409 and that is a real reject.
+  // Race "already taken" 409 from another courier is expected and counts as OK.
+  const candidates = content.filter(
+    (order) =>
+      order &&
+      order.id &&
+      String(order.requesterId || "").toLowerCase() !== String(userId).toLowerCase() &&
+      !openOrders.includes(order.id),
+  );
+  if (candidates.length > 0) {
+    const order = candidates[Math.floor(Math.random() * candidates.length)];
     const accepted = http.post(
       `${orderUrl}/api/v1/orders/${order.id}/accept`,
       null,
+      // 409 = already claimed (expected contention), not a threshold failure.
       params(userId, "fulfill", "accept", [200, 409]),
     );
-    check(accepted, { "accept claimed or already taken": (response) => response.status === 200 || response.status === 409 });
+    check(accepted, {
+      "accept claimed or already taken": (response) => response.status === 200 || response.status === 409,
+    });
     if (accepted.status === 200) {
       upload(userId, order.id, "collect");
       upload(userId, order.id, "deliver");

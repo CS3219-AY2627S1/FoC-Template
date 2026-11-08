@@ -2,12 +2,14 @@
 
 9600 virtual users call Order. The gateway identity headers are sent directly, so this does not go through the frontend or the gateway. Order makes the downstream calls.
 
-| Share | VUs | What they do |
-| --- | --- | --- |
-| 30% requesters | 2880 | Peak-lunch shape: each places up to **2 orders for the whole run** (1 credit each), then polls and acknowledges when delivered. Every 20th close escalates instead. Override with `MAX_ORDERS_PER_REQUESTER`. |
-| 70% couriers | 6720 | Read the open pool, accept one order, upload a 1×1 PNG for collect, then the same for deliver. |
+Everyone is **dual-role** (same as the product): one seeded user per VU. Each iteration they **choose**:
 
-9600 VUs is already about **2×** expected peak headcount; capping creates per requester models “food + drink” rather than a continuous create soak. Reads are mixed in. Requesters also call `/requests/active`, `/requests/past`, `/mine`, and `/alerts`. Couriers also call `/deliveries/active`, `/deliveries/past`, and `/search`.
+| Choice | Probability | What they do |
+| --- | --- | --- |
+| Request | `REQUEST_PROBABILITY` (default **0.3**, alias `REQUESTER_SHARE`) | Place up to **2 orders for the whole run** (1 credit each), poll/ack when delivered (every 20th close escalates). Extra reads: `/requests/active`, `/alerts`, `/mine`, `/requests/past`. |
+| Deliver | `1 −` that | Read the open pool, accept one order (409 on own/taken is OK), collect + deliver PNGs. Extra reads: `/deliveries/active`, `/deliveries/past`, `/search`. |
+
+Own open orders are always polled/closed even on deliver iterations so they do not stall. 9600 VUs is already about **2×** expected peak headcount; the create cap models “food + drink” rather than a continuous create soak.
 
 Downstream calls, as a share of that traffic:
 
@@ -21,7 +23,7 @@ Downstream calls, as a share of that traffic:
 | Rating | Order reads `GET /api/v1/rating/{userId}` on create and accept. Deliver and acknowledge publish `rating.permission.granted` on `foc.rating.commands` for Rating Service to grant the modal. |
 | MinIO / S3 | Collect and deliver store the PNG. |
 
-Default duration is 10 minutes. Create traffic is front-loaded (each requester’s 1–2 orders), then the run is mostly fulfill/close/read while the pool drains. Accept collisions return 409 and count as normal contention. Defaults: Supplier pickup id `2` (approved), Order delivery-point id `1` (seeded `kent-ridge-mrt`).
+Default duration is 10 minutes. Creates are front-loaded per VU (up to 2), then the run is mostly fulfill/close/read while the pool drains. Couriers **skip their own orders** in the pool (accepting those fails for real). **409 already taken** from another courier is expected contention and counts as success for fulfill thresholds. Defaults: Supplier pickup id `2` (approved), Order delivery-point id `1` (seeded `kent-ridge-mrt`).
 
 ## Setup, then load
 
@@ -258,13 +260,13 @@ and merge to `main`.
 | Variable | Default | Used by |
 | --- | --- | --- |
 | `VUS` | `9600` | seed + k6 |
-| `REQUESTER_SHARE` | `0.3` | seed + k6 |
-| `CREDIT_BALANCE` | `5000` | seed (requesters) |
-| `COURIER_BALANCE` | `100` | seed (couriers) |
+| `REQUEST_PROBABILITY` | `0.3` | k6 — P(request this iteration); falls back to `REQUESTER_SHARE` |
+| `REQUESTER_SHARE` | `0.3` | seed roster split + k6 alias for `REQUEST_PROBABILITY` |
+| `CREDIT_BALANCE` | `5000` | seed (every user; dual-role) |
 | `ORDER_URL` | `http://localhost:8083` | k6 |
 | `DURATION` | `10m` | k6 |
 | `THINK_SECONDS` | `1` | k6 |
-| `MAX_ORDERS_PER_REQUESTER` | `2` | k6 — successful creates per requester for the whole run |
+| `MAX_ORDERS_PER_REQUESTER` | `2` | k6 — successful creates per VU for the whole run |
 | `ESCALATE_EVERY` | `20` | k6 |
 | `PICKUP_ID` | `2` | k6 — Supplier approved place id (`fromLocation`) |
 | `DROPOFF_ID` | `1` | k6 — Order `delivery_point.id` (`deliveryPointId`) |
