@@ -3,7 +3,8 @@
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
  * Scope: Ported catalog seeding and loading from the scaffold's db.ts to Drizzle.
  *        2026-11-02: seeding reports whether the catalog changed.
- * Author review: Ngooi Jun Sen to validate before merge.
+ *        2026-11-09: the catalog is cached in memory between seeds.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { asc, sql } from 'drizzle-orm';
@@ -17,6 +18,7 @@ import type { BadgeDefinition } from '../types.js';
  * any badge was added or changed, i.e. whether users need re-checking.
  */
 export async function seedCatalog(definitions: BadgeDefinition[], executor: Executor = db): Promise<boolean> {
+  cached = null;
   if (definitions.length === 0) return false;
   const written = await executor
     .insert(badgeCatalog)
@@ -56,6 +58,23 @@ export async function seedCatalog(definitions: BadgeDefinition[], executor: Exec
     })
     .returning({ badgeId: badgeCatalog.badgeId });
   return written.length > 0;
+}
+
+// The catalog only changes when seedCatalog runs (at startup, from badges.json),
+// so events and profile reads share one copy instead of querying it each time.
+let cached: Promise<BadgeDefinition[]> | null = null;
+
+/** The catalog, read from the database once and reused until the next seed. */
+export function getCatalog(): Promise<BadgeDefinition[]> {
+  if (cached === null) {
+    const loading = loadCatalog();
+    cached = loading;
+    // A failed read is not kept, so the next call tries again.
+    loading.catch(() => {
+      if (cached === loading) cached = null;
+    });
+  }
+  return cached;
 }
 
 export async function loadCatalog(executor: Executor = db): Promise<BadgeDefinition[]> {

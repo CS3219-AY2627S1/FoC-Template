@@ -2,7 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
  * Scope: Generated TypeBox schemas for the consumed messages (admin.case.resolved added 2026-11-02).
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { type Static, Type } from '@sinclair/typebox';
@@ -72,3 +72,16 @@ export const AdminCaseResolved = Type.Object({
   faultParty: Type.Union([Type.Literal('requester'), Type.Literal('courier'), Type.Literal('no-fault')]),
 });
 export type AdminCaseResolved = Static<typeof AdminCaseResolved>;
+
+export const USER_DELETED = 'UserDeleted';
+
+// From foc.user.status. User Service builds it in buildUserDeletedEnvelope, in
+// its own envelope rather than the flat catalog format: the event name is in
+// `type` and the fields are under `data`.
+export const UserDeleted = Type.Object({
+  eventId: Type.String(),
+  type: Type.Literal(USER_DELETED),
+  occurredAt: Type.String(),
+  data: Type.Object({ userId: Uuid }),
+});
+export type UserDeleted = Static<typeof UserDeleted>;

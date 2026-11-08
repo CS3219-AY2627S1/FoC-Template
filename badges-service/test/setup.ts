@@ -2,7 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
  * Scope: Per-test database reset, adapted from rating-service; also seeds the catalog.
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { sql } from 'drizzle-orm';
@@ -21,7 +21,7 @@ if (!config.databaseUrl.includes('badges_test')) {
 // Clean slate before every test, with the real catalog in place (user_badge needs it).
 beforeEach(async () => {
   await db.execute(
-    sql`TRUNCATE badge_catalog, counted_order, disputed_order, user_metrics, user_badge RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE badge_catalog, counted_order, disputed_order, user_metrics, user_badge, deleted_user RESTART IDENTITY CASCADE`,
   );
   await seedCatalog(catalogSeed as BadgeDefinition[]);
 });

@@ -1,0 +1,16 @@
+sequenceDiagram
+    participant Rating as Rating Service
+    participant Kafka as foc.user.rating
+    participant Badges as Badges service
+    participant DB as Postgres
+
+    Rating->>Kafka: user.rating.updated, key is the user id
+    Kafka->>Badges: userId, newAverage, totalRatings
+    alt other eventType or fails the schema
+        Badges-->>Kafka: skip, and log when invalid
+    else stored rating_count is already at least totalRatings
+        Badges-->>Kafka: stale, nothing changes
+    else newer
+        Badges->>DB: upsert average_rating and rating_count
+        Badges->>DB: re-check that user's badges
+    end

@@ -2,7 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5), date: 2026-09-21
  * Scope: Generated the badge rule evaluation logic (pure functions, no I/O).
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import type {

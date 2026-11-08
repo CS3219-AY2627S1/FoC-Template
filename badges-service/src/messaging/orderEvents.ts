@@ -2,8 +2,8 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
  * Scope: Generated the order.status.changed handler that keeps delivery and request counts
- *        up to date. 2026-11-02: disputes go through counting.ts.
- * Author review: Ngooi Jun Sen to validate before merge.
+ *        up to date. 2026-11-02: disputes go through counting.ts. 2026-11-09: deleted users skipped.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { Value } from '@sinclair/typebox/value';
@@ -11,10 +11,10 @@ import { eq } from 'drizzle-orm';
 import { db } from '../database/index.js';
 import { countedOrder, disputedOrder } from '../database/schema.js';
 import { evaluateUser } from '../services/badges.service.js';
-import { adjustCount, applyDispute, type Role } from './counting.js';
+import { adjustCount, applyDispute, deletedAmong, type Role } from './counting.js';
 import { ORDER_STATUS_CHANGED, OrderStatusChanged } from './messages.js';
 
-export type OrderOutcome = 'counted' | 'uncounted' | 'duplicate' | 'disputed' | 'ignored' | 'invalid';
+export type OrderOutcome = 'counted' | 'uncounted' | 'duplicate' | 'disputed' | 'deleted' | 'ignored' | 'invalid';
 
 // An order counts once, the first time it reaches any of these (team decision
 // 2026-10-30). The same list as Order Service's COMPLETED_DELIVERIES.
@@ -57,10 +57,11 @@ export async function handleOrderEvent(raw: string): Promise<OrderOutcome> {
     const [dispute] = await tx.select().from(disputedOrder).where(eq(disputedOrder.orderId, orderId));
     if (dispute) return 'disputed';
 
-    const rows: { orderId: string; role: Role; userId: string }[] = [
-      { orderId, role: 'REQUESTER', userId: requesterId },
-    ];
-    if (courierId !== null) rows.push({ orderId, role: 'COURIER', userId: courierId });
+    const deleted = await deletedAmong(tx, [requesterId, courierId]);
+    const rows: { orderId: string; role: Role; userId: string }[] = [];
+    if (!deleted.has(requesterId)) rows.push({ orderId, role: 'REQUESTER', userId: requesterId });
+    if (courierId !== null && !deleted.has(courierId)) rows.push({ orderId, role: 'COURIER', userId: courierId });
+    if (rows.length === 0) return 'deleted';
 
     // The primary key makes a later status of the same order, or a redelivery, a no-op (NFR2.1).
     const added = await tx
