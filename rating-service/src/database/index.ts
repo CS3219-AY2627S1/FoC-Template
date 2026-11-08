@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated the Drizzle client and connection pool.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { config } from '../config.js';
@@ -12,4 +19,6 @@ export const queryClient = postgres(config.databaseUrl, {
 export const db = drizzle(queryClient, { schema, casing: 'snake_case' });
 
 export type Database = typeof db;
+// The database or an open transaction: helpers that run inside either take this.
+export type Executor = Database | Parameters<Parameters<Database['transaction']>[0]>[0];
 export { schema };

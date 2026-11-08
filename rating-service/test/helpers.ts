@@ -1,9 +1,16 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated test helpers for building grant messages.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
 import { randomUUID } from 'node:crypto';
 import { db } from '../src/database/index.js';
 import { ratingGrant } from '../src/database/schema.js';
 
 export { db };
-export { outbox, rating, ratingGrant, userRating } from '../src/database/schema.js';
+export { deletedUser, outbox, rating, ratingGrant, userRating } from '../src/database/schema.js';
 
 type Role = 'COURIER' | 'REQUESTER';
 
@@ -19,6 +26,17 @@ export function grantMessage(overrides: Record<string, unknown> = {}) {
     raterRole: 'COURIER',
     rateeId: randomUUID(),
     rateeRole: 'REQUESTER',
+    ...overrides,
+  };
+}
+
+// A UserDeleted message as User Service publishes it (its own envelope, not the flat format).
+export function userDeletedMessage(userId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    eventId: randomUUID(),
+    type: 'UserDeleted',
+    occurredAt: new Date().toISOString(),
+    data: { userId },
     ...overrides,
   };
 }

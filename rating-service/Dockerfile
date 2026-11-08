@@ -1,5 +1,10 @@
 # syntax=docker/dockerfile:1
 
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5)
+# Scope: Generated the multi-stage build: build, migrate and runtime stages.
+# Reviewed by Ngooi Jun Sen.
+
 # ---- Build stage ----
 FROM node:22-alpine AS build
 WORKDIR /app

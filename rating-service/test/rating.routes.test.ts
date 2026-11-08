@@ -1,9 +1,15 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated route tests through fastify.inject.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
-import { BATCH_MAX_USERS } from '../src/schemas/rating.js';
 import { averageOf } from '../src/services/rating.service.js';
 import { db, outbox, rating, seedGrant, userRating } from './helpers.js';
 
@@ -63,54 +69,6 @@ describe('GET /:userId', () => {
     const res = await app.inject({ method: 'GET', url: `${BASE}/not-a-uuid` });
     expect(res.statusCode).toBe(400);
     expect(res.json().code).toBe('VALIDATION_ERROR');
-  });
-});
-
-describe('POST /internal/batch', () => {
-  function batch(payload: Record<string, unknown>) {
-    return app.inject({ method: 'POST', url: `${BASE}/internal/batch`, payload });
-  }
-
-  it('returns each requested user in order, unrated users with a null average', async () => {
-    const grant = await seedGrant();
-    await submit(grant.raterId, grant.orderId, { score: 3 });
-    const unrated = randomUUID();
-
-    const res = await batch({ userIds: [unrated, grant.rateeId] });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({
-      ratings: [
-        { userId: unrated, average: null, count: 0 },
-        { userId: grant.rateeId, average: 3, count: 1 },
-      ],
-    });
-  });
-
-  it('returns a duplicated ID once', async () => {
-    const userId = randomUUID();
-    const res = await batch({ userIds: [userId, userId] });
-    expect(res.json().ratings).toEqual([{ userId, average: null, count: 0 }]);
-  });
-
-  it('returns an empty list for no IDs', async () => {
-    const res = await batch({ userIds: [] });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ ratings: [] });
-  });
-
-  it('400 above the page size', async () => {
-    const userIds = Array.from({ length: BATCH_MAX_USERS + 1 }, () => randomUUID());
-    const res = await batch({ userIds });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().code).toBe('VALIDATION_ERROR');
-  });
-
-  it('400 when an ID is not a UUID or userIds is missing', async () => {
-    for (const payload of [{ userIds: ['not-a-uuid'] }, {}]) {
-      const res = await batch(payload);
-      expect(res.statusCode).toBe(400);
-      expect(res.json().code).toBe('VALIDATION_ERROR');
-    }
   });
 });
 
@@ -244,6 +202,54 @@ describe('GET /me/pending', () => {
       rateeId: open.rateeId,
       rateeRole: 'REQUESTER',
     });
+  });
+});
+
+describe('POST /orders/:orderId/skip', () => {
+  function skip(raterId: string, orderId: string) {
+    return app.inject({ method: 'POST', url: `${BASE}/orders/${orderId}/skip`, headers: { 'x-user-id': raterId } });
+  }
+
+  function pending(raterId: string) {
+    return app.inject({ method: 'GET', url: `${BASE}/me/pending`, headers: { 'x-user-id': raterId } });
+  }
+
+  it('hides the grant from /me/pending, and skipping again changes nothing', async () => {
+    const grant = await seedGrant();
+    const res = await skip(grant.raterId, grant.orderId);
+    expect(res.statusCode).toBe(204);
+    expect(res.body).toBe('');
+    expect((await pending(grant.raterId)).json().pending).toEqual([]);
+
+    expect((await skip(grant.raterId, grant.orderId)).statusCode).toBe(204);
+  });
+
+  it('still accepts a rating for a skipped order', async () => {
+    const grant = await seedGrant();
+    await skip(grant.raterId, grant.orderId);
+    expect((await submit(grant.raterId, grant.orderId, { score: 4 })).statusCode).toBe(201);
+  });
+
+  it('403 RATING_NOT_PERMITTED without a grant for this rater', async () => {
+    const grant = await seedGrant();
+    const res = await skip(randomUUID(), grant.orderId);
+    expect(res.statusCode).toBe(403);
+    expect(res.json().code).toBe('RATING_NOT_PERMITTED');
+  });
+
+  it('409 RATING_ALREADY_SUBMITTED once the order is rated', async () => {
+    const grant = await seedGrant();
+    await submit(grant.raterId, grant.orderId, { score: 5 });
+    const res = await skip(grant.raterId, grant.orderId);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe('RATING_ALREADY_SUBMITTED');
+  });
+
+  it('400 when the order ID is not a UUID or x-user-id is missing', async () => {
+    const grant = await seedGrant();
+    expect((await skip(grant.raterId, 'order-1')).statusCode).toBe(400);
+    const noUser = await app.inject({ method: 'POST', url: `${BASE}/orders/${grant.orderId}/skip` });
+    expect(noUser.statusCode).toBe(400);
   });
 });
 

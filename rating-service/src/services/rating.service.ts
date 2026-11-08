@@ -1,11 +1,18 @@
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated the rating logic: grant check, storing a score, the running
+ *        total and the outbox row in one transaction.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { config } from '../config.js';
 import { db } from '../database/index.js';
 import { outbox, rating, ratingGrant, userRating } from '../database/schema.js';
 import { RatingAlreadySubmittedError, RatingNotPermittedError } from '../errors.js';
 import { ratingUpdatedMessage } from '../messaging/messages.js';
 import type {
-  BatchRatingsResponse,
   PendingRatingsResponse,
   SubmitRatingBody,
   SubmitRatingResponse,
@@ -27,27 +34,6 @@ export async function getUserRating(userId: string): Promise<UserRatingResponse>
   const sum = row?.sum ?? 0;
   const count = row?.count ?? 0;
   return { userId, average: averageOf(sum, count), count };
-}
-
-// One entry per distinct requested ID, in request order; unrated users get a
-// null average, as in getUserRating.
-export async function getUserRatings(userIds: string[]): Promise<BatchRatingsResponse> {
-  const ids = [...new Set(userIds)];
-  if (ids.length === 0) return { ratings: [] };
-
-  const rows = await db
-    .select({ userId: userRating.userId, sum: userRating.ratingSum, count: userRating.ratingCount })
-    .from(userRating)
-    .where(inArray(userRating.userId, ids));
-  const byId = new Map(rows.map((r) => [r.userId, r]));
-
-  return {
-    ratings: ids.map((userId) => {
-      const row = byId.get(userId);
-      const count = row?.count ?? 0;
-      return { userId, average: averageOf(row?.sum ?? 0, count), count };
-    }),
-  };
 }
 
 export async function submitRating(
@@ -130,10 +116,35 @@ export async function listPendingRatings(raterId: string): Promise<PendingRating
       rating,
       and(eq(rating.orderId, ratingGrant.orderId), eq(rating.raterId, ratingGrant.raterId)),
     )
-    .where(and(eq(ratingGrant.raterId, raterId), isNull(rating.ratingId)))
+    .where(and(eq(ratingGrant.raterId, raterId), isNull(rating.ratingId), isNull(ratingGrant.skippedAt)))
     .orderBy(asc(ratingGrant.grantedAt));
 
   return {
     pending: rows.map((r) => ({ ...r, grantedAt: r.grantedAt.toISOString() })),
   };
+}
+
+// Hides a grant from /me/pending. Same checks as submitting: a grant must exist
+// (403) and must not be used yet (409). Skipping twice changes nothing.
+export async function skipRating(raterId: string, orderId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [grant] = await tx
+      .select({ skippedAt: ratingGrant.skippedAt })
+      .from(ratingGrant)
+      .where(and(eq(ratingGrant.orderId, orderId), eq(ratingGrant.raterId, raterId)));
+    if (!grant) throw new RatingNotPermittedError(orderId);
+
+    const [used] = await tx
+      .select({ ratingId: rating.ratingId })
+      .from(rating)
+      .where(and(eq(rating.orderId, orderId), eq(rating.raterId, raterId)));
+    if (used) throw new RatingAlreadySubmittedError(orderId);
+
+    if (grant.skippedAt === null) {
+      await tx
+        .update(ratingGrant)
+        .set({ skippedAt: sql`now()` })
+        .where(and(eq(ratingGrant.orderId, orderId), eq(ratingGrant.raterId, raterId)));
+    }
+  });
 }

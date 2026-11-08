@@ -70,8 +70,6 @@ blockedPrefixes:
   # spend anyone's credits or refund any order.
   - /api/v1/credit/internal
   - /api/v1/badges/internal
-  # Badges' batch ratings lookup for its daily reconciliation poll.
-  - /api/v1/rating/internal
   # Order's escalation intake and User's report/appeal intake: no admin session,
   # so a client could open cases, reports or appeals for anyone.
   - /api/v1/admin/internal

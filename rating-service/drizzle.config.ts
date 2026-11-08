@@ -1,3 +1,8 @@
+// AI Assistance Disclosure
+// Tool: Claude Code (Claude Opus 5.5)
+// Scope: Generated the drizzle-kit configuration.
+// Reviewed by Ngooi Jun Sen.
+
 import { defineConfig } from 'drizzle-kit';
 import { sslRequired } from './src/config.js';
 
