@@ -71,7 +71,7 @@ one by hand, which creates a one-off Job.
 
 | CronJob | What it does | Runs on |
 | --- | --- | --- |
-| `load-setup` | Seeds 9600 users into the User and Credit databases. Re-run to reset credit balances. | normal nodes |
+| `load-setup` | Seeds **60000** users into the User and Credit databases (campus roster). Re-run to reset credit balances. Full/smoke still run **9600** VUs (first N of the roster). | normal nodes |
 | `load-run-smoke` | k6 soak, 30 VUs for 1 minute. Checks the whole path works. | normal nodes |
 | `load-run-full` | k6 peak ramp, 9600 VUs over ~15 minutes. The real test. | the `loadgen` node: one 8 vCPU / 32 GiB Spot node, added for the run and removed shortly after |
 
@@ -147,9 +147,10 @@ from the Argo CD UI. Both do the same thing. To open the UI, see
 | **Terminal** | `kubectl -n foc-load create job load-setup-$(date +%H%M) --from=cronjob/load-setup` | `kubectl -n foc-load logs -f job/load-setup-<HHMM> -c psql` |
 | **Argo CD UI** | app `load-test-dev` → CronJob **`load-setup`** → **⋮** → **Create Job** | the new pod → **Logs** → container `psql` |
 
-The log ends with `Seeded 9600 users`. Seeding takes about 15 seconds. Smoke
-and full runs reuse the same users, so seed again only to reset credit
-balances. Each requester starts with 5000 credits and each order spends 1.
+The log ends with `Seeded 60000 users`. Seeding takes longer than the old 9.6k
+roster (a minute or two). Smoke and full runs reuse the same users, so seed
+again only to reset credit balances. Each user starts with 5000 credits and
+each order spends 1.
 
 ### 4. Smoke run
 
@@ -259,7 +260,8 @@ and merge to `main`.
 
 | Variable | Default | Used by |
 | --- | --- | --- |
-| `VUS` | `9600` | seed + k6 peak / soak size |
+| `VUS` | `9600` | k6 peak / soak size (must be ≤ seeded roster) |
+| `seedVus` | `60000` | Helm — User/Credit seed size (`load-setup` + run init) |
 | `PROFILE` | `peak` | k6 — `peak` = ramping-vus (~15m); `soak` = flat `DURATION` |
 | `REQUEST_PROBABILITY` | `0.4` | k6 — P(request this iteration) + P(VU creates this run); falls back to `REQUESTER_SHARE` |
 | `REQUESTER_SHARE` | `0.4` | seed roster split + k6 alias for `REQUEST_PROBABILITY` |

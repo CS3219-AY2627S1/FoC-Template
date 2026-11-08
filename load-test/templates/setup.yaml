@@ -35,8 +35,8 @@ spec:
                 - name: CREDIT_DATABASE_URL
                   valueFrom: { secretKeyRef: { name: credit-db, key: DATABASE_URL } }
               resources:
-                requests: { cpu: 100m, memory: 128Mi }
-                limits: { cpu: 500m, memory: 256Mi }
+                requests: { cpu: 200m, memory: 256Mi }
+                limits: { cpu: "1", memory: 1Gi }
               volumeMounts:
                 - { name: data, mountPath: /work/data }
           volumes:
