@@ -3,8 +3,8 @@ orderUrl: ""
 secretStore: ""
 secretPrefix: "" # e.g. foc/dev/ → copies <prefix>user-db and <prefix>credit-db
 
-# Seed size. Runs may use fewer VUs; the roster's first N users are the same.
-seedVus: 9600
+# Seed size (campus-scale roster). Runs may use fewer VUs; k6 uses the first N.
+seedVus: 60000
 
 images:
   node: node:22-alpine

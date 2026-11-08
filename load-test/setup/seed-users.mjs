@@ -3,8 +3,9 @@
 //   node load-test/setup/seed-users.mjs
 //   node load-test/setup/seed-users.mjs --apply
 //
-// VUS (default 9600) sizes the roster. Everyone can request and deliver in k6
-// (REQUEST_PROBABILITY); seed still builds two label lists for stable ids.
+// VUS sizes the roster (k8s load-setup sets 60000; local default 9600).
+// Everyone can request and deliver in k6 (REQUEST_PROBABILITY); seed still
+// builds two label lists for stable ids. k6 may run with fewer VUs than seeded.
 // CREDIT_BALANCE (default 5000) for every user — each order spends 1.
 // Local --apply pipes SQL into Docker Postgres. Against EKS, generate the files
 // here, then apply users.sql and credits.sql to the User and Credit databases.
