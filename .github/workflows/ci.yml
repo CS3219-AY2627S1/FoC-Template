@@ -291,7 +291,7 @@ jobs:
         run: |
           GOBIN="$RUNNER_TEMP" go install github.com/k3d-io/k3d/v5@v5.8.3
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/k3d" cluster create foc --servers 1 --port '8081:80@loadbalancer' --wait
+          "$RUNNER_TEMP/k3d" cluster create foc --servers 1 --image rancher/k3s:v1.31.5-k3s1 --port '8081:80@loadbalancer' --wait
 
       - uses: azure/setup-helm@v4
         with:
