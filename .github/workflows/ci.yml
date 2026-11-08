@@ -1,3 +1,4 @@
+# AI-INFLUENCED: Install pinned CI tools without GitHub release assets with Codex.
 name: CI
 
 on:
@@ -76,13 +77,16 @@ jobs:
         with:
           version: v3.16.2
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: false
+
       - name: Install kubeconform
         run: |
-          curl -fsSL -o /tmp/kubeconform.tar.gz \
-            "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
-          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
-          sudo install -m 0755 /tmp/kubeconform /usr/local/bin/kubeconform
-          kubeconform -v
+          GOBIN="$RUNNER_TEMP" go install "github.com/yannh/kubeconform/cmd/kubeconform@v${KUBECONFORM_VERSION}"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/kubeconform" -v
 
       - name: helm lint
         run: helm lint infra/helm/foc
@@ -129,11 +133,8 @@ jobs:
 
       - name: Install actionlint
         run: |
-          curl -fsSL -o /tmp/actionlint.tar.gz \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
-          sudo install -m 0755 /tmp/actionlint /usr/local/bin/actionlint
-          actionlint -version
+          GOBIN="$RUNNER_TEMP" go install "github.com/rhysd/actionlint/cmd/actionlint@v${ACTIONLINT_VERSION}"
+          "$RUNNER_TEMP/actionlint" -version
 
       - name: actionlint
         run: actionlint .github/workflows/*.yml
@@ -281,15 +282,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create k3d cluster
-        uses: AbsaOSS/k3d-action@v2.4.0
+      - uses: actions/setup-go@v5
         with:
-          cluster-name: foc
-          k3d-version: v5.8.3
-          args: >-
-            --servers 1
-            --port 8081:80@loadbalancer
-            --wait
+          go-version: "1.22"
+          cache: false
+
+      - name: Create k3d cluster
+        run: |
+          GOBIN="$RUNNER_TEMP" go install github.com/k3d-io/k3d/v5@v5.8.3
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/k3d" cluster create foc --servers 1 --image rancher/k3s:v1.31.5-k3s1 --port '8081:80@loadbalancer' --wait
 
       - uses: azure/setup-helm@v4
         with:
