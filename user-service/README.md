@@ -120,7 +120,7 @@ These suites and `test:integration:email`, `test:integration:lockout`, `test:int
 - Gateway authorization uses `/api/v1/user/internal/authorize`, strips client identity headers and injects trusted `x-user-id`, `x-is-admin` and `x-permitted-action`. Each service must enforce the permission it needs.
 - Internal Telegram lookup is Order-only through Linkerd. Admin mutations require the real administrator's bearer token, even over internal networking.
 - Repository gateway/nginx rules block Admin's unauthenticated `/api/v1/admin/appeals/latest` route; the mesh admits User only. Keep it private when changing deployment/proxy rules.
-- `UserVerified` and `UserDeleted` use durable outboxes and the configured `foc.user.status` topic. Delivery can repeat; consumers must deduplicate. Credit currently handles `UserVerified`; its deletion handling and balance/history rules need coordination.
+- `UserVerified` and `UserDeleted` use durable outboxes and the configured `foc.user.status` topic. Delivery can repeat; consumers must deduplicate. Credit opens an account on `UserVerified` and revokes it on `UserDeleted` (balance to 0, account marked deleted, history kept; see `credit-service/docs/schema.md`).
 - Local `.env` values are not part of an image. Supply deployment secrets, SES permissions, frontend origin and bot credentials separately.
 
 Remaining work: record User load-test results (60,000 accounts; 95% auth/lookups under 1 second; 100 concurrent users with 95% requests under 2 seconds), and agree the broader account-status-help API beyond suspension appeals. Manual smoke tests cover the flows exercised, while performance and network-policy checks need their own evidence.

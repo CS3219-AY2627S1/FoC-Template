@@ -3,7 +3,15 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
-import { creditLog, creditOrder, creditUser, db, seedOrder, seedUser } from './helpers.js';
+import {
+  creditLog,
+  creditOrder,
+  creditUser,
+  db,
+  seedOrder,
+  seedRevokedUser,
+  seedUser,
+} from './helpers.js';
 
 const BASE = '/api/v1/credit';
 // Order's calls: under /internal, which the gateway blocks (ADR-0012).
@@ -37,6 +45,16 @@ describe('GET /me/balance', () => {
       method: 'GET',
       url: `${BASE}/me/balance`,
       headers: { 'x-user-id': randomUUID() },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().code).toBe('CREDIT_USER_NOT_FOUND');
+  });
+
+  it('404 CREDIT_USER_NOT_FOUND for a revoked (deleted) user', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `${BASE}/me/balance`,
+      headers: { 'x-user-id': await seedRevokedUser() },
     });
     expect(res.statusCode).toBe(404);
     expect(res.json().code).toBe('CREDIT_USER_NOT_FOUND');
@@ -108,6 +126,21 @@ describe('POST /internal/reserve', () => {
     });
     expect(res.statusCode).toBe(404);
     expect(res.json().code).toBe('CREDIT_USER_NOT_FOUND');
+  });
+
+  it('404 CREDIT_USER_NOT_FOUND for a revoked requester, reserving nothing', async () => {
+    const requesterId = await seedRevokedUser();
+    const orderId = randomUUID();
+    const res = await app.inject({
+      method: 'POST',
+      url: `${INTERNAL}/reserve`,
+      payload: { orderId, requesterId, amount: 1 },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().code).toBe('CREDIT_USER_NOT_FOUND');
+    expect(
+      await db.select().from(creditOrder).where(eq(creditOrder.orderId, orderId)),
+    ).toHaveLength(0);
   });
 
   it('400 CREDIT_INVALID_AMOUNT for a zero amount', async () => {
@@ -220,6 +253,19 @@ describe('POST /internal/release', () => {
     });
     expect(res.statusCode).toBe(404);
     expect(res.json().code).toBe('CREDIT_ORDER_NOT_FOUND');
+  });
+
+  it('404 CREDIT_USER_NOT_FOUND for a revoked requester, keeping the reservation', async () => {
+    const requesterId = await seedRevokedUser();
+    const orderId = await seedOrder(requesterId, 5);
+
+    const res = await app.inject({ method: 'POST', url: `${INTERNAL}/release`, payload: { orderId } });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().code).toBe('CREDIT_USER_NOT_FOUND');
+    expect(
+      await db.select().from(creditOrder).where(eq(creditOrder.orderId, orderId)),
+    ).toHaveLength(1);
   });
 
   it('is idempotent: releasing twice 404s the second time and does not double-refund', async () => {
