@@ -11,24 +11,24 @@ global:
   backup:
     image:
       repository: pg-backup
-      tag: a5463c0da11e24db69db8e6dbcec641fea158bb8
+      tag: e2d7e87a91106dd338937137197547b4a8608a56
     s3EndpointUrl: ""
     bucket: cs3219-g31-foc-backups-f6748651
 supplier-service:
-  image: {repository: supplier-service, tag: a5463c0da11e24db69db8e6dbcec641fea158bb8}
+  image: {repository: supplier-service, tag: e2d7e87a91106dd338937137197547b4a8608a56}
 user-service:
-  image: {repository: user-service, tag: a5463c0da11e24db69db8e6dbcec641fea158bb8}
+  image: {repository: user-service, tag: e2d7e87a91106dd338937137197547b4a8608a56}
 credit-service:
-  image: {repository: credit-service, tag: a5463c0da11e24db69db8e6dbcec641fea158bb8}
+  image: {repository: credit-service, tag: e2d7e87a91106dd338937137197547b4a8608a56}
 order-service:
-  image: {repository: order-service, tag: a5463c0da11e24db69db8e6dbcec641fea158bb8}
+  image: {repository: order-service, tag: e2d7e87a91106dd338937137197547b4a8608a56}
   env:
     ORDER_PHOTO_BUCKET: ""
     ORDER_PHOTO_REGION: ap-southeast-1
 notification-service:
-  image: {repository: notification-service, tag: a5463c0da11e24db69db8e6dbcec641fea158bb8}
+  image: {repository: notification-service, tag: e2d7e87a91106dd338937137197547b4a8608a56}
 api-gateway:
-  image: {repository: api-gateway, tag: a5463c0da11e24db69db8e6dbcec641fea158bb8}
+  image: {repository: api-gateway, tag: e2d7e87a91106dd338937137197547b4a8608a56}
   env:
     CORS_ALLOWED_ORIGINS: https://13.215.134.195.nip.io
   ingress:
@@ -37,7 +37,7 @@ api-gateway:
       enabled: true
       issuer: letsencrypt-prod
 frontend:
-  image: {repository: frontend, tag: a5463c0da11e24db69db8e6dbcec641fea158bb8}
+  image: {repository: frontend, tag: e2d7e87a91106dd338937137197547b4a8608a56}
   env:
     API_BASE_URL: https://13.215.134.195.nip.io
   ingress:
