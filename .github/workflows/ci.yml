@@ -55,6 +55,8 @@ jobs:
         run: shellcheck -x scripts/ci/*.sh infra/gcp/*.sh
       - name: Verify shared-library change detection
         run: bash scripts/ci/test-list-services.sh
+      - name: Test deploy failure handling without credentials
+        run: bash scripts/ci/test-deploy.sh
       - name: Test Order/Credit compensation cloud wiring without credentials
         run: python3 scripts/ci/test-order-workflows.py
       - name: Lint workflows (actionlint)

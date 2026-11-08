@@ -22,8 +22,9 @@
 # Safe rollout: an existing service gets the new revision with no traffic. Cloud Run only marks it
 # ready once its HTTP startup probe on HEALTH_PATH passes (the gateway's tagged URL is also checked
 # from here, as it is public), and only then does it receive 100% of traffic. If the revision never
-# becomes healthy the script exits non-zero and the previous revision keeps serving. After all
-# services are out, every one of them is smoke-tested through the public gateway.
+# becomes healthy, that service keeps its previous revision and the others still roll out; the
+# script exits non-zero at the end, naming what wasn't deployed. After the rollout, every deployed
+# service is smoke-tested through the public gateway.
 set -euo pipefail
 
 (( BASH_VERSINFO[0] >= 4 )) || { echo "deploy.sh needs bash >= 4 (macOS: brew install bash)" >&2; exit 2; }
@@ -159,8 +160,6 @@ deploy_service() {
     probe=(--startup-probe "httpGet.path=$HEALTH_PATH,initialDelaySeconds=5,periodSeconds=5,failureThreshold=24,timeoutSeconds=3")
   fi
 
-  echo "::group::Deploy $name ($image)"
-
   if [[ -x "$svc/deploy/pre-deploy.sh" ]]; then
     ENVIRONMENT=$ENVIRONMENT "$svc/deploy/pre-deploy.sh"
   fi
@@ -173,7 +172,6 @@ deploy_service() {
   # reach the service's own databases. scripts/ci/check-infra.sh catches this earlier.
   local sa="foc-$svc@$PROJECT_ID.iam.gserviceaccount.com"
   if ! gcloud iam service-accounts describe "$sa" --project "$PROJECT_ID" >/dev/null 2>&1; then
-    echo "::endgroup::"
     echo "::error title=Missing runtime identity::$sa does not exist. Ask the CI/CD owner to run infra/gcp/bootstrap.sh."
     return 1
   fi
@@ -202,7 +200,6 @@ deploy_service() {
       gcloud run services update-traffic "$name" --project "$PROJECT_ID" --region "$REGION" --remove-tags "$REVISION_TAG" --quiet
     fi
     echo "$name passed its startup probe on $HEALTH_PATH and is serving $IMAGE_TAG (internal ingress)"
-    echo "::endgroup::"
     return 0
   fi
 
@@ -223,47 +220,84 @@ deploy_service() {
         gcloud run services update-traffic "$name" --project "$PROJECT_ID" --region "$REGION" --remove-tags "$REVISION_TAG" --quiet
       fi
       echo "$name is healthy and serving $IMAGE_TAG"
-      echo "::endgroup::"
       return 0
     fi
     echo "  not healthy yet (attempt $attempt/12)"
     sleep 5
   done
 
-  echo "::endgroup::"
   echo "::error title=Deploy failed::$name did not become healthy; traffic stays on the previous revision."
   return 1
 }
 
+# One service failing doesn't hold back the others: it keeps its previous revision, the rest still
+# roll out, and the script fails at the end. The exception is Order, which must not run ahead of the
+# gateway and the providers deployed before it (see the ordering above).
+order_prerequisites=" gateway user-service supplier-service credit-service "
+deployed=()
+not_deployed=()
 for svc in "${ordered[@]}"; do
-  deploy_service "$svc"
+  if [[ $svc == order-service ]]; then
+    blocked=()
+    for prev in ${not_deployed[@]+"${not_deployed[@]}"}; do
+      [[ $order_prerequisites != *" $prev "* ]] || blocked+=("$prev")
+    done
+    if [[ ${#blocked[@]} -gt 0 ]]; then
+      echo "::error title=Deploy skipped::$svc-$ENVIRONMENT was not deployed because ${blocked[*]} failed; it keeps its previous revision."
+      not_deployed+=("$svc")
+      continue
+    fi
+  fi
+
+  echo "::group::Deploy $svc-$ENVIRONMENT ($REGISTRY/$svc:$IMAGE_TAG)"
+  # A subshell, so a failing step ends this service only. Bash ignores errexit inside a function
+  # called from a condition (`if deploy_service`, `deploy_service ||`), so check $? afterwards instead.
+  set +e
+  (set -e; deploy_service "$svc")
+  status=$?
+  set -e
+  echo "::endgroup::"
+  if [[ $status -eq 0 ]]; then
+    deployed+=("$svc")
+  else
+    echo "::error title=Deploy failed::$svc-$ENVIRONMENT was not deployed; traffic stays on the previous revision."
+    not_deployed+=("$svc")
+  fi
 done
 
 # Every deployed service must answer through the public gateway, the only way in from outside.
 gateway_url=$(service_url gateway)
-echo "::group::Smoke test through $gateway_url"
-failed=()
-for svc in "${ordered[@]}"; do
-  path=$(gateway_path "$svc")
-  # Retries cover cold starts: one request through the gateway may wake two instances.
-  if curl -fsS --max-time 60 --retry 5 --retry-all-errors --retry-delay 5 -o /dev/null "$gateway_url$path"; then
-    echo "  ✓ $svc: $path"
-  else
-    echo "  ✗ $svc: $path"
-    failed+=("$svc")
-  fi
-done
-echo "::endgroup::"
-if [[ ${#failed[@]} -gt 0 ]]; then
-  echo "::error title=Smoke test failed::Not reachable through the gateway: ${failed[*]}. See docs/ci-cd.md \"Rollback\"."
+smoke_failed=()
+if [[ ${#deployed[@]} -gt 0 ]]; then
+  echo "::group::Smoke test through $gateway_url"
+  for svc in "${deployed[@]}"; do
+    path=$(gateway_path "$svc")
+    # Retries cover cold starts: one request through the gateway may wake two instances.
+    if curl -fsS --max-time 60 --retry 5 --retry-all-errors --retry-delay 5 -o /dev/null "$gateway_url$path"; then
+      echo "  ✓ $svc: $path"
+    else
+      echo "  ✗ $svc: $path"
+      smoke_failed+=("$svc")
+    fi
+  done
+  echo "::endgroup::"
+fi
+[[ -n ${GITHUB_OUTPUT:-} ]] && echo "url=$gateway_url" >>"$GITHUB_OUTPUT"
+
+if [[ ${#smoke_failed[@]} -gt 0 ]]; then
+  echo "::error title=Smoke test failed::Not reachable through the gateway: ${smoke_failed[*]}. See docs/ci-cd.md \"Rollback\"."
   exit 1
 fi
 
-# Record what each environment runs, so production can promote exactly what staging tested.
-for svc in "${ordered[@]}"; do
+# Record what each environment runs, so production can promote exactly what staging tested. A service
+# that wasn't deployed keeps the tag of the revision still serving.
+for svc in ${deployed[@]+"${deployed[@]}"}; do
   gcloud artifacts docker tags add "$REGISTRY/$svc:$IMAGE_TAG" "$REGISTRY/$svc:$ENVIRONMENT" --quiet
 done
 
-echo "Deployed ${#ordered[@]} service(s) to $ENVIRONMENT at $IMAGE_TAG: $gateway_url"
-[[ -n ${GITHUB_OUTPUT:-} ]] && echo "url=$gateway_url" >>"$GITHUB_OUTPUT"
+echo "Deployed ${#deployed[@]} of ${#ordered[@]} service(s) to $ENVIRONMENT at $IMAGE_TAG: $gateway_url"
+if [[ ${#not_deployed[@]} -gt 0 ]]; then
+  echo "::error title=Partly deployed::Not deployed (previous revision still serving): ${not_deployed[*]}. Fix it and re-run the job."
+  exit 1
+fi
 exit 0
