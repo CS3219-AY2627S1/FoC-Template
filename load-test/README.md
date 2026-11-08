@@ -9,7 +9,7 @@ Everyone is **dual-role** (same as the product): one seeded user per VU. Each it
 | Request | `REQUEST_PROBABILITY` (default **0.4**, alias `REQUESTER_SHARE`) | Requester reads + maybe create. Extra reads: `/requests/active`, `/alerts`, `/mine`, `/requests/past`. |
 | Deliver | `1 −` that | With `COURIER_BROWSE_PROBABILITY` (default **0.2**) browse the open pool and maybe accept (409 on own/taken is OK), then collect + deliver PNGs. Otherwise idle think-time. List/search reads every 10th iteration. |
 
-**Peak creates** are gated once per VU: with probability `REQUEST_PROBABILITY` that VU creates at all; of those, `TWO_ORDERS_PROBABILITY` (default **0.6**) place `MAX_ORDERS_PER_REQUESTER` (default **2**) and the rest place one fewer. Expected creates ≈ `0.4 × 9600 × (0.6×2 + 0.4×1)` (~6.1k). Each planned create is due at a random time in the first `CREATE_SPREAD_SECONDS` of that VU’s life (default **240** on peak, **20** on soak). Failed closes stay in the VU’s open list and retry; create attempts stop after budget+3.
+**Peak creates** are gated once per VU: with probability `REQUEST_PROBABILITY` that VU creates at all; among creators, `ORDER_COUNT_WEIGHTS` (default **50,25,15,7,3**) picks **1..5** orders (NUS-skewed: most place 1–2, thin tail to 5). Expected creates ≈ `0.4 × 9600 × 1.88` (~7.2k). Each planned create is due at a random time in the first `CREATE_SPREAD_SECONDS` of that VU’s life (default **240** on peak, **20** on soak). Failed closes stay in the VU’s open list and retry; create attempts stop after budget+3.
 
 Downstream calls, as a share of that traffic:
 
@@ -269,8 +269,8 @@ and merge to `main`.
 | `ORDER_URL` | `http://localhost:8083` | k6 |
 | `DURATION` | `10m` | k6 — used only when `PROFILE=soak` |
 | `THINK_SECONDS` | `1` | k6 |
-| `MAX_ORDERS_PER_REQUESTER` | `2` | k6 — max successful creates for a VU that creates this run |
-| `TWO_ORDERS_PROBABILITY` | `0.6` | k6 — among creators, P(place the max); else place max−1 |
+| `MAX_ORDERS_PER_REQUESTER` | `5` | k6 — max orders a creating VU may place |
+| `ORDER_COUNT_WEIGHTS` | `50,25,15,7,3` | k6 — relative weights for placing 1..max orders |
 | `CREATE_SPREAD_SECONDS` | `240` / `20` | k6 — per-VU window to schedule creates (peak / soak defaults) |
 | `COURIER_BROWSE_PROBABILITY` | `0.2` | k6 — on a deliver iteration, P(pool read + maybe accept) |
 | `ESCALATE_EVERY` | `20` | k6 |
