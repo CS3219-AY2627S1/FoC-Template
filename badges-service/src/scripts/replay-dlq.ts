@@ -2,7 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: Generated the command that replays foc.badges.dlq (npm run replay:dlq).
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { config } from '../config.js';
@@ -16,7 +16,7 @@ import { createKafka } from '../messaging/kafka.js';
 // ones it re-queues) are left for the next run, so it always finishes.
 const IDLE_MS = Number(process.env.DLQ_IDLE_MS ?? 10_000);
 const startedAt = Date.now();
-const summary: Record<ReplayOutcome, number> = { replayed: 0, requeued: 0, dropped: 0 };
+const summary: Record<ReplayOutcome, number> = { replayed: 0, requeued: 0, expired: 0, dropped: 0 };
 
 const kafka = createKafka(config.kafka);
 const producer = kafka.producer();
@@ -38,7 +38,21 @@ try {
         consumer.pause([{ topic, partitions: [partition] }]);
         return;
       }
-      summary[await replayDeadLetter(producer, message.value, message.headers)] += 1;
+      const { outcome, letter } = await replayDeadLetter(producer, message.value, message.headers);
+      summary[outcome] += 1;
+      if (outcome === 'expired' || outcome === 'dropped') {
+        // Gone from the topic after this, so log everything needed to apply it by hand.
+        const headers = Object.fromEntries(
+          Object.entries(message.headers ?? {}).map(([name, v]) => [name, String(Array.isArray(v) ? v[0] : v)]),
+        );
+        console.error(
+          JSON.stringify({
+            outcome,
+            dlq: { partition, offset: message.offset },
+            letter: letter ?? { headers, raw: message.value?.toString('utf8') ?? '' },
+          }),
+        );
+      }
       await consumer.commitOffsets([{ topic, partition, offset: String(Number(message.offset) + 1) }]);
     },
   });

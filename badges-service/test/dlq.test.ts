@@ -1,12 +1,18 @@
 /**
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-09
- * Scope: Tests for sending skipped messages to foc.badges.dlq and replaying them.
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Scope: Tests for sending skipped messages to foc.badges.dlq and replaying them, with the replay cap.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { type DeadLetter, type DeadLetterSender, readDeadLetter, replayDeadLetter, sendToDeadLetter } from '../src/messaging/dlq.js';
+import {
+  type DeadLetter,
+  type DeadLetterSender,
+  readDeadLetter,
+  replayDeadLetter,
+  sendToDeadLetter,
+} from '../src/messaging/dlq.js';
 import { handlerFor } from '../src/messaging/handlers.js';
 import { metricsOf, orderMessage } from './helpers.js';
 
@@ -19,7 +25,9 @@ vi.mock('../src/messaging/handlers.js', async (importOriginal) => {
         ? async () => {
             throw new Error('still down');
           }
-        : actual.handlerFor(topic),
+        : topic === 'test.rejects'
+          ? async () => Promise.reject('boom')
+          : actual.handlerFor(topic),
   };
 });
 
@@ -30,6 +38,9 @@ function fakeSender() {
   return { sent, sender: { send: vi.fn(async (record: Sent) => sent.push(record)) } };
 }
 
+const FAILED_AT = '2026-11-09T00:00:00.000Z';
+const SOON = new Date('2026-11-10T00:00:00.000Z');
+
 const letter = (overrides: Partial<DeadLetter> = {}): DeadLetter => ({
   topic: 'foc.order.status',
   partition: 2,
@@ -37,6 +48,8 @@ const letter = (overrides: Partial<DeadLetter> = {}): DeadLetter => ({
   raw: '{}',
   reason: 'failed',
   error: 'database down',
+  replays: 0,
+  firstFailedAt: FAILED_AT,
   ...overrides,
 });
 
@@ -66,6 +79,8 @@ describe('sendToDeadLetter', () => {
               'x-original-offset': '42',
               'x-reason': 'failed',
               'x-error': 'database down',
+              'x-replay-count': '0',
+              'x-first-failed-at': FAILED_AT,
             },
           },
         ],
@@ -73,17 +88,21 @@ describe('sendToDeadLetter', () => {
     ]);
   });
 
-  it('leaves out the error header for an invalid message', async () => {
+  it('starts a new dead letter at no replays, failing now, with no error header when invalid', async () => {
     const { sent, sender } = fakeSender();
-    await sendToDeadLetter(sender, letter({ reason: 'invalid', error: null }));
-    expect(sent[0]!.messages[0]!.headers).not.toHaveProperty('x-error');
+    const before = Date.now();
+    await sendToDeadLetter(sender, { topic: 't', partition: 0, offset: '1', raw: 'x', reason: 'invalid', error: null });
+    const headers = sent[0]!.messages[0]!.headers;
+    expect(headers).not.toHaveProperty('x-error');
+    expect(headers['x-replay-count']).toBe('0');
+    expect(Date.parse(headers['x-first-failed-at']!)).toBeGreaterThanOrEqual(before);
   });
 });
 
 describe('readDeadLetter', () => {
   it('reads back what was sent', async () => {
-    const { value, headers } = await asReceived(letter());
-    expect(readDeadLetter(value, headers)).toEqual(letter());
+    const { value, headers } = await asReceived(letter({ replays: 3 }));
+    expect(readDeadLetter(value, headers)).toEqual(letter({ replays: 3 }));
   });
 
   it('takes the first value of a repeated header, and an empty value for a null message', () => {
@@ -92,10 +111,22 @@ describe('readDeadLetter', () => {
       'x-original-partition': '0',
       'x-original-offset': '1',
       'x-reason': 'invalid',
+      'x-replay-count': '1',
+      'x-first-failed-at': FAILED_AT,
     };
     expect(readDeadLetter(null, headers)).toEqual(
-      letter({ partition: 0, offset: '1', raw: '', reason: 'invalid', error: null }),
+      letter({ partition: 0, offset: '1', raw: '', reason: 'invalid', error: null, replays: 1 }),
     );
+  });
+
+  it('treats a missing or unreadable replay count and failure time as no replays, failing now', () => {
+    const before = Date.now();
+    const base = { 'x-original-topic': 't', 'x-original-partition': '0', 'x-original-offset': '1', 'x-reason': 'failed' };
+    for (const extra of [{}, { 'x-replay-count': 'many', 'x-first-failed-at': 'yesterday' }, { 'x-replay-count': '-1' }]) {
+      const read = readDeadLetter(Buffer.from('{}'), { ...base, ...extra })!;
+      expect(read.replays).toBe(0);
+      expect(Date.parse(read.firstFailedAt)).toBeGreaterThanOrEqual(before);
+    }
   });
 
   it.each([
@@ -115,7 +146,7 @@ describe('replayDeadLetter', () => {
     const { value, headers } = await asReceived(letter({ raw: JSON.stringify(message) }));
     const { sent, sender } = fakeSender();
 
-    expect(await replayDeadLetter(sender, value, headers)).toBe('replayed');
+    expect(await replayDeadLetter(sender, value, headers, SOON)).toMatchObject({ outcome: 'replayed' });
     expect(await metricsOf(message.courierId as string)).toMatchObject({ completedDeliveries: 1 });
     expect(sent).toHaveLength(0);
   });
@@ -125,20 +156,22 @@ describe('replayDeadLetter', () => {
     await handlerFor('foc.order.status')!(JSON.stringify(message));
     const { value, headers } = await asReceived(letter({ raw: JSON.stringify(message) }));
 
-    expect(await replayDeadLetter(fakeSender().sender, value, headers)).toBe('replayed');
+    expect(await replayDeadLetter(fakeSender().sender, value, headers, SOON)).toMatchObject({ outcome: 'replayed' });
     expect(await metricsOf(message.courierId as string)).toMatchObject({ completedDeliveries: 1 });
   });
 
-  it('re-queues a message that still fails, with the new error', async () => {
-    const { value, headers } = await asReceived(letter({ topic: 'test.broken' }));
+  it('re-queues a message that still fails, counting the replay and keeping the first failure time', async () => {
+    const { value, headers } = await asReceived(letter({ topic: 'test.broken', replays: 1 }));
     const { sent, sender } = fakeSender();
 
-    expect(await replayDeadLetter(sender, value, headers)).toBe('requeued');
+    expect(await replayDeadLetter(sender, value, headers, SOON)).toMatchObject({ outcome: 'requeued' });
     expect(sent[0]!.messages[0]!.headers).toMatchObject({
       'x-original-topic': 'test.broken',
       'x-original-offset': '42',
       'x-reason': 'failed',
       'x-error': 'still down',
+      'x-replay-count': '2',
+      'x-first-failed-at': FAILED_AT,
     });
   });
 
@@ -146,30 +179,48 @@ describe('replayDeadLetter', () => {
     const { value, headers } = await asReceived(letter({ raw: 'not json', reason: 'invalid', error: null }));
     const { sent, sender } = fakeSender();
 
-    expect(await replayDeadLetter(sender, value, headers)).toBe('requeued');
-    expect(sent[0]!.messages[0]!.headers).toMatchObject({ 'x-reason': 'invalid' });
+    expect(await replayDeadLetter(sender, value, headers, SOON)).toMatchObject({ outcome: 'requeued' });
+    expect(sent[0]!.messages[0]!.headers).toMatchObject({ 'x-reason': 'invalid', 'x-replay-count': '1' });
+  });
+
+  it("records a non-Error throw by its text", async () => {
+    const { value, headers } = await asReceived(letter({ topic: 'test.rejects' }));
+    const { sent, sender } = fakeSender();
+
+    expect(await replayDeadLetter(sender, value, headers, SOON)).toMatchObject({ outcome: 'requeued' });
+    expect(sent[0]!.messages[0]!.headers).toMatchObject({ 'x-error': 'boom' });
+  });
+
+  it('expires a message on its fifth failed replay instead of re-queueing it', async () => {
+    const { value, headers } = await asReceived(letter({ topic: 'test.broken', replays: 4 }));
+    const { sent, sender } = fakeSender();
+
+    const result = await replayDeadLetter(sender, value, headers, SOON);
+
+    expect(result).toEqual({
+      outcome: 'expired',
+      letter: letter({ topic: 'test.broken', replays: 5, error: 'still down' }),
+    });
+    expect(sent).toHaveLength(0);
+  });
+
+  it('expires a message first skipped longer ago than the topic keeps dead letters', async () => {
+    const { value, headers } = await asReceived(letter({ raw: 'not json', reason: 'invalid', error: null }));
+    const { sent, sender } = fakeSender();
+
+    const later = new Date(Date.parse(FAILED_AT) + 30 * 24 * 60 * 60 * 1000);
+    expect(await replayDeadLetter(sender, value, headers, later)).toMatchObject({ outcome: 'expired' });
+    expect(sent).toHaveLength(0);
   });
 
   it('drops a dead letter with unreadable headers or a topic Badges has no handler for', async () => {
     const { sender } = fakeSender();
-    expect(await replayDeadLetter(sender, Buffer.from('{}'), undefined)).toBe('dropped');
+    expect(await replayDeadLetter(sender, Buffer.from('{}'), undefined)).toEqual({ outcome: 'dropped', letter: null });
     const unknown = await asReceived(letter({ topic: 'some.other.topic' }));
-    expect(await replayDeadLetter(sender, unknown.value, unknown.headers)).toBe('dropped');
+    expect(await replayDeadLetter(sender, unknown.value, unknown.headers)).toMatchObject({
+      outcome: 'dropped',
+      letter: { topic: 'some.other.topic' },
+    });
     expect(sender.send).not.toHaveBeenCalled();
-  });
-
-  it("re-queues with the thrown value's text when the handler throws a non-Error", async () => {
-    vi.doMock('../src/messaging/handlers.js', () => ({ handlerFor: () => async () => Promise.reject('boom') }));
-    vi.resetModules();
-    const { replayDeadLetter: replay, sendToDeadLetter: send } = await import('../src/messaging/dlq.js');
-    const { sent: out, sender: capture } = fakeSender();
-    await send(capture, letter());
-    const message = out[0]!.messages[0]!;
-    const headers = Object.fromEntries(Object.entries(message.headers).map(([k, v]) => [k, Buffer.from(v)]));
-    const { sent, sender } = fakeSender();
-
-    expect(await replay(sender, Buffer.from(message.value), headers)).toBe('requeued');
-    expect(sent[0]!.messages[0]!.headers).toMatchObject({ 'x-error': 'boom' });
-    vi.doUnmock('../src/messaging/handlers.js');
   });
 });

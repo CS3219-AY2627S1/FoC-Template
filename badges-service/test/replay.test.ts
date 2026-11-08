@@ -2,7 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: Tests that replaying every event (a new consumer group) leaves badge state unchanged.
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { asc } from 'drizzle-orm';

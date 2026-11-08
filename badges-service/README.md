@@ -31,6 +31,9 @@ event fields in [docs/interfaces.md](docs/interfaces.md), and tables in
   itself.
 - `GET /api/v1/badges/{userId}`, readable by its owner only (2026-09-21, path from the contract).
 - Users are keyed by user ID; badges can be revoked (2026-09-21).
+- A deleted account's badge data is removed (2026-11-09, User F5), as Order and
+  Credit do on the same `UserDeleted` event. Like Credit's `deleted_at`, the
+  user stays marked as deleted so late or replayed events for them are ignored.
 
 ## How badges change
 
@@ -49,6 +52,13 @@ One consumer group `badges-service` (`src/messaging`):
 - `user.rating.updated` (foc.user.rating): stores the whole average and count.
   Ratings are never deleted, so a message with a lower or equal count is older
   and is ignored.
+- `UserDeleted` (foc.user.status, User's own envelope: `type` and `data.userId`):
+  removes the user's `user_metrics`, `user_badge` and `counted_order` rows and
+  records them in `deleted_user`. From then on their order, rating and verdict
+  events count for no one, so a replay can't bring their badges back. Their ID
+  stays on `disputed_order` only to mark them as a party; the other party's
+  verdict still applies. Other `type`s on the topic, such as `UserVerified`, are
+  ignored.
 - A message that fails 4 times, or doesn't match the contract, is logged, sent
   to the dead-letter topic `foc.badges.dlq`, and skipped (NFR3.1.1).
 
@@ -81,10 +91,14 @@ kubectl -n <namespace> exec deploy/badges -- npm run replay:dlq
 ```
 
 It reads the topic with its own consumer group (`badges-service-dlq-replay`)
-from where the last replay stopped, and prints `{ replayed, requeued, dropped }`.
-A message that still fails, or is still invalid, is re-queued at the end of the
-topic for the next replay; one with unreadable headers or from a topic Badges
-doesn't handle is dropped. Dead letters written after the replay started are
+from where the last replay stopped, and prints `{ replayed, requeued, expired,
+dropped }`. A message that still fails, or is still invalid, is re-queued at the
+end of the topic for the next replay, counting the replay. After 5 failed
+replays (`DLQ_MAX_REPLAYS`), or once it is 30 days past its first failure, it
+is expired instead, so a message that can never succeed doesn't circle forever.
+One with unreadable headers or from a topic Badges doesn't handle is dropped.
+Expired and dropped messages are written to the replay's error output in full
+(headers and value), so they can still be applied by hand. Dead letters written after the replay started are
 left for the next one, so it always finishes.
 
 Everything Kafka still holds. After a bug fix, or if the database got out of
@@ -127,8 +141,8 @@ a badge must hold. Thresholds are placeholders for the demo.
 ## What this service needs from teammates
 
 Nothing beyond the events it already reads. The badges KafkaUser may read
-foc.order.status, foc.user.rating and foc.admin.events
-(`deploy/charts/foc-kafka/values.yaml`).
+foc.order.status, foc.user.rating, foc.admin.events and foc.user.status, and
+write its own dead-letter topic foc.badges.dlq (`deploy/charts/foc-kafka/values.yaml`).
 
 ## Running it
 

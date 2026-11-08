@@ -30,6 +30,10 @@ An order counts once, the first time it reaches `DELIVERED`, `ACKNOWLEDGED`, `UN
 
 An order escalated from `COLLECTED` was never counted, so escalation removes nothing. An order escalated from `DELIVERED` was already counted for both, so escalation takes both counts back until the verdict.
 
+## Account deletion
+
+User publishes `UserDeleted` on foc.user.status once an account's six-month deletion period ends (User F5), in its own envelope (`type`, `data.userId`). Badges removes the user's metrics, badges and counted orders in one transaction and records the ID in `deleted_user`. Every later event checks that table: an order counts only for the party who still has an account, a rating for a deleted user is ignored, and a verdict counts the order only for the other party. A repeated `UserDeleted` is a no-op, and a replay can't bring the user's badges back.
+
 ## Rating updates
 
 ![Rating updates](seq-rating-event.png)

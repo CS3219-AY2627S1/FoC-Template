@@ -1,6 +1,6 @@
 # Database schema
 
-Drizzle owns the schema. `src/database/schema.ts` is the source; `npm run db:generate` writes migrations to `drizzle/`, and the migrate Job runs them before each deploy (ADR-0011). Migrations `0000` through `0002` produce the tables below. `user_badge.badge_id` is the only foreign key; order and user ids are plain UUIDs from other services.
+Drizzle owns the schema. `src/database/schema.ts` is the source; `npm run db:generate` writes migrations to `drizzle/`, and the migrate Job runs them before each deploy (ADR-0011). Migrations `0000` through `0003` produce the tables below. `user_badge.badge_id` is the only foreign key; order and user ids are plain UUIDs from other services.
 
 `0001` added the parties and verdict to `disputed_order`. `0002` dropped the `job_run` table and `user_metrics.reconciled_at` when the scheduled poll was removed.
 
@@ -76,6 +76,15 @@ One row per user and badge ever earned. Rows are not deleted on revocation, so r
 | updated_at | TIMESTAMPTZ | |
 
 Primary key `(user_id, badge_id)`.
+
+## deleted_user
+
+Users whose account was deleted (`UserDeleted` on foc.user.status). Their rows in `user_metrics`, `user_badge` and `counted_order` are removed; this row stays so a late or replayed event for them is ignored, the way Credit keeps `deleted_at`.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| user_id | UUID | Primary key. A repeated `UserDeleted` is a no-op |
+| deleted_at | TIMESTAMPTZ | When Badges applied the deletion |
 
 ## Enums
 

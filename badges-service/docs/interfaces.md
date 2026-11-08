@@ -73,17 +73,18 @@ A user with no events gets every badge unearned with `current` 0. An unrated use
 
 ## Kafka
 
-One consumer group, `badges-service` (`KAFKA_GROUP_ID`), reading three topics from the earliest retained offset. The badges KafkaUser may read only these topics, `foc.badges.dlq`, and groups prefixed `badges`, and may write only `foc.badges.dlq` (`deploy/charts/foc-kafka/values.yaml`, ADR-0004). Deployed clusters use TLS and SCRAM-SHA-512; with no `KAFKA_USERNAME` the client connects in plaintext, for a local broker. Badges publishes nothing but dead letters (below).
+One consumer group, `badges-service` (`KAFKA_GROUP_ID`), reading four topics from the earliest retained offset. The badges KafkaUser may read only these topics, `foc.badges.dlq`, and groups prefixed `badges`, and may write only `foc.badges.dlq` (`deploy/charts/foc-kafka/values.yaml`, ADR-0004). Deployed clusters use TLS and SCRAM-SHA-512; with no `KAFKA_USERNAME` the client connects in plaintext, for a local broker. Badges publishes nothing but dead letters (below).
 
-Every consumed payload uses the flat catalog format: `eventId`, `eventType`, `schemaVersion` (1), `occurredAt`, then the fields below. Extra fields are allowed and ignored, so publishers can add fields without breaking Badges. Any other `eventType` on these topics is ignored.
+Every consumed payload except User's uses the flat catalog format: `eventId`, `eventType`, `schemaVersion` (1), `occurredAt`, then the fields below. User's foc.user.status events use User Service's own envelope instead: `eventId`, `type`, `occurredAt`, and the fields under `data`. Extra fields are allowed and ignored, so publishers can add fields without breaking Badges. Any other `eventType` on these topics is ignored.
 
 | Topic | eventType | Publisher | Fields used | Effect |
 | --- | --- | --- | --- | --- |
 | foc.order.status | order.status.changed | Order | `orderId`, `requesterId`, `courierId` (null before accept), `fromStatus`, `toStatus` | Counted status: count once per role. `ESCALATED`: uncount until the verdict |
 | foc.admin.events | admin.case.resolved | Admin | `orderId`, `caseId`, `faultParty` (`requester` \| `courier` \| `no-fault`) | Count the disputed order for whoever was not at fault. First verdict kept |
 | foc.user.rating | user.rating.updated | Rating | `userId`, `newAverage` (0–5 or null), `totalRatings` (≥ 0) | Store the average and count if `totalRatings` is higher than stored |
+| foc.user.status | UserDeleted (`type`) | User | `data.userId` | Remove the user's metrics, badges and counted orders; record them in `deleted_user` so their later events are ignored. Other `type`s ignored |
 
-Deduplication does not use `eventId`. It comes from the data: the `counted_order` key for order events, the first stored verdict for admin events, and the rating count for rating events.
+Deduplication does not use `eventId`. It comes from the data: the `counted_order` key for order events, the first stored verdict for admin events, the rating count for rating events, and the `deleted_user` key for UserDeleted.
 
 A message is handled at most 4 times (`KAFKA_MAX_ATTEMPTS`), waiting 200 ms × attempt between tries, then logged, sent to `foc.badges.dlq`, and skipped. A dead letter's value is the original message; its headers say where it came from:
 
@@ -94,8 +95,10 @@ A message is handled at most 4 times (`KAFKA_MAX_ATTEMPTS`), waiting 200 ms × a
 | x-original-offset | Offset, as the client reports it |
 | x-reason | `failed` (every attempt threw) or `invalid` (doesn't match the contract) |
 | x-error | Last error message; absent for `invalid` |
+| x-replay-count | Replays that have failed so far; `0` when first skipped |
+| x-first-failed-at | When the consumer first skipped it (ISO 8601); kept across re-queues |
 
-The key is `<original topic>:<partition>`, so dead letters from one partition stay in order. The topic keeps them 30 days (`retention.ms` in `deploy/charts/foc-kafka/values.yaml`). If the send fails, the consumer throws instead of skipping, so the message is redelivered rather than lost. `npm run replay:dlq` reads the topic with the consumer group `badges-service-dlq-replay` and runs each dead letter through its handler again, re-queueing the ones that still fail.
+The key is `<original topic>:<partition>`, so dead letters from one partition stay in order. The topic keeps them 30 days (`retention.ms` in `deploy/charts/foc-kafka/values.yaml`). If the send fails, the consumer throws instead of skipping, so the message is redelivered rather than lost. `npm run replay:dlq` reads the topic with the consumer group `badges-service-dlq-replay` and runs each dead letter through its handler again, re-queueing the ones that still fail. A dead letter that fails its 5th replay (`DLQ_MAX_REPLAYS`), or is 30 days past `x-first-failed-at`, is expired instead: logged in full to the replay's error output and not re-queued. One with unreadable headers or a topic Badges doesn't handle is dropped and logged the same way.
 
 ## Configuration
 
@@ -112,3 +115,4 @@ The key is `<original topic>:<partition>`, so dead letters from one partition st
 | KAFKA_MAX_ATTEMPTS | 4 | |
 | KAFKA_DLQ_GROUP_ID | badges-service-dlq-replay | Consumer group of `npm run replay:dlq` |
 | DLQ_IDLE_MS | 10000 | `npm run replay:dlq` stops after this long with no new dead letter |
+| DLQ_MAX_REPLAYS | 5 | Failed replays before a dead letter is expired and logged instead of re-queued |

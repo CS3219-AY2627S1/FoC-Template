@@ -61,4 +61,4 @@ users:
     read: [foc.admin.commands]
   badges:
     write: [foc.badges.dlq]
-    read: [foc.order.status, foc.user.rating, foc.admin.events, foc.badges.dlq]
+    read: [foc.order.status, foc.user.rating, foc.admin.events, foc.user.status, foc.badges.dlq]
