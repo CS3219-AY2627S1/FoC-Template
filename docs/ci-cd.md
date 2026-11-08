@@ -120,12 +120,17 @@ For each service (backends → frontend → gateway):
 4. Health check. Every revision has an HTTP startup probe on `HEALTH_PATH`, so Cloud Run only
    marks it ready once the service answers. The deploy fails otherwise. The gateway (the only public
    service) is also curled on its tagged URL (12 tries, 5 s apart).
-5. Healthy → switch 100% of traffic to it. Unhealthy → fail the job; the previous revision
-   keeps serving.
-6. After all services: smoke-test each one **through the public gateway** (its
+5. Healthy → switch 100% of traffic to it. Unhealthy → the previous revision keeps serving, and the
+   remaining services **still roll out**; the job fails at the end, naming what wasn't deployed.
+   Order is the exception: if the gateway or a provider deployed before it (User, Supplier, Credit)
+   fails, Order is skipped, because it must not run ahead of them.
+6. After all services: smoke-test each deployed one **through the public gateway** (its
    `/api/<name>s/v3/api-docs`, the frontend's `/health`). This proves the gateway can reach it
    over the VPC.
-7. Then tag the images `<environment>` in Artifact Registry.
+7. Then tag the deployed images `<environment>` in Artifact Registry. A service that wasn't
+   deployed keeps the tag of the revision that is still serving.
+
+`scripts/ci/test-deploy.sh` checks this failure handling in CI with a fake `gcloud`.
 
 ### Per-service deploy config
 
@@ -232,4 +237,5 @@ Adding required reviewers to the `production` environment is optional.
 | **Cloud infrastructure** check fails on a PR | A service is missing its identity, databases, access or Pub/Sub wiring (usually a new service or event flow). The CI/CD owner runs `infra/gcp/bootstrap.sh`, then `infra/gcp/configure-compensation-pubsub.sh staging` and `infra/gcp/configure-compensation-pubsub.sh production`, and re-runs the job. |
 | Deploy fails with "Missing runtime identity" | Same cause, caught at deploy time. `deploy.sh` never falls back to the default (over-privileged) identity. |
 | First request is slow | Services scale to zero; a cold start takes 10–20 s. Set `--min-instances=1` in `EXTRA_FLAGS` for demos. |
-| A deploy failed | Earlier services keep their previous revision. Fix the problem and re-run the failed job (`gh run rerun <id> --failed`), or push a fix. |
+| A deploy failed ("Partly deployed") | The services it names keep their previous revision; the others are out. Fix the problem and re-run the failed job (`gh run rerun <id> --failed`), or push a fix. |
+| Order fails its startup probe with `remaining connection slots are reserved` | The shared `order-postgres` instance is out of connections during the rollout (#114). The other services still deploy. |
