@@ -18,6 +18,7 @@ export const creditOperation = pgEnum('credit_operation', [
   'EXPIRY',
   'COMPLETION',
   'RETURN',
+  'REVOCATION',
 ]);
 
 export const creditUser = pgTable(
@@ -27,6 +28,9 @@ export const creditUser = pgTable(
     balance: integer('balance').notNull().default(20),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    // Set once, on the User Service's UserDeleted: balance revoked to 0. The row
+    // stays so the FKs and the audit log hold, and late events find it.
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [check('credit_user_balance_nonneg', sql`${t.balance} >= 0`)],
 );

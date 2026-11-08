@@ -1,4 +1,4 @@
-import { cancelOrder, completeOrder } from '../services/credit.service.js';
+import { cancelOrder, completeOrder, type Settlement } from '../services/credit.service.js';
 import { asUuid, parseObject } from './messages.js';
 
 // foc.credit.commands, as published by the order service (its
@@ -45,20 +45,22 @@ export async function handleCreditCommandMessage(
   }
   const eventId = asUuid(command.eventId);
 
-  let settled: boolean;
+  let settlement: Settlement;
   if (eventType === 'credit.reservation.release') {
     const courierId = asUuid(command.courierId);
     if (!courierId) {
       log(`credit.commands: release of order ${orderId} with missing/invalid courierId, skipping`);
       return;
     }
-    settled = await completeOrder(orderId, courierId, eventId);
+    settlement = await completeOrder(orderId, courierId, eventId);
   } else {
     const operation = command.reason === 'EXPIRED' ? 'EXPIRY' : 'CANCELLATION';
-    settled = await cancelOrder(orderId, operation, eventId);
+    settlement = await cancelOrder(orderId, operation, eventId);
   }
 
-  if (!settled) {
+  if (settlement === 'not-reserved') {
     log(`credit.commands: order ${orderId} has no active reservation (already settled), skipping`);
+  } else if (settlement === 'forfeited') {
+    log(`credit.commands: order ${orderId} settled; its recipient's account is deleted, credits forfeited`);
   }
 }
