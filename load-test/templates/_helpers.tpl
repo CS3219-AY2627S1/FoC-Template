@@ -15,8 +15,9 @@
   env:
     - { name: VUS, value: {{ .Values.seedVus | quote }} }
   resources:
-    # 60k roster: JSON + SQL generation needs more headroom than the old 9.6k seed.
-    requests: { cpu: 500m, memory: 512Mi }
+    # Low requests so seed still schedules when Order is pinned at 32 (cluster
+    # often has Insufficient cpu for 500m+). Limits stay high for the 60k burst.
+    requests: { cpu: 100m, memory: 256Mi }
     limits: { cpu: "1", memory: 2Gi }
   # subPath: plain files. A directory mount is symlinks into ..<timestamp>/,
   # which Node resolves, so the script would look for ../data in the wrong place.
