@@ -1,3 +1,4 @@
+# AI-INFLUENCED: Harden GitHub release downloads against transient failures with Codex.
 name: CI
 
 on:
@@ -78,7 +79,7 @@ jobs:
 
       - name: Install kubeconform
         run: |
-          curl -fsSL -o /tmp/kubeconform.tar.gz \
+          curl -fsSL --retry 5 --retry-max-time 120 -o /tmp/kubeconform.tar.gz \
             "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
           tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
           sudo install -m 0755 /tmp/kubeconform /usr/local/bin/kubeconform
@@ -129,7 +130,7 @@ jobs:
 
       - name: Install actionlint
         run: |
-          curl -fsSL -o /tmp/actionlint.tar.gz \
+          curl -fsSL --retry 5 --retry-max-time 120 -o /tmp/actionlint.tar.gz \
             "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
           sudo install -m 0755 /tmp/actionlint /usr/local/bin/actionlint
@@ -433,7 +434,7 @@ jobs:
 
       - name: Install yq
         run: |
-          curl -fsSL -o /tmp/yq \
+          curl -fsSL --retry 5 --retry-max-time 120 -o /tmp/yq \
             "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
           sudo install -m 0755 /tmp/yq /usr/local/bin/yq
           yq --version
