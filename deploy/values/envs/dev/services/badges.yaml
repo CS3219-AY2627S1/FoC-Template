@@ -1,3 +1,3 @@
 image:
-  tag: "b945b74b04e08ab97301412532ce48a1ce671a7b" # git SHA, set by deploy/push-dev.sh
+  tag: "7796cf376528f896dad3231bb1672da62970228c" # git SHA, set by deploy/push-dev.sh
 replicas: 1

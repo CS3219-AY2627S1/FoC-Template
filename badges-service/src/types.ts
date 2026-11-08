@@ -2,7 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5), date: 2026-09-21
  * Scope: Generated shared types for the badges service scaffold.
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 export type MetricName =

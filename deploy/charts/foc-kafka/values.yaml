@@ -34,6 +34,9 @@ topics:
   # Rating's dead letters: messages its consumer skipped, replayed with
   # npm run replay:dlq. Kept 30 days, longer than the 7-day default.
   - name: foc.rating.dlq
+  # Badges' dead letters: messages its consumer skipped, replayed with
+  # npm run replay:dlq. Kept 30 days, longer than the 7-day default.
+  - name: foc.badges.dlq
     config:
       retention.ms: 2592000000
 
@@ -60,5 +63,5 @@ users:
     write: [foc.admin.events]
     read: [] # foc.admin.commands is unused: escalations arrive over HTTP
   badges:
-    write: []
-    read: [foc.order.status, foc.user.rating, foc.admin.events]
+    write: [foc.badges.dlq]
+    read: [foc.order.status, foc.user.rating, foc.admin.events, foc.user.status, foc.badges.dlq]

@@ -31,6 +31,7 @@ export default defineConfig({
         'src/database/schema.ts', // declarative; thunks run only during migration
         'src/messaging/kafka.ts', // wiring to a real broker; its parts are tested separately
         'src/types.ts', // types only
+        'src/scripts/**', // CLI entry points: thin wrappers over tested functions
       ],
       thresholds: {
         lines: 90,

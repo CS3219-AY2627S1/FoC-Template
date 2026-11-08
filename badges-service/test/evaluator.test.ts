@@ -2,7 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5), date: 2026-09-21; moved to Vitest 2026-10-30 (Claude Opus 5.5)
  * Scope: Generated unit tests for the badge rule evaluator.
- * Author review: Ngooi Jun Sen to validate and extend before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { describe, expect, it } from 'vitest';
