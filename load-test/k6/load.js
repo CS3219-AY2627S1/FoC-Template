@@ -33,10 +33,15 @@ const pickupId = __ENV.PICKUP_ID || "2";
 const dropoffId = Number(__ENV.DROPOFF_ID || 1);
 const escalateEvery = intEnv("ESCALATE_EVERY", 20);
 const think = Number(__ENV.THINK_SECONDS || 1);
-// Peak create shape: ~requestProbability of VUs place orders; of those, some take the
-// max (TWO_ORDERS_PROBABILITY) and the rest place one fewer. 9600 VUs ≈ 2× peak headcount.
-const maxOrdersPerRequester = intEnv("MAX_ORDERS_PER_REQUESTER", 2);
-const twoOrdersProbability = Number(__ENV.TWO_ORDERS_PROBABILITY || 0.6);
+// Peak create shape: ~requestProbability of VUs place orders; among creators,
+// ORDER_COUNT_WEIGHTS picks 1..MAX (NUS-skewed: most 1–2, thin tail to 5).
+// 9600 VUs ≈ 2× peak headcount.
+const maxOrdersPerRequester = intEnv("MAX_ORDERS_PER_REQUESTER", 5);
+// Weights for placing 1, 2, …, max orders (comma-separated). Default E[n] ≈ 1.88.
+const orderCountWeights = parseWeights(
+  __ENV.ORDER_COUNT_WEIGHTS || "50,25,15,7,3",
+  maxOrdersPerRequester,
+);
 // Spread each VU's creates uniformly over this window from VU start (not all at t≈0).
 // Peak default 4m so creates finish before cool-down (close drain), not into it.
 const createSpreadSeconds = intEnv(
@@ -72,33 +77,46 @@ if (!(courierBrowseProbability > 0) || courierBrowseProbability > 1) {
 if (profile !== "peak" && profile !== "soak") {
   throw new Error("PROFILE must be peak or soak");
 }
-if (!(twoOrdersProbability >= 0) || twoOrdersProbability > 1) {
-  throw new Error("TWO_ORDERS_PROBABILITY must be in [0, 1]");
-}
-
 // Per-VU state (each VU has its own JS runtime).
 const openOrders = [];
 let createdCount = 0;
 let createAttempts = 0;
-// Once per VU: ~requestProbability create at all; of those, twoOrdersProbability take max
-// (else max-1). Each planned create gets a random due time in [vuStart, vuStart+spread].
+// Once per VU: ~requestProbability create at all; else weighted 1..max.
+// Each planned create gets a random due time in [vuStart, vuStart+spread].
 const peakCreateBudget = drawPeakCreateBudget();
 const vuStartedAt = Date.now();
 const createDueAt = planCreateTimes(peakCreateBudget, vuStartedAt, createSpreadSeconds * 1000);
 // Small retry allowance only — unlimited retries on failure starve Order (create death spiral).
 const maxCreateAttempts = peakCreateBudget > 0 ? peakCreateBudget + 3 : 0;
 
+function parseWeights(raw, maxOrders) {
+  const parts = String(raw)
+    .split(",")
+    .map((part) => Number(part.trim()));
+  if (parts.length !== maxOrders || parts.some((weight) => !(weight >= 0) || Number.isNaN(weight))) {
+    throw new Error(
+      `ORDER_COUNT_WEIGHTS must be ${maxOrders} non-negative numbers (for 1..${maxOrders} orders)`,
+    );
+  }
+  const totalWeight = parts.reduce((sum, weight) => sum + weight, 0);
+  if (!(totalWeight > 0)) {
+    throw new Error("ORDER_COUNT_WEIGHTS must sum to a positive number");
+  }
+  return parts;
+}
+
 function drawPeakCreateBudget() {
   if (Math.random() >= requestProbability) {
     return 0;
   }
-  if (maxOrdersPerRequester <= 1) {
-    return maxOrdersPerRequester;
+  let cursor = Math.random() * orderCountWeights.reduce((sum, weight) => sum + weight, 0);
+  for (let index = 0; index < orderCountWeights.length; index += 1) {
+    cursor -= orderCountWeights[index];
+    if (cursor < 0) {
+      return index + 1;
+    }
   }
-  if (Math.random() < twoOrdersProbability) {
-    return maxOrdersPerRequester;
-  }
-  return maxOrdersPerRequester - 1;
+  return maxOrdersPerRequester;
 }
 
 function planCreateTimes(budget, startedAt, spreadMs) {
