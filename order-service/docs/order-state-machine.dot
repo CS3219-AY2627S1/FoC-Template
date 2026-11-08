@@ -27,10 +27,10 @@ digraph OrderStateMachine {
   PICKED_UP -> AWAITING_APPROVAL [label="assigned courier delivers\nOrderDelivered; start 24 h clock"];
   AWAITING_APPROVAL -> COMPLETED [label="requester approves + CreditTransferSucceeded\nOR 24 h auto-approval; OrderApproved"];
   OPEN -> CANCELLED [label="SupplierDeactivated; OrderCancelled"];
-  ACCEPTED -> CANCELLED [label="requester cancels before pickup + CreditReleased\nOR SupplierDeactivated; OrderCancelled"];
+  ACCEPTED -> CANCELLED [label="requester cancels before pickup + CreditReleased\nOrderCancelled"];
   OPEN -> EXPIRED [label="deadline <= DB time; expiry sweeper\nOrderExpired"];
   OPEN -> DELETED [label="requester deletes; CreditReleased\nthen remove row; OrderDeleted"];
 
   note [shape=note, style=filled, color="#b49c5c", fillcolor="#fff8e7", fontname="Helvetica", fontsize=10,
-    label="Pending delete / cancel / update / approval tasks are separate rows, not order statuses.\nRequester cancellation requires an assigned ACCEPTED order and waits for CreditReleased.\nSupplierDeactivated cancels OPEN or ACCEPTED immediately. CreditReleaseFailed leaves the order unchanged.\nCreditAmendRejected leaves OPEN. CreditTransferFailed leaves AWAITING_APPROVAL; auto-approval can still complete.\nInvalid transitions are rejected."];
+    label="Pending delete / cancel / update / approval tasks are separate rows, not order statuses.\nRequester cancellation requires an assigned ACCEPTED order and waits for CreditReleased.\nSupplierDeactivated cancels only OPEN orders. CreditReleaseFailed leaves the order unchanged.\nCreditAmendRejected leaves OPEN. CreditTransferFailed leaves AWAITING_APPROVAL; auto-approval can still complete.\nInvalid transitions are rejected."];
 }
