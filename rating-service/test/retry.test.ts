@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated tests for the retry helper.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
 import { describe, expect, it, vi } from 'vitest';
 import { withRetries } from '../src/messaging/retry.js';
 

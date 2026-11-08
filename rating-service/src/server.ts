@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated startup, the Kafka start, and graceful shutdown.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
 import { buildApp } from './app.js';
 import { config } from './config.js';
 import { queryClient } from './database/index.js';

@@ -1,4 +1,11 @@
-import { asc, inArray, isNull, sql } from 'drizzle-orm';
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated the transactional outbox relay to foc.user.rating.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
+import { and, asc, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '../database/index.js';
 import { outbox } from '../database/schema.js';
 
@@ -70,4 +77,27 @@ export function startOutboxRelay(
     stopped = true;
     if (timer) clearTimeout(timer);
   };
+}
+
+// Deletes rows sent more than retentionMs ago, so the outbox doesn't grow
+// forever. Unsent rows are never touched. Returns how many were deleted.
+export async function purgeSentOutbox(retentionMs: number): Promise<number> {
+  const cutoff = new Date(Date.now() - retentionMs);
+  const deleted = await db
+    .delete(outbox)
+    .where(and(isNotNull(outbox.sentAt), lt(outbox.sentAt, cutoff)))
+    .returning({ outboxId: outbox.outboxId });
+  return deleted.length;
+}
+
+// Purges on a timer until stopped. Returns a function that stops it.
+export function startOutboxPurge(
+  intervalMs: number,
+  retentionMs: number,
+  onError: (error: unknown) => void,
+): () => void {
+  const timer = setInterval(() => {
+    purgeSentOutbox(retentionMs).catch(onError);
+  }, intervalMs);
+  return () => clearInterval(timer);
 }

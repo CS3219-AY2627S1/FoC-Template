@@ -1,3 +1,8 @@
+// AI Assistance Disclosure
+// Tool: Claude Code (Claude Opus 5.5)
+// Scope: Generated the Vitest configuration and 90% coverage floor.
+// Reviewed by Ngooi Jun Sen.
+
 import { defineConfig } from 'vitest/config';
 import { TEST_DATABASE_URL } from './test/constants.ts';
 
@@ -28,6 +33,7 @@ export default defineConfig({
         'src/config.ts', // env plumbing (?? defaults); exercised by every test
         'src/database/schema.ts', // declarative; thunks run only during migration
         'src/messaging/kafka.ts', // wiring to a real broker; its parts are tested separately
+        'src/scripts/**', // CLI entry points: thin wrappers over tested functions
       ],
       thresholds: {
         lines: 90,

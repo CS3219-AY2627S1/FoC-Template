@@ -1,0 +1,19 @@
+sequenceDiagram
+    actor User
+    participant Gateway as Gateway
+    participant Orders as Order Service
+    participant Rating as Rating service
+    participant DB as Postgres
+
+    Orders->>Rating: GET /api/v1/rating/{userId}, on create and accept
+    Rating->>DB: user_rating row for userId
+    Rating-->>Orders: 200 userId, average or null, count
+
+    User->>Gateway: GET /api/v1/rating/{userId}
+    Gateway->>Rating: same path
+    Rating-->>User: 200 userId, average or null, count
+
+    User->>Gateway: GET /api/v1/rating/me/pending
+    Gateway->>Rating: same path, x-user-id
+    Rating->>DB: caller's rating_grant rows not rated and not skipped
+    Rating-->>User: 200 pending, oldest grant first
