@@ -63,9 +63,6 @@ export const SORT_LABELS = {
 } as const
 export type SortKey = keyof typeof SORT_LABELS
 
-export const STATUS_LABELS = { active: "Active", inactive: "Inactive", all: "All" } as const
-export type StatusKey = keyof typeof STATUS_LABELS
-
 export const PAGE_SIZE = 12
 
 export function supplierLookupPath(): string {
@@ -76,12 +73,14 @@ export function supplierLookupPayload(ids: readonly string[]): { ids: string[] }
   return { ids: Array.from(new Set(ids.filter(Boolean))) }
 }
 
-/** Catalogue view state, kept in the URL so searches are shareable and survive back/forward. */
+/**
+ * Catalogue view state, kept in the URL so searches are shareable and survive back/forward.
+ * The catalogue lists active suppliers only; administrators see inactive ones in Admin Mode.
+ */
 export type SupplierQuery = {
   q: string
   type: string
   openNow: boolean
-  status: StatusKey
   sort: SortKey
   order: "asc" | "desc"
   page: number
@@ -101,7 +100,6 @@ export function queryFromParams(params: URLSearchParams): SupplierQuery {
     q: params.get("q") ?? "",
     type: params.get("type") ?? "",
     openNow: params.get("openNow") === "true",
-    status: oneOf(params.get("status"), Object.keys(STATUS_LABELS) as StatusKey[], "active"),
     sort: sort === "distance" && !near ? "name" : sort,
     order: params.get("order") === "desc" ? "desc" : "asc",
     page: Math.max(1, Math.floor(Number(params.get("page")) || 1)),
@@ -115,7 +113,6 @@ export function paramsFromQuery(query: SupplierQuery): URLSearchParams {
   if (query.q.trim()) params.set("q", query.q.trim())
   if (query.type) params.set("type", query.type)
   if (query.openNow) params.set("openNow", "true")
-  if (query.status !== "active") params.set("status", query.status)
   if (query.near) {
     params.set("lat", query.near.lat.toFixed(6))
     params.set("lng", query.near.lng.toFixed(6))

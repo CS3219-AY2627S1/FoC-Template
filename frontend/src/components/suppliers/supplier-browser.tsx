@@ -1,9 +1,8 @@
 "use client"
 
-import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { PlusIcon, SearchXIcon } from "lucide-react"
+import { SearchXIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { SupplierFilters } from "@/components/suppliers/supplier-filters"
@@ -11,10 +10,8 @@ import { SupplierPagination } from "@/components/suppliers/supplier-pagination"
 import { SupplierResults, SupplierResultsSkeleton } from "@/components/suppliers/supplier-results"
 import { useAuth } from "@/components/providers/auth-provider"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Button } from "@/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { useApi } from "@/hooks/use-api"
-import { useSupplierPermissions } from "@/hooks/use-supplier-permissions"
 import { ApiError } from "@/lib/api"
 import {
   apiPathForQuery,
@@ -35,7 +32,6 @@ export function SupplierBrowser() {
   const searchParams = useSearchParams()
   const query = useMemo(() => queryFromParams(new URLSearchParams(searchParams.toString())), [searchParams])
   const requestPath = apiPathForQuery(query)
-  const { canManage } = useSupplierPermissions()
 
   const [result, setResult] = useState<Result | null>(null)
   const [types, setTypes] = useState<string[]>([])
@@ -111,18 +107,11 @@ export function SupplierBrowser() {
             Campus stores, facilities and landmarks you can pick up from or deliver to.
           </p>
         </div>
-        {canManage && (
-          <Button nativeButton={false} render={<Link href="/suppliers/new" />}>
-            <PlusIcon />
-            New supplier
-          </Button>
-        )}
       </div>
 
       <SupplierFilters
         query={query}
         types={types}
-        canManage={canManage}
         locating={locating}
         onChange={update}
         onToggleNearMe={toggleNearMe}
