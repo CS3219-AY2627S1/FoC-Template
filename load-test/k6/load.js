@@ -2,12 +2,13 @@
 // Order then calls User, Supplier, Credit, and, on escalate, Admin.
 //
 //   k6 run load-test/k6/load.js
-//   k6 run -e VUS=30 -e DURATION=30s load-test/k6/load.js
+//   k6 run -e PROFILE=soak -e VUS=30 -e DURATION=30s load-test/k6/load.js
 //
 // VUS must match setup/seed-users.mjs. Every seeded user can request and deliver;
 // each iteration picks a role with REQUEST_PROBABILITY (default 0.3).
-// Lunch creates are gated separately so dual-role does not 3× write volume vs the
+// Peak creates are gated separately so dual-role does not 3× write volume vs the
 // old fixed requester roster (~REQUEST_PROBABILITY × VUS × MAX_ORDERS).
+// PROFILE=peak (default): ramping-vus warm → peak hold → cool. PROFILE=soak: flat DURATION.
 //
 // Metrics cardinality (Prometheus / Grafana Cloud):
 // Paths like /orders/${id}/accept would otherwise make one series per order via the
@@ -20,16 +21,26 @@ import { check, sleep } from "k6";
 import { SharedArray } from "k6/data";
 
 const total = intEnv("VUS", 9600);
+const profile = String(__ENV.PROFILE || "peak").toLowerCase();
 // Chance this iteration acts as requester (else courier). Matches product: anyone can do both.
 const requestProbability = Number(__ENV.REQUEST_PROBABILITY || __ENV.REQUESTER_SHARE || 0.3);
+// On a deliver iteration, P(browse pool + maybe accept). Real couriers do not
+// refresh/accept every second; 1.0 caused empty-pool read storms.
+const courierBrowseProbability = Number(__ENV.COURIER_BROWSE_PROBABILITY || 0.2);
 const orderUrl = __ENV.ORDER_URL || "http://localhost:8083";
 const pickupId = __ENV.PICKUP_ID || "2";
 const dropoffId = Number(__ENV.DROPOFF_ID || 1);
 const escalateEvery = intEnv("ESCALATE_EVERY", 20);
 const think = Number(__ENV.THINK_SECONDS || 1);
-// Lunch-peak shape: ~requestProbability of VUs place this many orders for the run.
-// 9600 VUs is already ~2× expected peak headcount.
+// Peak create shape: ~requestProbability of VUs place orders; of those, some take the
+// max (TWO_ORDERS_PROBABILITY) and the rest place one fewer. 9600 VUs ≈ 2× peak headcount.
 const maxOrdersPerRequester = intEnv("MAX_ORDERS_PER_REQUESTER", 2);
+const twoOrdersProbability = Number(__ENV.TWO_ORDERS_PROBABILITY || 0.6);
+// Spread each VU's creates uniformly over this window from VU start (not all at t≈0).
+const createSpreadSeconds = intEnv(
+  "CREATE_SPREAD_SECONDS",
+  profile === "peak" ? 360 : 20,
+);
 
 // One user per element: SharedArray re-parses an element on every access, so a
 // single element holding every user would parse the whole file each iteration.
@@ -51,27 +62,85 @@ if (users.length < total) {
 if (!(requestProbability > 0) || !(requestProbability < 1)) {
   throw new Error("REQUEST_PROBABILITY must be between 0 and 1");
 }
+if (!(courierBrowseProbability > 0) || courierBrowseProbability > 1) {
+  throw new Error("COURIER_BROWSE_PROBABILITY must be in (0, 1]");
+}
+if (profile !== "peak" && profile !== "soak") {
+  throw new Error("PROFILE must be peak or soak");
+}
+if (!(twoOrdersProbability >= 0) || twoOrdersProbability > 1) {
+  throw new Error("TWO_ORDERS_PROBABILITY must be in [0, 1]");
+}
 
 // Per-VU state (each VU has its own JS runtime).
 const openOrders = [];
 let createdCount = 0;
 let createAttempts = 0;
-// Once per VU: keep lunch create volume ≈ share × VUS × maxOrders (not every VU × maxOrders).
-const lunchCreateBudget = Math.random() < requestProbability ? maxOrdersPerRequester : 0;
+// Once per VU: ~requestProbability create at all; of those, twoOrdersProbability take max
+// (else max-1). Each planned create gets a random due time in [vuStart, vuStart+spread].
+const peakCreateBudget = drawPeakCreateBudget();
+const vuStartedAt = Date.now();
+const createDueAt = planCreateTimes(peakCreateBudget, vuStartedAt, createSpreadSeconds * 1000);
 // Small retry allowance only — unlimited retries on failure starve Order (create death spiral).
-const maxCreateAttempts = lunchCreateBudget > 0 ? lunchCreateBudget + 3 : 0;
+const maxCreateAttempts = peakCreateBudget > 0 ? peakCreateBudget + 3 : 0;
+
+function drawPeakCreateBudget() {
+  if (Math.random() >= requestProbability) {
+    return 0;
+  }
+  if (maxOrdersPerRequester <= 1) {
+    return maxOrdersPerRequester;
+  }
+  if (Math.random() < twoOrdersProbability) {
+    return maxOrdersPerRequester;
+  }
+  return maxOrdersPerRequester - 1;
+}
+
+function planCreateTimes(budget, startedAt, spreadMs) {
+  const times = [];
+  for (let i = 0; i < budget; i += 1) {
+    times.push(startedAt + Math.floor(Math.random() * (spreadMs + 1)));
+  }
+  times.sort((left, right) => left - right);
+  return times;
+}
+
+function trafficScenario() {
+  if (profile === "soak") {
+    return {
+      executor: "constant-vus",
+      vus: total,
+      duration: __ENV.DURATION || "10m",
+      exec: "traffic",
+    };
+  }
+  // Compressed peak: warm → climb → hold → cool → drain (~12m).
+  const peak = total;
+  const quarter = Math.max(1, Math.round(peak * 0.25));
+  const half = Math.max(1, Math.round(peak * 0.5));
+  return {
+    executor: "ramping-vus",
+    startVUs: 0,
+    stages: [
+      { duration: "2m", target: quarter },
+      { duration: "2m", target: half },
+      { duration: "2m", target: peak },
+      { duration: "4m", target: peak },
+      { duration: "2m", target: half },
+      { duration: "2m", target: 0 },
+    ],
+    gracefulRampDown: "30s",
+    exec: "traffic",
+  };
+}
 
 export const options = {
   // systemTags only lists built-in tags. Custom `op` still comes from request tags.
   // Must not include `url` — that label keeps the full path with order UUIDs.
   systemTags: ["status", "method", "name", "expected_response", "scenario", "group", "check"],
   scenarios: {
-    traffic: {
-      executor: "constant-vus",
-      vus: total,
-      duration: __ENV.DURATION || "10m",
-      exec: "traffic",
-    },
+    traffic: trafficScenario(),
   },
   thresholds: {
     "http_req_failed{op:create}": ["rate<0.05"],
@@ -95,13 +164,17 @@ export function traffic() {
 }
 
 function maybeCreate(userId) {
-  if (lunchCreateBudget === 0) {
+  if (peakCreateBudget === 0) {
     return;
   }
-  if (createdCount >= lunchCreateBudget || createAttempts >= maxCreateAttempts) {
+  if (createdCount >= peakCreateBudget || createAttempts >= maxCreateAttempts) {
     return;
   }
-  if (openOrders.length >= lunchCreateBudget) {
+  if (openOrders.length >= peakCreateBudget) {
+    return;
+  }
+  // Wait until this create's scheduled time; retries stay on the same slot after failures.
+  if (Date.now() < createDueAt[createdCount]) {
     return;
   }
   createAttempts += 1;
@@ -143,34 +216,38 @@ function requesterReads(userId) {
 }
 
 function courier(userId) {
-  const pool = readJson(userId, `${orderUrl}/api/v1/orders?page=0&size=20`, "pool");
-  const content = pool && pool.content ? pool.content : [];
-  // Never accept our own request — Order returns 409 and that is a real reject.
-  // Race "already taken" 409 from another courier is expected and counts as OK.
-  const candidates = content.filter(
-    (order) =>
-      order &&
-      order.id &&
-      String(order.requesterId || "").toLowerCase() !== String(userId).toLowerCase() &&
-      !openOrders.includes(order.id),
-  );
-  if (candidates.length > 0) {
-    const order = candidates[Math.floor(Math.random() * candidates.length)];
-    const accepted = http.post(
-      `${orderUrl}/api/v1/orders/${order.id}/accept`,
-      null,
-      // 409 = already claimed (expected contention), not a threshold failure.
-      params(userId, "fulfill", "accept", [200, 409]),
+  // Most deliver iterations are idle think-time; only a share browses the pool.
+  if (Math.random() < courierBrowseProbability) {
+    const pool = readJson(userId, `${orderUrl}/api/v1/orders?page=0&size=20`, "pool");
+    const content = pool && pool.content ? pool.content : [];
+    // Never accept our own request — Order returns 409 and that is a real reject.
+    // Race "already taken" 409 from another courier is expected and counts as OK.
+    const candidates = content.filter(
+      (order) =>
+        order &&
+        order.id &&
+        String(order.requesterId || "").toLowerCase() !== String(userId).toLowerCase() &&
+        !openOrders.includes(order.id),
     );
-    check(accepted, {
-      "accept claimed or already taken": (response) => response.status === 200 || response.status === 409,
-    });
-    if (accepted.status === 200) {
-      upload(userId, order.id, "collect");
-      upload(userId, order.id, "deliver");
+    if (candidates.length > 0) {
+      const order = candidates[Math.floor(Math.random() * candidates.length)];
+      const accepted = http.post(
+        `${orderUrl}/api/v1/orders/${order.id}/accept`,
+        null,
+        // 409 = already claimed (expected contention), not a threshold failure.
+        params(userId, "fulfill", "accept", [200, 409]),
+      );
+      check(accepted, {
+        "accept claimed or already taken": (response) => response.status === 200 || response.status === 409,
+      });
+      if (accepted.status === 200) {
+        upload(userId, order.id, "collect");
+        upload(userId, order.id, "deliver");
+      }
     }
   }
-  if (__ITER % 5 === 0) {
+  // Occasional courier list/search — not every browse, not every idle tick.
+  if (__ITER % 10 === 0) {
     readJson(userId, `${orderUrl}/api/v1/orders/deliveries/active?page=0&size=20`, "deliveries_active");
     readJson(userId, `${orderUrl}/api/v1/orders/deliveries/past?page=0&size=20`, "deliveries_past");
     readJson(
