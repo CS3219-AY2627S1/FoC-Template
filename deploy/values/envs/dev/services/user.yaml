@@ -4,10 +4,10 @@ image:
 # the poller separately and set TELEGRAM_POLLING_ENABLED=false here.
 autoscaling:
   enabled: true
-  # Create path looks up telegram on every order; CPU HPA is blind to that I/O.
-  # Pin min=max so peers stay warm under 9600 VU peak (same pattern as Order).
-  minReplicas: 8
-  maxReplicas: 8
+  # Idle/dev. Full-run peak needs min=max=8 — see load-test/README.md
+  # "Scale up / scale down". Create looks up telegram; CPU HPA is blind to that.
+  minReplicas: 1
+  maxReplicas: 1
   targetCPUUtilization: 70
 resources:
   requests: {cpu: 250m}

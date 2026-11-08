@@ -1,8 +1,8 @@
 # dev and stg share the non-prod nodes; each gets half-ish of them.
 # Fits every HPA at maxReplicas plus Kafka, proxies, Jobs and rollout surge.
 # Raise a maxReplicas → raise these, or the extra pods are refused.
-# Order maxReplicas=32 × (500m+1Gi req / 2+2Gi lim) plus pinned peers at 8.
-# 28/40Gi refused the 32-pod Order floor; keep headroom for Kafka and Jobs.
+# Sized for a full-run peak (Order×32 + peers×8); idle floors are lower — see
+# load-test/README.md. 28/40Gi refused the 32-pod Order floor; keep headroom.
 quota:
   requests.cpu: "40"
   requests.memory: 64Gi

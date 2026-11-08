@@ -2,9 +2,10 @@ image:
   tag: "b945b74b04e08ab97301412532ce48a1ce671a7b" # git SHA, set by deploy/push-dev.sh
 autoscaling:
   enabled: true
-  # Create/accept read rating (soft-null on failure); pin warm under peak.
-  minReplicas: 8
-  maxReplicas: 8
+  # Idle/dev. Full-run peak needs min=max=8 — see load-test/README.md
+  # "Scale up / scale down". Create/accept read rating (soft-null on failure).
+  minReplicas: 1
+  maxReplicas: 1
   targetCPUUtilization: 70
 resources:
   requests: {cpu: 250m}

@@ -287,77 +287,86 @@ one time series per order. `url` is left out of `systemTags` as well. Thresholds
 
 ## Scale up / scale down (full-run footprint)
 
-Full 9600 VU peak is **I/O-bound**: CPU HPA often sits near 0% and would scale
-pods **down** mid-run if `minReplicas` < `maxReplicas`. For a serious full run,
-pin floors and raise capacity for the window, then drain back afterward so idle
-dev does not stay on the expensive footprint.
+**Required for a full 9600 VU run.** The Git values under
+`deploy/values/envs/dev/services/` are the **idle** floors. Leaving them idle
+and only bumping RDS will **not** pass — create-path traffic is I/O-bound, CPU
+HPA stays near 0%, and a low pin (or `min` < `max`) sheds pods mid-run. Scale
+**up in Git (or paused kubectl) before** the full Job; scale **back down after**
+so burst Spot and RDS xlarge do not idle-bill.
 
-### Peak footprint that passed (`full-1520`)
+### Idle (what Git should hold day-to-day) vs peak (`full-1520`)
 
-| Knob | Peak (for the run) | Idle / after |
+| Knob | Idle (committed default) | Peak (set before full run, revert after) |
 | --- | --- | --- |
-| Order | `minReplicas` = `maxReplicas` = **32** | lower pin or a real min≪max once you accept HPA risk |
-| User, Credit, Supplier, Rating | pinned **8** each (`min` = `max`) | lower pin |
-| `foc-dev` ResourceQuota | **40** CPU / **64Gi** requests, **100** pods | must still fit whatever floors you keep |
-| Burst node group max | Terraform `burst_node_max` default **8** | Autoscaler drains unused burst nodes when Pending clears |
-| RDS | `db.m7g.xlarge` for the run | `db.t4g.micro` (Terraform default) |
+| Order `minReplicas` / `maxReplicas` | **2 / 2** | **32 / 32** |
+| User, Credit, Supplier, Rating | **1 / 1** each | **8 / 8** each |
+| `foc-dev` ResourceQuota | keep **40** CPU / **64Gi** / **100** pods (already sized for peak) | same — raise further only if you go above 32/8 |
+| Terraform `burst_node_max` | default **3** | apply with **`-var burst_node_max=8`** |
+| RDS | `db.t4g.micro` (Terraform default) | apply with **`-var rds_instance_class=db.m7g.xlarge`** |
 
-Values live under `deploy/values/envs/dev/services/{order,user,credit,supplier,rating}.yaml`
-and `deploy/values/envs/dev/namespace.yaml`. Burst max is
-`infra/nonprod/aws` variable `burst_node_max`. Argo CD apps sync those service
-values from **`main`** only.
+Files: `deploy/values/envs/dev/services/{order,user,credit,supplier,rating}.yaml`,
+`deploy/values/envs/dev/namespace.yaml`, `infra/nonprod/aws` (`burst_node_max`,
+`rds_instance_class`). Argo syncs service values from **`main` only**.
 
 ### Scale up (before a full run)
 
-1. **Quota first** if you raise replica floors: edit `namespace.yaml` so
-   `requests.cpu` / `requests.memory` / `pods` fit Order×N plus peers, Kafka,
-   proxies, Jobs and rollout surge. Merge to `main` and sync `dev-foc-dev`
-   (or the namespace app) before the services, or extra pods are refused.
-2. **Pin services** in the env service YAML files (`minReplicas` = `maxReplicas`
-   at the peak counts above). Merge to `main`, then Refresh/sync
-   `dev-order`, `dev-user`, `dev-credit`, `dev-supplier`, `dev-rating`. Wait
-   until Desired = Ready at the new floors.
-3. **Burst capacity** if pods stay `Pending` with `Insufficient cpu` or
-   “max node group size reached”: raise `burst_node_max` and
-   `terraform -chdir=infra/nonprod/aws apply` with the same usual vars
-   (`state_bucket`, `ses_from_email`, …). Cluster Autoscaler adds Spot burst
-   nodes when pods are Pending.
-4. **RDS** as in [step 5](#5-full-run): apply with
-   `-var rds_instance_class=db.m7g.xlarge`, wait until `available`, then start
-   the full Job. Always pass the other required `-var`s on every apply so you
-   do not accidentally flip unrelated defaults.
+1. **Edit service YAML to the peak pins** (Order `32`/`32`, peers `8`/`8`).
+   Quota in `namespace.yaml` already fits that footprint; only raise it if you
+   go higher. Merge to `main`, then Refresh/sync `dev-order`, `dev-user`,
+   `dev-credit`, `dev-supplier`, `dev-rating`. Wait until Desired = Ready.
+2. **Burst capacity** — apply with a higher max so Order×32 can schedule:
 
-Optional temporary bump without waiting on Git: **pause** the Argo app
-(`argocd app pause …` or UI), `kubectl -n foc-dev scale` / patch the HPA
-`minReplicas`/`maxReplicas`, run the test, then unpause only after Git matches
-reality (otherwise self-heal reverts you). Prefer Git for anything you want
-reproducible.
+   ```bash
+   terraform -chdir=infra/nonprod/aws apply \
+     -var state_bucket=foc-tfstate-474265880628 \
+     -var ses_from_email=donleehh420@gmail.com \
+     -var burst_node_max=8 \
+     -var rds_instance_class=db.m7g.xlarge
+   ```
+
+   Always pass the usual `-var`s on every apply. Wait until RDS is `available`
+   (see [step 5](#5-full-run)), then start the full Job. Cluster Autoscaler
+   adds Spot burst nodes when pods are Pending.
+
+3. If pods stay `Pending` with `Insufficient cpu` or “max node group size
+   reached”, confirm `burst_node_max=8` applied and watch
+   `kubectl get nodes -l foc.io/pool=burst`.
+
+Optional without waiting on Git: **pause** the Argo apps, `kubectl -n foc-dev`
+patch HPA `minReplicas`/`maxReplicas` (and scale deploys) to the peak pins,
+run the test, then unpause **only after Git matches** (otherwise self-heal
+reverts you). Prefer Git for anything reproducible.
 
 ### Scale down (after the run)
 
-Do this soon after the k6 Job finishes so burst Spot and RDS xlarge do not
-idle-bill.
+Do this soon after the k6 Job finishes.
 
-1. **RDS back to micro** (largest ongoing cost if left up): same Terraform
-   apply as step 5 **without** `-var rds_instance_class=…` (default
-   `db.t4g.micro`), still passing `state_bucket` and `ses_from_email`. Tell the
-   team first — resize makes the DB unavailable for a few minutes. Confirm:
+1. **Revert service YAML to idle** (Order `2`/`2`, peers `1`/`1`), merge to
+   `main`, sync the Argo apps. If you scaled with `kubectl` first, **pause
+   Argo** beforehand; an unpaused sync restores whatever is on `main`.
+2. **RDS + burst max back to idle** (DB blips for a few minutes — tell the
+   team):
+
+   ```bash
+   terraform -chdir=infra/nonprod/aws apply \
+     -var state_bucket=foc-tfstate-474265880628 \
+     -var ses_from_email=donleehh420@gmail.com
+   # omits rds_instance_class → db.t4g.micro; omits burst_node_max → 3
+   ```
+
+   Confirm:
 
    ```bash
    aws rds describe-db-instances --db-instance-identifier foc-nonprod \
      --query 'DBInstances[0].[DBInstanceClass,DBInstanceStatus]' --output text
+   aws eks describe-nodegroup --cluster-name foc-nonprod --nodegroup-name burst \
+     --query 'nodegroup.scalingConfig' --output json
    ```
 
-2. **Lower service floors in Git** (e.g. Order/peers back to a cheap idle pin),
-   merge to `main`, sync the Argo apps. If you scale with `kubectl` first,
-   **pause Argo** beforehand; an unpaused sync will fight you and restore the
-   peak floors from Git.
-3. **Burst nodes**: no manual drain needed once replica requests drop —
-   Cluster Autoscaler removes idle burst nodes. If something stays Pending at
-   a lower floor, fix scheduling/quota rather than leaving `burst_node_max`
-   permanently high.
-4. **Quota**: you can leave the higher quota in place (harmless headroom) or
-   lower it with the floors; never leave floors above what the quota allows.
+3. **Burst nodes**: once replica requests drop, Cluster Autoscaler removes idle
+   burst nodes (often several minutes). No manual drain required.
+4. **Quota**: leave the higher quota; it is harmless headroom. Never leave
+   floors above what the quota allows.
 
 ### Check that scale-up actually stuck
 

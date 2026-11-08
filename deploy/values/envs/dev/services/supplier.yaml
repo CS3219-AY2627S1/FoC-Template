@@ -2,10 +2,10 @@ image:
   tag: "5ec616ba9b86e8ead4eaae928dd4c7fa15d6de66" # git SHA, set by deploy/push-dev.sh
 autoscaling:
   enabled: true
-  # Create validates pickup; Order also caches approved places ~5m, but keep
-  # peers pinned warm for cold cache / search.
-  minReplicas: 8
-  maxReplicas: 8
+  # Idle/dev. Full-run peak needs min=max=8 — see load-test/README.md
+  # "Scale up / scale down". Create validates pickup (Order also caches ~5m).
+  minReplicas: 1
+  maxReplicas: 1
   targetCPUUtilization: 70
 resources:
   requests: { cpu: 250m }
