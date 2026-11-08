@@ -61,9 +61,11 @@ variable "burst_instance_types" {
 }
 
 variable "burst_node_max" {
+  # Order×32 + peers×8 packs ~8 nodes (default max 3 + burst max 5); seed/Jobs
+  # then hit Insufficient cpu with "max node group size reached".
   description = "Most burst nodes Cluster Autoscaler may add (mind the Spot vCPU quota)."
   type        = number
-  default     = 5
+  default     = 8
 }
 
 variable "loadgen_instance_types" {
