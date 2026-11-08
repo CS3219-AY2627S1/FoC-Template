@@ -8,14 +8,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { SORT_LABELS, STATUS_LABELS, type SortKey, type StatusKey, type SupplierQuery } from "@/lib/suppliers"
+import { SORT_LABELS, type SortKey, type SupplierQuery } from "@/lib/suppliers"
 
 const ALL_TYPES = "__all__"
 
 type Props = {
   query: SupplierQuery
   types: string[]
-  canManage: boolean
   locating: boolean
   onChange: (changes: Partial<SupplierQuery>) => void
   onToggleNearMe: () => void
@@ -25,7 +24,7 @@ type Props = {
  * Filters wrap onto extra rows on narrow screens instead of hiding behind a drawer, so every
  * control is one tap away on both phone and desktop (NFR2.2.1).
  */
-export function SupplierFilters({ query, types, canManage, locating, onChange, onToggleNearMe }: Props) {
+export function SupplierFilters({ query, types, locating, onChange, onToggleNearMe }: Props) {
   const [text, setText] = useState(query.q)
   const latest = useRef(query.q)
 
@@ -51,7 +50,7 @@ export function SupplierFilters({ query, types, canManage, locating, onChange, o
   const sortItems = Object.fromEntries(
     Object.entries(SORT_LABELS).filter(([key]) => key !== "distance" || query.near),
   ) as Record<string, string>
-  const hasFilters = Boolean(query.q || query.type || query.openNow || query.near || query.status !== "active")
+  const hasFilters = Boolean(query.q || query.type || query.openNow || query.near)
 
   return (
     <div className="flex flex-col gap-3">
@@ -127,31 +126,10 @@ export function SupplierFilters({ query, types, canManage, locating, onChange, o
           Open now
         </Label>
 
-        {canManage && (
-          <Select
-            items={STATUS_LABELS}
-            value={query.status}
-            onValueChange={(value) => value && onChange({ status: value as StatusKey, page: 1 })}
-          >
-            <SelectTrigger aria-label="Filter by status" className="min-w-28">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
         {hasFilters && (
           <Button
             variant="ghost"
-            onClick={() =>
-              onChange({ q: "", type: "", openNow: false, near: null, status: "active", sort: "name", order: "asc", page: 1 })
-            }
+            onClick={() => onChange({ q: "", type: "", openNow: false, near: null, sort: "name", order: "asc", page: 1 })}
           >
             <XIcon />
             Clear

@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { PlusIcon, StoreIcon } from "lucide-react"
+import { PencilIcon, PlusIcon, StoreIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { SupplierForm } from "@/components/suppliers/supplier-form"
@@ -15,11 +15,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useAdminApi } from "@/hooks/use-admin-api"
 import { useAdminPage } from "@/hooks/use-admin-page"
 import type { AdminSearch } from "@/lib/admin-api"
-import type { Supplier } from "@/lib/suppliers"
+import { changedFields, toInput, type Supplier, type SupplierInput } from "@/lib/suppliers"
 import {
   AdminConfirmation, AdminDetails, AdminHeading, AdminLoadState, AdminPagination,
   AdminSearchForm, CopyId, adminDate,
 } from "./admin-ui"
+
+const SUPPLIER_TYPES = ["Food", "Facility", "Printing", "Landmark"]
 
 function AdminSupplierDetails({ supplierId, onBack }: { supplierId: string; onBack: () => void }) {
   const api = useAdminApi()
@@ -28,8 +30,37 @@ function AdminSupplierDetails({ supplierId, onBack }: { supplierId: string; onBa
   const [updated, setUpdated] = useState<Supplier | null>(null)
   const selected = updated ?? data
   const [confirm, setConfirm] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  // SupplierForm shows the error when this throws, so the dialog stays open for corrections.
+  async function save(input: SupplierInput) {
+    if (!selected) return
+    const changes = changedFields(toInput(selected), input)
+    if (Object.keys(changes).length === 0) {
+      setEditOpen(false)
+      toast("No changes to save.")
+      return
+    }
+    setBusy(true)
+    try {
+      setUpdated(await api.updateSupplier(supplierId, changes))
+      setEditOpen(false)
+      toast.success("Supplier updated.")
+    } finally { setBusy(false) }
+  }
+
+  async function reactivate() {
+    setBusy(true)
+    setActionError(null)
+    try {
+      setUpdated(await api.reactivateSupplier(supplierId))
+      toast.success("Supplier location reactivated.")
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not reactivate the supplier.")
+    } finally { setBusy(false) }
+  }
 
   async function deactivate() {
     setBusy(true)
@@ -50,9 +81,17 @@ function AdminSupplierDetails({ supplierId, onBack }: { supplierId: string; onBa
       {selected && <>
         <Card>
           <CardHeader><CardTitle className="text-xl">Admin actions</CardTitle></CardHeader>
-          <CardContent className="flex flex-wrap items-center gap-3">
-            <Button variant="destructive" disabled={busy || !selected.active} aria-label={"Deactivate " + selected.name}
-              onClick={() => { setActionError(null); setConfirm(true) }}>Deactivate</Button>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="outline" disabled={busy} onClick={() => { setActionError(null); setEditOpen(true) }}>
+                <PencilIcon />Edit details</Button>
+              {selected.active
+                ? <Button variant="destructive" disabled={busy} aria-label={"Deactivate " + selected.name}
+                    onClick={() => { setActionError(null); setConfirm(true) }}>Deactivate</Button>
+                : <Button variant="outline" disabled={busy} aria-label={"Reactivate " + selected.name}
+                    onClick={() => void reactivate()}>{busy ? "Reactivating…" : "Reactivate"}</Button>}
+            </div>
+            {actionError && !confirm && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
           </CardContent>
         </Card>
         <Card>
@@ -78,6 +117,13 @@ function AdminSupplierDetails({ supplierId, onBack }: { supplierId: string; onBa
       <AdminConfirmation open={confirm} title="Deactivate this supplier location?"
         description={"Deactivate " + (selected?.name ?? "this location") + "? The location will remain in the catalogue as inactive."}
         busy={busy} error={actionError} onClose={() => { setConfirm(false); setActionError(null) }} onConfirm={() => void deactivate()} />
+      <Dialog open={editOpen} onOpenChange={(open) => { if (!busy) setEditOpen(open) }}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader><DialogTitle>Edit supplier</DialogTitle><DialogDescription>Changes apply immediately to new errands.</DialogDescription></DialogHeader>
+          {selected && <SupplierForm locationPicker initial={toInput(selected)} types={SUPPLIER_TYPES} submitLabel="Save changes"
+            onCancel={() => { if (!busy) setEditOpen(false) }} onSubmit={save} />}
+        </DialogContent>
+      </Dialog>
   </section>
 }
 
@@ -124,7 +170,7 @@ function AdminSupplierList() {
     <Dialog open={createOpen} onOpenChange={(open) => { if (!createBusy) setCreateOpen(open) }}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader><DialogTitle>Create supplier</DialogTitle><DialogDescription>Add a campus pickup or delivery location.</DialogDescription></DialogHeader>
-        <SupplierForm locationPicker types={["Food", "Facility", "Printing", "Landmark"]} submitLabel="Create supplier"
+        <SupplierForm locationPicker types={SUPPLIER_TYPES} submitLabel="Create supplier"
           onCancel={() => { if (!createBusy) setCreateOpen(false) }} onSubmit={async (input) => {
             setCreateBusy(true)
             try {

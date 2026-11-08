@@ -122,7 +122,11 @@ function createLiveAdminApi(request: AdminRequest) {
     },
     supplier,
     createSupplier: (input: SupplierInput) => request<Supplier>("/api/suppliers", { method: "POST", body: input }),
+    // PATCH only the edited fields so concurrent edits to other fields are not overwritten.
+    updateSupplier: (id: string, changes: Partial<SupplierInput>) =>
+      request<Supplier>(detail("/api/suppliers", id), { method: "PATCH", body: changes }),
     deactivateSupplier: (id: string) => request<Supplier>(detail("/api/suppliers", id), { method: "DELETE" }),
+    reactivateSupplier: (id: string) => request<Supplier>(detail("/api/suppliers", id), { method: "PATCH", body: { active: true } }),
     // Label requests are independent of the primary Order query and its loading state.
     recordName: async (kind: "users" | "suppliers", id: string, signal?: AbortSignal): Promise<string | null> =>
     {

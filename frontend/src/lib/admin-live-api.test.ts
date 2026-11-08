@@ -66,7 +66,7 @@ describe("Live Admin API adapter", () => {
     expect(request.mock.calls.every(([path]) => !path.includes("admin-mock"))).toBe(true)
   })
 
-  it("reuses Supplier search/create/soft-deactivation contracts", async () => {
+  it("reuses Supplier search/create/edit/soft-deactivation contracts", async () => {
     const request = vi.fn().mockResolvedValue({ items: [] })
     const api = createAdminApi(request)
     await api.suppliers({ page: 2, searchBy: "name", q: " Deck " })
@@ -75,8 +75,12 @@ describe("Live Admin API adapter", () => {
       latitude: 1.3, longitude: 103.8, openingTime: "09:00", closingTime: "18:00", imageUrl: "" }
     await api.createSupplier(input)
     expect(request).toHaveBeenLastCalledWith("/api/suppliers", { method: "POST", body: input })
+    await api.updateSupplier("supplier/1", { closingTime: "21:30" })
+    expect(request).toHaveBeenLastCalledWith("/api/suppliers/supplier%2F1", { method: "PATCH", body: { closingTime: "21:30" } })
     await api.deactivateSupplier("supplier/1")
     expect(request).toHaveBeenLastCalledWith("/api/suppliers/supplier%2F1", { method: "DELETE" })
+    await api.reactivateSupplier("supplier/1")
+    expect(request).toHaveBeenLastCalledWith("/api/suppliers/supplier%2F1", { method: "PATCH", body: { active: true } })
   })
 
   it("preserves existing summary facts without fabricating missing profile or credit fields", async () => {

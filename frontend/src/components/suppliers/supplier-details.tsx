@@ -2,24 +2,12 @@
 
 import Link from "next/link"
 import { useCallback, useEffect, useState } from "react"
-import { ArrowLeftIcon, ClockIcon, ExternalLinkIcon, MapPinIcon, PencilIcon, PowerIcon, TagIcon } from "lucide-react"
-import { toast } from "sonner"
+import { ArrowLeftIcon, ClockIcon, ExternalLinkIcon, MapPinIcon, ShieldIcon, TagIcon } from "lucide-react"
 
 import { SupplierBadges } from "@/components/suppliers/supplier-badges"
 import { SupplierImage } from "@/components/suppliers/supplier-image"
 import { useAuth } from "@/components/providers/auth-provider"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
@@ -47,7 +35,6 @@ export function SupplierDetails({ id }: { id: string }) {
   const { canManage } = useSupplierPermissions()
   const [supplier, setSupplier] = useState<Supplier | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
-  const [saving, setSaving] = useState(false)
 
   const load = useCallback(
     (signal?: AbortSignal) => {
@@ -70,21 +57,6 @@ export function SupplierDetails({ id }: { id: string }) {
     load(controller.signal)
     return () => controller.abort()
   }, [load])
-
-  async function setActive(active: boolean) {
-    setSaving(true)
-    try {
-      const updated = active
-        ? await api<Supplier>(`/api/suppliers/${encodeURIComponent(id)}`, { method: "PATCH", body: { active: true } })
-        : await api<Supplier>(`/api/suppliers/${encodeURIComponent(id)}`, { method: "DELETE" })
-      setSupplier(updated)
-      toast.success(active ? "Supplier reactivated" : "Supplier deactivated")
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not update the supplier.")
-    } finally {
-      setSaving(false)
-    }
-  }
 
   const back = (
     <Button variant="ghost" size="sm" nativeButton={false} render={<Link href="/suppliers" />} className="w-fit">
@@ -126,41 +98,16 @@ export function SupplierDetails({ id }: { id: string }) {
             <SupplierBadges supplier={supplier} />
           </div>
         </div>
+        {/* Editing, deactivation and reactivation live in Admin Mode; this page is the read-only view. */}
         {canManage && (
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" nativeButton={false} render={<Link href={`/suppliers/${supplier.id}/edit`} />}>
-              <PencilIcon />
-              Edit
-            </Button>
-            {supplier.active ? (
-              <AlertDialog>
-                <AlertDialogTrigger render={<Button variant="destructive" disabled={saving} />}>
-                  <PowerIcon />
-                  Deactivate
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Deactivate {supplier.name}?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      It will no longer be selectable for new errands. Existing errands keep their reference, and you
-                      can reactivate it at any time.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction variant="destructive" onClick={() => setActive(false)}>
-                      Deactivate
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            ) : (
-              <Button onClick={() => setActive(true)} disabled={saving}>
-                <PowerIcon />
-                Reactivate
-              </Button>
-            )}
-          </div>
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href={`/admin/suppliers/${encodeURIComponent(supplier.id)}`} />}
+          >
+            <ShieldIcon />
+            Manage in Admin Mode
+          </Button>
         )}
       </div>
 
@@ -190,11 +137,6 @@ export function SupplierDetails({ id }: { id: string }) {
               <ExternalLinkIcon />
               Open in Google Maps
             </Button>
-            {canManage && (
-              <p className="text-xs text-muted-foreground">
-                ID {supplier.id} · Updated {new Date(supplier.updatedAt).toLocaleString()}
-              </p>
-            )}
           </CardContent>
         </Card>
       </div>

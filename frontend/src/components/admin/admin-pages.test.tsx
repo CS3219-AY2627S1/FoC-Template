@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import { ApiError } from "@/lib/api"
 import { AdminOrders } from "./admin-orders"
 import { AdminUsers } from "./admin-users"
 import { AdminSuppliers } from "./admin-suppliers"
@@ -15,10 +16,10 @@ const mocks = vi.hoisted(() => ({
   recordName: vi.fn(),
   supplier: vi.fn(), userTransactions: vi.fn(), userBalance: vi.fn(),
   suspendUser: vi.fn(), unsuspendUser: vi.fn(), promoteUser: vi.fn(), deactivateUser: vi.fn(),
-  createSupplier: vi.fn(), deactivateSupplier: vi.fn(),
+  createSupplier: vi.fn(), updateSupplier: vi.fn(), deactivateSupplier: vi.fn(), reactivateSupplier: vi.fn(),
 }))
 vi.mock("@/hooks/use-admin-api", () => ({ useAdminApi: () => mocks }))
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }))
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }))
 
 const user = {
@@ -359,6 +360,57 @@ describe("Admin pages", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
   })
 
+  it("edits a supplier by sending only the changed fields", async () => {
+    mocks.updateSupplier.mockResolvedValue({ ...supplier, closingTime: "21:30" })
+    render(<AdminSuppliers initialSupplierId="supplier-1" />)
+    fireEvent.click(await screen.findByRole("button", { name: "Edit details" }))
+    const dialog = within(await screen.findByRole("dialog"))
+    expect(dialog.getByLabelText("Name")).toHaveValue("The Deck")
+    fireEvent.change(dialog.getByLabelText("Closes"), { target: { value: "21:30" } })
+    fireEvent.click(dialog.getByRole("button", { name: "Save changes" }))
+    await waitFor(() => expect(mocks.updateSupplier).toHaveBeenCalledWith("supplier-1", { closingTime: "21:30" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+    expect(screen.getByText("21:30")).toBeInTheDocument()
+  })
+
+  it("closes the editor without a request when nothing changed", async () => {
+    render(<AdminSuppliers initialSupplierId="supplier-1" />)
+    fireEvent.click(await screen.findByRole("button", { name: "Edit details" }))
+    const dialog = within(await screen.findByRole("dialog"))
+    fireEvent.click(dialog.getByRole("button", { name: "Save changes" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+    expect(mocks.updateSupplier).not.toHaveBeenCalled()
+  })
+
+  it("keeps the editor open and shows the service error when an edit fails", async () => {
+    mocks.updateSupplier.mockRejectedValue(new ApiError(409, "CONFLICT", "Duplicate"))
+    render(<AdminSuppliers initialSupplierId="supplier-1" />)
+    fireEvent.click(await screen.findByRole("button", { name: "Edit details" }))
+    const dialog = within(await screen.findByRole("dialog"))
+    fireEvent.change(dialog.getByLabelText("Building"), { target: { value: "COM3" } })
+    fireEvent.click(dialog.getByRole("button", { name: "Save changes" }))
+    expect(await dialog.findByText("A supplier with this name already exists in that building.")).toBeInTheDocument()
+    expect(dialog.getByRole("button", { name: "Save changes" })).toBeEnabled()
+  })
+
+  it("reactivates an inactive supplier", async () => {
+    mocks.supplier.mockResolvedValue({ ...supplier, active: false })
+    mocks.reactivateSupplier.mockResolvedValue(supplier)
+    render(<AdminSuppliers initialSupplierId="supplier-1" />)
+    fireEvent.click(await screen.findByRole("button", { name: "Reactivate The Deck" }))
+    await waitFor(() => expect(mocks.reactivateSupplier).toHaveBeenCalledWith("supplier-1"))
+    expect(await screen.findByRole("button", { name: "Deactivate The Deck" })).toBeEnabled()
+  })
+
+  it("reports a failed reactivation", async () => {
+    mocks.supplier.mockResolvedValue({ ...supplier, active: false })
+    mocks.reactivateSupplier.mockRejectedValue(new Error("Update failed"))
+    render(<AdminSuppliers initialSupplierId="supplier-1" />)
+    fireEvent.click(await screen.findByRole("button", { name: "Reactivate The Deck" }))
+    expect(await screen.findByRole("alert")).toHaveTextContent("Update failed")
+    expect(screen.getByRole("button", { name: "Reactivate The Deck" })).toBeEnabled()
+  })
+
   it("keeps a supplier active when its confirmation is cancelled", async () => {
     render(<AdminSuppliers initialSupplierId="supplier-1" />)
     fireEvent.click(await screen.findByRole("button", { name: "Deactivate The Deck" }))
@@ -509,7 +561,8 @@ describe("Admin pages", () => {
     expect(mocks.deactivateSupplier).not.toHaveBeenCalled()
     fireEvent.click(await screen.findByRole("button", { name: "Confirm deactivation" }))
     await waitFor(() => expect(mocks.deactivateSupplier).toHaveBeenCalledWith("supplier-1"))
-    await waitFor(() => expect(screen.getByRole("button", { name: "Deactivate The Deck" })).toBeDisabled())
+    expect(await screen.findByRole("button", { name: "Reactivate The Deck" })).toBeEnabled()
+    expect(screen.queryByRole("button", { name: "Deactivate The Deck" })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Back to suppliers" }))
     expect(mocks.push).toHaveBeenCalledWith("/admin/suppliers")
   })
