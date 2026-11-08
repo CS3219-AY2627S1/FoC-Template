@@ -301,7 +301,7 @@ so burst Spot and RDS xlarge do not idle-bill.
 | Order `minReplicas` / `maxReplicas` | **2 / 2** | **32 / 32** |
 | User, Credit, Supplier, Rating | **1 / 1** each | **8 / 8** each |
 | `foc-dev` ResourceQuota | keep **40** CPU / **64Gi** / **100** pods (already sized for peak) | same — raise further only if you go above 32/8 |
-| Terraform `burst_node_max` | default **3** | apply with **`-var burst_node_max=8`** |
+| Terraform `burst_node_max` | default **5** | apply with **`-var burst_node_max=8`** |
 | RDS | `db.t4g.micro` (Terraform default) | apply with **`-var rds_instance_class=db.m7g.xlarge`** |
 
 Files: `deploy/values/envs/dev/services/{order,user,credit,supplier,rating}.yaml`,
@@ -351,7 +351,7 @@ Do this soon after the k6 Job finishes.
    terraform -chdir=infra/nonprod/aws apply \
      -var state_bucket=foc-tfstate-474265880628 \
      -var ses_from_email=donleehh420@gmail.com
-   # omits rds_instance_class → db.t4g.micro; omits burst_node_max → 3
+   # omits rds_instance_class → db.t4g.micro; omits burst_node_max → 5
    ```
 
    Confirm:
@@ -362,6 +362,7 @@ Do this soon after the k6 Job finishes.
    aws eks describe-nodegroup --cluster-name foc-nonprod --nodegroup-name burst \
      --query 'nodegroup.scalingConfig' --output json
    ```
+
 
 3. **Burst nodes**: once replica requests drop, Cluster Autoscaler removes idle
    burst nodes (often several minutes). No manual drain required.
