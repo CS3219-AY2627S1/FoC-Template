@@ -9,6 +9,10 @@ service.
 Stack mirrors rating-service: Fastify + TypeBox, Drizzle + postgres.js, Vitest
 (90% coverage floor), `@confluentinc/kafka-javascript`.
 
+Sequence and state diagrams are in [docs/README.md](docs/README.md), routes and
+event fields in [docs/interfaces.md](docs/interfaces.md), and tables in
+[docs/schema.md](docs/schema.md).
+
 ## Decisions this implementation follows
 
 - Events only (2026-11-02). This replaces the daily 22:00 UTC poll of User,
@@ -45,7 +49,8 @@ One consumer group `badges-service` (`src/messaging`):
 - `user.rating.updated` (foc.user.rating): stores the whole average and count.
   Ratings are never deleted, so a message with a lower or equal count is older
   and is ignored.
-- A message that fails 4 times is logged and skipped (NFR3.1.1).
+- A message that fails 4 times, or doesn't match the contract, is logged, sent
+  to the dead-letter topic `foc.badges.dlq`, and skipped (NFR3.1.1).
 
 A new consumer group reads what the topics still retain, so activity from
 before Badges was first deployed is picked up if Kafka still has it.
@@ -55,17 +60,52 @@ startup re-checks every user Badges has metrics for, 1,000 at a time
 (`src/services/recheck.service.ts`, NFR1.1.1), in the background so the health
 probes keep answering.
 
+## Recovering from missed or failed events
+
+Every handler ignores what it has already applied: counted orders are keyed by
+order and role, a dispute ends in the same state however often it is applied,
+only the first verdict is kept, and a rating with no higher count is stale. So
+running any event through Badges again is safe (`test/replay.test.ts` replays a
+mixed sequence twice and checks nothing changes).
+
+Skipped messages. A message the consumer gives up on (4 failed attempts, or one
+that doesn't match the contract) goes to the dead-letter topic `foc.badges.dlq`,
+with its original topic, partition, offset, reason and error in headers. The
+topic keeps them 30 days. Because it is in Kafka, not Badges' database, a
+message that failed because the database was down is kept too. If Kafka itself
+refuses the dead letter, the consumer stops on that message and retries it
+rather than lose it. Once the cause is fixed, replay them:
+
+```bash
+kubectl -n <namespace> exec deploy/badges -- npm run replay:dlq
+```
+
+It reads the topic with its own consumer group (`badges-service-dlq-replay`)
+from where the last replay stopped, and prints `{ replayed, requeued, dropped }`.
+A message that still fails, or is still invalid, is re-queued at the end of the
+topic for the next replay; one with unreadable headers or from a topic Badges
+doesn't handle is dropped. Dead letters written after the replay started are
+left for the next one, so it always finishes.
+
+Everything Kafka still holds. After a bug fix, or if the database got out of
+step, set `KAFKA_GROUP_ID` to a new name starting with `badges` (the KafkaUser
+may only use groups with that prefix, ADR-0004), e.g. `badges-service-replay-1`,
+in `deploy/values/services/badges.yaml` and redeploy. A new group reads every
+topic from the earliest offset Kafka retains, and already-applied events change
+nothing. Keep the new name afterwards; switching back would replay again from
+the old group's position, which is also harmless.
+
 ## Known limitations
 
-Badge state is only as complete as the events Badges has read. Nothing repairs
-metrics after the fact, so these stay wrong until the user's next event (or for
-good, if they have none):
+Badge state is only as complete as the events Kafka still holds. A replay (see
+above) recovers anything inside Kafka's retention (7 days by default). Beyond
+that, these stay wrong until the user's next event (or for good, if they have
+none):
 
 - Activity Kafka no longer holds: Badges first deployed, or its database reset,
   more than 7 days (Kafka's default retention) after it happened.
-- A message skipped after 4 failed attempts, e.g. the database down at that moment.
 - An `admin.case.resolved` Admin failed to publish: Admin has no outbox, so a
-  verdict given while Kafka was down is logged and dropped.
+  verdict given while Kafka was down is logged and dropped, and never reaches Kafka.
 - A verdict for an escalation Badges never saw: it has no parties to count.
 
 ## Endpoints
@@ -107,5 +147,5 @@ Schema changes: edit `src/database/schema.ts`, then `npm run db:generate`.
 
 Generated with Claude Code (Claude Opus 5 on 2026-09-21 for the original
 scaffold, Claude Opus 5.5 on 2026-10-30 for this port and 2026-11-02 for
-fault-aware disputes and the move to events only); each file names its scope
-in a header. Reviewed by Ngooi Jun Sen.
+fault-aware disputes and the move to events only, and on 2026-11-09 for
+docs/); each source file names its scope in a header. Reviewed by Ngooi Jun Sen.

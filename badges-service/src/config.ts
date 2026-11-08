@@ -61,6 +61,9 @@ export const config = {
     orderTopic: 'foc.order.status',
     ratingTopic: 'foc.user.rating',
     adminTopic: 'foc.admin.events',
+    // Dead letters: messages the consumer skipped, kept for npm run replay:dlq.
+    dlqTopic: 'foc.badges.dlq',
+    dlqGroupId: process.env.KAFKA_DLQ_GROUP_ID ?? 'badges-service-dlq-replay',
     // NFR3.1.1: a message that fails more than 3 times is logged and skipped.
     maxAttempts: toInt(process.env.KAFKA_MAX_ATTEMPTS, 4),
   },

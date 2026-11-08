@@ -1,0 +1,22 @@
+sequenceDiagram
+    participant Kafka as foc.order.status
+    participant Badges as Badges service
+    participant DB as Postgres
+
+    Kafka->>Badges: order.status.changed
+    alt not JSON, other eventType, or fails the schema
+        Badges-->>Kafka: skip, and log when invalid
+    else toStatus is ESCALATED
+        Badges->>DB: upsert disputed_order with requester and courier
+        Badges->>DB: make counted_order match the verdict, none until resolved
+        Badges->>DB: adjust user_metrics and re-check the users affected
+    else toStatus is not DELIVERED, ACKNOWLEDGED, UNACKNOWLEDGED or COMPLETED
+        Badges-->>Kafka: ignored
+    else order is in disputed_order
+        Badges-->>Kafka: disputed, only the verdict counts it
+    else counted status
+        Badges->>DB: insert counted_order per role, conflict does nothing
+        Note over Badges,DB: new rows only: +1 to completed_deliveries or completed_orders
+        Badges->>DB: re-check badges for each user with a new row
+    end
+    Note over Badges,DB: each branch is one transaction
