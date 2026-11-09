@@ -18,7 +18,7 @@ require_ns() {
 }
 sink() { kubectl apply -f -; }
 
-for ns in foc-supplier foc-user foc-credit foc-order foc-notification foc-messaging foc-gateway; do require_ns "$ns"; done
+for ns in foc-supplier foc-user foc-credit foc-order foc-notification foc-chat foc-messaging foc-gateway; do require_ns "$ns"; done
 
 JWT_SECRET="${JWT_SECRET:-$(existing foc-user user-secrets JWT_SECRET)}"
 JWT_SECRET="${JWT_SECRET:-$(existing foc-gateway gateway-secrets JWT_SECRET)}"
@@ -32,6 +32,8 @@ USER_PW="${USER_PG_PASSWORD:-$(existing foc-user user-secrets POSTGRES_PASSWORD)
 CREDIT_PW="${CREDIT_PG_PASSWORD:-$(existing foc-credit credit-secrets POSTGRES_PASSWORD)}"; CREDIT_PW="${CREDIT_PW:-$(gen)}"
 ORDER_PW="${ORDER_PG_PASSWORD:-$(existing foc-order order-secrets POSTGRES_PASSWORD)}"; ORDER_PW="${ORDER_PW:-$(gen)}"
 NOTIF_PW="${NOTIFICATION_PG_PASSWORD:-$(existing foc-notification notification-secrets POSTGRES_PASSWORD)}"; NOTIF_PW="${NOTIF_PW:-$(gen)}"
+CHAT_PW="${CHAT_PG_PASSWORD:-$(existing foc-chat chat-secrets POSTGRES_PASSWORD)}"; CHAT_PW="${CHAT_PW:-$(gen)}"
+CHAT_SERVICE_KEYS="${CHAT_SERVICE_KEYS:-$(existing foc-chat chat-secrets CHAT_SERVICE_KEYS)}"; CHAT_SERVICE_KEYS="${CHAT_SERVICE_KEYS:-$(gen)}"
 
 # shellcheck disable=SC2034  # consumed by build_secrets in lib.sh
 INCLUDE_BACKUP=0

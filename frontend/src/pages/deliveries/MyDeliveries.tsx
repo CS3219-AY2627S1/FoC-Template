@@ -12,6 +12,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { useEffect, useState } from "react";
 import { OrderStatusBadge } from "../../components/StatusPill";
+import { OrderChatButton } from "../../components/chat/OrderChatButton";
 import { ApiError, type OrderResponse, ordersApi, parseUtcDate } from "../../lib/api";
 
 export default function MyDeliveries() {
@@ -160,38 +161,41 @@ export default function MyDeliveries() {
               </Text>
             </Group>
           </Stack>
-          {showActions && (
-            <Group gap="xs" wrap="nowrap">
-              {isLoading && <Loader size="sm" />}
-              {!isLoading && order.status === "ACCEPTED" && (
-                <>
+          <Group gap="xs" wrap="nowrap">
+            {!isLoading && <OrderChatButton orderId={order.order_id} />}
+            {showActions && (
+              <>
+                {isLoading && <Loader size="sm" />}
+                {!isLoading && order.status === "ACCEPTED" && (
+                  <>
+                    <Button
+                      size="xs"
+                      onClick={() => handlePickup(order.order_id)}
+                    >
+                      Pick up
+                    </Button>
+                    <Button
+                      size="xs"
+                      color="red"
+                      variant="outline"
+                      onClick={() => handleWithdraw(order.order_id)}
+                    >
+                      Withdraw
+                    </Button>
+                  </>
+                )}
+                {!isLoading && order.status === "PICKED_UP" && (
                   <Button
                     size="xs"
-                    onClick={() => handlePickup(order.order_id)}
+                    color="green"
+                    onClick={() => handleDeliver(order.order_id)}
                   >
-                    Pick up
+                    Mark delivered
                   </Button>
-                  <Button
-                    size="xs"
-                    color="red"
-                    variant="outline"
-                    onClick={() => handleWithdraw(order.order_id)}
-                  >
-                    Withdraw
-                  </Button>
-                </>
-              )}
-              {!isLoading && order.status === "PICKED_UP" && (
-                <Button
-                  size="xs"
-                  color="green"
-                  onClick={() => handleDeliver(order.order_id)}
-                >
-                  Mark delivered
-                </Button>
-              )}
-            </Group>
-          )}
+                )}
+              </>
+            )}
+          </Group>
         </Group>
       </Box>
     );

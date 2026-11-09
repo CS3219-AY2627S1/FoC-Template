@@ -3,6 +3,7 @@ import React from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppLayout } from "./components/AppLayout";
 import { AdminRoute, ProtectedRoute } from "./components/RouteGuards";
+import { ChatProvider } from "./components/chat/ChatProvider";
 import Profile from "./pages/Profile";
 import AdminClients from "./pages/admin/AdminClients";
 import AdminSuppliers from "./pages/admin/AdminSuppliers";
@@ -20,6 +21,7 @@ const MyRequests = React.lazy(() => import("./pages/orders/MyRequests"));
 const MyDeliveries = React.lazy(() => import("./pages/deliveries/MyDeliveries"));
 const OrderDetail = React.lazy(() => import("./pages/orders/OrderDetail"));
 const Notifications = React.lazy(() => import("./pages/notifications/Notifications"));
+const Messages = React.lazy(() => import("./pages/chat/Messages"));
 
 export default function App() {
   return (
@@ -33,7 +35,13 @@ export default function App() {
 
       {/* Authenticated app */}
       <Route element={<ProtectedRoute />}>
-        <Route element={<AppLayout />}>
+        <Route
+          element={
+            <ChatProvider>
+              <AppLayout />
+            </ChatProvider>
+          }
+        >
             <Route path="/" element={<Navigate to="/suppliers" replace />} />
             <Route path="/suppliers" element={<SupplierList />} />
             <Route path="/suppliers/:id" element={<SupplierDetail />} />
@@ -44,6 +52,8 @@ export default function App() {
             <Route path="/deliveries" element={<MyDeliveries />} />
             <Route path="/orders/:id" element={<OrderDetail />} />
             <Route path="/notifications" element={<Notifications />} />
+            <Route path="/messages" element={<Messages />} />
+            <Route path="/messages/:conversationId" element={<Messages />} />
 
             {/* Admin-only */}
             <Route element={<AdminRoute />}>

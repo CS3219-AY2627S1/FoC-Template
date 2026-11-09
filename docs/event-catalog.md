@@ -4,11 +4,15 @@ Canonical list of asynchronous events (project M6). Schemas live in
 `shared/foc_shared/events.py` so all parties share one contract. Consumers must
 handle redelivery **idempotently**.
 
-Broker: RabbitMQ. There are two exchanges:
+Broker: RabbitMQ. The exchanges:
 
 - `foc.user.events` (**fanout**) — published by User Service.
 - `foc.order.events` (**topic**, routing key = event type) — published by
   Order Service (PR #5).
+- `foc.credit.events` (**topic**) — Credit Service replies to order tasks.
+- `foc.chat.events` (**topic**) — published by Chat Service (N2H), see below.
+- `foc.chat.fanout` (**fanout**) — Chat Service internal: delivers socket frames
+  to whichever chat-service replica holds the recipient's WebSocket.
 
 ## User events — `foc.user.events` (fanout)
 
@@ -39,6 +43,30 @@ Notification Service. Routing key = event type.
 | `OrderCancellationRequested` | Requester/supplier cancels (F3.3.1, F4.1.3) | Credit | Release credits; reply `CreditReleased` / `CreditReleaseFailed` |
 | `OrderUpdateRequested` | Requester edits a pending order (reward may change) | Credit | Amend the reservation; reply `CreditAmended` / `CreditAmendRejected` |
 | `OrderApprovalRequested` | Requester approves / auto-approval (F3.5.1) | Credit | Transfer the reservation to `courier_id`; reply `CreditTransferSucceeded` / `CreditTransferFailed` |
+
+### Order events consumed by Chat Service (N2H)
+
+| Event (routing key) | Effect in Chat Service |
+| --- | --- |
+| `OrderAccepted` | Create the chat with requester + courier (labels `requester`/`courier`); after a withdrawal, add the new courier without earlier history. System message `order.accepted`. |
+| `OrderPickedUp` | System message `order.picked_up` (creates the chat if it is missing). |
+| `OrderDelivered` | System message `order.delivered` (creates the chat if it is missing). |
+| `CourierWithdrawn` | System message `order.courier_withdrawn`; the courier is removed and loses access. |
+| `OrderApproved` | The order-service's completion fact: system message `order.completed`, chat closed (read-only); kept, or deleted after `CHAT_CLOSED_RETENTION_DAYS` if set (default `0` = keep). |
+| `OrderCancelled` | System message `order.cancelled` (with `reason`); chat closed (purge scheduled if retention is set). |
+| `OrderExpired` | Chat closed if one exists (an expired order never had a courier). |
+| `OrderCompleted` | Handled like `OrderApproved` if it is ever published (declared in `foc_shared`, not published today). |
+
+
+## Chat events — `foc.chat.events` (topic)
+
+| Routing key | Payload |
+| --- | --- |
+| `conversation.created`, `conversation.updated`, `conversation.closed` | conversation view (id, `unique_key`, `metadata`, members, ...) |
+| `conversation.purged` | `conversation_id` |
+| `member.added`, `member.removed` | `conversation_id`, `user_id` |
+| `message.created`, `message.updated` | `message`, `member_ids` (recipients) |
+
 
 ## Task request/reply contract
 

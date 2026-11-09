@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TARGETS=(shared api-gateway user-service supplier-service order-service credit-service notification-service)
+TARGETS=(shared api-gateway user-service supplier-service order-service credit-service notification-service chat-service)
 
 failed=0
 for t in "${TARGETS[@]}"; do

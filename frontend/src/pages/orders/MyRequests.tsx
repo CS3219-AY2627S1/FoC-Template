@@ -16,6 +16,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { useEffect, useState } from "react";
 import { OrderStatusBadge } from "../../components/StatusPill";
+import { OrderChatButton } from "../../components/chat/OrderChatButton";
 import {
   ApiError,
   type OrderResponse,
@@ -360,6 +361,7 @@ export default function MyRequests() {
           </Stack>
           <Group gap="xs" wrap="nowrap">
             {polling && <Loader size="sm" />}
+            {!polling && <OrderChatButton orderId={order.order_id} />}
             {!polling && isOpen && noAssign && (
               <>
                 <Button

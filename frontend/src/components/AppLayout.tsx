@@ -21,6 +21,7 @@ import {
   IconBuildingStore,
   IconClipboardList,
   IconLogout,
+  IconMessages,
   IconShieldCog,
   IconShoppingBag,
   IconTruck,
@@ -32,12 +33,16 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { BalanceResponse, creditsApi, parseUtcDate } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useNotifications } from "../lib/useNotifications";
+import { useChat } from "../lib/chat/context";
+import { totalUnread } from "../lib/chat/store";
 
 interface NavItem {
   to: string;
   label: string;
   icon: React.ReactNode;
   adminOnly?: boolean;
+  /** Only in the mobile menu; desktop reaches it from a header icon instead. */
+  mobileOnly?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -47,6 +52,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/orders/mine", label: "My requests", icon: <IconClipboardList size={18} /> },
   { to: "/deliveries", label: "My deliveries", icon: <IconTruck size={18} /> },
   { to: "/notifications", label: "Notifications", icon: <IconBell size={18} /> },
+  { to: "/messages", label: "Messages", icon: <IconMessages size={18} />, mobileOnly: true },
   {
     to: "/admin/suppliers",
     label: "Manage Suppliers",
@@ -157,11 +163,35 @@ function NotificationBell() {
   );
 }
 
+function ChatButton({ unread }: { unread: number }) {
+  return (
+    <Indicator
+      label={unread > 99 ? "99+" : unread}
+      size={16}
+      color="red"
+      disabled={unread === 0}
+      offset={4}
+      data-testid="nav-unread"
+    >
+      <ActionIcon
+        component={NavLink}
+        to="/messages"
+        variant="subtle"
+        color="gray"
+        aria-label={unread ? `Messages, ${unread} unread` : "Messages"}
+      >
+        <IconMessages size={20} />
+      </ActionIcon>
+    </Indicator>
+  );
+}
+
 export function AppLayout() {
   const { user, role, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
   const [drawerOpened, drawer] = useDisclosure(false);
   const [balance, setBalance] = useState<BalanceResponse | null>(null);
+  const unread = useChat((s) => totalUnread(s.convs), 0);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -191,7 +221,9 @@ export function AppLayout() {
 
           {/* Desktop nav */}
           <Group gap="lg" visibleFrom="sm" wrap="nowrap">
-            {items.map((item) => (
+            {items
+              .filter((item) => !item.mobileOnly)
+              .map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -225,6 +257,7 @@ export function AppLayout() {
                 {balance.available_balance} avail / {balance.reserved_balance} rsv
               </Badge>
             )}
+            <ChatButton unread={unread} />
             <NotificationBell />
             <Avatar radius="xl" color="brand" size="sm" visibleFrom="sm">
               {initials(user?.display_name, user?.email)}
@@ -278,6 +311,13 @@ export function AppLayout() {
               to={item.to}
               label={item.label}
               leftSection={item.icon}
+              rightSection={
+                item.to === "/messages" && unread > 0 ? (
+                  <Badge size="xs" circle>
+                    {unread > 99 ? "99+" : unread}
+                  </Badge>
+                ) : undefined
+              }
               onClick={drawer.close}
             />
           ))}

@@ -14,6 +14,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { OrderChatButton } from "../../components/chat/OrderChatButton";
 import { useAuth } from "../../lib/auth";
 import { ApiError, type OrderResponse, type OrderStatus, ordersApi, parseUtcDate } from "../../lib/api";
 
@@ -331,6 +332,14 @@ export default function OrderDetail() {
       </Box>
 
       <Group gap="xs">
+        {(isRequester || isCourier) && (
+          <OrderChatButton
+            orderId={order.order_id}
+            size="sm"
+            label={isRequester ? "Chat with courier" : "Chat with requester"}
+          />
+        )}
+
         {actionLoading && <Loader size="sm" />}
 
         {!actionLoading && isNeither && order.status === "OPEN" && (

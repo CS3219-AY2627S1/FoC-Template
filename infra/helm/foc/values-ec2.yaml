@@ -27,6 +27,11 @@ order-service:
     ORDER_PHOTO_REGION: ap-southeast-1
 notification-service:
   image: {repository: notification-service, tag: e2d7e87a91106dd338937137197547b4a8608a56}
+chat-service:
+  image: {repository: chat-service, tag: e2d7e87a91106dd338937137197547b4a8608a56}
+  env:
+    CHAT_PHOTO_BUCKET: ""
+    CHAT_PHOTO_REGION: ap-southeast-1
 api-gateway:
   image: {repository: api-gateway, tag: e2d7e87a91106dd338937137197547b4a8608a56}
   env:
