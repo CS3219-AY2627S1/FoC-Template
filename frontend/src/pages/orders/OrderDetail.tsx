@@ -1,11 +1,15 @@
-// AI-assisted: Responsive order detail layout, delivery progress, participant names, and proof viewer.
+// AI-assisted: OrderDetail page — view all fields for a single order with role-based actions.
+// UI tweaks (Claude Opus 5.5): supplier and people shown by name, readable status
+// timeline, Cancel removes an order nobody accepted yet. Reviewed by authors.
+// Proof of delivery (from PR #38, Codex): the courier adds a photo when marking the
+// order delivered, and the photo shows here with a full-size view. Participant and
+// supplier names come with the order from order-service.
 import {
-  ActionIcon,
-  Avatar,
+  Anchor,
   Badge,
   Box,
   Button,
-  CopyButton,
+  Group,
   Loader,
   Modal,
   Stack,
@@ -16,36 +20,28 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import {
-  IconArrowLeft,
-  IconArrowUpRight,
-  IconCalendarDue,
-  IconCamera,
-  IconCheck,
-  IconClock,
-  IconCoins,
-  IconCopy,
-  IconMapPin,
-  IconMaximize,
-  IconNotes,
-  IconPackage,
-  IconTruckDelivery,
-  IconUser,
-  IconX,
-} from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { useAuth } from "../../lib/auth";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { DeliveryPhotoModal } from "../../components/DeliveryPhotoModal";
-import { ApiError, type OrderDetailResponse, type OrderResponse, type OrderStatus, ordersApi, parseUtcDate } from "../../lib/api";
+import { OrderChatButton } from "../../components/chat/OrderChatButton";
+import { useAuth } from "../../lib/auth";
+import {
+  ApiError,
+  type OrderDetailResponse,
+  type OrderStatus,
+  ordersApi,
+  parseUtcDate,
+} from "../../lib/api";
+import { ORDER_STATUS_INFO } from "../../lib/orderStatus";
+import { useSuppliers } from "../../lib/people";
 
 const POLL_INTERVAL = 2000;
 const POLL_TIMEOUT = 15000;
 
-async function pollUntil(
-  fn: () => Promise<OrderResponse>,
-  done: (r: OrderResponse) => boolean,
-): Promise<OrderResponse | "timeout"> {
+async function pollUntil<T>(
+  fn: () => Promise<T>,
+  done: (r: T) => boolean,
+): Promise<T | "timeout"> {
   const deadline = Date.now() + POLL_TIMEOUT;
   while (Date.now() < deadline) {
     const r = await fn();
@@ -63,97 +59,76 @@ const TIMELINE_STATUSES: OrderStatus[] = [
   "COMPLETED",
 ];
 
-const STATUS_LABELS: Record<OrderStatus, string> = {
-  OPEN: "Open",
-  ACCEPTED: "Accepted",
-  PICKED_UP: "Picked up",
-  AWAITING_APPROVAL: "Awaiting approval",
-  COMPLETED: "Completed",
-  CANCELLED: "Cancelled",
-  EXPIRED: "Expired",
-};
-
-const STATUS_DESCRIPTIONS: Record<OrderStatus, string> = {
-  OPEN: "Waiting for a courier to accept your order.",
-  ACCEPTED: "Your courier is getting ready for pickup.",
-  PICKED_UP: "Your order is on its way to the delivery location.",
-  AWAITING_APPROVAL: "Delivery submitted. Waiting for the requester to approve.",
-  COMPLETED: "Delivery approved. This order is complete.",
-  CANCELLED: "This order has been cancelled.",
-  EXPIRED: "This order expired before it was accepted.",
-};
-
-function formatDate(value: string) {
-  return parseUtcDate(value).toLocaleDateString("en-SG", {
-    day: "numeric", month: "short", year: "numeric",
-  });
-}
-
-function formatTime(value: string) {
-  return parseUtcDate(value).toLocaleTimeString("en-SG", {
-    hour: "numeric", minute: "2-digit", hour12: true,
-  });
-}
-
 function StatusTimeline({ status }: { status: OrderStatus }) {
   const isTerminal = status === "CANCELLED" || status === "EXPIRED";
-  const currentIndex = TIMELINE_STATUSES.indexOf(status);
-  if (isTerminal) {
-    return (
-      <div className="order-terminal-status">
-        <span className="order-progress-dot" data-state="terminal">
-          <IconX size={15} aria-hidden="true" />
-        </span>
-        <span>{STATUS_LABELS[status]}</span>
-      </div>
-    );
-  }
+  const steps = isTerminal
+    ? (TIMELINE_STATUSES.slice(0, -1) as OrderStatus[]).concat([status])
+    : TIMELINE_STATUSES;
+
   return (
-    <ol className="order-progress" aria-label="Order progress">
-      {TIMELINE_STATUSES.map((step, index) => {
-        const isCurrent = step === status;
-        const isDone = index < currentIndex || status === "COMPLETED";
+    <Group gap="xs" wrap="wrap" align="center">
+      {steps.map((s, i) => {
+        const isCurrent = s === status;
+        const isPast =
+          !isTerminal && TIMELINE_STATUSES.indexOf(s) < TIMELINE_STATUSES.indexOf(status);
         return (
-          <li key={step} data-state={isDone ? "done" : isCurrent ? "current" : "upcoming"}
-            aria-current={isCurrent ? "step" : undefined}>
-            <span className="order-progress-dot" aria-hidden="true">
-              {isDone ? <IconCheck size={14} stroke={2.5} /> : <span />}
-            </span>
-            <span>{step === "OPEN" ? "Order placed" : step === "ACCEPTED" ? "Courier assigned" : STATUS_LABELS[step]}</span>
-            {isCurrent && <span className="order-progress-current">{status === "COMPLETED" ? "Done" : "Now"}</span>}
-          </li>
+          <Group key={s} gap={4} wrap="nowrap" align="center">
+            <Tooltip label={ORDER_STATUS_INFO[s].hint} withArrow openDelay={300}>
+            <Badge
+              variant={isCurrent ? "filled" : isPast ? "light" : "outline"}
+              color={
+                isCurrent
+                  ? s === "CANCELLED" || s === "EXPIRED"
+                    ? "red"
+                    : s === "COMPLETED"
+                    ? "green"
+                    : "blue"
+                  : "gray"
+              }
+              size="sm"
+              tt="none"
+            >
+              {ORDER_STATUS_INFO[s].label}
+            </Badge>
+            </Tooltip>
+            {i < steps.length - 1 && (
+              <Text size="xs" c="dimmed">
+                →
+              </Text>
+            )}
+          </Group>
         );
       })}
-    </ol>
+    </Group>
   );
 }
 
-function Participant({ label, name, isYou }: { label: string; name: string; isYou: boolean }) {
+function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="order-person">
-      <Avatar color={label === "Requester" ? "brand" : "teal"} radius="xl" size={40}>
-        <IconUser size={20} aria-hidden="true" />
-      </Avatar>
-      <div className="order-person-info">
-        <span className="order-field-label">{label}</span>
-        <span className="order-person-name">{name} {isYou && <span className="order-you-tag">You</span>}</span>
-      </div>
-    </div>
+    <Group gap="sm" align="flex-start" wrap="nowrap">
+      <Text size="sm" fw={600} style={{ minWidth: 140 }}>
+        {label}
+      </Text>
+      <Box style={{ fontSize: "var(--mantine-font-size-sm)" }}>{value}</Box>
+    </Group>
   );
 }
 
 export default function OrderDetail() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [order, setOrder] = useState<OrderDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
   const [deliveryModalOpen, setDeliveryModalOpen] = useState(false);
   const [proofModalOpen, setProofModalOpen] = useState(false);
-  const [cancelReason, setCancelReason] = useState("");
+  const supplier = useSuppliers([order?.supplier_id])[order?.supplier_id ?? ""];
+
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
@@ -198,6 +173,12 @@ export default function OrderDetail() {
     setActionLoading(true);
     try {
       await ordersApi.accept(id);
+      window.dispatchEvent(new Event("credits-changed"));
+      notifications.show({
+        color: "green",
+        title: "Accepted",
+        message: "You're the courier for this errand",
+      });
       await refreshOrder();
     } catch (err) {
       notifications.show({
@@ -244,14 +225,60 @@ export default function OrderDetail() {
     }
   }
 
+
   function openCancelModal() {
     setCancelReason("");
     setCancelModalOpen(true);
   }
 
+  /** Nobody accepted the order yet, so order-service only allows deleting it. */
+  async function handleRemove() {
+    if (!id) return;
+    setActionLoading(true);
+    setCancelModalOpen(false);
+    try {
+      const task = await ordersApi.delete(id);
+      const result = await pollUntil(
+        () => ordersApi.pollDeletion(task.task_id),
+        (r) => r.status !== "pending",
+      );
+      if (result === "timeout") {
+        notifications.show({ color: "yellow", title: "Cancel", message: "Still processing" });
+      } else if (result.status === "completed") {
+        window.dispatchEvent(new Event("credits-changed"));
+        notifications.show({
+          color: "green",
+          title: "Cancelled",
+          message: "Request cancelled and removed",
+        });
+        navigate("/orders/mine", { replace: true });
+        return;
+      } else {
+        notifications.show({
+          color: "red",
+          title: "Cancel failed",
+          message: result.failure_reason ?? "Unknown error",
+        });
+      }
+      await refreshOrder();
+    } catch (err) {
+      notifications.show({
+        color: "red",
+        title: "Cancel failed",
+        message: err instanceof ApiError ? err.message : "Failed to cancel",
+      });
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   async function handleCancel(e: React.FormEvent) {
     e.preventDefault();
     if (!id) return;
+    if (order?.status === "OPEN" && order.courier_id === null) {
+      await handleRemove();
+      return;
+    }
     setActionLoading(true);
     setCancelModalOpen(false);
     try {
@@ -337,209 +364,228 @@ export default function OrderDetail() {
   const isRequester = userId === order.requester_id;
   const isCourier = userId === order.courier_id;
   const isNeither = !isRequester && !isCourier;
-  const hasActions = (isNeither && order.status === "OPEN")
-    || (isRequester && ["OPEN", "ACCEPTED", "AWAITING_APPROVAL"].includes(order.status))
-    || (isCourier && ["ACCEPTED", "PICKED_UP"].includes(order.status));
-  const supplierName = order.supplier_name ?? order.supplier_id;
-  const courierName = order.courier_id ? (order.courier_name ?? order.courier_id) : "Not assigned yet";
-  const statusColor = order.status === "COMPLETED" ? "teal"
-    : order.status === "CANCELLED" ? "red" : order.status === "EXPIRED" ? "gray" : "brand";
+  const notAccepted = order.status === "OPEN" && order.courier_id === null;
+  const hours =
+    supplier?.startingTime && supplier.closingTime
+      ? `${supplier.startingTime} – ${supplier.closingTime}`
+      : null;
 
   return (
-    <div className="order-detail">
-      <nav className="order-breadcrumb" aria-label="Breadcrumb">
-        <Link to={isCourier ? "/deliveries" : "/orders/mine"}>
-          <IconArrowLeft size={15} aria-hidden="true" />
-          {isCourier ? "My deliveries" : "My requests"}
-        </Link>
-        <span aria-hidden="true">/</span>
-        <span>Order details</span>
-      </nav>
-
-      <header className="order-detail-header">
-        <div>
-          <div className="order-eyebrow">ORDER DETAILS</div>
-          <Title order={1} className="order-detail-title">{order.name}</Title>
-          <p className="order-detail-description">{STATUS_DESCRIPTIONS[order.status]}</p>
-        </div>
-        <Badge className="order-header-status" color={statusColor} variant="light" size="lg" radius="xl"
-          leftSection={order.status === "COMPLETED" ? <IconCheck size={14} /> : undefined}>
-          {STATUS_LABELS[order.status]}
-        </Badge>
-      </header>
-
-      <div className="order-detail-grid">
-        <div className="order-detail-main">
-          <section className="order-panel" aria-labelledby="delivery-heading">
-            <div className="order-panel-heading">
-              <span className="order-section-icon"><IconTruckDelivery size={20} aria-hidden="true" /></span>
-              <Title order={2} id="delivery-heading">Delivery details</Title>
-            </div>
-            <div className="order-route">
-              <div className="order-route-stop">
-                <span className="order-route-marker" data-stop="pickup"><IconPackage size={18} aria-hidden="true" /></span>
-                <div className="order-route-info">
-                  <span className="order-field-label">Pickup location</span>
-                  <p className="order-location">{order.pickup_location}</p>
-                  <Link className="order-supplier-link" to={`/suppliers/${encodeURIComponent(order.supplier_id)}`}>
-                    {supplierName}<IconArrowUpRight size={14} aria-hidden="true" />
-                  </Link>
-                </div>
-              </div>
-              <div className="order-route-stop">
-                <span className="order-route-marker" data-stop="delivery"><IconMapPin size={18} aria-hidden="true" /></span>
-                <div className="order-route-info">
-                  <span className="order-field-label">Delivery location</span>
-                  <p className="order-location">{order.delivery_location}</p>
-                </div>
-              </div>
-            </div>
-            <div className="order-notes">
-              <div className="order-notes-heading"><IconNotes size={16} aria-hidden="true" />Request notes</div>
-              <p>{order.details}</p>
-            </div>
-          </section>
-
-          {order.proof_of_delivery_photo && (
-            <section className="order-panel order-proof-panel" aria-labelledby="proof-heading">
-              <div className="order-panel-heading order-proof-heading">
-                <div className="order-heading-with-icon">
-                  <span className="order-section-icon"><IconCamera size={20} aria-hidden="true" /></span>
-                  <Title order={2} id="proof-heading">Proof of delivery</Title>
-                </div>
-                <Button className="order-proof-view-button" variant="subtle" size="compact-sm" color="brand"
-                  aria-label="View full photo" title="View full photo"
-                  rightSection={<IconMaximize size={15} aria-hidden="true" />}
-                  onClick={() => setProofModalOpen(true)}><span className="order-proof-view-label">View full photo</span></Button>
-              </div>
-              <UnstyledButton className="order-proof-image-button" onClick={() => setProofModalOpen(true)}
-                aria-label="Enlarge proof of delivery photo">
-                <img src={order.proof_of_delivery_photo} alt="Proof of delivery" className="order-proof-image" />
-                <span className="order-proof-expand"><IconMaximize size={18} aria-hidden="true" /></span>
-              </UnstyledButton>
-              <div className="order-proof-caption"><IconCamera size={14} aria-hidden="true" />
-                Delivery photo{order.courier_id ? <> submitted by <strong>{courierName}</strong></> : null}
-              </div>
-            </section>
-          )}
-        </div>
-
-        <aside className="order-detail-sidebar" aria-label="Order summary and progress">
-          <section className="order-panel" aria-labelledby="summary-heading">
-            <Title order={2} id="summary-heading" className="order-sidebar-title">Order summary</Title>
-            <div className="order-reward">
-              <div className="order-reward-label"><IconCoins size={17} aria-hidden="true" />Courier reward</div>
-              <div className="order-reward-amount">{order.reward}<span>{order.reward === 1 ? "credit" : "credits"}</span></div>
-            </div>
-            <div className="order-summary-row">
-              <IconCalendarDue size={19} aria-hidden="true" />
-              <div><span className="order-field-label">Delivery deadline</span>
-                <time dateTime={order.deadline}>{formatDate(order.deadline)}<span className="order-summary-time">{formatTime(order.deadline)}</span></time>
-              </div>
-            </div>
-            <div className="order-summary-row">
-              <IconClock size={19} aria-hidden="true" />
-              <div><span className="order-field-label">Order placed</span>
-                <time dateTime={order.created_at}>{formatDate(order.created_at)}<span className="order-summary-time">{formatTime(order.created_at)}</span></time>
-              </div>
-            </div>
-            {(hasActions || actionLoading) && <div className="order-detail-actions">
-              {actionLoading && <Loader size="sm" />}
-
-              {!actionLoading && isNeither && order.status === "OPEN" && (
-                <Button onClick={handleAccept}>Accept</Button>
-              )}
-
-              {!actionLoading && isRequester && (order.status === "OPEN" || order.status === "ACCEPTED") && (
-                <Button color="orange" variant="outline" onClick={openCancelModal}>
-                  Cancel
-                </Button>
-              )}
-
-              {!actionLoading && isRequester && order.status === "AWAITING_APPROVAL" && (
-                <Button color="green" onClick={handleApprove}>
-                  Approve
-                </Button>
-              )}
-
-              {!actionLoading && isCourier && order.status === "ACCEPTED" && (
-                <>
-                  <Button onClick={handlePickup}>Pick up</Button>
-                  <Button color="red" variant="outline" onClick={handleWithdraw}>
-                    Withdraw
-                  </Button>
-                </>
-              )}
-
-              {!actionLoading && isCourier && order.status === "PICKED_UP" && (
-                <Button color="green" onClick={() => setDeliveryModalOpen(true)}>
-                  Mark delivered
-                </Button>
-              )}
-            </div>}
-          </section>
-
-          <section className="order-panel" aria-labelledby="people-heading">
-            <Title order={2} id="people-heading" className="order-sidebar-title">People</Title>
-            <div className="order-people">
-              <Participant label="Requester" name={order.requester_name ?? order.requester_id} isYou={isRequester} />
-              <Participant label="Courier" name={courierName} isYou={isCourier} />
-            </div>
-          </section>
-
-          <section className="order-panel" aria-labelledby="progress-heading">
-            <Title order={2} id="progress-heading" className="order-sidebar-title">Order progress</Title>
-            <StatusTimeline status={order.status} />
-          </section>
-        </aside>
+    <Stack gap="lg">
+      <div>
+        <Title order={2}>{order.name}</Title>
+        <Text size="xs" c="dimmed">
+          Order {order.order_id}
+        </Text>
       </div>
 
-      <footer className="order-reference">
-        <span>Order ID</span><code>{order.order_id}</code>
-        <CopyButton value={order.order_id}>
-          {({ copied, copy }) => (
-            <Tooltip label={copied ? "Copied" : "Copy order ID"} withArrow>
-              <ActionIcon aria-label="Copy order ID" onClick={copy} variant="subtle" color={copied ? "teal" : "gray"} size="sm">
-                {copied ? <IconCheck size={15} /> : <IconCopy size={15} />}
-              </ActionIcon>
-            </Tooltip>
-          )}
-        </CopyButton>
-      </footer>
+      <Box p="md" style={{ border: "1px solid #dee2e6", borderRadius: 8 }}>
+        <Stack gap="xs">
+          <DetailRow label="Details" value={order.details} />
+          <DetailRow label="Reward" value={`${order.reward} credits`} />
+          <DetailRow label="Deadline" value={parseUtcDate(order.deadline).toLocaleString()} />
+          <DetailRow label="Pickup" value={order.pickup_location} />
+          <DetailRow label="Delivery" value={order.delivery_location} />
+          <DetailRow
+            label="Supplier"
+            value={
+              supplier ? (
+                <Stack gap={2}>
+                  <Anchor component={Link} to={`/suppliers/${supplier.id}`} size="sm">
+                    {supplier.name}
+                  </Anchor>
+                  <Text size="xs" c="dimmed">
+                    {supplier.building}
+                    {supplier.floor ? `, ${supplier.floor}` : ""}
+                    {supplier.locationDescription ? ` · ${supplier.locationDescription}` : ""}
+                  </Text>
+                  {hours && (
+                    <Text size="xs" c="dimmed">
+                      Open {hours}
+                    </Text>
+                  )}
+                </Stack>
+              ) : (
+                // Still loading, or supplier-service did not answer: use the name
+                // order-service sent with the order.
+                order.supplier_name ?? (supplier === null ? "Supplier unavailable" : "Loading…")
+              )
+            }
+          />
+          <DetailRow
+            label="Requester"
+            value={isRequester ? "You" : (order.requester_name ?? "Requester")}
+          />
+          <DetailRow
+            label="Courier"
+            value={
+              !order.courier_id
+                ? "Not assigned yet"
+                : isCourier
+                  ? "You"
+                  : (order.courier_name ?? "Courier")
+            }
+          />
+          <DetailRow label="Created" value={parseUtcDate(order.created_at).toLocaleString()} />
+        </Stack>
+      </Box>
 
-      <Modal opened={proofModalOpen} onClose={() => setProofModalOpen(false)} title="Proof of delivery" size="xl" centered>
-        <img src={order.proof_of_delivery_photo ?? undefined} alt="Full-size proof of delivery" className="order-proof-full-image" />
-      </Modal>
+      <Box>
+        <Text fw={600} mb="xs">
+          Status
+        </Text>
+        <StatusTimeline status={order.status} />
+      </Box>
 
-      <DeliveryPhotoModal
-        orderId={deliveryModalOpen ? id ?? null : null}
-        onClose={() => setDeliveryModalOpen(false)}
-        onDelivered={() => void refreshOrder()}
-      />
+      {order.proof_of_delivery_photo && (
+        <Box
+          component="section"
+          aria-labelledby="proof-heading"
+          p="md"
+          style={{ border: "1px solid #dee2e6", borderRadius: 8 }}
+        >
+          <Group justify="space-between" mb="xs">
+            <Text fw={600} id="proof-heading">
+              Proof of delivery
+            </Text>
+            <Button variant="subtle" size="compact-sm" onClick={() => setProofModalOpen(true)}>
+              View full photo
+            </Button>
+          </Group>
+          <UnstyledButton
+            onClick={() => setProofModalOpen(true)}
+            aria-label="Enlarge proof of delivery photo"
+            style={{ display: "block" }}
+          >
+            <img
+              src={order.proof_of_delivery_photo}
+              alt="Proof of delivery"
+              style={{
+                display: "block",
+                maxWidth: "100%",
+                maxHeight: 280,
+                borderRadius: 8,
+                objectFit: "cover",
+              }}
+            />
+          </UnstyledButton>
+          <Text size="xs" c="dimmed" mt={6}>
+            Delivery photo
+            {order.courier_id
+              ? ` submitted by ${isCourier ? "you" : (order.courier_name ?? "the courier")}`
+              : ""}
+          </Text>
+        </Box>
+      )}
+
+      <Group gap="xs">
+        {(isRequester || isCourier) && (
+          <OrderChatButton
+            orderId={order.order_id}
+            size="sm"
+            label={isRequester ? "Chat with courier" : "Chat with requester"}
+          />
+        )}
+
+        {actionLoading && <Loader size="sm" />}
+
+        {!actionLoading && isNeither && order.status === "OPEN" && (
+          <Button onClick={handleAccept}>Accept</Button>
+        )}
+
+        {!actionLoading && isRequester && (notAccepted || order.status === "ACCEPTED") && (
+          <Button color="red" variant="outline" onClick={openCancelModal}>
+            Cancel
+          </Button>
+        )}
+
+        {!actionLoading && isRequester && order.status === "AWAITING_APPROVAL" && (
+          <Button color="green" onClick={handleApprove}>
+            Approve
+          </Button>
+        )}
+
+        {!actionLoading && isCourier && order.status === "ACCEPTED" && (
+          <>
+            <Button onClick={handlePickup}>Pick up</Button>
+            <Button color="red" variant="outline" onClick={handleWithdraw}>
+              Withdraw
+            </Button>
+          </>
+        )}
+
+        {!actionLoading && isCourier && order.status === "PICKED_UP" && (
+          <Button color="green" onClick={() => setDeliveryModalOpen(true)}>
+            Mark delivered
+          </Button>
+        )}
+      </Group>
 
       <Modal
         opened={cancelModalOpen}
         onClose={() => setCancelModalOpen(false)}
-        title="Cancel Order"
+        title="Cancel request"
       >
-        <form onSubmit={handleCancel}>
-          <Stack gap="md">
-            <Textarea
-              label="Reason"
-              required
-              value={cancelReason}
-              onChange={(e) => setCancelReason(e.currentTarget.value)}
-            />
-            <Button
-              type="submit"
-              color="red"
-              disabled={!cancelReason.trim()}
-            >
-              Confirm Cancel
-            </Button>
-          </Stack>
-        </form>
+        {notAccepted ? (
+          <form onSubmit={handleCancel}>
+            <Stack gap="md">
+              <Text size="sm">
+                Nobody has accepted this errand yet, so it will be removed and
+                your reserved credits returned.
+              </Text>
+              <Group justify="flex-end">
+                <Button variant="subtle" onClick={() => setCancelModalOpen(false)}>
+                  Keep it
+                </Button>
+                <Button type="submit" color="red">
+                  Cancel request
+                </Button>
+              </Group>
+            </Stack>
+          </form>
+        ) : (
+          <form onSubmit={handleCancel}>
+            <Stack gap="md">
+              <Text size="sm">
+                A courier has already accepted this errand. Let them know why you
+                are cancelling.
+              </Text>
+              <Textarea
+                label="Reason"
+                required
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.currentTarget.value)}
+              />
+              <Button type="submit" color="red" disabled={!cancelReason.trim()}>
+                Confirm Cancel
+              </Button>
+            </Stack>
+          </form>
+        )}
       </Modal>
-    </div>
+
+      <Modal
+        opened={proofModalOpen}
+        onClose={() => setProofModalOpen(false)}
+        title="Proof of delivery"
+        size="xl"
+        centered
+      >
+        <img
+          src={order.proof_of_delivery_photo ?? undefined}
+          alt="Full-size proof of delivery"
+          style={{ display: "block", width: "100%", height: "auto", borderRadius: 8 }}
+        />
+      </Modal>
+
+      <DeliveryPhotoModal
+        orderId={deliveryModalOpen ? order.order_id : null}
+        onClose={() => setDeliveryModalOpen(false)}
+        onDelivered={() => {
+          window.dispatchEvent(new Event("credits-changed"));
+          void refreshOrder();
+        }}
+      />
+    </Stack>
   );
 }

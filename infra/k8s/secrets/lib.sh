@@ -46,12 +46,19 @@ build_secrets() {
     --from-literal=DATABASE_URL="$(db_url notification-db "$NOTIF_PW" notification_db)" \
     --from-literal=RABBITMQ_URL="$rabbitmq_url" | sink foc-notification notification-secrets
 
+  render_secret foc-chat chat-secrets \
+    --from-literal=POSTGRES_USER="$PG_USER" \
+    --from-literal=POSTGRES_PASSWORD="$CHAT_PW" \
+    --from-literal=DATABASE_URL="$(db_url chat-db "$CHAT_PW" chat_db)" \
+    --from-literal=RABBITMQ_URL="$rabbitmq_url" \
+    --from-literal=CHAT_SERVICE_KEYS="$CHAT_SERVICE_KEYS" | sink foc-chat chat-secrets
+
   render_secret foc-gateway gateway-secrets \
     --from-literal=JWT_SECRET="$JWT_SECRET" | sink foc-gateway gateway-secrets
 
   if [ "${INCLUDE_BACKUP:-0}" = "1" ]; then
     local ns
-    for ns in foc-supplier foc-user foc-credit foc-order foc-notification; do
+    for ns in foc-supplier foc-user foc-credit foc-order foc-notification foc-chat; do
       render_secret "$ns" backup-s3 \
         --from-literal=AWS_ACCESS_KEY_ID="$BACKUP_AWS_ACCESS_KEY_ID" \
         --from-literal=AWS_SECRET_ACCESS_KEY="${BACKUP_AWS_SECRET_ACCESS_KEY:-}" | sink "$ns" backup-s3

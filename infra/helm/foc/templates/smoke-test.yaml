@@ -47,6 +47,7 @@ spec:
               check http://credit-service.foc-credit.svc.cluster.local:8000/health
               check http://order-service.foc-order.svc.cluster.local:8000/health
               check http://notification-service.foc-notification.svc.cluster.local:8000/health
+              check http://chat-service.foc-chat.svc.cluster.local:8000/health
               check http://frontend.foc-frontend.svc.cluster.local:80/healthz
               echo "all healthy"
 {{- end }}

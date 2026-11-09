@@ -421,7 +421,11 @@ async def get_order_for_participant(
         raise OrderNotFoundError(order_id)
     is_requester = user_id == order.requester_id
     is_courier = order.courier_id is not None and user_id == order.courier_id
-    if not (is_requester or is_courier):
+    # An open, unassigned order is already listed to every user under Take Errands,
+    # so any user may open it before accepting. Once taken it is private again.
+    # AI-assisted (Claude Opus 5.5); reviewed by authors.
+    is_open = order.status == OrderStatus.OPEN and order.courier_id is None
+    if not (is_requester or is_courier or is_open):
         raise OrderAccessDeniedError(order_id)
     photo = None
     if order.proof_of_delivery_photo_key:

@@ -1,4 +1,5 @@
 // AI-INFLUENCED: Verify photo uploads, participant details, navigation, and the enlarged proof viewer.
+// Adapted to the order detail layout from PR #35 (Claude Opus 5.5).
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Request } from "@playwright/test";
@@ -111,7 +112,7 @@ test("completed delivery card opens order details with names and proof", async (
   await expect(page).toHaveURL(new RegExp(`/orders/${ORDER_ID}$`));
   await expect(page.getByText("A Hot Hideout")).toBeVisible();
   await expect(page.getByText("Alexander")).toBeVisible();
-  await expect(page.getByRole("region", { name: "People" }).getByText("Trial")).toBeVisible();
+  await expect(page.getByText("Delivery photo submitted by you")).toBeVisible();
   await expect(page.getByRole("img", { name: "Proof of delivery" })).toBeVisible();
   await page.getByRole("button", { name: "View full photo" }).click();
   await expect(page.getByRole("dialog", { name: "Proof of delivery" })
@@ -144,8 +145,8 @@ test("completed request card opens order details with names and proof", async ({
 
   await expect(page).toHaveURL(new RegExp(`/orders/${ORDER_ID}$`));
   await expect(page.getByText("A Hot Hideout")).toBeVisible();
-  await expect(page.getByText("Alexander")).toBeVisible();
-  await expect(page.getByRole("region", { name: "People" }).getByText("Trial")).toBeVisible();
+  await expect(page.getByText("Trial", { exact: true })).toBeVisible();
+  await expect(page.getByText("Delivery photo submitted by Trial")).toBeVisible();
   await expect(page.getByRole("img", { name: "Proof of delivery" })).toBeVisible();
 });
 

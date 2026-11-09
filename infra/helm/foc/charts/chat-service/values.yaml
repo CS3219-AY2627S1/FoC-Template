@@ -1,0 +1,67 @@
+# AI-influenced: chat-service chart written with Claude (Opus 5.5); see ai/usage-log.md.
+namespace: foc-chat
+replicas: 1
+port: 8000
+healthPath: /health
+
+image:
+  repository: foc/chat-service
+  tag: dev
+
+env:
+  LOG_LEVEL: info
+  CHAT_AUTH_MODE: gateway
+  CHAT_ORDER_EVENTS_ENABLED: "true"
+  ORDER_EVENTS_EXCHANGE: foc.order.events
+  CHAT_WS_TICKET_TTL_S: "30"
+  CHAT_WS_MAX_SESSION_S: "3600"
+  CHAT_CLOSED_RETENTION_DAYS: "0"
+  # Photos: the delivery-photo bucket (prefix chat/), reached with the node's IAM
+  # role. Empty = photo sharing off; render-ec2-values.sh fills it in on EC2.
+  CHAT_PHOTO_BUCKET: ""
+  CHAT_PHOTO_REGION: ap-southeast-1
+
+secretEnv:
+  - name: DATABASE_URL
+    secret: chat-secrets
+    key: DATABASE_URL
+  - name: RABBITMQ_URL
+    secret: chat-secrets
+    key: RABBITMQ_URL
+  - name: CHAT_SERVICE_KEYS
+    secret: chat-secrets
+    key: CHAT_SERVICE_KEYS
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+postgres:
+  name: chat-db
+  dbName: chat_db
+  secret: chat-secrets
+  image: postgres:16-alpine
+  sharedBuffers: 128MB
+  # Each replica pools up to 30 connections; leave room for 3 replicas.
+  maxConnections: 100
+  storage: 1Gi
+  storageClass: local-path
+  resources:
+    requests:
+      cpu: 50m
+      memory: 160Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# Replicas share sockets' traffic through the foc.chat.fanout exchange, and the
+# order-event queue is single-active-consumer, so scaling out is safe.
+hpa:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 60

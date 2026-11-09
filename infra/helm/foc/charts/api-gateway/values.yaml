@@ -14,6 +14,7 @@ env:
   ORDER_SERVICE_URL: http://order-service.foc-order.svc.cluster.local:8000
   CREDIT_SERVICE_URL: http://credit-service.foc-credit.svc.cluster.local:8000
   NOTIFICATION_SERVICE_URL: http://notification-service.foc-notification.svc.cluster.local:8000
+  CHAT_SERVICE_URL: http://chat-service.foc-chat.svc.cluster.local:8000
   CORS_ALLOWED_ORIGINS: http://foc.localhost
 
 secretEnv:

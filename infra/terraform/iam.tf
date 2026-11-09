@@ -33,8 +33,9 @@ data "aws_iam_policy_document" "instance" {
     resources = [aws_s3_bucket.backups.arn]
   }
   statement {
+    # order-service delivery photos and chat-service chat photos.
     actions   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
-    resources = ["${aws_s3_bucket.photos.arn}/proof-of-delivery/*"]
+    resources = ["${aws_s3_bucket.photos.arn}/proof-of-delivery/*", "${aws_s3_bucket.photos.arn}/chat/*"]
   }
   statement {
     actions   = ["ec2:StopInstances"]
