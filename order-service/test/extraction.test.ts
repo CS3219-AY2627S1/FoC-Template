@@ -293,10 +293,15 @@ describe("checkExtraction", () => {
     assert.deepEqual(r.items, [{ name: "Latte", quantity: null }, { name: "Bun", quantity: null }, { name: "Tea", quantity: 99 }]);
   });
 
-  test("more than 20 items, or none left, is null", () => {
+  test("more than 20 items left after dropping, or none left, is null (round 4)", () => {
     const item = { name: "Pen", quantity: 1 };
+    const bad = { name: "", quantity: 1 };
     assert.equal(checkExtraction({ items: Array(21).fill(item) }, ids, now)!.items, null);
     assert.equal(checkExtraction({ items: Array(20).fill(item) }, ids, now)!.items!.length, 20);
+    // 25 sent, 5 dropped for a bad name: the 20 left are kept
+    assert.equal(checkExtraction({ items: [...Array(20).fill(item), ...Array(5).fill(bad)] }, ids, now)!.items!.length, 20);
+    // 22 sent, 1 dropped: 21 left is still too many
+    assert.equal(checkExtraction({ items: [...Array(21).fill(item), bad] }, ids, now)!.items, null);
     assert.equal(checkExtraction({ items: [] }, ids, now)!.items, null);
   });
 

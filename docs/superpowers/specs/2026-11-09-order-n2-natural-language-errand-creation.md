@@ -16,7 +16,7 @@ Branch `feat/order-nl-errand-creation`, stacked on `feat/order-member-frontend` 
 first; no code until the author approves it.
 
 Every decision below is @mattis's, quoted word for word from the request of 2026-11-09 (round 1) and the reply to the
-open questions (round 2, section 7), and the acceptance of section 8 (round 3, section 9). Section 3 holds the details the author asked Claude to propose; the author
+open questions (round 2, section 7), the acceptance of section 8 (round 3, section 9), and the answers to the two questions raised after implementation (round 4, section 10). Section 3 holds the details the author asked Claude to propose; the author
 approved them in round 2, with the round 2 changes applied. Section 8 holds the remaining answers, all accepted.
 
 ## 1. Facts the decisions rest on
@@ -379,3 +379,13 @@ the item list; the rate limit is 3 calls a minute per user of any role, and stub
 reuses Order's Supplier mapping and per-page timeout and sends `buildingLabel`, `floor` and `buildingCode`; the button
 stays disabled during the countdown; and characters are counted as JavaScript string length. The spec is approved.
 
+## 10. Decisions — round 4
+
+Two questions came up during implementation: should the 20-item limit count the list the model sent, or the items
+left after dropping those with a bad name; and is it fine that the status endpoint says "available" to a user who has
+used up their 3 calls this minute. The author's reply (2026-11-09), word for word:
+
+> count after dropping, status is fine
+
+So items with a bad name are dropped first, and `items` is `null` only if more than 20, or none, are left. The status
+endpoint stays as it is and never looks at the rate limit.

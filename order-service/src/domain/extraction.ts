@@ -64,10 +64,10 @@ export function checkExtraction(reply: unknown, supplierIds: ReadonlySet<string>
   const rawSupplier = typeof reply.supplierId === "string" ? reply.supplierId.toLowerCase() : null;
   const supplierId = rawSupplier !== null && supplierIds.has(rawSupplier) ? rawSupplier : null;
 
-  // More than 20 items: the whole list fails. An item whose name fails is dropped; a quantity that fails, or was
-  // not stated, becomes null and the item is kept. No items left: null.
+  // An item whose name fails is dropped; a quantity that fails, or was not stated, becomes null and the item is
+  // kept. The 20-item limit is counted on the items left after dropping (round 4): more than 20, or none, is null.
   let items: ExtractedErrand["items"] = null;
-  if (Array.isArray(reply.items) && reply.items.length <= L.maxItems) {
+  if (Array.isArray(reply.items)) {
     const kept: { name: string; quantity: number | null }[] = [];
     for (const raw of reply.items) {
       if (!isRecord(raw) || typeof raw.name !== "string") continue;
@@ -76,7 +76,7 @@ export function checkExtraction(reply: unknown, supplierIds: ReadonlySet<string>
       const q = raw.quantity;
       kept.push({ name, quantity: isWhole(q) && q >= 1 && q <= L.maxItemQuantity ? q : null });
     }
-    items = kept.length > 0 ? kept : null;
+    items = kept.length > 0 && kept.length <= L.maxItems ? kept : null;
   }
 
   const text = (v: unknown, max: number): string | null => {
