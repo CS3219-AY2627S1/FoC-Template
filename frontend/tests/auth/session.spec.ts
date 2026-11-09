@@ -150,6 +150,7 @@ test.describe("auth session", () => {
     await expect(
       page.getByRole("link", { name: "Client Accounts" }),
     ).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Admin" })).toHaveCount(0);
   });
 
   test("lets admins into admin-only routes", async ({ page }) => {
@@ -163,5 +164,36 @@ test.describe("auth session", () => {
     await expect(page).toHaveURL(/\/admin\/clients$/);
     await expect(page.getByText("Admin", { exact: true })).toBeVisible();
     expect(api.lastCall("GET", "/api/users/admin")).not.toBeUndefined();
+  });
+
+  test("puts admin links in an Admin menu that fits a laptop header", async ({ page }) => {
+    await seedToken(page, fakeJwt({ role: "admin" }));
+    await mockApi(page, {
+      "GET /api/users/me": () => ({ body: ADMIN_PROFILE }),
+      [`GET /api/credits/${ADMIN_PROFILE.id}/balance`]: () => ({
+        body: { user_id: ADMIN_PROFILE.id, available_balance: 1000, reserved_balance: 250 },
+      }),
+    });
+
+    await page.goto("/suppliers");
+    const nav = page.getByTestId("desktop-nav");
+    await expect(nav.getByRole("link")).toHaveText([
+      "Request Errand",
+      "My Requests",
+      "Take Errands",
+      "My Deliveries",
+    ]);
+
+    // Nothing in the header is squeezed: badge labels are not truncated.
+    const badge = page.getByTestId("credits-badge");
+    await expect(badge).toHaveText("1000 avail | 250 rsv");
+    const truncated = await badge
+      .locator(".mantine-Badge-label")
+      .evaluate((el) => el.scrollWidth > el.clientWidth);
+    expect(truncated).toBe(false);
+
+    await nav.getByRole("button", { name: "Admin" }).click();
+    await page.getByRole("menuitem", { name: "Client Accounts" }).click();
+    await expect(page).toHaveURL(/\/admin\/clients$/);
   });
 });

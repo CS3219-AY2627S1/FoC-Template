@@ -1,5 +1,6 @@
 // AI-assisted: responsive app shell with nav items, credits widget, desktop navbar and mobile bottom tab bar.
-// UI tweaks (Claude Opus 5.5): grouped nav, avatar account menu, credits tooltip. Reviewed by authors.
+// UI tweaks (Claude Opus 5.5): grouped nav, admin menu, avatar account menu, credits tooltip.
+// Reviewed by authors.
 import {
   ActionIcon,
   AppShell,
@@ -27,6 +28,7 @@ import {
   IconClipboardList,
   IconLogout,
   IconMessages,
+  IconChevronDown,
   IconShieldCog,
   IconShoppingBag,
   IconTruck,
@@ -34,7 +36,7 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import React, { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { BalanceResponse, creditsApi, parseUtcDate } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useNotifications } from "../lib/useNotifications";
@@ -79,7 +81,9 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/profile", label: "Profile", icon: <IconUser size={18} />, group: "account", mobileOnly: true },
 ];
 
-const DESKTOP_GROUPS: NavItem["group"][] = ["request", "deliver", "admin"];
+// Admin links sit in one "Admin" menu on desktop so the header fits a laptop
+// screen; the menu label also marks the user as an admin.
+const DESKTOP_GROUPS: NavItem["group"][] = ["request", "deliver"];
 
 function initials(name: string | undefined, email: string | undefined): string {
   if (name) {
@@ -224,7 +228,7 @@ function CreditsBadge({ balance }: { balance: BalanceResponse }) {
         variant="light"
         tt="none"
         visibleFrom="xs"
-        style={{ cursor: "pointer", border: 0 }}
+        style={{ cursor: "pointer", border: 0, flexShrink: 0 }}
         onClick={() => navigate("/profile#credits")}
         data-testid="credits-badge"
       >
@@ -268,6 +272,39 @@ function AccountMenu({ onLogout }: { onLogout: () => void }) {
   );
 }
 
+function AdminMenu({ items }: { items: NavItem[] }) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  return (
+    <Menu position="bottom-start" shadow="md" width={200}>
+      <Menu.Target>
+        <UnstyledButton
+          style={{
+            ...navLinkStyle({ isActive: pathname.startsWith("/admin") }),
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          Admin
+          <IconChevronDown size={14} stroke={2.2} />
+        </UnstyledButton>
+      </Menu.Target>
+      <Menu.Dropdown>
+        {items.map((item) => (
+          <Menu.Item
+            key={item.to}
+            leftSection={item.icon}
+            onClick={() => navigate(item.to)}
+          >
+            {item.label}
+          </Menu.Item>
+        ))}
+      </Menu.Dropdown>
+    </Menu>
+  );
+}
+
 function navLinkStyle({ isActive }: { isActive: boolean }): React.CSSProperties {
   return {
     textDecoration: "none",
@@ -303,19 +340,23 @@ export function AppLayout() {
     navigate("/login", { replace: true });
   };
 
+  // Below this width the nav moves into the burger menu. Admins carry an extra
+  // menu, so they switch over at a wider screen.
+  const navFrom = isAdmin ? "lg" : "md";
+
   return (
     <AppShell header={{ height: 60 }} padding="md">
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
-          <Group gap="xs" wrap="nowrap">
+          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
             <IconBuildingStore size={22} />
-            <Text fw={700} size="lg">
+            <Text fw={700} size="lg" visibleFrom="lg">
               Campus Errands
             </Text>
           </Group>
 
-          {/* Desktop nav: requester links | courier links | admin links */}
-          <Group gap="xl" visibleFrom="sm" wrap="nowrap" data-testid="desktop-nav">
+          {/* Desktop nav: requester links | courier links | admin menu */}
+          <Group gap="lg" visibleFrom={navFrom} wrap="nowrap" data-testid="desktop-nav">
             {DESKTOP_GROUPS.map((group) => ({
               group,
               links: items.filter((i) => i.group === group && !i.mobileOnly),
@@ -324,7 +365,7 @@ export function AppLayout() {
               .map(({ group, links }, gi) => (
                 <React.Fragment key={group}>
                   {gi > 0 && <Divider orientation="vertical" my={4} />}
-                  <Group gap="lg" wrap="nowrap">
+                  <Group gap="md" wrap="nowrap">
                     {links.map((item) => (
                       <NavLink key={item.to} to={item.to} style={navLinkStyle}>
                         {item.label}
@@ -333,14 +374,15 @@ export function AppLayout() {
                   </Group>
                 </React.Fragment>
               ))}
+            {isAdmin && (
+              <>
+                <Divider orientation="vertical" my={4} />
+                <AdminMenu items={items.filter((i) => i.group === "admin")} />
+              </>
+            )}
           </Group>
 
-          <Group gap="sm" wrap="nowrap">
-            {isAdmin && (
-              <Badge color="brand" variant="light" visibleFrom="xs">
-                Admin
-              </Badge>
-            )}
+          <Group gap="sm" wrap="nowrap" style={{ flexShrink: 0 }}>
             {balance && <CreditsBadge balance={balance} />}
             <ChatButton unread={unread} />
             <NotificationBell />
@@ -349,7 +391,7 @@ export function AppLayout() {
             <Burger
               opened={drawerOpened}
               onClick={drawer.toggle}
-              hiddenFrom="sm"
+              hiddenFrom={navFrom}
               size="sm"
             />
           </Group>
@@ -369,7 +411,7 @@ export function AppLayout() {
         opened={drawerOpened}
         onClose={drawer.close}
         title="Menu"
-        hiddenFrom="sm"
+        hiddenFrom={navFrom}
         size="70%"
       >
         <Stack gap="xs">

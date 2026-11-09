@@ -152,6 +152,7 @@ test.describe("supplier list", () => {
     await page.goto("/suppliers");
     await expect(page.getByRole("heading", { name: "Request an Errand" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Add supplier" })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "Manage Suppliers" })).toBeVisible();
+    await page.getByTestId("desktop-nav").getByRole("button", { name: "Admin" }).click();
+    await expect(page.getByRole("menuitem", { name: "Manage Suppliers" })).toBeVisible();
   });
 });
