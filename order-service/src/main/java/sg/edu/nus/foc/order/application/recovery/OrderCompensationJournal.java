@@ -202,6 +202,9 @@ public class OrderCompensationJournal {
     private void finishRejected(String key, String step, String code, String message) {
         OrderCommandStore.Entry command = commands.get(key);
         if ("REPOST".equals(command.kind())) {
+            if (commands.automaticExecution(key)) {
+                message = automaticRejectionMessage(code, message);
+            }
             // Preserve the existing requester-visible failure audit. NOWAIT avoids
             // waiting on an ingress transaction that already holds the original.
             jdbc.queryForList("select id from orders where id=? for update nowait", String.class, command.orderId());
@@ -217,6 +220,17 @@ public class OrderCompensationJournal {
               updated_at=clock_timestamp() where command_id=? and status='PENDING'
             """, step, code, message, key);
     }
+    private static String automaticRejectionMessage(String code, String fallback) {
+        return switch (code) {
+            case "INSUFFICIENT_CREDITS" -> "Automatic repost stopped: insufficient available credits. Review the order before reposting manually.";
+            case "FORBIDDEN" -> "Automatic repost stopped: the requester is no longer eligible.";
+            case "ACCOUNT_NOT_FOUND", "NOT_FOUND" -> "Automatic repost stopped: a required account or location no longer exists.";
+            case "VALIDATION_ERROR" -> "Automatic repost stopped: the saved repost details are no longer valid.";
+            case "REPOST_EXPIRED" -> "Automatic repost stopped: its expiry has passed.";
+            default -> fallback;
+        };
+    }
+
     private static String operation(String kind) {
         return switch (kind) {
             case "CREATE","REPOST" -> "RESERVE";

@@ -105,11 +105,17 @@ public class OrderCommandStore {
             """, this::map, requesterId, orderId).stream().findFirst();
     }
 
+    /** Financially safe is necessary, but a business rejection also stops the saved plan. */
     public boolean automaticRetrySafe(String key) {
         return Boolean.TRUE.equals(jdbc.queryForObject("""
-            select exists(select 1 from order_commands where command_id=? and automatic_execution
-              and kind='REPOST' and recovery_policy='COMPENSATE' and status='COMPLETED' and outcome='REJECTED'
-              and final_stage_status='FULLY_COMPENSATED' and credit_step_status in ('FAILED','COMPENSATED'))
+            select exists(select 1 from order_commands c where c.command_id=? and c.automatic_execution
+              and c.kind='REPOST' and c.recovery_policy='COMPENSATE' and c.status='COMPLETED' and c.outcome='REJECTED'
+              and c.final_stage_status='FULLY_COMPENSATED' and c.credit_step_status in ('FAILED','COMPENSATED')
+              and not exists(select 1 from order_commands rejected
+                where rejected.actor_id=c.actor_id and rejected.order_id=c.order_id and rejected.automatic_execution
+                  and rejected.status='COMPLETED' and rejected.outcome='REJECTED'
+                  and rejected.reason in ('INSUFFICIENT_CREDITS','FORBIDDEN','ACCOUNT_NOT_FOUND',
+                    'NOT_FOUND','VALIDATION_ERROR','REPOST_EXPIRED')))
             """, Boolean.class, key));
     }
 

@@ -7,6 +7,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import sg.edu.nus.foc.order.application.BackgroundRepostChecks;
 import sg.edu.nus.foc.order.domain.OrderProblem;
 import tools.jackson.databind.JsonNode;
@@ -45,8 +46,7 @@ public class HttpBackgroundRepostChecks implements BackgroundRepostChecks {
     @Override
     public void validate(String requesterId, String pickup, String delivery) {
         try {
-            JsonNode requester = users.get().uri("/api/users/internal/order-requesters/{id}", requesterId)
-                    .retrieve().body(JsonNode.class);
+            JsonNode requester = readRequester(requesterId);
             if (requester == null || !requesterId.equals(requester.path("userId").asString())
                     || !requester.path("eligible").isBoolean()) {
                 throw new OrderProblem("SERVICE_UNAVAILABLE", "User Service did not confirm automatic repost eligibility.");
@@ -65,6 +65,24 @@ public class HttpBackgroundRepostChecks implements BackgroundRepostChecks {
             }
         } catch (RestClientException failure) {
             throw new OrderProblem("SERVICE_UNAVAILABLE", "Automatic repost dependency is unavailable.");
+        }
+    }
+
+    private JsonNode readRequester(String requesterId) {
+        try {
+            return users.get().uri("/api/users/internal/order-requesters/{id}", requesterId)
+                    .retrieve().body(JsonNode.class);
+        } catch (RestClientResponseException failure) {
+            if (failure.getStatusCode().value() == 404) {
+                JsonNode error = failure.getResponseBodyAs(JsonNode.class);
+                // User Service uses this exact envelope for a missing account.
+                // Its generic missing-route 404 must remain an operational failure.
+                if (error != null && "NOT_FOUND".equals(error.path("error").asString())
+                        && "User not found".equals(error.path("message").asString())) {
+                    throw OrderProblem.notFound("The saved requester no longer exists.");
+                }
+            }
+            throw failure;
         }
     }
 }
