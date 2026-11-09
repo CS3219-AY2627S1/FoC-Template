@@ -224,6 +224,12 @@ listings omit photo bytes and the private S3 key is never returned. Retrieval al
 removes metadata from photos stored before this change; existing S3 objects are
 not rewritten by a read.
 
+The same detail response includes nullable `supplier_name`, `requester_name`,
+and `courier_name`. Order Service fetches these from Supplier Service and the
+internal User Service name route. If a lookup is unavailable, the corresponding
+name is `null` and the original ID remains in the response. Set
+`USER_SERVICE_URL` for deployments where the default service DNS name differs.
+
 At runtime, FastAPI also serves the live specification at `/openapi.json` and
 interactive documentation at `/docs`.
 

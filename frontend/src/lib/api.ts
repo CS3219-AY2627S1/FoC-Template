@@ -1,4 +1,4 @@
-// AI-assisted (OpenCode + Claude): typed fetch wrapper for the API gateway,
+// AI-assisted (OpenCode + Claude + Codex): typed fetch wrapper for the API gateway,
 // attaches the JWT bearer token and normalizes error payloads. Extended with
 // ordersApi and creditsApi for D3. Reviewed by authors.
 import type {
@@ -280,6 +280,9 @@ export interface OrderResponse {
 }
 
 export interface OrderDetailResponse extends OrderResponse {
+  supplier_name: string | null;
+  requester_name: string | null;
+  courier_name: string | null;
   proof_of_delivery_photo: string | null;
 }
 

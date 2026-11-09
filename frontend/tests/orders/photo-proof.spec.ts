@@ -1,4 +1,4 @@
-// AI-INFLUENCED: Verify required courier photo uploads and participant proof display with Codex.
+// AI-INFLUENCED: Verify photo uploads, participant details, navigation, and the enlarged proof viewer.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Request } from "@playwright/test";
@@ -83,4 +83,84 @@ test("my deliveries sends the selected photo through the gateway", async ({ page
 
   await expect.poll(() => api.callsTo("POST", `${ORDER_PATH}/deliver`).length).toBe(1);
   await expect(page.getByText("No active deliveries")).toBeVisible();
+});
+
+test("completed delivery card opens order details with names and proof", async ({ page }) => {
+  await seedToken(page);
+  await mockApi(page, {
+    "GET /api/orders/assigned": () => ({ body: [] }),
+    "GET /api/orders/assigned/completed": () => ({
+      body: [{ ...ORDER, status: "COMPLETED" }],
+    }),
+    [`GET ${ORDER_PATH}`]: () => ({
+      body: {
+        ...ORDER,
+        status: "COMPLETED",
+        supplier_name: "A Hot Hideout",
+        requester_name: "Alexander",
+        courier_name: "Trial",
+        proof_of_delivery_photo: PHOTO_URI,
+      },
+    }),
+  });
+
+  await page.goto("/deliveries");
+  await page.getByRole("tab", { name: "Completed" }).click();
+  await page.getByText("Deliver lunch").click();
+
+  await expect(page).toHaveURL(new RegExp(`/orders/${ORDER_ID}$`));
+  await expect(page.getByText("A Hot Hideout")).toBeVisible();
+  await expect(page.getByText("Alexander")).toBeVisible();
+  await expect(page.getByRole("region", { name: "People" }).getByText("Trial")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Proof of delivery" })).toBeVisible();
+  await page.getByRole("button", { name: "View full photo" }).click();
+  await expect(page.getByRole("dialog", { name: "Proof of delivery" })
+    .getByRole("img", { name: "Full-size proof of delivery" })).toBeVisible();
+});
+
+test("completed request card opens order details with names and proof", async ({ page }) => {
+  await seedToken(page);
+  await mockApi(page, {
+    "GET /api/users/me": () => ({ body: { ...CLIENT_PROFILE, id: ORDER.requester_id } }),
+    "GET /api/orders/requested/ongoing": () => ({ body: [] }),
+    "GET /api/orders/requested/completed": () => ({
+      body: [{ ...ORDER, status: "COMPLETED" }],
+    }),
+    [`GET ${ORDER_PATH}`]: () => ({
+      body: {
+        ...ORDER,
+        status: "COMPLETED",
+        supplier_name: "A Hot Hideout",
+        requester_name: "Alexander",
+        courier_name: "Trial",
+        proof_of_delivery_photo: PHOTO_URI,
+      },
+    }),
+  });
+
+  await page.goto("/orders/mine");
+  await page.getByRole("tab", { name: "Completed" }).click();
+  await page.getByText("Deliver lunch").click();
+
+  await expect(page).toHaveURL(new RegExp(`/orders/${ORDER_ID}$`));
+  await expect(page.getByText("A Hot Hideout")).toBeVisible();
+  await expect(page.getByText("Alexander")).toBeVisible();
+  await expect(page.getByRole("region", { name: "People" }).getByText("Trial")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Proof of delivery" })).toBeVisible();
+});
+
+test("request action button does not open order details", async ({ page }) => {
+  await seedToken(page);
+  await mockApi(page, {
+    "GET /api/users/me": () => ({ body: { ...CLIENT_PROFILE, id: ORDER.requester_id } }),
+    "GET /api/orders/requested/ongoing": () => ({
+      body: [{ ...ORDER, status: "OPEN", courier_id: null }],
+    }),
+  });
+
+  await page.goto("/orders/mine");
+  await page.getByRole("button", { name: "Edit" }).click();
+
+  await expect(page).toHaveURL(/\/orders\/mine$/);
+  await expect(page.getByRole("dialog", { name: "Edit Order" })).toBeVisible();
 });

@@ -1,4 +1,4 @@
-// AI-assisted: MyRequests page — requester's ongoing and completed orders with Edit/Delete/Cancel/Approve actions.
+// AI-assisted: MyRequests page — request cards open details while preserving request actions.
 import {
   Box,
   Button,
@@ -15,6 +15,7 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { OrderStatusBadge } from "../../components/StatusPill";
 import {
   ApiError,
@@ -50,6 +51,7 @@ interface EditForm {
 }
 
 export default function MyRequests() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<string | null>("ongoing");
 
   const [ongoingItems, setOngoingItems] = useState<OrderResponse[]>([]);
@@ -342,7 +344,21 @@ export default function MyRequests() {
       <Box
         key={order.order_id}
         p="sm"
-        style={{ border: "1px solid #dee2e6", borderRadius: 8, marginBottom: 8 }}
+        role="link"
+        tabIndex={0}
+        aria-label={`View details for ${order.name}`}
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest("button")) return;
+          navigate(`/orders/${order.order_id}`);
+        }}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            navigate(`/orders/${order.order_id}`);
+          }
+        }}
+        style={{ border: "1px solid #dee2e6", borderRadius: 8, marginBottom: 8, cursor: "pointer" }}
       >
         <Group justify="space-between" wrap="nowrap" align="flex-start">
           <Stack gap={4}>
@@ -359,6 +375,7 @@ export default function MyRequests() {
             </Group>
           </Stack>
           <Group gap="xs" wrap="nowrap">
+            {order.status === "COMPLETED" && <Text size="sm" c="blue">View details →</Text>}
             {polling && <Loader size="sm" />}
             {!polling && isOpen && noAssign && (
               <>

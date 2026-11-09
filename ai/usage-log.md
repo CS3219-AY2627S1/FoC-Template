@@ -1,4 +1,4 @@
-<!-- AI-INFLUENCED: Record Order Service photo and D3 Postman updates with Codex. -->
+<!-- AI-INFLUENCED: Record order details, proof photos, UI styling, and request/delivery navigation updates with Codex. -->
 
 # AI Usage Log
 

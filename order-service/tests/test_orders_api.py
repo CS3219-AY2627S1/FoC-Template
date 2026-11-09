@@ -1,4 +1,4 @@
-# AI-INFLUENCED: Sprint 1 Order Service API tests generated with Codex.
+# AI-INFLUENCED: Order Service API and detail-name tests generated with Codex.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -37,10 +37,15 @@ def fake_session() -> object:
 
 
 @pytest.fixture
-def client(fake_session: object):
+def client(fake_session: object, monkeypatch: pytest.MonkeyPatch):
     app = FastAPI()
     register_exception_handlers(app)
     app.include_router(order_routes.router)
+    monkeypatch.setattr(
+        order_routes,
+        "get_order_names",
+        AsyncMock(return_value=("The Deck", "Alice", "Bob")),
+    )
 
     async def override_get_session():
         yield fake_session
@@ -513,6 +518,9 @@ def test_get_order_happy_path(
     response = client.get("/orders/order-1", headers={"X-User-Id": user_id})
     assert response.status_code == 200
     assert response.json()["proof_of_delivery_photo"] is None
+    assert response.json()["supplier_name"] == "The Deck"
+    assert response.json()["requester_name"] == "Alice"
+    assert response.json()["courier_name"] == "Bob"
     assert response.headers["cache-control"] == "private, no-store"
 
 

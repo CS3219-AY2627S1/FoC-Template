@@ -1,4 +1,4 @@
-// AI-assisted: MyDeliveries page — courier's active and completed deliveries with Pick up/Withdraw/Deliver actions.
+// AI-assisted: MyDeliveries page — delivery cards open order details while preserving action buttons.
 import {
   Box,
   Button,
@@ -11,11 +11,13 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { DeliveryPhotoModal } from "../../components/DeliveryPhotoModal";
 import { OrderStatusBadge } from "../../components/StatusPill";
 import { ApiError, type OrderResponse, ordersApi, parseUtcDate } from "../../lib/api";
 
 export default function MyDeliveries() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<string | null>("active");
 
   const [activeItems, setActiveItems] = useState<OrderResponse[]>([]);
@@ -139,7 +141,21 @@ export default function MyDeliveries() {
       <Box
         key={order.order_id}
         p="sm"
-        style={{ border: "1px solid #dee2e6", borderRadius: 8, marginBottom: 8 }}
+        role="link"
+        tabIndex={0}
+        aria-label={`View details for ${order.name}`}
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest("button")) return;
+          navigate(`/orders/${order.order_id}`);
+        }}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            navigate(`/orders/${order.order_id}`);
+          }
+        }}
+        style={{ border: "1px solid #dee2e6", borderRadius: 8, marginBottom: 8, cursor: "pointer" }}
       >
         <Group justify="space-between" wrap="nowrap" align="flex-start">
           <Stack gap={4}>
@@ -155,6 +171,7 @@ export default function MyDeliveries() {
               </Text>
             </Group>
           </Stack>
+          {!showActions && <Text size="sm" c="blue">View details →</Text>}
           {showActions && (
             <Group gap="xs" wrap="nowrap">
               {isLoading && <Loader size="sm" />}

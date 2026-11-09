@@ -1,4 +1,4 @@
-// AI-INFLUENCED: Order Service architecture diagram updated with Codex from current code, D1 project requirements, and course materials.
+// AI-INFLUENCED: Order Service architecture diagram includes detail-name lookups through User Service.
 digraph OrderServiceArchitecture {
   graph [
     label="Order Service architecture | implemented component view (C4 level 3)",
@@ -13,6 +13,7 @@ digraph OrderServiceArchitecture {
   users [label="Requester / courier\nweb client", fillcolor="#e9f1fb", color="#678dbd"];
   gateway [label="API Gateway\nJWT validation; trusted identity headers", fillcolor="#e9f1fb", color="#678dbd"];
   supplier [label="Supplier Service\nsupplier HTTP API; deactivation fact publisher", fillcolor="#e9f1fb", color="#678dbd"];
+  user_service [label="User Service\ninternal display-name API", fillcolor="#e9f1fb", color="#678dbd"];
   credit [label="Credit Service\nreservation HTTP API; order-event consumer;\ncredit-result publisher", fillcolor="#e9f1fb", color="#678dbd"];
 
   subgraph cluster_order {
@@ -23,7 +24,7 @@ digraph OrderServiceArchitecture {
     api [label="HTTP interface\napi/routes/orders.py + health.py\nrequest validation, identity/role checks, responses"];
     workflow [label="Order workflows\nservices/orders.py\ncreate, query, update, accept, pickup,\nwithdraw, deliver, cancel, delete, approve"];
     lifecycle [label="Lifecycle policy\nservices/lifecycle.py\nseven statuses; allowed transitions", fillcolor="#d9eee1"];
-    http_adapters [label="Outbound HTTP clients\nclients/supplier + clients/credit\nhttpx transport and response contracts", fillcolor="#e6f3f7"];
+    http_adapters [label="Outbound HTTP clients\nclients/supplier + clients/user + clients/credit\nhttpx transport and response contracts", fillcolor="#e6f3f7"];
     timed [label="Timed workers\nexpiry_worker.py (5 s)\nauto_approval_worker.py (60 s)", fillcolor="#fff2dc", color="#ba8c49"];
     results [label="Credit-result consumers / handlers\nrelease, update, approval consumers\ncorrelate task + reservation; apply outcome", fillcolor="#fff2dc", color="#ba8c49"];
     supplier_listener [label="Supplier-deactivation consumer / handler\nsupplier_consumer.py + supplier_deactivation.py\ndeduplicate fact; cancel pre-pickup orders", fillcolor="#fff2dc", color="#ba8c49"];
@@ -31,6 +32,7 @@ digraph OrderServiceArchitecture {
     relay [label="Event relay\nevent_worker.py + events.py\nconfirmed, persistent AMQP publish; retry", fillcolor="#fff2dc", color="#ba8c49"];
 
     api -> workflow [label="calls / validated JSON"];
+    api -> http_adapters [label="resolves detail names"];
     workflow -> lifecycle [label="checks legal status changes"];
     workflow -> http_adapters [label="calls remote APIs"];
     workflow -> repos [label="reads / transactional writes"];
@@ -51,7 +53,8 @@ digraph OrderServiceArchitecture {
 
   users -> gateway [label="HTTPS / JSON + bearer token"];
   gateway -> api [label="HTTP / JSON; X-User-Id, X-User-Role"];
-  http_adapters -> supplier [label="HTTP GET /suppliers/{id}; GET /suppliers\nvalidate creation / filter category"];
+  http_adapters -> supplier [label="HTTP GET /suppliers/{id}; GET /suppliers\nvalidate creation / filter category / detail name"];
+  http_adapters -> user_service [label="HTTP GET /users/internal/{id}/name\nrequester / courier detail names"];
   http_adapters -> credit [label="HTTP POST /credits/reservations\nreserve on creation; release on DB failure"];
   repos -> db [label="SQLAlchemy / asyncpg", style=dotted, color="#778390", fontcolor="#626c76"];
   relay -> order_x [label="AMQP publish; routing key = event type", style=dashed, color="#b47a21", fontcolor="#805716"];
