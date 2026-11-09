@@ -463,9 +463,7 @@ class Observability:
             self._readiness_router(readiness_session_dep, readiness_extra, check_broker)
         )
 
-    def _metrics_router(
-        self, refresh: Callable[[], Awaitable[None]] | None = None
-    ) -> APIRouter:
+    def _metrics_router(self, refresh: Callable[[], Awaitable[None]] | None = None) -> APIRouter:
         router = APIRouter(tags=["observability"])
 
         @router.get("/metrics", include_in_schema=False)
