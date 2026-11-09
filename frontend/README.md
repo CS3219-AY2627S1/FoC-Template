@@ -21,6 +21,9 @@ issue #34. Author review: Reviewed and approved by @ron.
 Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: documented
 the member errand pages, routes and the Order Service API calls.
 Author review: Reviewed and approved by @mattis.
+Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: documented
+the N2 description box on the create page and ApiError's retryAfterSeconds.
+Author review: Pending review by @mattis.
 -->
 
 # Frontend
@@ -141,6 +144,7 @@ Docker. It forwards API calls:
 | `src/errands/OpenErrandsPage.tsx` | Other members' OPEN errands, paged through the URL, with Accept on each card |
 | `src/errands/MyErrandsPage.tsx` | Your errands as requester or courier, with a state filter |
 | `src/errands/CreateErrandPage.tsx` | Post an errand: supplier search, items, drop-off, notes, credits, deadlines |
+| `src/errands/DescribeErrand.tsx` | N2: the "Describe your errand" box above the create form (status check, counter, fill, failure and rate-limit messages) |
 | `src/errands/ErrandDetailPage.tsx` | Errand detail, actions with confirmations, deadlines and history; polls while credits are reserved |
 | `src/App.tsx` | URL → page table |
 
@@ -181,3 +185,12 @@ detail page links here) and `/errands/:id`. The top bar links to all of them.
   reason code. The form checks the same limits as `order-service/src/domain/validation.ts` and
   shows the server's 400 `details` next to the matching fields.
 - Deadlines are entered in the browser's time zone and sent as UTC ISO timestamps.
+- **Filling the form from a description (N2).** `/errands/new` opens with a "Describe your
+  errand" box. On load it calls `GET /api/v1/errands/extract/status`; if the feature is
+  unavailable, or that call fails, the box says so and the form works as before. "Fill in the
+  form" sends up to 1000 characters to `POST /api/v1/errands/extract`; only fields that come
+  back with a value are filled, returned items replace the item rows (a missing quantity shows
+  1), a field the requester edits while the request runs keeps their edit, and each filled field
+  shows "From your description" until it is edited. Nothing is submitted automatically. Any
+  failure shows one message; a 429 shows a countdown from `Retry-After`, read through the
+  shared client's `ApiError.retryAfterSeconds`.

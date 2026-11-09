@@ -3,6 +3,8 @@
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: Typed calls to the Order Service member errand endpoints.
  * Author review: Reviewed and approved by @mattis.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
+ * Scope: N2 extraction status and extract calls. Author review: Pending review by @mattis.
  */
 import { apiRequest } from './client'
 import type {
@@ -10,6 +12,8 @@ import type {
   Errand,
   ErrandDetail,
   ErrandPage,
+  ExtractedErrand,
+  ExtractionStatus,
   MemberAction,
   MyErrandsQuery,
 } from '../errands/types'
@@ -40,6 +44,16 @@ export function createErrand(body: CreateErrandRequest): Promise<Errand> {
 export function runErrandAction(id: string, action: MemberAction, reason?: string): Promise<Errand> {
   const body = action === 'reject' && reason ? { reason } : undefined
   return apiRequest<Errand>(`${errandPath(id)}/${action}`, { method: 'POST', body })
+}
+
+/** Whether filling the form from a description is available (N2). Always 200 for a logged-in user. */
+export function getExtractionStatus(signal?: AbortSignal): Promise<ExtractionStatus> {
+  return apiRequest<ExtractionStatus>(`${ERRAND_PATH}/extract/status`, { signal })
+}
+
+/** Works out the create fields from a description. Nothing is created. 429 carries retryAfterSeconds. */
+export function extractErrand(description: string): Promise<ExtractedErrand> {
+  return apiRequest<ExtractedErrand>(`${ERRAND_PATH}/extract`, { method: 'POST', body: { description } })
 }
 
 function errandPath(id: string): string {
