@@ -18,6 +18,9 @@ Author review: Reviewed and approved by @ron.
 Additional AI assistance: OpenAI Codex (GPT-6), 2026-09-27. Scope: documented
 the expanded live validation, concurrency, and mobile administrator checks for
 issue #34. Author review: Reviewed and approved by @ron.
+Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: documented
+the member errand pages, routes and the Order Service API calls.
+Author review: Reviewed and approved by @mattis.
 -->
 
 # Frontend
@@ -25,6 +28,8 @@ issue #34. Author review: Reviewed and approved by @ron.
 React + TypeScript + Vite, Tailwind, React Router. D2 scope includes sign in,
 create account, log out, session-expiry toasts, and live Supplier catalogue and
 detail screens for authenticated members, plus administrator Supplier management.
+Members can also post, browse, accept and run errands through Order Service (the
+administrator dispute screens are not built yet).
 
 ## Running it
 
@@ -107,6 +112,8 @@ Docker. It forwards API calls:
 | `GET`/`PATCH /api/v1/whoami` | user-service `GET`/`PATCH /whoami` |
 | `PUT /api/v1/users/{id}/role` | user-service `PUT /users/{id}/role` |
 | `/api/v1/suppliers...` | supplier-service (same path) |
+| `/api/v1/errands...` | order-service `/errands...` |
+| `/api/v1/admin/errands...` | order-service `/admin/errands...` (no screens yet) |
 | `/assets/suppliers/...` | supplier-service (same path) |
 
 `/auth/verify` is not exposed. Rules live in `vite.config.ts` and `nginx.conf`; keep them in sync.
@@ -126,6 +133,15 @@ Docker. It forwards API calls:
 | `src/suppliers/SupplierDetailPage.tsx` | Live Supplier detail, coordinates, typical hours and image fallback |
 | `src/suppliers/admin/SupplierAdminPage.tsx` | Administrator ACTIVE/ARCHIVED management, archive and restore |
 | `src/suppliers/admin/SupplierFormPage.tsx` | Metadata-backed create/edit and stale-ETag recovery |
+| `src/api/errandApi.ts` | Typed Order Service calls: open list, my errands, detail, create, and the member actions |
+| `src/auth/tokenSubject.ts` | Reads the account id (`sub`) from the token, for display only (see below) |
+| `src/errands/types.ts` | Errand API models and the Order Service limits |
+| `src/errands/presentation.ts` | State labels, which actions each party may take in each state, guidance and history wording |
+| `src/errands/errandFormModel.ts` | Create-errand form checks, keyed by the server's field names |
+| `src/errands/OpenErrandsPage.tsx` | Other members' OPEN errands, paged through the URL, with Accept on each card |
+| `src/errands/MyErrandsPage.tsx` | Your errands as requester or courier, with a state filter |
+| `src/errands/CreateErrandPage.tsx` | Post an errand: supplier search, items, drop-off, notes, credits, deadlines |
+| `src/errands/ErrandDetailPage.tsx` | Errand detail, actions with confirmations, deadlines and history; polls while credits are reserved |
 | `src/App.tsx` | URL → page table |
 
 Authenticated users land on `/suppliers`; `/suppliers/:id` shows detail. Catalogue
@@ -139,3 +155,29 @@ or timestamps because those fields are server-owned. Archive retains the Supplie
 and ID; there is no physical-delete control. Conditional writes use the ETags retained by
 `src/api/supplierApi.ts`. The shared client attaches the token and logs the user out after
 an authenticated 401.
+
+### Errand pages
+
+Member routes are `/errands` (open errands), `/errands/mine` (`?as=courier` for the ones you
+deliver, `&state=` to filter), `/errands/new` (`?supplierId=` preselects a supplier; the Supplier
+detail page links here) and `/errands/:id`. The top bar links to all of them.
+
+- **Who you are in an errand.** `/whoami` has no account id and errands name people only by id,
+  so the pages read the token's `sub` claim (as `tokenExpiry.ts` reads `exp`). It only decides
+  which buttons to show; Order Service checks the party on every action. No endpoint resolves
+  other users' names, so they appear as "Requester", "Courier" or "Another member".
+- **Actions** follow the Order Service transition table: a non-requester may accept an OPEN
+  errand; the courier may pick up or withdraw (ACCEPTED) and deliver (PICKED_UP); the requester
+  may cancel (OPEN, ACCEPTED) and confirm or report a problem (DELIVERED). Each asks for
+  confirmation. A 409 (lost accept race, repeated step, passed deadline) is explained and the
+  errand is re-read so the page shows its real state.
+- **Accepting from the board.** Each open-errand card has an Accept button with the same
+  confirmation as the detail page. When the accept succeeds, or fails because the errand is no
+  longer available (lost race, cancelled, expired, deadline passed), the card is dropped at once
+  and the page of results is reloaded; other failures (e.g. 503) leave it listed.
+- Cards show the total item quantity ("3 items" for 2 × latte and 1 croissant).
+- **Posting** answers 202 with the errand in `PENDING_RESERVATION`. The detail page re-reads it
+  every 2 seconds until Credit Service opens or declines it, and explains a decline by its
+  reason code. The form checks the same limits as `order-service/src/domain/validation.ts` and
+  shows the server's 400 `details` next to the matching fields.
+- Deadlines are entered in the browser's time zone and sent as UTC ISO timestamps.

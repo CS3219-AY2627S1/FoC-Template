@@ -10,8 +10,11 @@
  * Additional AI assistance: OpenAI Codex (GPT-6), 2026-09-27. Scope: kept the
  * shared navigation visible while Supplier pages scroll.
  * Author review: Reviewed and approved by @ron.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: added
+ * the Suppliers / Open errands / My errands / Post errand navigation row.
+ * Author review: Reviewed and approved by @mattis.
  */
-import { Link } from 'react-router'
+import { Link, NavLink } from 'react-router'
 import { useAuth } from '../auth/authContext'
 import { APP_NAME } from '../config'
 
@@ -71,6 +74,36 @@ export function TopBar() {
           </button>
         </div>
       </div>
+      <nav aria-label="Main" className="border-t border-slate-100">
+        {/* Scrolls sideways on its own on narrow screens rather than widening the page */}
+        <div className="mx-auto flex max-w-5xl items-center gap-0.5 overflow-x-auto px-2 py-1.5 whitespace-nowrap sm:gap-1 sm:px-4">
+          <MainLink to="/suppliers" end={false}>Suppliers</MainLink>
+          <MainLink to="/errands" end>Open errands</MainLink>
+          <MainLink to="/errands/mine" end>My errands</MainLink>
+          <Link
+            to="/errands/new"
+            className="ml-auto shrink-0 rounded-lg bg-accent-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-600"
+          >
+            Post<span className="hidden sm:inline"> errand</span>
+          </Link>
+        </div>
+      </nav>
     </header>
+  )
+}
+
+function MainLink({ to, end, children }: { to: string; end: boolean; children: string }) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        `shrink-0 rounded-lg px-2 py-1.5 text-sm font-semibold sm:px-3 ${
+          isActive ? 'bg-navy-100 text-navy-900' : 'text-slate-600 hover:bg-navy-50 hover:text-navy-900'
+        }`
+      }
+    >
+      {children}
+    </NavLink>
   )
 }

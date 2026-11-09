@@ -11,6 +11,9 @@
  * Additional AI assistance: OpenAI Codex (GPT-6), date: 2026-09-27.
  * Scope: Added browser regressions for sticky navigation and aligned time fields.
  * Author review: Reviewed and approved by @ron.
+ * Additional AI assistance: OpenAI Codex (GPT-6), date: 2026-11-09.
+ * Scope: Updated issue #64's stale Supplier detail assertion to verify the existing
+ * errand action and exact Supplier preselection URL. Author review: PENDING.
  */
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test'
 
@@ -92,7 +95,10 @@ test('MEMBER browses, searches, filters, sorts, pages and views live Suppliers r
   await captureEvidence(page, testInfo, 'member-mobile-catalogue.png')
 
   await page.getByRole('link', { name: /View details for/ }).first().click()
-  await expect(page.getByText('No errand-order action is available yet.')).toBeVisible()
+  const requestErrandLink = page.getByRole('link', { name: 'Request an errand from here', exact: true })
+  await expect(requestErrandLink).toBeVisible()
+  const supplierId = new URL(page.url()).pathname.split('/').at(-1)
+  await expect(requestErrandLink).toHaveAttribute('href', `/errands/new?supplierId=${supplierId}`)
   await assertNoHorizontalOverflow(page, 'mobile member detail')
 })
 

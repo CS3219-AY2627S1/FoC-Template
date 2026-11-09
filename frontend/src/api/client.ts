@@ -7,13 +7,17 @@
  * response metadata and Supplier error details while retaining the existing
  * authentication and body-only client behaviour for issue #28.
  * Author review: Reviewed and approved by @ron.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: read
+ * Order Service error bodies (field errors as a list, currentState on 409).
+ * Author review: Reviewed and approved by @mattis.
  */
 import { API_BASE } from '../config'
 import { getToken } from '../auth/tokenStorage'
 
 // Error thrown for any non-2xx response, carrying what the backend sent back.
 // The backends reply with JSON like: { "error": "USERNAME_TAKEN", "message": "Username is taken" }
-// (Supplier uses "code" instead of "error"; both are handled.)
+// (Supplier uses "code" instead of "error"; both are handled. Order sends `details` as a list of
+// { field, message } and adds `currentState` to 409s; the list is flattened into a field record.)
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
@@ -21,6 +25,7 @@ export class ApiError extends Error {
   readonly fieldErrors: Record<string, string>
   readonly requestId?: string
   readonly existingSupplierId?: string
+  readonly currentState?: string
 
   constructor(
     status: number,
@@ -31,6 +36,7 @@ export class ApiError extends Error {
       fieldErrors?: Record<string, string>
       requestId?: string
       existingSupplierId?: string
+      currentState?: string
     } = {},
   ) {
     super(message)
@@ -41,6 +47,7 @@ export class ApiError extends Error {
     this.fieldErrors = metadata.fieldErrors ?? {}
     this.requestId = metadata.requestId
     this.existingSupplierId = metadata.existingSupplierId
+    this.currentState = metadata.currentState
   }
 }
 
@@ -132,12 +139,26 @@ function toApiError(status: number, data: unknown): ApiError {
   const code = typeof body.error === 'string' ? body.error : typeof body.code === 'string' ? body.code : 'UNKNOWN'
   const message = typeof body.message === 'string' ? body.message : 'Something went wrong. Please try again.'
   const fieldErrors = stringRecord(body.fieldErrors)
-  const details = stringRecord(body.details) ?? fieldErrors ?? {}
+  const details = stringRecord(body.details) ?? fieldList(body.details) ?? fieldErrors ?? {}
   return new ApiError(status, code, message, details, {
     fieldErrors: fieldErrors ?? {},
     requestId: typeof body.requestId === 'string' ? body.requestId : undefined,
     existingSupplierId: typeof body.existingSupplierId === 'string' ? body.existingSupplierId : undefined,
+    currentState: typeof body.currentState === 'string' ? body.currentState : undefined,
   })
+}
+
+// [{ field: "items[0].name", message: "..." }] -> { "items[0].name": "..." }; repeats are joined
+function fieldList(value: unknown): Record<string, string> | undefined {
+  if (!Array.isArray(value)) return undefined
+  const record: Record<string, string> = {}
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) return undefined
+    const { field, message } = entry as Record<string, unknown>
+    if (typeof field !== 'string' || typeof message !== 'string') return undefined
+    record[field] = record[field] ? `${record[field]} ${message}` : message
+  }
+  return record
 }
 
 function stringRecord(value: unknown): Record<string, string> | undefined {

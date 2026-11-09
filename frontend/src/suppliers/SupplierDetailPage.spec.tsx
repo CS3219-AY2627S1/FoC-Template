@@ -3,6 +3,8 @@
  * Tool: OpenAI Codex (GPT-6), date: 2026-09-27
  * Scope: Added focused member Supplier detail component tests for issue #29.
  * Author review: Reviewed and approved by @ron.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: the
+ * detail page now links to posting an errand. Author review: Reviewed and approved by @mattis.
  */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -50,7 +52,7 @@ describe('Supplier member detail', () => {
     vi.mocked(supplierApi.getSupplier).mockResolvedValue({ supplier, etag: '"v0"' })
   })
 
-  it('shows description, typical hours, coordinates, and no future Order action', async () => {
+  it('shows description, typical hours, coordinates, and a link to post an errand from it', async () => {
     renderDetail()
 
     expect(await screen.findByRole('heading', { name: 'Overnight Coffee' })).toBeInTheDocument()
@@ -60,7 +62,10 @@ describe('Supplier member detail', () => {
     expect(screen.getByText('11:00–02:00 (closes next day)')).toBeInTheDocument()
     expect(screen.getByText('1.295, 103.773')).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'No image available for Overnight Coffee' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /request errand/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Request an errand from here' })).toHaveAttribute(
+      'href',
+      `/errands/new?supplierId=${supplier.id}`,
+    )
   })
 
   it('conceals unavailable detail as not found and permits retry', async () => {
