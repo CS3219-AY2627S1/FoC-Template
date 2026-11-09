@@ -1,3 +1,5 @@
+/* Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+ * Scope: HTTP history configuration for #58. Author review: Pending. */
 /*
  * AI Assistance Disclosure:
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-16
@@ -31,6 +33,26 @@ export function loadCreditConfig() {
     throw new Error("INITIAL_CREDIT_GRANT must be a whole number >= 0");
   }
   return { initialCreditGrant: grant };
+}
+
+export function loadHttpConfig() {
+  const bounded = (name: string, fallback: number, max: number) => {
+    const text = process.env[name] ?? String(fallback);
+    const value = Number(text);
+    if (!/^\d+$/.test(text) || !Number.isSafeInteger(value) || value < 1 || value > max) {
+      throw new Error(`${name} must be an integer from 1 to ${max}`);
+    }
+    return value;
+  };
+  const baseUrl = required("USER_SERVICE_BASE_URL");
+  const url = new URL(baseUrl);
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+    throw new Error("USER_SERVICE_BASE_URL must be an HTTP(S) URL without credentials, query or fragment");
+  }
+  return {
+    port: bounded("PORT", 3003, 65535),
+    userService: { baseUrl, timeoutMs: bounded("USER_SERVICE_VERIFY_TIMEOUT_MS", 1000, 60000) },
+  };
 }
 
 export function loadKafkaConfig() {

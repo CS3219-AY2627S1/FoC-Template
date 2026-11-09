@@ -1,3 +1,5 @@
+/* Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+ * Scope: Avoid a fixed Credit HTTP port in disposable UI stacks for #58. Author review: Pending. */
 /**
  * AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-09-27.
  * Scope: Added disposable Compose orchestration for the real-browser Supplier
@@ -52,6 +54,7 @@ const environment = {
   BOOTSTRAP_ADMIN_EMAIL: 'supplier-ui-admin@u.nus.edu',
   BOOTSTRAP_ADMIN_PASSWORD: adminPassword,
   FRONTEND_PORT: String(frontendPort),
+  CREDIT_PORT: '0',
   USER_PORT: String(userPort),
   SUPPLIER_PORT: String(supplierPort),
   SUPPLIER_UI_BASE_URL: frontendBaseUrl,

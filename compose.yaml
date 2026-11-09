@@ -1,3 +1,4 @@
+# Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09. Scope: Credit HTTP settings, port and gateway dependency for #58. Author review: Pending.
 # Additional AI assistance: Codex (GPT-6), 2026-10-18. Scope: User Service Kafka configuration. Author review: Reviewed and approved by @phuc.
 # AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-09-25. Scope: merged the User and Supplier Compose definitions while preserving their separate databases, startup order, and runtime configuration. Author review: Reviewed and approved by @ron.
 # Additional AI assistance: OpenAI Codex (GPT-6), 2026-09-25. Scope: configured Supplier-to-User session verification for issue #16. Author review: Reviewed and approved by @ron.
@@ -26,6 +27,7 @@ services:
       - user-service
       - supplier-service
       - order-service
+      - credit-service
 
   user-service:
     image: foc-user-service:local
@@ -246,7 +248,12 @@ services:
     image: foc-credit-service:local
     pull_policy: never
     init: true
+    ports:
+      - "${CREDIT_PORT:-3003}:3003"
     environment:
+      PORT: 3003
+      USER_SERVICE_BASE_URL: http://user-service:3001
+      USER_SERVICE_VERIFY_TIMEOUT_MS: ${CREDIT_USER_SERVICE_VERIFY_TIMEOUT_MS:-1000}
       # The app role: row access only, no schema changes
       DATABASE_URL: postgres://credit_app:${CREDIT_DB_APP_PASSWORD:?Set CREDIT_DB_APP_PASSWORD in .env}@credit-db:5432/credits
       KAFKA_BROKERS: kafka:9092

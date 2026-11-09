@@ -1,3 +1,5 @@
+/* Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+ * Scope: Credit history gateway for #58. Author review: Pending. */
 /*
  * AI Assistance Disclosure:
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-09-26
@@ -21,6 +23,7 @@ import { defineConfig } from 'vite'
 const USER_SERVICE_URL = process.env.USER_SERVICE_URL ?? 'http://localhost:3001'
 const SUPPLIER_SERVICE_URL = process.env.SUPPLIER_SERVICE_URL ?? 'http://localhost:3000'
 const ORDER_SERVICE_URL = process.env.ORDER_SERVICE_URL ?? 'http://localhost:3002'
+const CREDIT_SERVICE_URL = process.env.CREDIT_SERVICE_URL ?? 'http://localhost:3003'
 
 // "/api/v1/whoami" -> "/whoami", "/api/v1/auth/login" -> "/auth/login"
 const stripApiPrefix = (path: string) => path.replace(/^\/api\/v1/, '')
@@ -31,6 +34,7 @@ export default defineConfig({
   server: {
     // Dev gateway; keep in sync with nginx.conf. Keys starting with "^" are regexes.
     proxy: {
+      '^/api/v1/me/credit/transactions(\\?|$)': { target: CREDIT_SERVICE_URL, rewrite: stripApiPrefix },
       // user-service: public paths are rewritten to the service's own routes
       '^/api/v1/auth/(login|register)$': { target: USER_SERVICE_URL, rewrite: stripApiPrefix },
       '^/api/v1/whoami$': { target: USER_SERVICE_URL, rewrite: stripApiPrefix },

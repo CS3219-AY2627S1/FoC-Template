@@ -1,4 +1,6 @@
 <!--
+Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+Scope: Credit history endpoint summary for #58. Author review: Pending.
 AI Assistance Disclosure:
 Additional AI assistance: OpenAI Codex (GPT-6), date: 2026-11-09.
 Scope: Recorded issue #64's Supplier browser assertion fix and verification.
@@ -106,3 +108,10 @@ browser test to check the existing "Request an errand from here" link and its ex
 Supplier preselection URL after PR #59 removed the old placeholder. The existing
 member and administrator browser journeys both passed locally. Author review is
 pending; the exact prompt and verification results are in `ai/usage-log.md`.
+
+OpenAI Codex (GPT-6) assisted on 2026-11-09 with the requested authenticated Credit
+transaction history endpoint from issue #58: own-user reads, optional date bounds,
+pagination, live User Service verification, independent Kafka startup, gateway and
+Compose wiring, and focused HTTP/database tests. Author review is pending.
+Exact prompts and verification evidence are recorded in `ai/usage-log.md`;
+JSON dependency attribution is in `credit-service/AI-DISCLOSURES.md`.

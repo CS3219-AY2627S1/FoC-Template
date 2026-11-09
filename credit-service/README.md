@@ -1,3 +1,4 @@
+<!-- Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09. Scope: Transaction history API and verification documentation for #58. Author review: Pending. -->
 <!-- Additional AI assistance: Codex (GPT-6), 2026-10-18. Scope: account-status publishing implementation and verification notes. Author review: Reviewed and approved by @phuc. -->
 <!--
 AI Assistance Disclosure:
@@ -26,7 +27,8 @@ Owns every credit balance on the platform. The design is in
 | Balance read (`getBalance`) | Done; no HTTP route yet |
 | Kafka topics, including the two DLQs | Created by the shared `kafka-init` Compose service, see [../kafka/README.md](../kafka/README.md) |
 | Kafka consumer, rejection replies, DLQ, outbox publisher loop | Done (`src/consumer.ts`, `src/publisher.ts`, `src/index.ts`) |
-| HTTP API, `/health` | Not started: HTTP paths are still open |
+| Own transaction history HTTP API | Implemented; see contract below |
+| Balance HTTP API, `/health` | Not implemented |
 
 ## Layout
 
@@ -42,6 +44,9 @@ src/consumer.ts                           Kafka consumer: parse, handle, reply/D
 src/publisher.ts                          outbox publisher loop and hourly cleanup
 src/kafka.ts                              Kafka client and producer (acks=all, idempotent)
 src/index.ts                              service entry point
+src/http.ts, src/sessionVerifier.ts        own-history route and live User verification
+src/transactions.ts                       history validation and read-only query
+src/lifecycle.ts                          independent, retriable Kafka startup
 src/db.ts                                 pool and inTransaction()
 e2e/                                      end-to-end test in its own Compose stack
 ```
@@ -109,3 +114,61 @@ duplicate deliveries, concurrent reserves from one user, capture/cancel races, d
 two outbox publishers at once, and that `credit_app` cannot change `credit_transactions`. After
 every database test, each balance is checked against the sum of its ledger deltas and its `HELD`
 reservations.
+
+## Transaction history HTTP API
+
+`GET /api/v1/me/credit/transactions` through the frontend gateway maps to
+`GET /me/credit/transactions` on Credit (port 3003 by default).
+Send `Authorization: Bearer <access-token>`. Credit forwards it to User Service
+`GET /auth/verify` and uses only the verified ID, including for administrators.
+
+| Query | Meaning |
+| --- | --- |
+| `from` | Optional inclusive ISO timestamp with timezone, e.g. `2026-11-02T00:00:00+08:00` |
+| `to` | Optional exclusive timestamp; must be later than `from` |
+| `page` | Zero-based integer, default 0 |
+| `size` | Integer from 1 to 100, default 20 |
+
+Timestamps require seconds and `Z` or an explicit `+/-HH:MM` offset; fractional
+seconds may contain 1 to 3 digits. Date-only values, invalid calendar dates,
+repeated parameters, unknown parameters (including `userId`), invalid pagination,
+and unsafe offsets return 400. Either date bound can be used alone.
+Use `URLSearchParams` or URL-encode `+` as `%2B`. For a complete Singapore calendar
+day, use midnight `+08:00` through the following midnight as the exclusive end.
+
+Example request for 2 November 2026 in Singapore:
+
+```sh
+curl -G http://localhost:8080/api/v1/me/credit/transactions \
+  -H "Authorization: Bearer $TOKEN" \
+  --data-urlencode 'from=2026-11-02T00:00:00+08:00' \
+  --data-urlencode 'to=2026-11-03T00:00:00+08:00' \
+  --data-urlencode 'page=0' --data-urlencode 'size=20'
+```
+
+Response: `{ items, page, size, totalItems }`. Each item contains `id` (decimal
+string), `type`, `availableDelta`, `reservedDelta` (whole credit numbers),
+`reservationId`, `orderId` (nullable), and `createdAt` (UTC ISO timestamp).
+All six ledger types are returned. Both deltas are retained because a reservation
+moves credits between available and reserved balances. Rows sort newest first by
+`createdAt`, then `id`. Count and page share one PostgreSQL statement snapshot.
+New entries can shift later page positions. Unknown/not-yet-created accounts,
+unmatched filters and out-of-range pages return 200 with an empty `items` array;
+out-of-range pages still include the filtered total. Responses use `Cache-Control: no-store`.
+
+401 means a missing, invalid, expired or inactive session. User verification
+outages/timeouts and database connection outages return 503. Malformed successful
+verification replies or unexpected upstream statuses return 500. Internal error
+details are not returned to clients.
+
+For direct startup, set `USER_SERVICE_BASE_URL` (required), `PORT` (default 3003),
+and `USER_SERVICE_VERIFY_TIMEOUT_MS` (default 1000, maximum 60000). Migration commands
+still need only their database settings. Compose supplies the internal User URL;
+`CREDIT_PORT` and `CREDIT_USER_SERVICE_VERIFY_TIMEOUT_MS` configure the host port and
+timeout. Vite uses `CREDIT_SERVICE_URL` (default `http://localhost:3003`).
+
+HTTP starts after database readiness independently of Kafka connection attempts.
+Kafka startup failures retry in the background. Shutdown drains HTTP, stops Kafka
+workers and closes the shared pool, with a 15-second overall shutdown deadline.
+No schema migration is needed. AWS Credit deployment remains outside this change
+under ADR 0001.

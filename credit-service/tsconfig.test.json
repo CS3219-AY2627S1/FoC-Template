@@ -1,0 +1,6 @@
+{
+  "//": "AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-11-09; Typecheck Credit tests for #58. Author review pending.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "rootDir": ".", "noEmit": true },
+  "include": ["src", "test"]
+}

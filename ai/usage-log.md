@@ -1,4 +1,6 @@
 <!--
+Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+Scope: Credit history endpoint prompts and verification for #58. Author review: Pending.
 AI Assistance Disclosure:
 Additional AI assistance: OpenAI Codex (GPT-6), date: 2026-11-09.
 Scope: Recorded the exact issue #64 fix-and-push authorization and browser validation.
@@ -1995,3 +1997,36 @@ Claude built four member pages (open errands, my errands, post an errand, errand
 
 Claude restructured the card so the link to the detail and the new Accept button are siblings (a button may not sit inside a link), reused the detail page's confirmation dialog, and on success or a lost race both drops the card at once and reloads the page of results; a 503 or network failure leaves it listed. The item count is the total quantity across lines. Tests: 72/72 Vitest (a mutation check confirmed the race test fails if the card is not dropped), oxlint clean, and a scratch Playwright run against the Compose stack where a second courier won the race through the API.
 
+
+## 2026-11-09 — Credit transaction history endpoint (#58)
+
+- Tool/mode: OpenAI Codex (GPT-6), code generation, debugging and tests.
+- Author review: Pending.
+- Exact prompts in this exchange:
+  - "Implement the FE for the credit service view their own transaction with filter"
+  - "does anyservice query to credit"
+  - "Implement the endpoint"
+- Key responses: Inspected repository guidance, the existing #58 proposal, gateway,
+  Credit schema and startup, and Order's User verifier. Reported that Credit had
+  Kafka interactions but no HTTP server. After the endpoint request, implemented
+  GET /me/credit/transactions and public /api/v1/me/credit/transactions using the
+  ticket's own-user identity, inclusive-from/exclusive-to timestamps, zero-based
+  pagination and response fields. Added live verification with a deadline covering
+  response bodies, consistent single-statement count/page reads under credit_app,
+  background Kafka startup/retry, shutdown draining, Compose/Vite/nginx configuration,
+  dependency metadata, API documentation and tests. No transaction frontend page
+  was implemented in this endpoint increment; no database schema or AWS resources changed.
+- Verification: Source and test typechecks/build passed. All 50 Credit tests passed against a disposable
+  PostgreSQL 17 container, including existing database/concurrency tests and new
+  authentication, HTTP, date-boundary, pagination, large-ID, role-permission and
+  Kafka lifecycle regressions. Initial sandbox execution blocked tsx OS access;
+  the same tests passed with approved local listener/database access. All 23 existing
+  Kafka end-to-end tests passed in an isolated Compose stack. The running production
+  Credit container also returned 401 without a token and 503 when its User Service
+  dependency was absent. Verifier tests use a local HTTP fixture; a real User
+  Service registration/login journey was not run. Frontend build was unavailable
+  because frontend dependencies were not installed; only gateway configuration
+  changed in this endpoint increment.
+  nginx configuration validation also passed in the production nginx image.
+  Final startup inspection found that the native Kafka clients reject reconnects
+  after disconnect; retry attempts now construct fresh producer/consumer instances.
