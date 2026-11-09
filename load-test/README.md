@@ -299,6 +299,7 @@ so burst Spot and RDS xlarge do not idle-bill.
 | Knob | Idle (committed default) | Peak (set before full run, revert after) |
 | --- | --- | --- |
 | Order `minReplicas` / `maxReplicas` | **2 / 2** | **32 / 32** |
+| Order Hikari `maximum-pool-size` | **10** (`application-k8s.yml`) | **30** (full-run create/read; 32×30 ≈ 960 fits xlarge ~1800) |
 | User, Credit, Supplier, Rating | **1 / 1** each | **8 / 8** each |
 | `foc-dev` ResourceQuota | keep **40** CPU / **64Gi** / **100** pods (already sized for peak) | same — raise further only if you go above 32/8 |
 | Terraform `burst_node_max` | default **5** | apply with **`-var burst_node_max=8`** |
@@ -306,14 +307,21 @@ so burst Spot and RDS xlarge do not idle-bill.
 
 Files: `deploy/values/envs/dev/services/{order,user,credit,supplier,rating}.yaml`,
 `deploy/values/envs/dev/namespace.yaml`, `infra/nonprod/aws` (`burst_node_max`,
-`rds_instance_class`). Argo syncs service values from **`main` only**.
+`rds_instance_class`), `order-service/src/main/resources/application-k8s.yml`
+(Hikari). Argo syncs service values from **`main` only**; Hikari lives in the
+Order image — change it, then rebuild/push Order (or set
+`SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE` on the Order deploy for a quick
+override).
 
 ### Scale up (before a full run)
 
 1. **Edit service YAML to the peak pins** (Order `32`/`32`, peers `8`/`8`).
    Quota in `namespace.yaml` already fits that footprint; only raise it if you
-   go higher. Merge to `main`, then Refresh/sync `dev-order`, `dev-user`,
-   `dev-credit`, `dev-supplier`, `dev-rating`. Wait until Desired = Ready.
+   go higher. **Order Hikari:** set `maximum-pool-size` to **30** (file above,
+   or env override) — idle **10** stalls Tomcat workers under full-run I/O.
+   Merge to `main`, then Refresh/sync `dev-order`, `dev-user`,
+   `dev-credit`, `dev-supplier`, `dev-rating` (and roll Order if the image
+   changed). Wait until Desired = Ready.
 2. **Burst capacity** — apply with a higher max so Order×32 can schedule:
 
    ```bash
@@ -341,9 +349,11 @@ reverts you). Prefer Git for anything reproducible.
 
 Do this soon after the k6 Job finishes.
 
-1. **Revert service YAML to idle** (Order `2`/`2`, peers `1`/`1`), merge to
-   `main`, sync the Argo apps. If you scaled with `kubectl` first, **pause
-   Argo** beforehand; an unpaused sync restores whatever is on `main`.
+1. **Revert service YAML to idle** (Order `2`/`2`, peers `1`/`1`) and Order
+   Hikari back to **10**, merge to `main`, sync the Argo apps (rebuild/push
+   Order if Hikari was changed in the image). If you scaled with `kubectl`
+   first, **pause Argo** beforehand; an unpaused sync restores whatever is on
+   `main`.
 2. **RDS + burst max back to idle** (DB blips for a few minutes — tell the
    team):
 
