@@ -55,6 +55,7 @@ admin-service/
 ├── scripts/
 │   └── resolve_open_escalations.py  # one-off ops: clear open cases as no-fault
 ├── alembic/                      # migrations through 0007_report_ai
+│   └── versions/AI_ASSISTANCE.md # folder-level AI disclosure (no in-file headers)
 ├── tests/
 ├── mock_user_service.py          # local stub for User Service
 ├── docker-compose.yml            # Postgres, mock User Service, app (Kafka is Order's)
@@ -392,3 +393,24 @@ calls send `x-user-id`, `x-is-admin`, and `x-permitted-action`.
   `.env` and set `AI_PROVIDER_API_KEY` to a Google AI Studio key. Compose
   reads that file. An empty key, a timeout, a missing object, or an unusable
   reply records `ai_failed`.
+
+## AI Use Summary
+
+**Owner:** Sahana Avantika
+
+**Tools:** Cursor (Auto)
+
+Sahana Avantika defined Admin Service requirements and architecture (conflict
+state machine, HTTP/Kafka contracts, schema, AI evaluation and auto-resolve,
+claim/review, moderation reports/appeals, append-only audit, gateway auth,
+durable timers, evidence photo fetch). Cursor (Auto) assisted with
+implementation code, tests, config/Docker, and documentation under that
+design. Per-file `AI Assistance Disclosure` headers are on Python sources,
+application config, Docker/compose, scripts, and design docs.
+
+Alembic revision files are **not** edited with in-file headers (checksum /
+deploy safety). Collection disclosure:
+[`alembic/versions/AI_ASSISTANCE.md`](alembic/versions/AI_ASSISTANCE.md).
+
+Plan: [`../ai/plans/admin_service_plan.md`](../ai/plans/admin_service_plan.md).
+Usage log: [`../ai/usage-log.md`](../ai/usage-log.md).
