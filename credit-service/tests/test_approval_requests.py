@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 import pytest
 
 from app.models.reservation import ReservationStatus
+from app.observability import metrics
 from app.schemas.interop import (
     CreditTransferResult,
     OrderApprovalRequestedEvent,
@@ -351,3 +352,24 @@ async def test_settled_reservation_is_not_offered_for_release(session, published
     assert (await service.get_balances("requester")).available_balance == 60
     status = getattr(caught.value, "status_code", None)
     assert status == 409
+
+
+async def test_transfer_outcome_is_counted_for_the_saga(session, published):
+    service, reservation_id = await _setup(session)
+    before = metrics.metric_value(metrics.SAGA_TASKS, kind="transfer", outcome="transferred")
+
+    await service.handle_approval_requested(_approval_event(reservation_id=reservation_id))
+
+    after = metrics.metric_value(metrics.SAGA_TASKS, kind="transfer", outcome="transferred")
+    assert after == before + 1
+
+
+async def test_duplicate_approval_task_is_counted_as_suppressed(session, published):
+    service, reservation_id = await _setup(session)
+    event = _approval_event(reservation_id=reservation_id)
+    await service.handle_approval_requested(event)
+    before = metrics.metric_value(metrics.DUPLICATE_SUPPRESSED, op="transfer_task")
+
+    await service.handle_approval_requested(event)
+
+    assert metrics.metric_value(metrics.DUPLICATE_SUPPRESSED, op="transfer_task") == before + 1
