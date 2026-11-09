@@ -590,3 +590,13 @@ CHANGE-179 verification amendment:701Order+13common full scoped verify passes, n
 ## CHANGE-180 - Admin courier suspension UI (2026-11-04)
 
 Yao Xiang requests Suspend/Unsuspend controls for existing admin-only User PUT endpoints. Existing Admin user profile actions now use confirmations, bodyless authenticated calls, returned-profile refresh and pending/error safeguards. No backend, API contract, schema, environment, topic or cloud change. Test-first evidence and remaining local build/runtime blockers: changes/CHANGE-180-admin-courier-suspension-ui.md.
+
+
+## CHANGE-181 - Supplier selection and optional image alignment (2026-11-09)
+
+User-approved frontend fix: Order creation follows Supplier pages beyond100 with all-or-error loading; Admin creates send imageUrl:null for blank input, keep PATCH clearing; create/edit type suggestions use actual Supplier types. No backend/config/data changes. Larger-scale searchable selector/index/cursor redesign is proposed only, awaiting approval. Evidence/limits: changes/CHANGE-181-supplier-catalogue-form-alignment.md.
+
+
+## CHANGE-182 - Searchable Supplier selectors (2026-11-09)
+
+User approves bounded browse/search pickup and delivery selectors. Existing installed Base UI Combobox and Input/Button styling; no eager requests,20 active suppliers per explicitly requested page,300ms optional search, Clear reset, stable selected ID/label, cancellation/late-response protection and retry/no-match handling. Replaces CHANGE-181 interim all-page Order loader only; its image null/type fixes remain. Backend indexing/cursors are not implemented; existing provider still scans a cached catalogue. Verification: changes/CHANGE-182-searchable-supplier-selection.md.

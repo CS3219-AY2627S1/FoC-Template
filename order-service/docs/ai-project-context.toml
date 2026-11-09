@@ -715,3 +715,27 @@ ui = "confirmed conditional Suspend/Unsuspend in Admin user profile; pending/err
 scope = "frontend and Order documentation only; no backend/API/schema/config/cloud changes"
 verification = "11 expected RED failures;52 focused and331 full frontend tests pass;lint/typecheck pass"
 blockers = "Docker engine unresponsive;host build Windows OutOfMemoryException;old local User image lacks Unsuspend;legacy missing-status writes remain separate"
+
+
+[supplier_catalogue_alignment_181]
+date = "2026-11-09"
+owner = "Yao Xiang"
+branch = "hfix/suppplier-not-showing-up"
+status = "implemented; final verification recorded in CHANGE-181"
+current_fix = "create blank image explicit null; actual catalogue type suggestions; interim all-page Order loader superseded by CHANGE-182"
+contracts = "existing authenticated Supplier list/types and admin POST/PATCH; no backend changes"
+proposal = "bounded searchable combobox; indexed backend/cursor design required for huge catalogue; awaiting approval"
+resources = "no schema/topic/env/cloud/data or sibling backend mutations"
+
+
+[supplier_selector_182]
+date = "2026-11-09"
+owner = "Yao Xiang"
+branch = "hfix/suppplier-not-showing-up"
+approval = "user approved optional browse20/search300ms/Show more design"
+implementation = "Order feature SupplierSelector with existing Base UI/Input/Button/useApi; no eager or automatic all-page fetch"
+consistency = "selected ID/label retained; query/page response guards; abort on change/close; retry same failed page"
+contract = "existing Supplier list Page with active status,size20,name asc and optional q; final Order pair validation unchanged"
+supersedes = "CHANGE-181 temporary all-pages Order loader only; null image and catalogue type fixes retained"
+limitations = "Supplier backend still caches findAll/in-memory search; index/cursor redesign not implemented; final build/browser status in CHANGE-182"
+verification = "18focused;354frontend/57files;lint/typecheck pass;production build native out-of-memory;Docker stopped;browser pending"

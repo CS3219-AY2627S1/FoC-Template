@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useState, type ComponentProps } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { PencilIcon, PlusIcon, StoreIcon } from "lucide-react"
@@ -21,7 +21,13 @@ import {
   AdminSearchForm, CopyId, adminDate,
 } from "./admin-ui"
 
-const SUPPLIER_TYPES = ["Food", "Facility", "Printing", "Landmark"]
+function AdminSupplierForm(props: Omit<ComponentProps<typeof SupplierForm>, "types">) {
+  const api = useAdminApi()
+  const load = useCallback((signal: AbortSignal) => api.supplierTypes(signal), [api])
+  const { data } = useAdminPage(load)
+  // Suggestions are optional: the service also accepts a manually entered type.
+  return <SupplierForm {...props} types={data ?? []} />
+}
 
 function AdminSupplierDetails({ supplierId, onBack }: { supplierId: string; onBack: () => void }) {
   const api = useAdminApi()
@@ -120,7 +126,7 @@ function AdminSupplierDetails({ supplierId, onBack }: { supplierId: string; onBa
       <Dialog open={editOpen} onOpenChange={(open) => { if (!busy) setEditOpen(open) }}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader><DialogTitle>Edit supplier</DialogTitle><DialogDescription>Changes apply immediately to new errands.</DialogDescription></DialogHeader>
-          {selected && <SupplierForm locationPicker initial={toInput(selected)} types={SUPPLIER_TYPES} submitLabel="Save changes"
+          {selected && <AdminSupplierForm locationPicker initial={toInput(selected)} submitLabel="Save changes"
             onCancel={() => { if (!busy) setEditOpen(false) }} onSubmit={save} />}
         </DialogContent>
       </Dialog>
@@ -170,7 +176,7 @@ function AdminSupplierList() {
     <Dialog open={createOpen} onOpenChange={(open) => { if (!createBusy) setCreateOpen(open) }}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader><DialogTitle>Create supplier</DialogTitle><DialogDescription>Add a campus pickup or delivery location.</DialogDescription></DialogHeader>
-        <SupplierForm locationPicker types={SUPPLIER_TYPES} submitLabel="Create supplier"
+        <AdminSupplierForm locationPicker submitLabel="Create supplier"
           onCancel={() => { if (!createBusy) setCreateOpen(false) }} onSubmit={async (input) => {
             setCreateBusy(true)
             try {

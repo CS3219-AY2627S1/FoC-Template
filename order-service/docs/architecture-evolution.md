@@ -1715,3 +1715,13 @@ CHANGE-179 verification amendment:701Order+13common full scoped verify passes, n
 ## CHANGE-180 - Existing Admin profile gains suspension actions (2026-11-04)
 
 The explicit user request supersedes the earlier removal of Suspend from Admin Users. Reuse the existing profile/actions/confirmation and API normalization; no new service, endpoint, client authentication, persistence or broker mechanism. Shared confirmation labels/variant are optional with original deactivation defaults. User Service remains policy/authorization authority. Existing ADMIN gate and USER-mode behavior are unchanged. No new ADR is needed for this presentation extension. CHANGE-180 records test-first evidence and build/runtime limits.
+
+
+## CHANGE-181 - Supplier query completeness and nullable create image (2026-11-09)
+
+Implementation repair within existing HTTP contracts: consume every page for today's Order dropdown, normalize optional Admin create image to explicit null, reuse real catalogue types and existing form/loading primitives. No new architecture/ADR/schema/auth/broker. User also requests a scale design; CHANGE-181 proposes bounded searchable comboboxes and documents that the provider's cached findAll/in-memory search cannot scale to100million. Indexed Supplier-owned querying and cursors require separate approval; no external search service or database/index mutation is authorized or made. All-pages loading is explicitly interim, not the large-scale solution.
+
+
+## CHANGE-182 - Approved bounded Supplier selection (2026-11-09)
+
+User explicitly approves the revised optional-search-and-browse proposal. A single Order-feature SupplierSelector reuses installed Base UI Combobox, Input/Button and useApi; each instance owns bounded page/query/selection and request cancellation state. This replaces CHANGE-181 all-pages Order loading without changing its independent Admin image/type repair. Existing synchronous authenticated Supplier list remains matching; no new endpoint, backend, schema, service, event, cache/index infrastructure or ADR. Selection is not a reservation: existing backend pair validation remains authoritative. Backend currently caches/scans all suppliers; separately proposed indexed/cursor search is still unapproved. This records the UI refinement, not100million-scale readiness.

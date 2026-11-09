@@ -121,7 +121,14 @@ function createLiveAdminApi(request: AdminRequest) {
       return request<Page<Supplier>>("/api/suppliers?" + params, { signal })
     },
     supplier,
-    createSupplier: (input: SupplierInput) => request<Supplier>("/api/suppliers", { method: "POST", body: input }),
+    supplierTypes: async (signal?: AbortSignal) =>
+      (await request<{ items: string[] }>("/api/suppliers/types", { signal })).items,
+    createSupplier: (input: SupplierInput) => {
+      // Create accepts null for no image; PATCH still uses an empty string to clear it.
+      const { imageUrl, ...fields } = input
+      return request<Supplier>("/api/suppliers", { method: "POST",
+        body: { ...fields, imageUrl: imageUrl.trim() || null } })
+    },
     // PATCH only the edited fields so concurrent edits to other fields are not overwritten.
     updateSupplier: (id: string, changes: Partial<SupplierInput>) =>
       request<Supplier>(detail("/api/suppliers", id), { method: "PATCH", body: changes }),

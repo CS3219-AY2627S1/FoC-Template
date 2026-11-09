@@ -678,3 +678,13 @@ Order now consumes existing authenticated GET /api/users/role-context with requi
 ## CHANGE-180 - Existing User suspension APIs consumed by Admin UI (2026-11-04)
 
 Admin Users profile now calls PUT /api/users/{userId}/suspension and PUT /api/users/{userId}/suspension-removal through the existing authenticated gateway client. Both are bodyless, ADMIN_ONLY and return200 User; IDs are encoded and returned target identity is validated. Suspend sets score10 and a one-month courier suspension; Unsuspend clears suspension/deadline without score reset. No provider contract or implementation changes. Current local User image exposes only Suspend and needs rebuilding from existing source; end-to-end verification is pending. Missing-status legacy account writes remain a separate unapproved provider compatibility issue.
+
+
+## CHANGE-181 - Supplier catalogue contract use (2026-11-09)
+
+Existing authenticated Supplier GET list: status=active&page=1&size=100&sort=name&order=asc returns Page/Supplier with totalPages; Order creation follows pages and exposes options after all succeed. No type/openNow restriction added. Existing admin-only POST /api/suppliers now receives imageUrl:null for blank/whitespace form value, accepted by CreateSupplierRequest; nonempty URL retained/trimmed. PATCH empty imageUrl still clears an existing image; do not replace that with null because null means unchanged. GET /api/suppliers/types returns {items:string[]} and supplies Admin create/edit datalist; failed optional suggestions leave free-text input available. No backend/API/auth changes. Scalable indexed cursor search is unapproved proposal only; current provider caches findAll and scans in memory.
+
+
+## CHANGE-182 - Bounded Supplier queries supersede all-page loader (2026-11-09)
+
+Order pickup/delivery selectors query existing authenticated GET /api/suppliers only when opened: status=active&page=1&size=20&sort=name&order=asc. Optional q is trimmed,2+characters,300ms debounce; blank browses without search. Show more requests only the next current-query page; errors retry the same page. Query/close/unmount/disable cancels old work; late results ignored. Selected Supplier ID/label remains independent of current results. Existing Order command/pair validation/auth unchanged. No new endpoint/response: Page totalPages still used. Supplier backend cached findAll/in-memory scan remains a limitation; frontend paging does not imply backend100million-record scalability. CHANGE-181 create imageUrl:null and type-query contracts retained.

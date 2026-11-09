@@ -895,3 +895,27 @@ CHANGE-179 verification amendment:701Order+13common full scoped verify passes, n
 | NFR3.1.3; authorization/error safety | Correct encoded-ID PUT/no body; no request before confirmation; cancel, success switch, errors, disabled inactive/capability/busy and duplicate-submit safeguards | RED11 failures then52 focused pass;331 full frontend tests, lint/typecheck pass | Automated verification passed |
 
 Sequence: admin selects user/action -> confirmation -> existing useApi bearer PUT through gateway -> User Service enforces ADMIN_ONLY and updates -> normalize matching user response -> update profile/status/score/deadline or retain dialog/error for retry. Responsibilities remain AdminUserProfile presentation/state, AdminConfirmation dialog, admin-api transport/normalization and existing User provider policy. No new lifecycle, domain, diagram, schema or contract. Docker/production-build and legacy-account limitations recorded in CHANGE-180.
+
+
+## CHANGE-181 - Supplier catalogue visibility and optional images (2026-11-09)
+
+| Reference | Acceptance | Implementation / verification |
+| --- | --- | --- |
+| Explicit user bug-fix amendment; Supplier F5.1 existing validation | Vincent House/woodland and other later-page active suppliers selectable in pickup/delivery; no partial catalogue on later failure | requests/new page pagination; page component regressions |
+| Supplier F6.1/F6.2 provider contract | Blank creation image is null; supplied URL preserved; PATCH blank still clears | admin-api create mapping; admin-live-api contract tests |
+| Explicit type alignment; NFR2.1 | Actual types suggested in existing responsive create/edit form, manual entry survives failed query | AdminSupplierForm + useAdminPage; create/edit/failure tests; layout unchanged |
+| NFR3.1.3 | Test-first positive/negative evidence, error propagation, current authenticated gateway transport retained | Initial7 expected failures/67 pass;82 focused pass before explicit-null refinement; separate null RED1/12 pass; final results in CHANGE-181 |
+
+Sequence/classes: Order creation -> useApi -> Supplier active paginated list -> complete options or existing error UI. Admin form -> existing useApi/type query -> SupplierForm datalist; create adapter normalizes empty image to null -> Supplier validates/admin-authorizes/persists. No domain/state/credit/penalty/hold/migration/config changes. Full backend APIs remain provider-owned and unchanged. Large-scale searchable selection/index/cursor plan awaits approval and has no implementation or scale claim.
+
+
+## CHANGE-182 - Supplier browsing/search acceptance (2026-11-09)
+
+| Reference | Acceptance | Implementation / tests |
+| --- | --- | --- |
+| Explicit approved browse/search amendment; existing Order creation/Supplier F5.1 |20 active results on open; another page only on Show more; selected IDs stay in original Order payload | Order SupplierSelector and requests/new page; lazy/paging/selection/form integration tests |
+| Approved300ms search; NFR3.1.3 |2+characters, trimmed query; clear resets page1; latest query wins; close/disable aborts; no partial-query stale results | Selector debounce/whitespace/race/abort/disabled tests |
+| Existing authenticated API/negative-case requirement | Server explanation/retry; failed later page retains valid earlier choices and retry does not skip; no-match/empty states | Selector initial/later error, same-page retry, empty/minimum tests; existing Order same-supplier/server validation regressions |
+| NFR2.1; existing shared UI baseline | Installed Base UI keyboard/focus/escape semantics; viewport-bounded popup, wrapping text and scrollable list; no new dependency | Keyboard Enter/Escape test, existing Input/Button palette/classes. Real320px visual verification pending |
+
+Sequence/classes: open/type -> SupplierSelector request state -> existing useApi bearer gateway query -> one Supplier page -> ID selection -> unchanged Order command/validation. Removed legacy page-wide eager/fetch-all loader; shared global layout/auth/client unchanged. Admin null image/type changes from CHANGE-181 retained.18 focused tests, lint/typecheck pass at this stage; final suite/build/runtime evidence in CHANGE-182. Backend indexing/cursor work is not approved/implemented here.

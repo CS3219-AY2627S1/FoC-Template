@@ -3511,3 +3511,31 @@ OpenAI Codex; Yao Xiang on hfix/report-service; authorized frontend implementati
 - **Prompt:** "PUT /api/users/:userid/suspension PUT /api/users/:userid/suspension-removal (we have this suspend and unsuspend feature. Add the admin ui"
 - **Key response:** Added existing-provider Suspend/Unsuspend Admin profile actions and confirmations, real bodyless authenticated PUTs, returned-profile/status refresh and inactive/pending/error safeguards. AI supported implementation and verification within the developer-selected feature scope, preserving current architecture.11 expected test-first failures,52 focused and331 full frontend tests pass; lint and TypeScript pass. Docker engine timed out, both build commands were stopped without restarting services. Direct production build hit Windows OutOfMemoryException. Existing local User image lacks Unsuspend; rebuilding/runtime/browser verification remains pending. No backend source, account data, schema, environment, topic, IAM, cloud or authorization change. Legacy missing-status issue remains separate and unmodified. CHANGE-180 contains evidence and limits; no commit/push performed.
 - **Author verification:** Yao Xiang requested the Admin feature and selected the scope. Human source/browser review pending; automated verification does not constitute human approval.
+
+
+## Supplier catalogue repair and selection design assistance (Order Service / Frontend)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-09
+- **Mode:** Investigation, implementation, verification and design proposal.
+- **Affected locations:** frontend/src/app/requests/new/page.tsx and tests; frontend/src/components/admin/admin-suppliers.tsx and admin-pages.test.tsx; frontend/src/lib/admin-api.ts and admin-live-api.test.ts; Order CHANGE-181/context/traceability/sprint/active-work and this log. Supplier backend inspected read-only.
+- **Prompt:** User reports missing Vincent House/woodland and image/type inconsistencies, asks to fix; follow-up explicitly requests blank image sent as null and a proposal for selection with up to100million suppliers.
+- **Key response:** AI supported provider comparison and the developer-approved frontend repair: follow current catalogue pages beyond100, do not install partial results on failure, send create imageUrl:null when blank, preserve supplied URLs/PATCH clearing, and query actual types for Admin create/edit suggestions. Initial7 expected failures/67 pass reproduced bugs;82 focused tests passed after fixing an overbroad request-count assertion. Explicit-null amendment separately reproduced1 expected failure/12 pass. Full final verification is recorded in CHANGE-181; production build encountered host memory failure and Docker was not running. Large-scale bounded search/combobox/index/cursor design is a proposal awaiting approval, not implemented or load-tested; current provider findAll/in-memory scan is explicitly identified as a backend bottleneck. No sibling source, authorization, schema, topics, environment, cloud, database/account/supplier data mutations, commit or push.
+- **Author verification:** Yao Xiang selected the bug-fix scope and explicit-null requirement. AI supported comparison and design options; the developer has not yet approved the large-scale redesign. Human source/browser review pending; automated checks are not human approval.
+
+
+- **Verification update (CHANGE-181):** Final343 tests/56files, full lint and TypeScript pass. Docker stopped; direct production build failed host memory allocation. No image/browser/staging verification. Explicit-null create wire semantics verified; no account/database/backend mutation or deployment. Human review and scale-design approval pending.
+
+
+## Bounded supplier browsing and search assistance (Order Service / Frontend)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-09
+- **Mode:** Implementation, verification and documentation.
+- **Affected locations:** frontend/src/components/orders/supplier-selector.tsx and supplier-selector.test.tsx; frontend/src/app/requests/new/page.tsx and tests; Order CHANGE-182/context/sprint/traceability/active-work/disclosure records. Prior CHANGE-181 Admin image/type patch retained.
+- **Prompt:** User explicitly approves optional browsing with20 suppliers on opening, Show more for further pages,300ms search and clearing back to browse: "ok can make the changes now".
+- **Key response:** AI supported the user-selected design using installed Base UI Combobox and existing Input/Button/useApi; no eager/fetch-all catalogue download. Retains selected Supplier ID/name, existing Order command/validation, active filter/name sort, query reset and cancellation/late-response guards. Page errors retry same page with earlier choices retained; empty/minimum/loading/server error states and keyboard/disabled behavior tested. Test-first2 expected integration failures; whitespace-only query change separately reproduced and corrected.18 focused tests, full lint and TypeScript pass; final full suite/build evidence follows in CHANGE-182. New page tests initially clicked before the existing Order command became ready; updated test to wait for readiness rather than weakening production guards. No backend/index/schema/auth/environment/topic/cloud/data changes or dependencies.100million-scale backend indexing/cursors remain a separately proposed feature, not implemented or claimed. Existing uncommitted CHANGE-181 fixes preserved; no commit/push.
+- **Author verification:** Yao Xiang approved browse/search design and existing Supplier HTTP interaction. Human browser/source review pending; AI comparison/test assistance is not human architecture approval.
+
+
+- **Verification update (CHANGE-182):**18 focused and354 full frontend tests/57files pass; full lint and TypeScript pass. Capped production build still fails native allocation; Docker is stopped. Responsive popup height-only class added after full run using existing convention. No image/browser/staging verification or data/backend/config mutations. Human review pending; no commit/push.
