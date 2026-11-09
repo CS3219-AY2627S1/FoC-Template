@@ -126,8 +126,9 @@ test.describe("orders", () => {
     await expect(page.getByText("You", { exact: true })).toBeVisible();
     await expect(page.getByText("Charles Babbage")).toBeVisible();
     // Readable timeline, no raw ids or SCREAMING_CASE statuses.
-    await expect(page.getByText("Heading to vendor")).toBeVisible();
-    await expect(page.getByText("Awaiting confirmation")).toBeVisible();
+    const progress = page.getByRole("list", { name: "Order progress" });
+    await expect(progress.getByText("Heading to vendor")).toBeVisible();
+    await expect(progress.getByText("Awaiting confirmation")).toBeVisible();
     await expect(page.getByText("AWAITING_APPROVAL")).toHaveCount(0);
     await expect(page.getByText(COURIER)).toHaveCount(0);
     await expect(page.getByText("sup-1", { exact: true })).toHaveCount(0);
