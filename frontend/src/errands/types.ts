@@ -6,7 +6,7 @@
  * Author review: Reviewed and approved by @mattis.
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: N2 extraction models (status and the extracted fields), per the approved N2 spec.
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 
 // Same order as order-service/src/domain/states.ts

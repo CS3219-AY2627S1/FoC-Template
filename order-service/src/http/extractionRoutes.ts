@@ -3,7 +3,7 @@
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: N2 routes GET /errands/extract/status and POST /errands/extract, in the order of checks in spec 3.4,
  *        with one errand_extraction log line per call (spec 3.7), per the approved N2 spec.
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 import { Router, type Response } from "express";
 import {

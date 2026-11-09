@@ -3,7 +3,7 @@
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: Component tests for the N2 description box on the create page: counter and cap, unavailable state,
  *        filling only returned fields, labels, edits during a request, failure and rate-limit messages.
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'

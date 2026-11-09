@@ -23,7 +23,7 @@
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: LLM_MODE, LLM_API_KEY, LLM_MODEL and LLM_TIMEOUT_MS for N2 errand extraction, per the
  *        approved N2 spec.
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 
 // The only file that reads process.env. Each part loads only what it needs, so the

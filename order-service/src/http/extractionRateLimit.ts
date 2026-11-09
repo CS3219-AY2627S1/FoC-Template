@@ -2,7 +2,7 @@
  * AI Assistance Disclosure:
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: In-memory sliding-window limit for N2 extraction calls that reach the LLM (spec 3.2 and 3.3).
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 
 /**

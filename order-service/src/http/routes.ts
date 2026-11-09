@@ -10,7 +10,7 @@
  * Author review: Reviewed and approved by @mattis.
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: mounted the N2 extraction routes before /errands/:id, per the approved N2 spec.
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 import { Router, type Request, type Response } from "express";
 import type { Pool } from "pg";

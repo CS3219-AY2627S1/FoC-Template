@@ -4,7 +4,7 @@
  * Scope: Tests for the Order Service request paths and bodies.
  * Author review: Reviewed and approved by @mattis.
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
- * Scope: N2 status and extract requests. Author review: Pending review by @mattis.
+ * Scope: N2 status and extract requests. Author review: Reviewed and approved by @mattis.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {

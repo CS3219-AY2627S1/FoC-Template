@@ -6,7 +6,7 @@
  * Author review: Reviewed and approved by @mattis.
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: N2 filling of the form from an extraction (only fields with a value, never ones the
- *        requester edited meanwhile), per the approved N2 spec. Author review: Pending review by @mattis.
+ *        requester edited meanwhile), per the approved N2 spec. Author review: Reviewed and approved by @mattis.
  */
 import { ERRAND_LIMITS, type CreateErrandRequest, type ExtractedErrand } from './types'
 

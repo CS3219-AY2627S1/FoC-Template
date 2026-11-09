@@ -21,7 +21,7 @@
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: loads the N2 LLM settings, builds the extraction dependencies and logs the mode (never the key),
  *        per the approved N2 spec.
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 import { StubCreditBus } from "./adapters/creditBus";
 import { HttpSessionVerifier, StubSessionVerifier, type SessionVerifier } from "./adapters/sessionVerifier";

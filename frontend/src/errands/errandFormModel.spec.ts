@@ -4,7 +4,7 @@
  * Scope: Tests for the create-errand form checks against the Order Service rules.
  * Author review: Reviewed and approved by @mattis.
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
- * Scope: tests for filling the form from an N2 extraction. Author review: Pending review by @mattis.
+ * Scope: tests for filling the form from an N2 extraction. Author review: Reviewed and approved by @mattis.
  */
 import { describe, expect, it } from 'vitest'
 import {

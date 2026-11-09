@@ -8,7 +8,7 @@
  * for Order Service field-error lists and currentState.
  * Author review: Reviewed and approved by @mattis.
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09. Scope: tests
- * for Retry-After, and that Supplier errors are unchanged. Author review: Pending review by @mattis.
+ * for Retry-After, and that Supplier errors are unchanged. Author review: Reviewed and approved by @mattis.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 

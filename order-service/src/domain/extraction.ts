@@ -3,7 +3,7 @@
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: N2 errand extraction: the POST /errands/extract body check and the checks applied to the model's reply
  *        (the POST /errands rules; a failing value becomes null), per the approved N2 spec.
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 import { CREATE_LIMITS, parseIsoTimestamp, type FieldError } from "./validation";
 

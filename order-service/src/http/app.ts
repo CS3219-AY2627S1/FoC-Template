@@ -5,7 +5,7 @@
  * Author review: Reviewed and approved by @mattis.
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: optional N2 extraction dependencies (DISABLED when not given), per the approved N2 spec.
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 import express from "express";
 import type { Pool } from "pg";

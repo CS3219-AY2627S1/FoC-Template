@@ -4,7 +4,7 @@ Tool: Claude Code (Claude Opus 5.5), date: 2026-11-09
 Scope: transcribed the author's N2 decisions word for word, recorded the facts they rest on (read from the code and from
        Anthropic's structured-outputs documentation), drafted the details the author asked Claude to propose, and listed
        open questions. No requirement, interface or trade-off was decided by the AI.
-Author review: Pending review by @mattis.
+Author review: Reviewed and approved by @mattis.
 -->
 
 # Order Service: N2 Natural Language Errand Creation

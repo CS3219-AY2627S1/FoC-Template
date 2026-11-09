@@ -12,7 +12,7 @@
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: SupplierCatalogue.listActiveSuppliers (every page of GET /api/v1/suppliers?status=ACTIVE with
  *        the caller's token) for N2 errand extraction, per the approved N2 spec.
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 import type { UpstreamConfig } from "../config";
 import type { SupplierSnapshot } from "../errands/errand";

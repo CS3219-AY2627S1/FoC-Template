@@ -6,7 +6,7 @@
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: moved the timestamp check into parseIsoTimestamp so N2 extraction checks deadlines with the
  *        same rule; messages unchanged.
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 
 export interface CreateErrandInput {

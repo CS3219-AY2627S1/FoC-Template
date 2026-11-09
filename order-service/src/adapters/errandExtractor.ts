@@ -3,7 +3,7 @@
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: N2 errand extraction adapters: one Claude call with a structured-output schema (Anthropic TypeScript
  *        SDK, no retries) and the fixed stub with its stub:fail / stub:slow words, per the approved N2 spec.
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 import Anthropic from "@anthropic-ai/sdk";
 import type { CatalogueSupplier } from "./supplierDirectory";

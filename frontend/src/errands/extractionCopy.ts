@@ -2,7 +2,7 @@
  * AI Assistance Disclosure:
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: N2 wording on the create page, as approved in the N2 spec (section 3.6).
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 
 export const UNAVAILABLE_TEXT =

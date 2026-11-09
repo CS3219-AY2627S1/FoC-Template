@@ -4,7 +4,7 @@
  * Scope: Typed calls to the Order Service member errand endpoints.
  * Author review: Reviewed and approved by @mattis.
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
- * Scope: N2 extraction status and extract calls. Author review: Pending review by @mattis.
+ * Scope: N2 extraction status and extract calls. Author review: Reviewed and approved by @mattis.
  */
 import { apiRequest } from './client'
 import type {

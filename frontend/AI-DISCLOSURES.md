@@ -24,7 +24,7 @@ Author review: Reviewed and approved by @ron.
 Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: recorded
 the member errand pages below. Author review: Reviewed and approved by @mattis.
 Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: recorded
-the N2 description box below. Author review: Pending review by @mattis.
+the N2 description box below. Author review: Reviewed and approved by @mattis.
 -->
 
 # Frontend AI disclosures
@@ -222,7 +222,7 @@ while the first clicked Accept on the board.
 - **Repository files affected:** `frontend/src/api/client.ts`, `frontend/src/api/errandApi.ts`,
   `frontend/src/errands/{DescribeErrand.tsx,extractionCopy.ts,CreateErrandPage.tsx,errandFormModel.ts,types.ts}`,
   their tests, `frontend/README.md` and this file.
-- **Author review:** Pending review by @mattis.
+- **Author review:** Reviewed and approved by @mattis.
 
 Claude added the "Describe your errand" box above the create form. It checks the extraction status
 on load and shows one unavailable message for any reason, including a failed status call. It caps

@@ -7,7 +7,7 @@
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: N2 description box above the form, filling only fields that came back with a value and not ones
  *        edited during the request, with "From your description" labels that go on edit, per the approved
- *        N2 spec. Author review: Pending review by @mattis.
+ *        N2 spec. Author review: Reviewed and approved by @mattis.
  */
 import { useId, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'

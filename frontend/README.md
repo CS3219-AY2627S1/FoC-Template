@@ -23,7 +23,7 @@ the member errand pages, routes and the Order Service API calls.
 Author review: Reviewed and approved by @mattis.
 Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: documented
 the N2 description box on the create page and ApiError's retryAfterSeconds.
-Author review: Pending review by @mattis.
+Author review: Reviewed and approved by @mattis.
 -->
 
 # Frontend

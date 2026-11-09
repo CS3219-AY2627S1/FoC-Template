@@ -4,7 +4,7 @@
  * Scope: Tests for N2 errand extraction: request checks, roles, status, Supplier matching, reply checks, the rate
  *        limit and Retry-After, the stub words, Supplier failures, the Anthropic adapter with a fake client, the
  *        Supplier list adapter, and logs that never hold the description. No test calls the real Anthropic API.
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 import assert from "node:assert/strict";
 import type { Server } from "node:http";

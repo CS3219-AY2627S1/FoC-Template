@@ -93,7 +93,7 @@ Scope: Recorded the member errand frontend pages entry.
 Author review: Reviewed and approved by @mattis.
 Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
 Scope: Recorded the N2 natural language errand creation entry.
-Author review: Pending review by @mattis.
+Author review: Reviewed and approved by @mattis.
 -->
 
 # AI Usage Log
@@ -2004,7 +2004,7 @@ Claude restructured the card so the link to the detail and the new Accept button
 - **Mode:** explain (spec), then implementation
 - **Allowed-use scope:** requirements work (transcribing the author's decisions word for word and drafting only the details the author asked Claude to propose); learning support (reading the Order, Supplier and frontend code and Anthropic's structured-outputs documentation); implementation code, tests, configuration and documentation once the author had approved the spec. No requirement, interface or trade-off decided by the AI.
 - **Repository files affected:** `docs/superpowers/specs/2026-11-09-order-n2-natural-language-errand-creation.md`, `order-service/package.json`, `order-service/package-lock.json` (adds `@anthropic-ai/sdk`), `order-service/src/config.ts`, `order-service/src/adapters/{supplierDirectory,errandExtractor}.ts`, `order-service/src/domain/{validation,extraction}.ts`, `order-service/src/http/{extractionRateLimit,extractionRoutes,routes,app}.ts`, `order-service/src/index.ts`, `order-service/test/extraction.test.ts`, `order-service/README.md`, `compose.yaml`, `.env.example`, `frontend/src/api/{client,client.spec,errandApi,errandApi.spec}.ts`, `frontend/src/errands/{DescribeErrand.tsx,DescribeErrand.spec.tsx,extractionCopy.ts,CreateErrandPage.tsx,CreateErrandPage.spec.tsx,errandFormModel.ts,errandFormModel.spec.ts,types.ts}`, `frontend/README.md`, `frontend/AI-DISCLOSURES.md`, `ai/usage-log.md`
-- **Author review:** Pending review by @mattis.
+- **Author review:** Reviewed and approved by @mattis.
 
 ### Prompts
 
@@ -2075,7 +2075,7 @@ Claude recorded rounds 2 and 3 in the spec, then implemented it in conventional 
 - **Mode:** implementation
 - **Allowed-use scope:** implementation code, tests and documentation for the author's round 4 answers to the open questions left after the N2 implementation; one real Anthropic API call the author approved; UI wording the author supplied.
 - **Repository files affected:** `order-service/src/domain/extraction.ts`, `order-service/test/extraction.test.ts`, `order-service/README.md`, `docs/superpowers/specs/2026-11-09-order-n2-natural-language-errand-creation.md` (commit 8b2ecab); `frontend/src/errands/DescribeErrand.tsx` (commits 90281b3, 531425a); `ai/usage-log.md`
-- **Author review:** Pending review by @mattis.
+- **Author review:** Reviewed and approved by @mattis.
 
 ### Prompts
 

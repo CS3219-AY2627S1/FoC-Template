@@ -3,7 +3,7 @@
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: N2 description box above the create-errand form: status check, 1000-character box with a counter,
  *        "Fill in the form", the failure message and the rate-limit countdown, per the approved N2 spec.
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 import { useEffect, useId, useState } from 'react'
 import { ApiError } from '../api/client'

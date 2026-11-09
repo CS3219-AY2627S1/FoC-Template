@@ -12,7 +12,7 @@
  * Author review: Reviewed and approved by @mattis.
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09. Scope: keep a
  * Retry-After header in whole seconds as retryAfterSeconds (additive; other errors unchanged).
- * Author review: Pending review by @mattis.
+ * Author review: Reviewed and approved by @mattis.
  */
 import { API_BASE } from '../config'
 import { getToken } from '../auth/tokenStorage'

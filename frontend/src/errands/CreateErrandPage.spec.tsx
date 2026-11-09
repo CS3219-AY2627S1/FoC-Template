@@ -4,7 +4,7 @@
  * Scope: Component tests for posting an errand: supplier choice, the request body, and server errors.
  * Author review: Reviewed and approved by @mattis.
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
- * Scope: the errand API mock gains the N2 status and extract calls. Author review: Pending review by @mattis.
+ * Scope: the errand API mock gains the N2 status and extract calls. Author review: Reviewed and approved by @mattis.
  */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
