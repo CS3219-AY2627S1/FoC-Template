@@ -5,8 +5,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import health, proxy
 from app.config import settings
+from app.observability import OBS, route_label
 
 app = FastAPI(title="FoC API Gateway", version="0.1.0")
+# Edge observability: every request is labelled by downstream service
+# (/api/credits/*) so the gateway never doubles the per-service panels but
+# still shows 401/403/404/5xx that never reach a backend.
+OBS.install(app, check_broker=False, route_labeler=route_label)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

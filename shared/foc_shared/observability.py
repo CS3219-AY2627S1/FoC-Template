@@ -212,6 +212,9 @@ class Observability:
         self.service = service
         self.prefix = prefix or service.replace("-service", "").replace("-", "_")
         self.excluded_paths = frozenset(excluded_paths or DEFAULT_EXCLUDED_PATHS)
+        # Set by ``install()`` for services whose only route is a catch-all
+        # proxy (the gateway): maps a raw path to a bounded route label.
+        self.route_labeler: Callable[[str], str] | None = None
         self.started_at = _STARTED_AT
         self.registry = CollectorRegistry(auto_describe=False)
 
@@ -275,6 +278,16 @@ class Observability:
 
     def record_error_code(self, route: str, code: str) -> None:
         self.http_errors.labels(service=self.service, route=route, code=code).inc()
+
+    def route_label(self, scope: dict) -> str:
+        """Route label for the ``route`` dimension.
+
+        Defaults to the FastAPI route template; the gateway installs a
+        ``route_labeler`` because its only route is a catch-all proxy.
+        """
+        if self.route_labeler is not None:
+            return self.route_labeler(scope.get("path", ""))
+        return self.route_template(scope)
 
     # ── exposition / queries ────────────────────────────────────────────────
 
@@ -444,6 +457,7 @@ class Observability:
         readiness_extra: Callable[[], dict[str, str]] | None = None,
         check_broker: bool = True,
         metrics_refresh: Callable[[], Awaitable[None]] | None = None,
+        route_labeler: Callable[[str], str] | None = None,
     ) -> None:
         """Mount ``/metrics`` and ``/health/ready`` and add the middleware.
 
@@ -456,7 +470,12 @@ class Observability:
         come from the database or the connection pool are fresh without a
         background task. Prometheus scrapes are the only trigger, so a scrape
         must never fail because of it (errors are logged and swallowed).
+
+        ``route_labeler`` maps a raw request path to the ``route`` label for
+        services whose only route is a catch-all proxy (the gateway); every
+        other service gets route templates from FastAPI for free.
         """
+        self.route_labeler = route_labeler
         app.add_middleware(ObservabilityMiddleware, observability=self)
         app.include_router(self._metrics_router(metrics_refresh))
         app.include_router(
@@ -554,7 +573,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
         finally:
             self.obs.observe_http_request(
                 method=request.method,
-                route=self.obs.route_template(request.scope),
+                route=self.obs.route_label(request.scope),
                 status=str(status),
                 duration=time.perf_counter() - started,
             )

@@ -11,3 +11,5 @@ python-jose[cryptography]>=3.3   # JWT validation — uncomment when implementin
 # dev/test
 pytest>=8.2
 pytest-asyncio>=0.23
+# observability: shared /metrics endpoint (foc_shared.observability)
+prometheus-client>=0.20

@@ -24,14 +24,29 @@ Services with an error envelope additionally call
 | --- | --- | --- |
 | credit-service | ✅ metrics + readiness + JSON summary + all business/saga/consumer counters | `credit` |
 | supplier-service | ✅ metrics + readiness + envelope `code` counters | `supplier` |
-| user-service | ✅ metrics + readiness + envelope `code` counters | `user` |
-| api-gateway | ⏳ edge-level audit not implemented (would duplicate service numbers) | — |
-| order-service | ⏳ pending PR #10 (its routes are still changing) | — |
-| notification-service | ⏳ scaffold (501 stubs, no Rabbit consumer yet) | — |
+| user-service | ✅ metrics + readiness (envelope codes on the user-service roadmap) | `user` |
+| order-service | ✅ metrics + readiness | `order` |
+| notification-service | ✅ metrics + readiness | `notification` |
+| api-gateway | ✅ edge metrics, route collapsed to `/api/<service>/*` | `gateway` |
 
-> Status: implemented for the three services above (metrics, structured logs,
-> readiness, credit JSON summary, opt-in Prometheus/Grafana profile). Tracing is
-> deliberately out of scope, see [§7 Known gaps](#7-known-gaps).
+> Status: every backend service is instrumented. Grafana
+> (`http://127.0.0.1:3000`) is the only exposed surface; `/metrics` stays on
+> `foc-net` and Prometheus is not published. The gateway is instrumented for
+> **edge** signals only (401/403/404/5xx that never reach a backend) and its
+> route label is collapsed per downstream service, so it does not duplicate the
+> per-service numbers. Tracing is deliberately out of scope, see
+> [§7 Known gaps](#7-known-gaps).
+
+### Adding a service
+
+1. `app/observability.py` — `OBS = Observability("<service>", prefix="<prefix>")`
+2. `app/main.py` — `OBS.install(app, readiness_session_dep=get_session, check_broker=<True only if the service maintains broker state>)`
+3. `requirements.txt` — `prometheus-client>=0.20`
+4. `tests/test_observability.py` — assert `OBS.service` and that the prefixed
+   family appears in `OBS.render()`
+
+No dashboard edit is needed: "All services — Overview" groups by the `service`
+label, and each service's metric names carry its prefix.
 
 ---
 
