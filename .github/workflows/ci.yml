@@ -20,6 +20,7 @@ jobs:
       user: ${{ steps.filter.outputs.user }}
       credit: ${{ steps.filter.outputs.credit }}
       badges: ${{ steps.filter.outputs.badges }}
+      rating: ${{ steps.filter.outputs.rating }}
       supplier: ${{ steps.filter.outputs.supplier }}
       order: ${{ steps.filter.outputs.order }}
       frontend: ${{ steps.filter.outputs.frontend }}
@@ -33,6 +34,7 @@ jobs:
             user: [user-service/**]
             credit: [credit-service/**]
             badges: [badges-service/**]
+            rating: [rating-service/**]
             supplier: [supplier-service/**]
             order: [order-service/**]
             frontend: [frontend/**]
@@ -115,6 +117,31 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       # test/constants.ts defaults to badges:badges@localhost:5434, as above.
+      - run: npm run test:coverage
+
+  rating:
+    needs: changes
+    if: needs.changes.outputs.rating == 'true'
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: rating, POSTGRES_PASSWORD: rating, POSTGRES_DB: postgres }
+        ports: ["5433:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: rating-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # engines.node
+          cache: npm
+          cache-dependency-path: rating-service/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      # test/constants.ts defaults to rating:rating@localhost:5433, as above.
       - run: npm run test:coverage
 
   supplier:
