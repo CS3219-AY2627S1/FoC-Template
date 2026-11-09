@@ -1,5 +1,8 @@
 <!--
 AI Assistance Disclosure:
+Additional AI assistance: OpenAI Codex (GPT-6), date: 2026-11-09.
+Scope: Recorded the exact issue #64 fix-and-push authorization and browser validation.
+Author review: PENDING.
 Tool: OpenAI Codex (GPT-6), date: 2026-09-25
 Scope: Recorded the exact Supplier backend implementation prompt and key response.
 Author review: Reviewed and approved by @ron.
@@ -97,6 +100,37 @@ To avoid duplicating prompt text, their initiating implementation request is quo
 under [Supplier frontend API and test foundation](#2026-09-27--supplier-frontend-api-and-test-foundation),
 and the approved metadata follow-up is quoted once under
 [Supplier Building Code metadata endpoint](#2026-09-27--supplier-building-code-metadata-endpoint).
+
+## 2026-11-09 — Fix the stale Supplier UI E2E assertion on PR #59 (issue #64)
+
+- **Tool/mode:** OpenAI Codex (GPT-6); diagnosis, test maintenance, and verification.
+- **Scope:** `frontend/e2e/supplier-ui.spec.ts` and required AI disclosures.
+- **Author review:** PENDING. The author explicitly authorized making and pushing the fix.
+
+### Exact prompt
+
+> are you able to make the fix and push it or do i need to get the dev who made that branch to do it, if not do it
+
+### Key response
+
+Codex verified repository push access and used an isolated checkout of
+`feat/order-member-frontend` at `9e90c6c5e8f0677cdb6fd13aaed15b360324980c`.
+The existing browser suite reproduced the CI failure locally: the member journey
+expected the removed "No errand-order action is available yet." text, and the
+serial administrator journey did not run. PR #59 already replaced that text with
+"Request an errand from here" and updated its component test.
+
+The E2E assertion now verifies that the existing errand link is visible and that its
+exact destination preselects the Supplier currently displayed. Application behavior,
+workflow configuration, and branch protections are unchanged. The main checkout's
+uncommitted files were preserved.
+
+Verification: the pre-fix `npm run test:e2e` failed on the obsolete assertion as
+expected. After the fix, the complete live member and administrator browser journeys
+both passed (2/2); `npm run lint` and `git diff --check` also passed. Both disposable
+Compose stacks were removed by their test runner. The change is committed separately
+and the author authorized pushing it directly to the existing PR branch so that
+automatic pull-request CI can report the required check.
 
 ## 2026-10-18 — AWS demo deployment specification
 

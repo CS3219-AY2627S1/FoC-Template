@@ -1,5 +1,8 @@
 <!--
 AI Assistance Disclosure:
+Additional AI assistance: OpenAI Codex (GPT-6), date: 2026-11-09.
+Scope: Recorded issue #64's Supplier browser assertion fix and verification.
+Author review: PENDING.
 Tool: OpenAI Codex (GPT-6), date: 2026-09-25
 Scope: Added the consolidated project AI Use Summary for the Supplier backend foundation and its integration with the merged User Service contract.
 Author review: Reviewed and approved by @ron.
@@ -97,3 +100,9 @@ routes and a demo script. The author made the design decisions listed in the pla
 calls; Claude drafted them as proposals. Project-author review of the implementation is
 pending. Prompts and key responses are in `ai/usage-log.md`; per-file attributions are in the
 file headers.
+
+OpenAI Codex (GPT-6) assisted on 2026-11-09 with issue #64 by updating the Supplier
+browser test to check the existing "Request an errand from here" link and its exact
+Supplier preselection URL after PR #59 removed the old placeholder. The existing
+member and administrator browser journeys both passed locally. Author review is
+pending; the exact prompt and verification results are in `ai/usage-log.md`.
