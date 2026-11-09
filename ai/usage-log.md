@@ -1,7 +1,7 @@
 # AI usage log (Order Service + Load test)
 
 Shared FoC log for **Order Service** and **Load test** work owned by
-**Varun Sivakumar**. Other teammates may append their own sections.
+**Varun Sivakumar**. 
 
 **Tool:** Cursor (Auto)
 
