@@ -118,6 +118,16 @@ def schedule_conflict_timers(case_id: str, deadline: datetime) -> None:
     )
 
 
+def conflict_job_ids(case_id: str) -> tuple[str, ...]:
+    """Durable APScheduler ids tied to one conflict case."""
+    return (
+        f"reminder-{case_id}",
+        f"deadline-{case_id}",
+        f"ai-{case_id}",
+        f"ai-rerun-{case_id}",
+    )
+
+
 def cancel_conflict_timers(case_id: str) -> None:
     """Called when a case is resolved before its deadline fires."""
     for job_id in (f"reminder-{case_id}", f"deadline-{case_id}"):
