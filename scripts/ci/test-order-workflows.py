@@ -135,6 +135,19 @@ class CloudWorkflowTest(unittest.TestCase):
         self.assertLess(rollout.index('configure-compensation-pubsub.sh "$environment"'),
                         rollout.index('"$tag" order-service'))
 
+    def test_order_and_credit_pools_fit_the_shared_database(self):
+        # order-postgres (db-f1-micro) allows 25 connections. Postgres reserves 3 for superusers and
+        # Cloud SQL's cloudsqladmin uses a few, so about 20 are left for Order and Credit staging (#114).
+        used = 0
+        for service in ("order-service", "credit-service"):
+            env = (ROOT / service / "deploy/env.yaml").read_text()
+            pool = re.search(r'^SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "(\d+)"$', env, re.M)
+            self.assertIsNotNone(pool, service + " must cap its Hikari pool (default 10)")
+            conf = (ROOT / service / "deploy/service.conf").read_text()
+            instances = re.search(r"--max-instances=(\d+)", conf)
+            used += int(pool.group(1)) * int(instances.group(1))
+        self.assertLessEqual(used, 20)
+
     def test_deployment_order_executes_gateway_and_providers_before_order(self):
         source = (ROOT / "scripts/ci/deploy.sh").read_text()
         block = source.split("ordered=()", 1)[1].split("render_env_file()", 1)[0]
