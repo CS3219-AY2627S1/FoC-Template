@@ -35,15 +35,18 @@ services=(gateway user-service supplier-service credit-service order-service fro
 
 check() {
   local name=$1 fail_deploy=$2 fail_smoke=$3 want_status=$4 want_attempted=$5 want_tagged=$6
-  local status=0 attempted tagged
+  local status=0 attempted tagged untagged
   : >"$fakes/log"
   FAKE_LOG="$fakes/log" FAIL_DEPLOY="$fail_deploy" FAIL_SMOKE="$fail_smoke" PATH="$fakes:$PATH" GITHUB_OUTPUT="" \
     bash "$repo_root/scripts/ci/deploy.sh" staging 0123456789abcdef "${services[@]}" >"$fakes/out" 2>&1 || status=$?
   attempted=$(sed -n 's/^gcloud run deploy \([a-z-]*\)-staging .*/\1/p' "$fakes/log" | xargs)
   tagged=$(sed -n 's#^gcloud artifacts docker tags add [^ ]*/\([a-z-]*\):.*#\1#p' "$fakes/log" | xargs)
-  if [[ $status != "$want_status" || $attempted != "$want_attempted" || $tagged != "$want_tagged" ]]; then
-    printf 'FAIL: %s\n  exit      %s (want %s)\n  attempted [%s]\n       want [%s]\n  tagged    [%s]\n       want [%s]\n' \
-      "$name" "$status" "$want_status" "$attempted" "$want_attempted" "$tagged" "$want_tagged" >&2
+  # Every attempted rollout, failed or not, drops its revision tag afterwards.
+  untagged=$(sed -n 's/^gcloud run services update-traffic \([a-z-]*\)-staging .*--remove-tags.*/\1/p' "$fakes/log" | xargs)
+  if [[ $status != "$want_status" || $attempted != "$want_attempted" || $tagged != "$want_tagged" ||
+        $untagged != "$attempted" ]]; then
+    printf 'FAIL: %s\n  exit      %s (want %s)\n  attempted [%s]\n       want [%s]\n  tagged    [%s]\n       want [%s]\n  untagged  [%s]\n' \
+      "$name" "$status" "$want_status" "$attempted" "$want_attempted" "$tagged" "$want_tagged" "$untagged" >&2
     cat "$fakes/out" >&2
     exit 1
   fi
