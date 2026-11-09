@@ -52,6 +52,8 @@ admin-service/
 │       ├── appeal_jobs.py       # advisory appeal assessment (own DB session)
 │       ├── report_jobs.py       # advisory report assessment (own DB session)
 │       └── conflict_jobs.py      # AI eval, reminder, auto-resolve (own DB session)
+├── scripts/
+│   └── resolve_open_escalations.py  # one-off ops: clear open cases as no-fault
 ├── alembic/                      # migrations through 0007_report_ai
 ├── tests/
 ├── mock_user_service.py          # local stub for User Service
@@ -325,6 +327,25 @@ uvicorn app.main:app --reload --port 8084
 You still need Postgres, and Order's Kafka if you want publishes to succeed.
 Easiest path: start Order's Kafka, then `docker compose up db mock-user-service`,
 then run uvicorn on the host with `KAFKA_BOOTSTRAP_SERVERS=localhost:9092`.
+
+## Ops: clear open escalations (load-test cleanup)
+
+Not a migration. Resolves every open conflict case as `no-fault`, deletes leftover
+APScheduler jobs, and publishes `admin.case.resolved` so Order / Credit / Badges
+catch up. Dry-run by default.
+
+```bash
+cp .env.example .env   # DB + Kafka must point at the target environment
+pip install -r requirements.txt
+python scripts/resolve_open_escalations.py              # list only
+python scripts/resolve_open_escalations.py --apply      # write + publish
+python scripts/resolve_open_escalations.py --apply --limit 100
+python scripts/resolve_open_escalations.py --republish --apply   # retry Kafka after a broker blip
+```
+
+Order's Kafka must be reachable (`KAFKA_BOOTSTRAP_SERVERS`). If publish fails after
+the DB commit, use `--republish --apply` (Order only settles while still
+`ESCALATED` / `UNDER_REVIEW`, so a second event is safe once already `COMPLETED`).
 
 ## Tests
 
