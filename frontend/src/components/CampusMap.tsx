@@ -1,0 +1,103 @@
+// AI-assisted (GitHub Copilot Chat, DeepSeek V4.1 Flash): reusable Leaflet +
+// OpenStreetMap view centered on a campus location. Reviewed by authors.
+import { ActionIcon, Box, Text, Tooltip } from "@mantine/core";
+import { IconFocusCentered } from "@tabler/icons-react";
+import { divIcon } from "leaflet";
+import "leaflet/dist/leaflet.css";
+import {
+  MapContainer,
+  Marker,
+  Popup,
+  TileLayer,
+  useMap,
+} from "react-leaflet";
+
+interface CampusMapProps {
+  latitude: number;
+  longitude: number;
+  label?: string;
+}
+
+const OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const OSM_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+const DEFAULT_ZOOM = 17;
+
+// Overlay control that re-centers the map on the supplier and restores the
+// default zoom level.
+function RecenterControl({
+  latitude,
+  longitude,
+}: {
+  latitude: number;
+  longitude: number;
+}) {
+  const map = useMap();
+
+  return (
+    <Box style={{ position: "absolute", top: 10, right: 10, zIndex: 1000 }}>
+      <Tooltip label="Recenter map" withArrow>
+        <ActionIcon
+          aria-label="Recenter map"
+          variant="default"
+          size="lg"
+          radius="md"
+          onClick={() =>
+            map.setView([latitude, longitude], DEFAULT_ZOOM, { animate: true })
+          }
+        >
+          <IconFocusCentered size={18} />
+        </ActionIcon>
+      </Tooltip>
+    </Box>
+  );
+}
+
+// Red teardrop pin drawn as inline SVG so no extra image assets are needed.
+// iconAnchor points at the bottom tip, so the tip marks the exact coordinate.
+const RED_PIN_ICON = divIcon({
+  className: "campus-map-pin",
+  html: `<svg width="30" height="45" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="display:block">
+      <path d="M12 0C5.373 0 0 5.373 0 12c0 8.25 12 24 12 24s12-15.75 12-24C24 5.373 18.627 0 12 0Z" fill="#e03131"/>
+      <circle cx="12" cy="12" r="4.5" fill="#fff"/>
+    </svg>`,
+  iconSize: [30, 45],
+  iconAnchor: [15, 45],
+  popupAnchor: [0, -40],
+});
+
+export function CampusMap({ latitude, longitude, label }: CampusMapProps) {
+  // Explicit tuple so Leaflet's LatLngExpression type narrows correctly.
+  const position: [number, number] = [latitude, longitude];
+
+  return (
+    <Box
+      h={{ base: 360, sm: 520 }}
+      w="100%"
+      style={{
+        borderRadius: "var(--mantine-radius-md)",
+        overflow: "hidden",
+        border: "1px solid var(--mantine-color-gray-3)",
+      }}
+    >
+      <MapContainer
+        center={position}
+        zoom={DEFAULT_ZOOM}
+        scrollWheelZoom={false}
+        style={{ height: "100%", width: "100%" }}
+      >
+        <TileLayer url={OSM_TILE_URL} attribution={OSM_ATTRIBUTION} />
+        <Marker position={position} icon={RED_PIN_ICON}>
+          {label ? (
+            <Popup>
+              <Text size="sm" fw={600}>
+                {label}
+              </Text>
+            </Popup>
+          ) : null}
+        </Marker>
+        <RecenterControl latitude={latitude} longitude={longitude} />
+      </MapContainer>
+    </Box>
+  );
+}

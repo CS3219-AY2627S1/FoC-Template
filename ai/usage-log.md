@@ -1327,3 +1327,31 @@ commit=False)` so the settlement and its task result commit once,
   `dot -Tsvg notification-service/docs/notification-service-architecture.dot -o notification-service/docs/notification-service-architecture.svg`
   and confirmed it is non-empty. Grepped every cited test name against `tests/`.
   Re-read the Markdown for the one-sentence-per-line rule and no em dashes.
+
+## 09/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: N2H campus map. Added the `CampusMap` component (Leaflet +
+  OpenStreetMap via react-leaflet) with a red teardrop SVG pin anchored at its
+  bottom tip and a recenter control that restores the supplier position and
+  default zoom, the `/suppliers/:id/map` page, and a "View on map" button after
+  Location on the supplier detail page. Registered the lazy-loaded route in
+  `App.tsx`. Files: `frontend/src/components/CampusMap.tsx`,
+  `frontend/src/pages/suppliers/SupplierMap.tsx`,
+  `frontend/src/pages/suppliers/SupplierDetail.tsx`, `frontend/src/App.tsx`.
+- Prompt(s):
+  1. "I am going to use the Leaflet + OpenStreetMap approach. I have already
+     installed leaflet, react-leaflet and the related packages. Create a new
+     `CampusMap` component for map display. Then update the supplier card: add
+     a map button after the location, navigate to `CampusMap`, read the
+     supplier's longitude/latitude, and show the location on the map."
+  2. "Change the marker to red, the kind with a pointed tip at the bottom, with
+     the tip corresponding to the place."
+  3. "Move the map button from the supplier card to the supplier detail page,
+     again after Location. Also add a recenter button to the map view that
+     moves the supplier to the center and restores the default size. When done,
+     make the first commit, with the message matching the other commits."
+- Author review: `npx tsc --noEmit`, `npm run lint` (only pre-existing warnings)
+  and `npm run build` pass. Verified in Playwright that the supplier card has no
+  map action, the detail button opens `/suppliers/:id/map`, and the red pin plus
+  the recenter control render.

@@ -14,7 +14,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
-import { IconArrowLeft, IconEdit } from "@tabler/icons-react";
+import { IconArrowLeft, IconEdit, IconMap } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ActiveBadge } from "../../components/StatusPill";
@@ -139,6 +139,17 @@ export default function SupplierDetail() {
             <Field label="Building" value={supplier.building} />
             <Field label="Floor" value={supplier.floor} />
             <Field label="Location" value={supplier.locationDescription} />
+            {supplier.latitude != null && supplier.longitude != null ? (
+              <Button
+                component={Link}
+                to={`/suppliers/${supplier.id}/map`}
+                variant="light"
+                leftSection={<IconMap size={16} />}
+                w="fit-content"
+              >
+                View on map
+              </Button>
+            ) : null}
             <Field label="Opening hours" value={hours} />
             <Field label="Coordinates" value={coords} />
           </Stack>
