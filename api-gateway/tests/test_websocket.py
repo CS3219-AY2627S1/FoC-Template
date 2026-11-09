@@ -102,16 +102,19 @@ def test_upstream_url_maps_the_public_path_to_the_backend_path():
     assert upstream_url("https://chat.example/", "/api/chat/ws", "") == "wss://chat.example/chat/ws"
 
 
-@pytest.mark.parametrize(
-    "path",
-    ["/api/chat/ws/extra", "/api/chat/conversations", "/api/users/ws", "/api/chat/./ws"],
-)
+@pytest.mark.parametrize("path", ["/api/chat/ws/extra", "/api/chat/conversations", "/api/users/ws"])
 def test_only_allowlisted_paths_are_relayed(path):
     assert resolve_websocket_upstream(path) is None
     with pytest.raises(WebSocketDisconnect) as exc:
         with client.websocket_connect(path):
             pass
     assert exc.value.code == 1008
+
+
+@pytest.mark.parametrize("path", ["/api/chat/./ws", "/api/chat//ws", "/api/chat/ws/"])
+def test_non_canonical_paths_do_not_match_the_allowlist(path):
+    # Checked on the resolver: the test client normalizes dot segments before sending.
+    assert resolve_websocket_upstream(path) is None
 
 
 def test_frames_are_relayed_both_ways_with_the_query_string(chat: FakeChatService):
