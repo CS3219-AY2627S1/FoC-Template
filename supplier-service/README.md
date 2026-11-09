@@ -45,3 +45,24 @@ docker compose up --build
 ```
 
 The API is on port `8081`. Postgres is on port `5555`. The container applies migrations on startup.
+
+## AI Use Summary
+
+**Owner:** Sahana Avantika
+
+**Tools:** Cursor (Auto)
+
+Sahana Avantika defined Supplier Service requirements and architecture (public
+catalogue for Order, permitted-user create, verified-admin edit/approve/reject/
+delete, rejection reasons, SupplierAction audit, gateway header rules, Prisma
+schema/seed). Cursor (Auto) assisted with implementation code, tests,
+config/Docker, and documentation under that design. Per-file
+`AI Assistance Disclosure` headers are on TypeScript sources, Prisma
+schema/seed, Docker/compose, and config.
+
+Prisma migration SQL files are **not** edited with in-file headers (checksum /
+deploy safety). Collection disclosure:
+[`prisma/migrations/AI_ASSISTANCE.md`](prisma/migrations/AI_ASSISTANCE.md).
+
+Plan: [`../ai/plans/supplier_service_plan.md`](../ai/plans/supplier_service_plan.md).
+Usage log: [`../ai/usage-log.md`](../ai/usage-log.md).

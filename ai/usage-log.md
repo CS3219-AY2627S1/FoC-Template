@@ -1,14 +1,15 @@
-# AI usage log (Order Service + Load test + Admin Service)
+# AI usage log (Order Service + Load test + Admin Service + Supplier Service)
 
 Shared FoC log. **Order Service** and **Load test** work is owned by
-**Varun Sivakumar**. **Admin Service** work is owned by **Sahana Avantika**.
+**Varun Sivakumar**. **Admin Service** and **Supplier Service** work is owned
+by **Sahana Avantika**.
 
 **Tool:** Cursor (Auto)
 
 **Author review:** For Order / Load test entries, Varun Sivakumar generated
 ideas, designed implementation, validated correctness, edited where needed,
-and verified behavior/tests. For Admin Service entries, Sahana Avantika did
-the same for that service.
+and verified behavior/tests. For Admin / Supplier Service entries, Sahana
+Avantika did the same for those services.
 
 **Plans:** Cursor plan files under [`plans/`](plans/) are **author design
 notes** reworded for agent execution. They are not AI-originated architecture
@@ -128,6 +129,31 @@ product requirements.
 
 ---
 
+## 5. Supplier Service build-out
+
+| Field | Detail |
+| --- | --- |
+| Owner | Sahana Avantika |
+| Approx. dates | 2026-09 → 2026-11 |
+| Mode | generate / implement / test / docs |
+| Plan | [`plans/supplier_service_plan.md`](plans/supplier_service_plan.md) |
+
+**Already decided by author:** Express + Prisma Supplier Service; public
+approved catalogue for Order; permitted-user create as `pending`; verified-admin
+edit / approve / reject (with reason) / delete; `SupplierAction` audit;
+gateway header rules (401/403); campus seed data.
+
+**What Cursor Auto produced:** Routes, gateway helpers, Prisma schema/seed
+content, tests, Docker/compose, config, and docs wording. Prisma migration
+**SQL files were not given in-file headers** (checksum / deploy safety); see
+`supplier-service/prisma/migrations/AI_ASSISTANCE.md`.
+
+**Sample prompt scenario (summarized):** Implement the Supplier Service from
+the author’s plan (catalogue, create, admin moderation, activity log, tests)
+without changing service boundaries or inventing new product requirements.
+
+---
+
 ## File attribution map
 
 | Location | How disclosed |
@@ -137,5 +163,7 @@ product requirements.
 | `order-service/bruno/` | `AI_ASSISTANCE.md` only |
 | `admin-service/app/**/*.py`, tests, config, Docker, scripts, docs | Per-file header |
 | `admin-service/alembic/versions/*.py` | `AI_ASSISTANCE.md` only (no revision edits) |
+| `supplier-service/src/**/*.ts`, tests, Prisma schema/seed, Docker, config | Per-file header |
+| `supplier-service/prisma/migrations/*.sql` | `AI_ASSISTANCE.md` only (no SQL edits) |
 | `load-test/k6/load.js`, inference notes | Per-file header |
 | `load-test` Helm + `setup/` | `load-test/AI_ASSISTANCE.md` |
