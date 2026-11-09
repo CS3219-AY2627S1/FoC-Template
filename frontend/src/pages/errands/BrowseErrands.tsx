@@ -1,12 +1,16 @@
 // AI-assisted: browse available errands page with reward filters, sort, and accept action.
+// UI tweaks (Claude Opus 5.5): "Take Errands" framing, supplier-page filter layout
+// and client-side search. Reviewed by authors.
 import {
   Badge,
   Box,
   Button,
   Card,
+  Center,
   Group,
   Loader,
   NumberInput,
+  SegmentedControl,
   Select,
   SimpleGrid,
   Stack,
@@ -15,10 +19,12 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { useEffect, useState } from "react";
+import { IconSearch } from "@tabler/icons-react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { OrderStatusBadge } from "../../components/StatusPill";
 import { ApiError, type OrderResponse, ordersApi, parseUtcDate, suppliersApi } from "../../lib/api";
+import { SUPPLIER_CATEGORIES, type Category } from "../../lib/types";
 
 export default function BrowseErrands() {
   const navigate = useNavigate();
@@ -29,7 +35,8 @@ export default function BrowseErrands() {
   const [supplierNames, setSupplierNames] = useState<Record<string, string>>({});
   const [minReward, setMinReward] = useState<number | "">("");
   const [maxReward, setMaxReward] = useState<number | "">("");
-  const [category, setCategory] = useState("");
+  const [q, setQ] = useState("");
+  const [category, setCategory] = useState<Category | null>(null);
   const [sortBy, setSortBy] = useState("deadline");
   const [sortOrder, setSortOrder] = useState("asc");
 
@@ -72,6 +79,17 @@ export default function BrowseErrands() {
     };
   }, [category, minReward, maxReward, sortBy, sortOrder]);
 
+  // order-service has no text search, so filter the fetched page in the browser.
+  const visible = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return items;
+    return items.filter((o) =>
+      [o.name, o.details, supplierNames[o.supplier_id], o.pickup_location, o.delivery_location]
+        .filter(Boolean)
+        .some((field) => String(field).toLowerCase().includes(needle)),
+    );
+  }, [items, q, supplierNames]);
+
   async function handleAccept(orderId: string) {
     try {
       await ordersApi.accept(orderId);
@@ -89,43 +107,70 @@ export default function BrowseErrands() {
 
   return (
     <Stack gap="lg">
-      <Title order={2}>Browse Errands</Title>
+      <div>
+        <Title order={2}>Take Errands</Title>
+        <Text c="dimmed" size="sm">
+          Run errands for fellow students around NUS and earn credits
+        </Text>
+      </div>
 
-      <Group wrap="wrap">
-        <TextInput
-          placeholder="Category"
-          value={category}
-          onChange={(e) => setCategory(e.currentTarget.value)}
-        />
-        <NumberInput
-          placeholder="Min reward"
-          min={0}
-          value={minReward}
-          onChange={(v) => setMinReward(v as number | "")}
-        />
-        <NumberInput
-          placeholder="Max reward"
-          min={0}
-          value={maxReward}
-          onChange={(v) => setMaxReward(v as number | "")}
-        />
-        <Select
-          data={[
-            { value: "deadline", label: "Deadline" },
-            { value: "reward", label: "Reward" },
-          ]}
-          value={sortBy}
-          onChange={(v) => setSortBy(v ?? "deadline")}
-        />
-        <Select
-          data={[
-            { value: "asc", label: "Asc" },
-            { value: "desc", label: "Desc" },
-          ]}
-          value={sortOrder}
-          onChange={(v) => setSortOrder(v ?? "asc")}
-        />
-      </Group>
+      <Stack gap="sm">
+        <Group grow wrap="wrap">
+          <TextInput
+            leftSection={<IconSearch size={16} />}
+            placeholder="Search errands..."
+            value={q}
+            onChange={(e) => setQ(e.currentTarget.value)}
+          />
+          <Select
+            placeholder="All categories"
+            clearable
+            data={SUPPLIER_CATEGORIES.map((c) => ({ value: c, label: c }))}
+            value={category}
+            onChange={(v) => setCategory(v as Category | null)}
+          />
+          <NumberInput
+            placeholder="Min reward"
+            min={1}
+            value={minReward}
+            onChange={(v) => setMinReward(typeof v === "number" ? v : "")}
+          />
+          <NumberInput
+            placeholder="Max reward"
+            min={1}
+            value={maxReward}
+            onChange={(v) => setMaxReward(typeof v === "number" ? v : "")}
+          />
+        </Group>
+        <Group justify="space-between" wrap="wrap">
+          <Text size="sm" c="dimmed">
+            {visible.length} errand{visible.length === 1 ? "" : "s"}
+          </Text>
+          <Group gap="xs">
+            <Text size="sm" c="dimmed">
+              Sort by
+            </Text>
+            <SegmentedControl
+              size="xs"
+              value={sortBy}
+              onChange={setSortBy}
+              data={[
+                { label: "Deadline", value: "deadline" },
+                { label: "Reward", value: "reward" },
+              ]}
+            />
+            <SegmentedControl
+              size="xs"
+              value={sortOrder}
+              onChange={setSortOrder}
+              data={[
+                { label: "Asc", value: "asc" },
+                { label: "Desc", value: "desc" },
+              ]}
+            />
+          </Group>
+        </Group>
+      </Stack>
 
       {error && (
         <Text c="red">{error}</Text>
@@ -135,9 +180,13 @@ export default function BrowseErrands() {
         <Box style={{ display: "flex", justifyContent: "center", padding: "2rem" }}>
           <Loader />
         </Box>
+      ) : visible.length === 0 ? (
+        <Center h={160}>
+          <Text c="dimmed">No errands match your filters.</Text>
+        </Center>
       ) : (
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-          {items.map((order) => (
+          {visible.map((order) => (
             <Card key={order.order_id} withBorder padding="md">
               <Text fw={600}>{order.name}</Text>
               <Text size="xs" c="dimmed">

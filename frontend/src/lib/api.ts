@@ -182,6 +182,22 @@ export const authApi = {
   },
 };
 
+// ---- Other users (name only) ----
+export interface PublicProfile {
+  id: string;
+  display_name: string;
+}
+
+export const usersApi = {
+  /** Display name of another user, e.g. the courier or requester of an order. */
+  publicProfile(userId: string) {
+    return request<PublicProfile>(
+      "GET",
+      `/api/users/${encodeURIComponent(userId)}/public`,
+    );
+  },
+};
+
 // ---- Admin user management ----
 export const adminUsersApi = {
   list(

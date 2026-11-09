@@ -1,6 +1,7 @@
 // AI-assisted: small status badge used across tables and order views.
-import { Badge } from "@mantine/core";
+import { Badge, Tooltip } from "@mantine/core";
 import { OrderStatus } from "../lib/api";
+import { ORDER_STATUS_INFO } from "../lib/orderStatus";
 
 export function ActiveBadge({ active }: { active: boolean }) {
   return (
@@ -29,9 +30,12 @@ const ORDER_STATUS_COLORS: Record<OrderStatus, string> = {
 };
 
 export function OrderStatusBadge({ status }: { status: OrderStatus }) {
+  const info = ORDER_STATUS_INFO[status];
   return (
-    <Badge color={ORDER_STATUS_COLORS[status]} variant="light">
-      {status}
-    </Badge>
+    <Tooltip label={info?.hint ?? status} withArrow openDelay={300}>
+      <Badge color={ORDER_STATUS_COLORS[status]} variant="light" tt="none">
+        {info?.label ?? status}
+      </Badge>
+    </Tooltip>
   );
 }

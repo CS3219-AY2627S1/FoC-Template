@@ -184,6 +184,55 @@ test.describe("chat", () => {
     expect(socketUrls).toHaveLength(1);
   });
 
+  test("quick replies fill the box and a location is only sent with the message", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 1.2966, longitude: 103.7764 });
+    const chat = chatMocks();
+    const sent: Record<string, unknown>[] = [];
+    await page.routeWebSocket(/\/api\/chat\/ws/, (ws) => {
+      ready(ws);
+      ws.onMessage((raw) => {
+        const frame = JSON.parse(String(raw));
+        sent.push(frame);
+        if (frame.type === "send") {
+          const stored = message(2, { sender_id: ME, client_msg_id: frame.data.client_msg_id, ...frame.data });
+          ws.send(JSON.stringify({ type: "ack", req_id: frame.req_id, data: { message: stored, duplicate: false } }));
+        }
+      });
+    });
+    await seedToken(page);
+    await mockApi(page, chat.responders);
+
+    await page.goto(`/messages/${CONV}`);
+    const box = page.getByLabel("Message", { exact: true });
+    const quick = page.getByTestId("quick-replies");
+
+    // The old one-tap location button is gone.
+    await expect(page.getByRole("button", { name: "Share my location" })).toHaveCount(0);
+    // Requester replies, not the courier's.
+    await expect(quick.getByRole("button", { name: "How long more?" })).toBeVisible();
+    await expect(quick.getByRole("button", { name: "On my way to the vendor" })).toHaveCount(0);
+
+    await quick.getByRole("button", { name: "How long more?" }).click();
+    await expect(box).toHaveValue("How long more?");
+    await quick.getByRole("button", { name: "Here's my location" }).click();
+    await expect(page.getByTestId("location-attachment")).toBeVisible();
+    await expect(box).toHaveValue("How long more?");
+    expect(sent.filter((f) => f.type === "send")).toHaveLength(0);
+
+    await box.press("Enter");
+    await expect.poll(() => sent.filter((f) => f.type === "send").length).toBe(1);
+    expect(sent.find((f) => f.type === "send")?.data).toMatchObject({
+      kind: "location",
+      body: "How long more?",
+      payload: { lat: 1.2966, lng: 103.7764, label: "My location" },
+    });
+    await expect(page.getByTestId("location-attachment")).toHaveCount(0);
+  });
+
   test("sends and shows photos, loading them with the login token", async ({ page }) => {
     const chat = chatMocks();
     // 1x1 PNG

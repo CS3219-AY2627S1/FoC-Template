@@ -27,7 +27,7 @@ import { chatTitle, memberName, orderIdOf } from "../../lib/chat/format";
 import { sortedMessages, tickState, type ChatState } from "../../lib/chat/store";
 import type { ChatMessage } from "../../lib/chat/types";
 import { OrderStatusBadge } from "../StatusPill";
-import { Composer } from "./Composer";
+import { Composer, type ChatRole } from "./Composer";
 import { MessageBubble, SystemLine } from "./MessageBubble";
 
 const EMPTY_PENDING: ChatState["pending"] = {};
@@ -81,6 +81,9 @@ export function ConversationView({ id, orders, onBack }: Props) {
   const orderId = orderIdOf(conv);
   const order = orderId ? orders[orderId] : null;
   const others = conv.members.filter((m) => m.user_id !== meId).map((m) => nameOf(m.user_id));
+  const myLabel = conv.members.find((m) => m.user_id === meId)?.label;
+  const myRole: ChatRole =
+    myLabel === "requester" || myLabel === "courier" ? myLabel : null;
 
   const loadOlder = async () => {
     const el = viewport.current;
@@ -220,6 +223,7 @@ export function ConversationView({ id, orders, onBack }: Props) {
 
       <Composer
         conversationId={id}
+        role={myRole}
         disabled={closed}
         replyTo={replyTo}
         replyName={replyTo?.sender_id ? nameOf(replyTo.sender_id) : ""}

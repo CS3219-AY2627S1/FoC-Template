@@ -1,6 +1,19 @@
 // AI-assisted (Claude Opus 5.5): message composer with replies, photos and location
 // sharing, ported from the standalone chat demo. Reviewed by authors.
-import { ActionIcon, Box, CloseButton, Group, Text, Textarea, Tooltip } from "@mantine/core";
+// UI tweaks (Claude Opus 5.5): quick replies above the input; location is attached
+// from a quick reply and only sent with the message. Reviewed by authors.
+import {
+  ActionIcon,
+  Badge,
+  Box,
+  Button,
+  CloseButton,
+  Group,
+  ScrollArea,
+  Text,
+  Textarea,
+  Tooltip,
+} from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconMapPin, IconPhoto, IconSend } from "@tabler/icons-react";
 import { useRef, useState } from "react";
@@ -11,8 +24,30 @@ import type { ChatMessage } from "../../lib/chat/types";
 
 type Content = Pick<PendingMessage, "kind" | "body" | "payload" | "reply_to_id">;
 
+/** The signed-in user's role in an order chat, from its member label. */
+export type ChatRole = "requester" | "courier" | null;
+
+const QUICK_REPLIES: Record<"requester" | "courier" | "other", string[]> = {
+  requester: ["Hi!", "How long more?", "Where are you now?", "Thanks!"],
+  courier: [
+    "Hi, I've got your order!",
+    "On my way to the vendor",
+    "Picked it up, heading over",
+    "Where should I meet you?",
+  ],
+  other: ["Hi!", "Where are you now?", "Thanks!"],
+};
+
+const LOCATION_TEXT = "Here's my location";
+
+interface Coords {
+  lat: number;
+  lng: number;
+}
+
 interface Props {
   conversationId: string;
+  role?: ChatRole;
   disabled: boolean;
   replyTo: ChatMessage | null;
   replyName: string;
@@ -25,6 +60,7 @@ const MAX_LENGTH = 4000;
 
 export function Composer({
   conversationId,
+  role = null,
   disabled,
   replyTo,
   replyName,
@@ -34,8 +70,18 @@ export function Composer({
 }: Props) {
   const [text, setText] = useState("");
   const [locating, setLocating] = useState(false);
+  const [location, setLocation] = useState<Coords | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const textInput = useRef<HTMLTextAreaElement>(null);
+  const quickReplies = QUICK_REPLIES[role ?? "other"];
+
+  /** Put a quick reply in the box so it can be edited; nothing is sent yet. */
+  const applyQuickReply = (reply: string) => {
+    setText((prev) => (prev.trim() ? `${prev.trimEnd()} ${reply}` : reply));
+    onTyping();
+    textInput.current?.focus();
+  };
   const reply = replyTo?.id ?? null;
 
   /** Upload the picked photo, then send it; the typed text becomes its caption. */
@@ -69,13 +115,25 @@ export function Composer({
 
   const submit = () => {
     const body = text.trim();
-    if (!body || disabled) return;
-    onSend({ kind: "text", body, payload: null, reply_to_id: reply });
+    if (disabled || (!body && !location)) return;
+    if (location) {
+      // One message: the map link plus whatever was typed.
+      onSend({
+        kind: "location",
+        body: body || null,
+        payload: { lat: location.lat, lng: location.lng, label: "My location" },
+        reply_to_id: reply,
+      });
+      setLocation(null);
+    } else {
+      onSend({ kind: "text", body, payload: null, reply_to_id: reply });
+    }
     setText("");
     onCancelReply();
   };
 
-  const shareLocation = () => {
+  /** Attach the current location to the next message (it is sent with Send). */
+  const attachLocation = () => {
     if (!navigator.geolocation) {
       notifications.show({ color: "red", message: "This browser cannot share a location." });
       return;
@@ -84,13 +142,9 @@ export function Composer({
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocating(false);
-        onSend({
-          kind: "location",
-          body: null,
-          payload: { lat: pos.coords.latitude, lng: pos.coords.longitude, label: "My location" },
-          reply_to_id: reply,
-        });
-        onCancelReply();
+        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setText((prev) => (prev.trim() ? prev : LOCATION_TEXT));
+        textInput.current?.focus();
       },
       () => {
         setLocating(false);
@@ -121,6 +175,60 @@ export function Composer({
           <CloseButton size="sm" onClick={onCancelReply} aria-label="Cancel reply" />
         </Group>
       )}
+      {!disabled && (
+        <ScrollArea type="never" mb={6} data-testid="quick-replies">
+          <Group gap={6} wrap="nowrap">
+            {quickReplies.map((q) => (
+              <Button
+                key={q}
+                size="compact-xs"
+                radius="xl"
+                variant="light"
+                color="gray"
+                onClick={() => applyQuickReply(q)}
+                style={{ flexShrink: 0 }}
+              >
+                {q}
+              </Button>
+            ))}
+            <Button
+              size="compact-xs"
+              radius="xl"
+              variant="light"
+              leftSection={<IconMapPin size={12} />}
+              loading={locating}
+              disabled={Boolean(location)}
+              onClick={attachLocation}
+              style={{ flexShrink: 0 }}
+            >
+              {LOCATION_TEXT}
+            </Button>
+          </Group>
+        </ScrollArea>
+      )}
+      {location && (
+        <Group gap={4} mb={6}>
+          <Badge
+            variant="light"
+            tt="none"
+            leftSection={<IconMapPin size={12} />}
+            rightSection={
+              <CloseButton
+                size="xs"
+                variant="transparent"
+                onClick={() => setLocation(null)}
+                aria-label="Remove location"
+              />
+            }
+            data-testid="location-attachment"
+          >
+            Current location attached
+          </Badge>
+          <Text size="xs" c="dimmed">
+            Sent with your message
+          </Text>
+        </Group>
+      )}
       <Group align="flex-end" gap="xs" wrap="nowrap">
         <input
           ref={fileInput}
@@ -146,19 +254,8 @@ export function Composer({
             <IconPhoto size={18} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label="Share my location">
-          <ActionIcon
-            variant="subtle"
-            size="lg"
-            disabled={disabled}
-            loading={locating}
-            onClick={shareLocation}
-            aria-label="Share my location"
-          >
-            <IconMapPin size={18} />
-          </ActionIcon>
-        </Tooltip>
         <Textarea
+          ref={textInput}
           style={{ flex: 1 }}
           autosize
           minRows={1}
@@ -183,7 +280,7 @@ export function Composer({
         <ActionIcon
           size="lg"
           onClick={submit}
-          disabled={disabled || !text.trim()}
+          disabled={disabled || (!text.trim() && !location)}
           aria-label="Send"
           data-testid="send"
         >

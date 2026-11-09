@@ -33,7 +33,9 @@ test.describe("auth session", () => {
     await page.goto("/suppliers");
 
     await expect(page).toHaveURL(/\/suppliers$/);
-    await expect(page.getByText("Client", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Account menu" })).toBeVisible();
+    // Clients get no role badge; only admins are labelled.
+    await expect(page.getByText("Admin", { exact: true })).toHaveCount(0);
     expect(api.callsTo("POST", "/api/users/login")).toHaveLength(0);
     expect(api.lastCall("GET", "/api/users/me")?.authorization).toBe(
       `Bearer ${await storedToken(page)}`,
@@ -59,9 +61,11 @@ test.describe("auth session", () => {
     await expect(page).toHaveURL(/\/suppliers$/);
 
     await expect(
-      page.getByRole("heading", { name: "Campus Suppliers" }),
+      page.getByRole("heading", { name: "Request an Errand" }),
     ).toBeVisible();
-    await expect(page.getByText("Client", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Account menu" })).toBeVisible();
+    // Clients get no role badge; only admins are labelled.
+    await expect(page.getByText("Admin", { exact: true })).toHaveCount(0);
   });
 
   test("clears an expired token and returns to login", async ({ page }) => {
@@ -86,13 +90,51 @@ test.describe("auth session", () => {
     await page.goto("/suppliers");
     await expect(page).toHaveURL(/\/suppliers$/);
 
-    await page.getByRole("button", { name: "Log out" }).click();
+    await page.getByRole("button", { name: "Account menu" }).click();
+    await page.getByRole("menuitem", { name: "Log out" }).click();
 
     await expect(page).toHaveURL(/\/login$/);
     expect(await storedToken(page)).toBeNull();
 
     await page.goto("/profile");
     await expect(page).toHaveURL(/\/login$/);
+  });
+
+  test("logs out from the profile page", async ({ page }) => {
+    await seedToken(page);
+    await mockApi(page);
+
+    await page.goto("/profile");
+    await page.getByRole("button", { name: "Log out" }).click();
+
+    await expect(page).toHaveURL(/\/login$/);
+    expect(await storedToken(page)).toBeNull();
+  });
+
+  test("opens the profile from the avatar menu", async ({ page }) => {
+    await seedToken(page);
+    await mockApi(page);
+
+    await page.goto("/suppliers");
+    await page.getByRole("button", { name: "Account menu" }).click();
+    await page.getByRole("menuitem", { name: "Profile" }).click();
+
+    await expect(page).toHaveURL(/\/profile$/);
+  });
+
+  test("groups requester and courier links in the header", async ({ page }) => {
+    await seedToken(page);
+    await mockApi(page);
+
+    await page.goto("/suppliers");
+    const nav = page.getByTestId("desktop-nav");
+
+    await expect(nav.getByRole("link")).toHaveText([
+      "Request Errand",
+      "My Requests",
+      "Take Errands",
+      "My Deliveries",
+    ]);
   });
 
   test("keeps clients out of admin-only routes", async ({ page }) => {
