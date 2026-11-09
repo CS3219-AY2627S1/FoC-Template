@@ -10,6 +10,9 @@
  * Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: read
  * Order Service error bodies (field errors as a list, currentState on 409).
  * Author review: Reviewed and approved by @mattis.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09. Scope: keep a
+ * Retry-After header in whole seconds as retryAfterSeconds (additive; other errors unchanged).
+ * Author review: Pending review by @mattis.
  */
 import { API_BASE } from '../config'
 import { getToken } from '../auth/tokenStorage'
@@ -26,6 +29,8 @@ export class ApiError extends Error {
   readonly requestId?: string
   readonly existingSupplierId?: string
   readonly currentState?: string
+  /** Whole seconds from a Retry-After header (Order's 429 RATE_LIMITED); undefined when absent */
+  readonly retryAfterSeconds?: number
 
   constructor(
     status: number,
@@ -37,6 +42,7 @@ export class ApiError extends Error {
       requestId?: string
       existingSupplierId?: string
       currentState?: string
+      retryAfterSeconds?: number
     } = {},
   ) {
     super(message)
@@ -48,6 +54,7 @@ export class ApiError extends Error {
     this.requestId = metadata.requestId
     this.existingSupplierId = metadata.existingSupplierId
     this.currentState = metadata.currentState
+    this.retryAfterSeconds = metadata.retryAfterSeconds
   }
 }
 
@@ -129,12 +136,12 @@ export async function apiRequestWithMeta<T>(
 
   if (!response.ok) {
     if (response.status === 401 && token && onUnauthorized) onUnauthorized()
-    throw toApiError(response.status, data)
+    throw toApiError(response.status, data, response.headers)
   }
   return { data: data as T, status: response.status, headers: response.headers }
 }
 
-function toApiError(status: number, data: unknown): ApiError {
+function toApiError(status: number, data: unknown, headers?: Headers): ApiError {
   const body = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>
   const code = typeof body.error === 'string' ? body.error : typeof body.code === 'string' ? body.code : 'UNKNOWN'
   const message = typeof body.message === 'string' ? body.message : 'Something went wrong. Please try again.'
@@ -145,7 +152,14 @@ function toApiError(status: number, data: unknown): ApiError {
     requestId: typeof body.requestId === 'string' ? body.requestId : undefined,
     existingSupplierId: typeof body.existingSupplierId === 'string' ? body.existingSupplierId : undefined,
     currentState: typeof body.currentState === 'string' ? body.currentState : undefined,
+    retryAfterSeconds: retryAfter(headers),
   })
+}
+
+// Only the delta-seconds form ("12"); an HTTP-date or anything else is ignored
+function retryAfter(headers: Headers | undefined): number | undefined {
+  const raw = headers?.get('Retry-After')?.trim()
+  return raw && /^\d+$/.test(raw) ? Number(raw) : undefined
 }
 
 // [{ field: "items[0].name", message: "..." }] -> { "items[0].name": "..." }; repeats are joined
