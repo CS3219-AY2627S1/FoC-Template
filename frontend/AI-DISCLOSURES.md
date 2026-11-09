@@ -21,6 +21,8 @@ Author review: Reviewed and approved by @ron.
 Additional AI assistance: OpenAI Codex (GPT-6), 2026-09-27. Scope: fixed and
 tested Supplier form-control alignment and persistent navigation for PR #32.
 Author review: Reviewed and approved by @ron.
+Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: recorded
+the member errand pages below. Author review: Reviewed and approved by @mattis.
 -->
 
 # Frontend AI disclosures
@@ -173,3 +175,39 @@ repository workflow installs Chromium, runs that live-stack journey, and retains
 report, traces, screenshots, videos, Compose status, and relevant service logs for seven days
 after failure. No frontend product behavior, production credential, or test scenario was
 changed.
+
+## 2026-11-09 — Member errand pages for Order Service
+
+- **Tool:** Claude Code (Claude Opus 5.5)
+- **Allowed-use scope:** Implementation, tests and documentation of the member side of the
+  Order Service frontend, from `order-service/README.md`, `order-service/src/http/routes.ts` and
+  `order-service/src/domain/validation.ts`. Administrator dispute screens were out of scope.
+- **Repository files affected:** `frontend/src/api/errandApi.ts`, `frontend/src/api/client.ts`,
+  `frontend/src/auth/tokenSubject.ts`, `frontend/src/errands/**`,
+  `frontend/src/components/Pagination.tsx`, `frontend/src/components/TopBar.tsx`,
+  `frontend/src/App.tsx`, `frontend/src/suppliers/SupplierDetailPage.tsx`, their tests,
+  `frontend/README.md`, `order-service/README.md` and `ai/usage-log.md`.
+- **Author review:** Reviewed and approved by @mattis.
+
+Claude added protected `/errands`, `/errands/mine`, `/errands/new` and `/errands/:id` routes and
+a navigation row in the top bar. Members can browse other people's OPEN errands; list their own
+as requester or courier with a state filter; post an errand with a live supplier search, items,
+drop-off, notes, credits and three deadlines (checked as the server checks them, with the
+server's 400 field details shown inline); and open an errand to see its state, guidance, route,
+deadlines, parties and history and take the steps the transition table allows them, each behind
+a confirmation. The detail page polls while credits are being reserved and re-reads the errand
+after a 409. The shared client now flattens Order's list-shaped `details` and keeps
+`currentState`. The viewer's account id is read from the token's `sub` claim for display only.
+The Supplier detail page gained a link to post an errand from that Supplier, replacing its
+"no errand action yet" note. No backend code was changed. Checked with Vitest (69 tests), oxlint,
+the production build, and a scratch Playwright run against the Compose stack covering post →
+reserve → accept → pick up → deliver → confirm, a declined reservation, and 390-pixel layouts.
+
+Follow-up the same day, at the author's request: each card on the open-errands board has an
+Accept button behind the same confirmation dialog. An accept that succeeds, or that loses the race
+(or finds the errand cancelled, expired or past its deadline), takes the card off the board at once
+and reloads the page of results; the loss is explained as another courier accepting first. Cards
+also show the total item quantity. New component tests cover losing the race on the board
+(including before the reload returns), a successful accept, and a 503 that leaves the card listed;
+a scratch Playwright run against the Compose stack had a second courier win the race through the API
+while the first clicked Accept on the board.

@@ -4,6 +4,8 @@
  * Scope: Implemented the live responsive member Supplier detail page for
  * issue #29.
  * Author review: Reviewed and approved by @ron.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: added
+ * the link to post an errand from this Supplier. Author review: Reviewed and approved by @mattis.
  */
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router'
@@ -111,9 +113,13 @@ function SupplierDetail({ supplier }: { readonly supplier: Supplier }) {
               description={hasCoordinates ? `${supplier.latitude}, ${supplier.longitude}` : 'Not available'}
             />
           </dl>
-          <p className="mt-4 text-xs leading-5 text-slate-500">
-            Typical hours are guidance only and may change. No errand-order action is available yet.
-          </p>
+          <Link
+            to={`/errands/new?supplierId=${encodeURIComponent(supplier.id)}`}
+            className="mt-6 inline-flex min-h-11 items-center rounded-lg bg-accent-500 px-5 py-2 text-sm font-semibold text-white hover:bg-accent-600"
+          >
+            Request an errand from here
+          </Link>
+          <p className="mt-4 text-xs leading-5 text-slate-500">Typical hours are guidance only and may change.</p>
         </div>
       </div>
     </article>

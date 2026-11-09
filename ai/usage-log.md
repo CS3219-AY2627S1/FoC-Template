@@ -85,6 +85,9 @@ Author review: Reviewed and approved by @mattis.
 Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-10-16
 Scope: Recorded the Order Service final whole-branch review fix wave.
 Author review: Reviewed and approved by @mattis.
+Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
+Scope: Recorded the member errand frontend pages entry.
+Author review: Reviewed and approved by @mattis.
 -->
 
 # AI Usage Log
@@ -1925,4 +1928,36 @@ The author's four choices are quoted in the spec, round 6.
 ### Key response
 
 Claude rebased `feat/order-user-supplier-integration` onto `origin/main` at `fed362c` and resolved the conflicts as the author chose: `AUTH_MODE=stub|http` with `HttpSessionVerifier`; `CREDIT_MODE=stub|kafka` and all Kafka settings kept from main; main's `AuthMode`, `AUTH_MODE=user-service`, `loadUserServiceConfig`, `UserServiceSessionVerifier`, `SessionVerificationUnavailableError`, the `auth.ts` 503 catch, the `CREDIT_MODE=kafka` startup check and `test/userServiceVerifier.test.ts` removed. Compose keeps main's `${ORDER_AUTH_MODE:-...}` override with the default changed to `http`, and `.env.example` sets `ORDER_AUTH_MODE=http`. The usage-log conflict kept both sides. The test for an invalid `CREDIT_MODE` now expects main's message ("CREDIT_MODE must be stub or kafka, not http"). Tests: 173/173 on PostgreSQL 16.8 (the Kafka integration suite needs `TEST_KAFKA_BROKERS` and did not run); type check clean.
+
+## 2026-11-09 — Frontend: member errand pages for Order Service
+
+- **Tool:** Claude Code (Claude Opus 5.5)
+- **Mode:** implementation
+- **Allowed-use scope:** implementation code, tests and documentation for the member side of the Order Service frontend, following the author's existing Order Service API and design; administrator dispute screens left for later.
+- **Repository files affected:** `frontend/src/api/errandApi.ts`, `frontend/src/api/errandApi.spec.ts`, `frontend/src/api/client.ts`, `frontend/src/api/client.spec.ts`, `frontend/src/auth/tokenSubject.ts`, `frontend/src/errands/*`, `frontend/src/components/Pagination.tsx`, `frontend/src/components/TopBar.tsx`, `frontend/src/App.tsx`, `frontend/src/App.spec.tsx`, `frontend/src/suppliers/SupplierDetailPage.tsx`, `frontend/src/suppliers/SupplierDetailPage.spec.tsx`, `frontend/README.md`, `frontend/AI-DISCLOSURES.md`, `order-service/README.md`
+- **Author review:** Reviewed and approved by @mattis.
+
+### Prompts
+
+> I need you to build the member-facing frontend for the Order Service in the FoC repo. The frontend is React 19 with Vite, Tailwind 4 and React Router, and it lives in frontend/. This is just the member side. Leave the admin dispute screens for later. You can pick up knowledge of the project in the relevant docs directory and the source code is stored in Foc/. To get your bearings, read frontend/README.md and frontend/AI-DISCLOSURES.md. For what the backend does, read order-service/README.md. It has the states, the transition table, the API and the error codes. For the exact JSON and the create rules, look at serializeErrand, serializeDetail and serializePage in order-service/src/http/routes.ts, and at order-service/src/domain/validation.ts.
+
+### Key response
+
+Claude built four member pages (open errands, my errands, post an errand, errand detail) with the actions the transition table allows each party, confirmations, 409 recovery, reservation polling and server field errors shown inline, and linked the Supplier detail page to posting an errand. Two calls it made without asking, for the author to confirm: the viewer's account id comes from the token's `sub` claim (`/whoami` has no id), for display only; and other users appear as "Requester", "Courier" or "Another member" because no endpoint resolves usernames. Checks: 69/69 Vitest tests, oxlint clean, production build, and a scratch Playwright run against the Compose stack (post, Kafka reservation, accept, pick up, deliver, confirm; a declined 1000-credit errand; 390-pixel layouts without horizontal overflow).
+
+## 2026-11-09 — Frontend: accept from the open-errands board, item counts
+
+- **Tool:** Claude Code (Claude Opus 5.5)
+- **Mode:** implementation
+- **Allowed-use scope:** implementation code, tests and documentation for changes the author specified after reviewing the member errand pages.
+- **Repository files affected:** `frontend/src/errands/OpenErrandsPage.tsx`, `frontend/src/errands/ErrandCard.tsx`, `frontend/src/errands/presentation.ts`, `frontend/src/errands/presentation.spec.ts`, `frontend/src/errands/ErrandListPages.spec.tsx`, `frontend/README.md`, `frontend/AI-DISCLOSURES.md`
+- **Author review:** Reviewed and approved by @mattis.
+
+### Prompts
+
+> i've review the changes and it seems that they are in good shape. here are some changes I would like to add an accept button to each card on the open-errands board, with the same confirmation dialog as the detail page. If you lose the race, show the "someone else accepted it first" message and take that errand off the list, either by reloading the page of results or by dropping it from the list. Add a test for losing the race on the board itself. also, show how many items an errand has on the cards, like "3 items"
+
+### Key response
+
+Claude restructured the card so the link to the detail and the new Accept button are siblings (a button may not sit inside a link), reused the detail page's confirmation dialog, and on success or a lost race both drops the card at once and reloads the page of results; a 503 or network failure leaves it listed. The item count is the total quantity across lines. Tests: 72/72 Vitest (a mutation check confirmed the race test fails if the card is not dropped), oxlint clean, and a scratch Playwright run against the Compose stack where a second courier won the race through the API.
 

@@ -16,6 +16,9 @@ Author review: Reviewed and approved by @mattis.
 Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-10-18
 Scope: The demo now runs against the real Credit Service.
 Author review: Reviewed and approved by @mattis.
+Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
+Scope: Noted that the member frontend pages now exist.
+Author review: Reviewed and approved by @mattis.
 -->
 
 # Order Service
@@ -48,7 +51,8 @@ How Order answers when User or Supplier does not give a usable reply (no retries
 | `5xx`, no reply within the timeout, or unreachable | `503 SERVICE_UNAVAILABLE` |
 | Supplier `400`/`403`, User 4xx other than `401`, or a `200` body Order does not expect | `500 INTERNAL_ERROR`, logged |
 
-Not done yet: reacting to account suspensions (OS-F6), and the frontend pages.
+Not done yet: reacting to account suspensions (OS-F6), and the administrator dispute screens in the frontend. The member
+pages (open errands, my errands, posting an errand, and the errand detail with its actions) are in `frontend/src/errands/`.
 
 Message contract with Credit Service: [docs/order-credit-contract.md](docs/order-credit-contract.md).
 

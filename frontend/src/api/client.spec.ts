@@ -4,6 +4,9 @@
  * Scope: Added focused tests for response metadata, Supplier errors, and the
  * existing global unauthorised flow in issue #28.
  * Author review: Reviewed and approved by @ron.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: tests
+ * for Order Service field-error lists and currentState.
+ * Author review: Reviewed and approved by @mattis.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -56,6 +59,39 @@ describe('API client', () => {
       existingSupplierId: 'existing-id',
       requestId: 'request-id',
     })
+  })
+
+  it('flattens Order field-error lists and keeps the current state of a 409', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            error: 'VALIDATION_ERROR',
+            message: 'Request is invalid',
+            details: [
+              { field: 'items[0].name', message: 'name must be 1 to 100 characters' },
+              { field: 'creditAmount', message: 'creditAmount must be an integer from 1 to 1000' },
+            ],
+          },
+          400,
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ error: 'INVALID_STATE', message: 'Not allowed', currentState: 'COMPLETED' }, 409),
+      )
+
+    const invalid = await apiRequest('/errands').catch((caught: unknown) => caught)
+    const conflict = await apiRequest('/errands/x/confirm').catch((caught: unknown) => caught)
+
+    expect(invalid).toMatchObject({
+      status: 400,
+      code: 'VALIDATION_ERROR',
+      details: {
+        'items[0].name': 'name must be 1 to 100 characters',
+        creditAmount: 'creditAmount must be an integer from 1 to 1000',
+      },
+    })
+    expect(conflict).toMatchObject({ status: 409, code: 'INVALID_STATE', currentState: 'COMPLETED' })
   })
 
   it('preserves the existing logged-in 401 handler', async () => {
