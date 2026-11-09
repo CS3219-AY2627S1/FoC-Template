@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # RabbitMQ. When unset the service runs single-instance: socket fan-out stays
     # in-process and outbox events are logged instead of published.
     rabbitmq_url: str | None = None
+    # RabbitMQ can report healthy before it accepts connections, so start-up keeps
+    # retrying the connection for this long before giving up.
+    rabbitmq_connect_timeout_s: float = 60.0
     chat_fanout_exchange: str = "foc.chat.fanout"  # cross-instance delivery to sockets
     chat_events_exchange: str = "foc.chat.events"  # domain events (outbox) for other services
 

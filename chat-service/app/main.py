@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
+from aio_pika.exceptions import AMQPConnectionError
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -31,6 +32,30 @@ from app.services.outbox import (
 from app.state import AppState
 
 log = logging.getLogger("chat")
+
+
+async def start_with_retry(
+    name: str, start: Callable[[], Awaitable[None]], timeout_s: float
+) -> None:
+    """Run ``start`` until RabbitMQ accepts the connection or ``timeout_s`` passes.
+
+    Compose starts this service once RabbitMQ's healthcheck passes, which can be a few
+    seconds before the broker listens on its AMQP port. Without a retry the first
+    "connection refused" would stop start-up for good.
+    """
+    loop = asyncio.get_running_loop()
+    give_up = loop.time() + timeout_s
+    delay = 0.5
+    while True:
+        try:
+            await start()
+            return
+        except (OSError, AMQPConnectionError) as exc:
+            if loop.time() + delay > give_up:
+                raise
+            log.warning("%s: RabbitMQ not reachable (%s); retrying in %.1fs", name, exc, delay)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 5.0)
 
 
 async def _purge_loop(state: AppState) -> None:
@@ -70,8 +95,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         publisher: EventPublisher = (
             AmqpEventPublisher(amqp, settings.chat_events_exchange) if amqp else LogEventPublisher()
         )
-        await broker.start()
-        await publisher.start()
+        timeout = settings.rabbitmq_connect_timeout_s
+        await start_with_retry("socket fan-out", broker.start, timeout)
+        await start_with_retry("event publisher", publisher.start, timeout)
         state = AppState(
             settings=settings,
             sessionmaker=sessionmaker,
