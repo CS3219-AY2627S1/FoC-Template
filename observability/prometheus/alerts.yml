@@ -34,12 +34,14 @@ groups:
           runbook: "docs/observability.md#story-2"
 
       - alert: CreditDbPoolSaturated
-        expr: credit_db_pool_in_use >= credit_db_pool_size
+        # Guarded on size > 0: before the first scrape refresh the gauges are
+        # both zero, and "0 >= 0" would page on a fresh stack.
+        expr: (credit_db_pool_in_use >= 0.9 * credit_db_pool_size) and (credit_db_pool_size > 0)
         for: 5m
         labels:
           severity: page
         annotations:
-          summary: "credit-service DB pool fully checked out"
+          summary: "credit-service DB pool nearly exhausted"
           runbook: "docs/observability.md#story-2"
 
   - name: credit-service-async

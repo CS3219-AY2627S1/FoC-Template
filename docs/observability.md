@@ -65,7 +65,7 @@ Two design decisions worth knowing:
 | `GET` | `/metrics` | none — internal only, scraped over `foc-net` | Prometheus exposition |
 | `GET` | `/health` | none | unchanged: `{"status": "ok"}` (compose healthcheck) |
 | `GET` | `/health/ready` | none | readiness; `503` when degraded (DB, plus broker for services that maintain broker state) |
-| `GET` | `/credits/observability/summary` | **admin** (via gateway: `/api/credits/observability/summary`) | the JSON "data display" block |
+| `GET` | `/credits/observability/summary` | **admin** — internal only, not in the gateway's `EXPOSED_ROUTES` | the JSON "data display" block |
 
 The broker check is **opt-in** (`install(..., check_broker=False)`): only a
 service with a long-lived consumer keeps `set_broker_state()` up to date.
@@ -74,14 +74,20 @@ supplier-service (no broker use) check the DB only, so they do not report
 `degraded` forever.
 
 `/metrics` is not published through the API gateway on purpose: the gateway is
-the only public entry point, and metrics are an internal operational surface.
+default-deny (`app/exposed_routes.py`) and only forwards the client-facing
+routes listed there, so metrics stay an internal operational surface.
 
 ### The JSON summary
 
+The summary is an **internal ops surface**, not a browser endpoint: the gateway
+does not expose `/api/credits/observability/summary` (only
+`GET /api/credits/{user_id}/balance` and `.../transactions` are public). Call it
+inside the network, or against a locally running service:
+
 ```bash
-TOKEN=...   # admin JWT from /api/users/login
-curl -s localhost:8080/api/credits/observability/summary \
-  -H "Authorization: Bearer $TOKEN" | jq .
+# local service (uvicorn on :8000)
+curl -s localhost:8000/credits/observability/summary \
+  -H "X-User-Id: <admin-id>" -H "X-User-Role: admin" | jq .
 ```
 
 Shape (abridged):
@@ -233,8 +239,9 @@ make up
 
 # 2. optional observability profile (does not change `make up`)
 make obs-up
-#    Prometheus http://localhost:9090
-#    Grafana    http://localhost:3000  (anonymous viewer; admin/admin)
+#    Grafana  http://127.0.0.1:3000  (login required: admin / $GRAFANA_ADMIN_PASSWORD)
+#    Prometheus is NOT published: Grafana proxies its queries, so the metric
+#    store is not reachable from the host at all.
 
 # 3. generate traffic
 TOKEN=$(curl -s -X POST localhost:8080/api/users/login \
@@ -243,10 +250,11 @@ TOKEN=$(curl -s -X POST localhost:8080/api/users/login \
 UID_=$(curl -s localhost:8080/api/users/me -H "Authorization: Bearer $TOKEN" | jq -r .id)
 FOC_TOKEN=$TOKEN FOC_USER_ID=$UID_ make obs-load
 
-# 4. read the numbers without Grafana
-curl -s localhost:8000/metrics          # only via the compose network
-curl -s -H "Authorization: Bearer $TOKEN" \
-  localhost:8080/api/credits/observability/summary | jq .http
+# 4. read the numbers without Grafana (internal surfaces: run inside the net)
+docker compose exec -T credit-service python -c \
+  "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/metrics').read().decode()[:400])"
+docker compose exec -T credit-service python -c \
+  "import urllib.request as u; r=u.Request('http://localhost:8000/credits/observability/summary', headers={'X-User-Id':'admin','X-User-Role':'admin'}); print(u.urlopen(r).read().decode()[:400])"
 ```
 
 ### Self-test without Docker
@@ -323,8 +331,10 @@ startup/access output is unchanged and nothing is duplicated.
 - **Counters are process-lifetime.** They reset on restart and are not
   persisted; Grafana queries therefore use `rate(...)` / `increase(...)` over a
   window rather than raw totals.
-- **Single instance assumption for the gauges.** `credit_reserved_balance_sum`
-  is refreshed on summary/build calls and reads the whole table, which is fine
-  for one replica; with several replicas the sum is still correct but redundant.
+- **Scrape-time gauges.** `credit_reserved_balance_sum`, `credit_available_balance_sum`,
+  `credit_accounts_total` and the DB-pool gauges are recomputed by the
+  `metrics_refresh` hook on every `/metrics` scrape (one aggregate query), so
+  Prometheus never sees a stale zero. The single-instance caveat is only about
+  the (cheap) redundancy of each replica computing the same aggregate.
 - **No tracing UI.** No Jaeger/Tempo in the profile, deliberately: metrics first,
   traces only once propagation exists end-to-end.

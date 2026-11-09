@@ -10,6 +10,7 @@ from app.api.routes import credits, credits_observability, health
 from app.db import get_session, init_db
 from app.errors import register_exception_handlers
 from app.observability import metrics
+from app.observability.refresh import refresh_scrape_gauges
 from app.services.consumer import CreditEventConsumer
 
 
@@ -26,7 +27,12 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="FoC Credit Service", version="0.1.0", lifespan=lifespan)
 # Shared layer: /metrics, /health/ready, HTTP metrics, request-id propagation.
-metrics.OBS.install(app, readiness_session_dep=get_session)
+# refresh_scrape_gauges keeps the pool/balance gauges fresh at scrape time.
+metrics.OBS.install(
+    app,
+    readiness_session_dep=get_session,
+    metrics_refresh=refresh_scrape_gauges,
+)
 register_exception_handlers(app)
 app.include_router(health.router)
 app.include_router(credits_observability.router)  # /credits/observability/summary

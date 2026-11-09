@@ -80,10 +80,10 @@ seed: ## Run the supplier data seeder against the running stack
 
 # ---- Observability (N2H: metrics -> analytics) --------------
 .PHONY: obs-up
-obs-up: env ## Start Prometheus + Grafana (opt-in observability profile)
+obs-up: env ## Start Grafana (Prometheus stays internal to the compose net)
 	$(COMPOSE) --profile observability up -d prometheus grafana
-	@echo "Grafana    http://localhost:$${GRAFANA_PORT:-3000}  (dashboard: Credit Service - Observability)"
-	@echo "Prometheus http://localhost:$${PROMETHEUS_PORT:-9090}"
+	@echo "Grafana    http://127.0.0.1:$${GRAFANA_PORT:-3000}  (login required; dashboard: Credit Service - Observability)"
+	@echo "Prometheus is internal only: query it from Grafana Explore."
 
 .PHONY: obs-down
 obs-down: ## Stop the observability stack (keeps collected data)

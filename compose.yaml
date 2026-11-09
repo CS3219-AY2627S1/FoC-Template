@@ -291,6 +291,11 @@ services:
 
   # Observability (N2H) — opt-in profile, never started by `make up`
   #   make obs-up   # == docker compose --profile observability up -d
+  #
+  # Exposure: only Grafana is reachable from the host, and only on loopback.
+  # Prometheus is internal (Grafana proxies its queries) so nobody can query
+  # the metric store directly, and the per-service /metrics endpoints stay on
+  # foc-net — the gateway is default-deny and never forwards them.
   # ==========================================================
   prometheus:
     image: prom/prometheus:v2.54.1
@@ -302,8 +307,8 @@ services:
     volumes:
       - ./observability/prometheus:/etc/prometheus:ro
       - prometheus-data:/prometheus
-    ports:
-      - "${PROMETHEUS_PORT:-9090}:9090"
+    expose:
+      - "9090"
     depends_on:
       credit-service: {condition: service_healthy}
     networks: [foc-net]
@@ -315,14 +320,15 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      # Login required: the dashboard is the single viewing surface, so treat
+      # it like any other admin UI (loopback binding + credentials).
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
     depends_on:
       prometheus: {condition: service_started}
     networks: [foc-net]

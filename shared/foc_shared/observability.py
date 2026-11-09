@@ -41,7 +41,7 @@ import json
 import logging
 import math
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from contextvars import ContextVar, Token
 from uuid import uuid4
 
@@ -443,6 +443,7 @@ class Observability:
         readiness_session_dep: Callable | None = None,
         readiness_extra: Callable[[], dict[str, str]] | None = None,
         check_broker: bool = True,
+        metrics_refresh: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         """Mount ``/metrics`` and ``/health/ready`` and add the middleware.
 
@@ -450,18 +451,30 @@ class Observability:
         :func:`set_broker_state` up to date (a long-lived consumer). Services
         that merely publish through an outbox, or do not use the broker at all,
         would otherwise report ``degraded`` forever.
+
+        ``metrics_refresh`` runs before every ``/metrics`` scrape so gauges that
+        come from the database or the connection pool are fresh without a
+        background task. Prometheus scrapes are the only trigger, so a scrape
+        must never fail because of it (errors are logged and swallowed).
         """
         app.add_middleware(ObservabilityMiddleware, observability=self)
-        app.include_router(self._metrics_router())
+        app.include_router(self._metrics_router(metrics_refresh))
         app.include_router(
             self._readiness_router(readiness_session_dep, readiness_extra, check_broker)
         )
 
-    def _metrics_router(self) -> APIRouter:
+    def _metrics_router(
+        self, refresh: Callable[[], Awaitable[None]] | None = None
+    ) -> APIRouter:
         router = APIRouter(tags=["observability"])
 
         @router.get("/metrics", include_in_schema=False)
         async def prometheus_metrics() -> Response:
+            if refresh is not None:
+                try:
+                    await refresh()
+                except Exception:
+                    logging.getLogger("app").exception("Metrics refresh failed.")
             return Response(content=self.render(), media_type=CONTENT_TYPE_LATEST)
 
         return router
