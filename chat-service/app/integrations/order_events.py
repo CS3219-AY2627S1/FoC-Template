@@ -23,6 +23,12 @@ also schedules the purge (``purge_after``).
 Each event is applied exactly once: its id goes into ``processed_events`` in the same
 transaction as its effects. One consumer is active at a time (single-active-consumer
 queue), so events are applied in the order the order-service published them.
+
+A failing event is retried in place, with backoff, so the order is kept. After
+``CHAT_ORDER_EVENT_RETRY_LIMIT`` attempts it is moved to the dead queue
+(``chat-service.order-events.dead``) for inspection and replay, so one bad event cannot
+block the queue. While the database is unreachable every event would fail, so those
+attempts are not counted: the consumer waits instead of parking good events.
 """
 
 from __future__ import annotations
@@ -38,6 +44,7 @@ from typing import Any
 import aio_pika
 from aio_pika.abc import AbstractIncomingMessage
 from pydantic import BaseModel, ConfigDict, ValidationError
+from sqlalchemy import exc as sa_exc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import ChatError
@@ -57,6 +64,7 @@ log = logging.getLogger(__name__)
 # OrderApproved is the order-service's completion fact (it has no shared enum member).
 ORDER_APPROVED = "OrderApproved"
 REQUESTER, COURIER = "requester", "courier"
+MAX_BACKOFF_S = 30.0
 
 
 class OrderFact(BaseModel):
@@ -211,6 +219,8 @@ class OrderEventConsumer:
     def __init__(self, state: AppState) -> None:
         self.state = state
         self.settings = state.settings
+        # Publishes a message to the dead queue; set once the channel is open.
+        self._park: Callable[[AbstractIncomingMessage, str], Awaitable[None]] | None = None
 
     async def run(self) -> None:
         while True:
@@ -237,6 +247,26 @@ class OrderEventConsumer:
         )
         for routing_key in BINDINGS:
             await queue.bind(exchange, routing_key=routing_key)
+        dead_queue = self.settings.chat_order_events_dead_queue
+        await channel.declare_queue(dead_queue, durable=True)
+
+        async def park(message: AbstractIncomingMessage, reason: str) -> None:
+            await channel.default_exchange.publish(
+                aio_pika.Message(
+                    body=message.body,
+                    content_type="application/json",
+                    delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                    message_id=message.message_id,
+                    headers={
+                        **(message.headers or {}),
+                        "x-original-routing-key": message.routing_key or "",
+                        "x-failure": reason[:500],
+                    },
+                ),
+                routing_key=dead_queue,
+            )
+
+        self._park = park
         log.info("consuming %s from %r", ", ".join(BINDINGS), self.settings.order_events_exchange)
         async with queue.iterator() as messages:
             async for message in messages:
@@ -245,31 +275,74 @@ class OrderEventConsumer:
     async def handle(self, message: AbstractIncomingMessage) -> None:
         try:
             fact = OrderFact.model_validate_json(message.body)
-        except ValidationError:
-            log.warning("dropping malformed order event %s", message.message_id)
-            await message.reject(requeue=False)
+        except ValidationError as exc:
+            log.warning("parking malformed order event %s", message.message_id)
+            await self._dead_letter(message, f"malformed: {exc.error_count()} error(s)")
             return
         # The order-service sets message_id to its outbox event id.
         event_id = message.message_id or hashlib.sha256(message.body).hexdigest()
         days = self.settings.chat_closed_retention_days
-        try:
-            await self.state.run(
-                lambda s: apply_order_event(s, fact, event_id=event_id, retention_days=days)
-            )
-        except ChatError as exc:
-            if exc.code == "conflict":  # concurrent write; try again
-                await self._retry_later(message)
+        limit = max(1, self.settings.chat_order_event_retry_limit)
+        attempts = 0
+        while True:
+            try:
+                await self.state.run(
+                    lambda s: apply_order_event(s, fact, event_id=event_id, retention_days=days)
+                )
+                break
+            except ChatError as exc:
+                if exc.code != "conflict":  # a business rule: retrying cannot help
+                    log.warning("order event %s ignored: %s", fact.event_type, exc.message)
+                    break
+                error: Exception = exc  # a concurrent write: try again
+            except ValueError:
+                log.warning("order event %s has a non-UUID user id; ignored", fact.event_type)
+                break
+            except Exception as exc:
+                error = exc
+            if _database_unavailable(error):
+                log.warning("database unavailable; retrying order event %s", fact.event_type)
+                await asyncio.sleep(MAX_BACKOFF_S / 6)
+                continue
+            attempts += 1
+            if attempts >= limit:
+                log.error(
+                    "order event %s failed %d times; parking it on the dead queue",
+                    fact.event_type,
+                    attempts,
+                    exc_info=error,
+                )
+                await self._dead_letter(message, f"{type(error).__name__}: {error}")
                 return
-            log.warning("order event %s ignored: %s", fact.event_type, exc.message)
-        except ValueError:
-            log.warning("order event %s has a non-UUID user id; ignored", fact.event_type)
-        except Exception:
-            log.exception("order event %s failed; will retry", fact.event_type)
-            await self._retry_later(message)
-            return
+            log.warning(
+                "order event %s failed (attempt %d/%d); retrying",
+                fact.event_type,
+                attempts,
+                limit,
+                exc_info=error,
+            )
+            await asyncio.sleep(min(2 ** (attempts - 1), MAX_BACKOFF_S))
         await message.ack()
 
-    @staticmethod
-    async def _retry_later(message: AbstractIncomingMessage) -> None:
-        await asyncio.sleep(1)  # avoid a hot redelivery loop while e.g. the DB is down
-        await message.nack(requeue=True)
+    async def _dead_letter(self, message: AbstractIncomingMessage, reason: str) -> None:
+        """Move the message to the dead queue, then ack it. Without a dead queue (not
+        consuming yet) it is rejected; it is never requeued, so it cannot block."""
+        if self._park is None:
+            await message.reject(requeue=False)
+            return
+        await self._park(message, reason)  # if this fails the message is redelivered
+        await message.ack()
+
+
+def _database_unavailable(error: BaseException) -> bool:
+    """True when the failure is the database being unreachable, not this event."""
+    if isinstance(error, sa_exc.DBAPIError) and error.connection_invalidated:
+        return True
+    return isinstance(
+        error,
+        OSError
+        | TimeoutError
+        | sa_exc.TimeoutError
+        | sa_exc.OperationalError
+        | sa_exc.InterfaceError,
+    )

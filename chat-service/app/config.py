@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     chat_order_events_enabled: bool = False
     order_events_exchange: str = "foc.order.events"
     chat_order_events_queue: str = "chat-service.order-events"
+    # An event that keeps failing is tried this many times, then parked on the dead
+    # queue so it cannot block the events behind it. Database outages are not counted.
+    chat_order_event_retry_limit: int = 5
+    chat_order_events_dead_queue: str = "chat-service.order-events.dead"
     # Closed order chats are deleted this many days later. 0 keeps them forever.
     chat_closed_retention_days: int = 0  # 0 = keep closed chats
 
@@ -71,6 +75,8 @@ class Settings(BaseSettings):
     typing_min_interval_s: float = 1.0
     outbox_poll_interval_s: float = 1.0
     outbox_batch_size: int = 100
+    # Published outbox rows (they hold message bodies) are deleted after this long.
+    outbox_keep_hours: int = 24
     purge_interval_s: float = 60.0
 
     @property

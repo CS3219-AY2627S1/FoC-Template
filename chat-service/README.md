@@ -134,6 +134,11 @@ message with the returned `attachment_id`.
   loop deletes unsent photos after `CHAT_PHOTO_UNSENT_TTL_S`, photos of deleted
   messages, and photos of purged conversations. Objects are deleted before their row,
   so a storage outage only delays the clean-up.
+* An upload never holds a database connection during the slow part: a short
+  transaction checks membership and the unsent limit, the image is processed and put
+  in the bucket outside any transaction, and a second short transaction checks again
+  (the chat may have closed meanwhile) and records it. If that last step fails, the
+  object is deleted.
 * No bucket configured: uploads answer 503 and the rest of the chat works.
 
 ### Internal API (`X-Service-Key`, never exposed by the gateway)
@@ -179,8 +184,14 @@ Other order events (`OrderDeletionRequested`, `OrderUpdateRequested`, the credit
 saga replies, ...) are not bound. Every event id (`message_id` from the order-service
 outbox) is stored in `processed_events` in the same transaction as its effects, so
 redeliveries change nothing. The queue is single-active-consumer, so even with several
-replicas the events are applied in publication order. Malformed events are dropped
-(rejected without requeue); database failures are retried.
+replicas the events are applied in publication order.
+
+A failing event is retried in place with backoff (1, 2, 4, 8 s), which keeps the order.
+After `CHAT_ORDER_EVENT_RETRY_LIMIT` attempts, or at once if it is malformed, it is
+moved to the durable queue `chat-service.order-events.dead` (with an `x-failure`
+header) and acknowledged, so one bad event cannot block the events behind it; replay
+it from there once fixed. While the database is unreachable every event would fail, so
+those attempts are not counted: the consumer waits for the database instead.
 
 ## Schema
 
@@ -189,7 +200,7 @@ replicas the events are applied in publication order. Malformed events are dropp
 | `conversations` | `kind` (direct/group), `unique_key`, `title`, `metadata` (JSONB + GIN index), `last_seq`, `closed_at`, `purge_after` |
 | `conversation_members` | `label`, `history_from_seq`, `delivered_seq`, `read_seq`, `left_at` |
 | `messages` | `seq` (unique per conversation), `client_msg_id` (unique per sender), `kind`, `body`, `payload` (JSONB), `reply_to_id`, `edited_at`, `deleted_at` |
-| `outbox` | Domain events written with the change, relayed to RabbitMQ |
+| `outbox` | Domain events written with the change, relayed to RabbitMQ, deleted `OUTBOX_KEEP_HOURS` after publishing |
 | `ws_tickets` | SHA-256 of live WebSocket tickets, `user_id`, `expires_at` |
 | `processed_events` | Inbox of consumed order events (idempotency) |
 | `attachments` | Photos: `object_key`, `content_type`, `size`, `width`, `height`, `uploader_id`, `message_id` (null until sent) |
@@ -218,6 +229,9 @@ row lock on the conversation (`last_seq`), not from the socket.
 | `CHAT_WS_MAX_SESSION_S` | `3600` | Socket re-auth interval (`0` = never) |
 | `CHAT_ORDER_EVENTS_ENABLED` | `false` | Run the order-event adapter |
 | `CHAT_ORDER_EVENTS_QUEUE` | `chat-service.order-events` | |
+| `CHAT_ORDER_EVENT_RETRY_LIMIT` | `5` | Attempts before a failing event is parked |
+| `CHAT_ORDER_EVENTS_DEAD_QUEUE` | `chat-service.order-events.dead` | Where failing and malformed events are parked |
+| `OUTBOX_KEEP_HOURS` | `24` | Published outbox events (they hold message bodies) are deleted after this |
 | `CHAT_CLOSED_RETENTION_DAYS` | `0` | Delete closed order chats and their photos after this many days (`0` = keep) |
 | `CHAT_FANOUT_EXCHANGE` / `CHAT_EVENTS_EXCHANGE` | `foc.chat.fanout` / `foc.chat.events` | |
 | `CHAT_PHOTO_BUCKET` | unset | Private S3 bucket for photos; unset = photos off (503) |

@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db import make_engine, make_sessionmaker
@@ -20,6 +20,7 @@ from app.models.messages import Message
 from app.models.outbox import Outbox
 from app.realtime.broker import LocalBroker
 from app.realtime.hub import Hub
+from app.repositories import outbox as outbox_repo
 from app.schemas.conversations import CreateConversationBody, MemberSpec
 from app.schemas.frames import SendData
 from app.services.outbox import OutboxRelay
@@ -108,6 +109,39 @@ async def test_outbox_is_written_in_transaction_and_relayed_once(state: AppState
             )
             == 0
         )
+
+
+async def test_published_outbox_events_are_pruned(state: AppState) -> None:
+    alice = uuid.uuid4()
+    conv = uuid.UUID(await _conversation(state, alice))
+    for text in ("old", "recent", "unsent"):
+        await state.run(
+            lambda s, t=text: s.send(
+                alice, SendData(conversation_id=conv, client_msg_id=uuid.uuid4(), body=t)
+            )
+        )
+    now = datetime.now(UTC)
+    async with state.sessionmaker() as session, session.begin():
+        rows = {
+            row.payload.get("message", {}).get("body"): row.id
+            for row in await session.scalars(select(Outbox))
+        }
+        await session.execute(
+            update(Outbox)
+            .where(Outbox.id == rows["old"])
+            .values(published_at=now - timedelta(days=2))
+        )
+        await session.execute(
+            update(Outbox).where(Outbox.id == rows["recent"]).values(published_at=now)
+        )
+        await outbox_repo.prune_published(session, keep_hours=24)
+    async with state.sessionmaker() as session:
+        left = {
+            row.payload.get("message", {}).get("body")
+            for row in await session.scalars(select(Outbox))
+        }
+    # conversation.created was never published, so it stays too.
+    assert left == {None, "recent", "unsent"}
 
 
 async def test_failed_transaction_writes_no_outbox_rows(state: AppState) -> None:

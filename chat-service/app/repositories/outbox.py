@@ -4,9 +4,10 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.outbox import Outbox
@@ -34,3 +35,13 @@ async def mark_published(session: AsyncSession, ids: list[int]) -> None:
         await session.execute(
             update(Outbox).where(Outbox.id.in_(ids)).values(published_at=func.now())
         )
+
+
+async def prune_published(session: AsyncSession, keep_hours: int) -> None:
+    """Delete events already published more than `keep_hours` ago."""
+    await session.execute(
+        delete(Outbox).where(
+            Outbox.published_at.is_not(None),
+            Outbox.published_at < func.now() - timedelta(hours=keep_hours),
+        )
+    )

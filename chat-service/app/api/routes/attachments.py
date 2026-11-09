@@ -27,9 +27,18 @@ async def upload_photo(
 ) -> AttachmentResponse:
     """Upload a JPEG, PNG or WebP photo (at most 5 MiB) to a chat you are in."""
     data = await file.read(MAX_IMAGE_BYTES + 1)
-    photo = await state.run(
-        lambda s: photos.upload(s, state.photos, user, conversation_id, data, file.content_type)
+    store = state.photos
+    # Two short transactions around the slow part, so uploads never hold a pooled
+    # database connection while an image is processed or sent to the bucket.
+    await state.run(lambda s: photos.check_upload(s, store, user, conversation_id))
+    stored = await photos.store_image(
+        store, state.settings, conversation_id, data, file.content_type
     )
+    try:
+        photo = await state.run(lambda s: photos.record(s, store, user, conversation_id, stored))
+    except BaseException:
+        await photos.discard(store, stored.key)  # covers a failed commit too
+        raise
     return AttachmentResponse(
         attachment_id=photo.id,
         content_type=photo.content_type,

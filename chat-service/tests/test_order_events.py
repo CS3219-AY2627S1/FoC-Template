@@ -169,6 +169,8 @@ class FakeMessage:
     def __init__(self, body: bytes, message_id: str | None = "m1") -> None:
         self.body = body
         self.message_id = message_id
+        self.headers: dict[str, Any] = {}
+        self.routing_key = "OrderAccepted"
         self.outcome: str | None = None
 
     async def ack(self) -> None:
@@ -214,17 +216,80 @@ async def test_consumer_drops_malformed_events_and_ignores_bad_ids(state: AppSta
     assert await order_chat(state) is None
 
 
-async def test_consumer_requeues_on_unexpected_failure(state: AppState, monkeypatch) -> None:
+def parking_consumer(state: AppState) -> tuple[OrderEventConsumer, list[tuple[str, str]]]:
+    """A consumer whose dead queue is a list of (message id, reason)."""
     consumer = OrderEventConsumer(state)
+    parked: list[tuple[str, str]] = []
+
+    async def park(message: Any, reason: str) -> None:
+        parked.append((message.message_id, reason))
+
+    consumer._park = park
+    return consumer, parked
+
+
+async def test_a_failing_event_is_parked_after_the_retry_limit(
+    state: AppState, monkeypatch
+) -> None:
+    consumer, parked = parking_consumer(state)
+    calls = 0
 
     async def broken(op):
-        raise RuntimeError("database down")
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("bug in a handler")
 
     monkeypatch.setattr(state, "run", broken)
     monkeypatch.setattr("app.integrations.order_events.asyncio.sleep", _no_sleep)
+    msg = FakeMessage(body(), "evt-bad")
+    await consumer.handle(msg)  # returns, so the events behind it are not blocked
+    assert calls == state.settings.chat_order_event_retry_limit == 5
+    assert msg.outcome == "ack"
+    assert parked == [("evt-bad", "RuntimeError: bug in a handler")]
+
+
+async def test_a_transient_failure_is_retried_in_place(state: AppState, monkeypatch) -> None:
+    consumer, parked = parking_consumer(state)
+    real_run, failures = state.run, [RuntimeError("blip")]
+
+    async def flaky(op):
+        if failures:
+            raise failures.pop()
+        return await real_run(op)
+
+    monkeypatch.setattr(state, "run", flaky)
+    monkeypatch.setattr("app.integrations.order_events.asyncio.sleep", _no_sleep)
     msg = FakeMessage(body())
     await consumer.handle(msg)
-    assert msg.outcome == "nack(requeue=True)"
+    assert (msg.outcome, parked) == ("ack", [])
+    assert await order_chat(state) is not None
+
+
+async def test_database_outages_do_not_use_up_the_retry_limit(state: AppState, monkeypatch) -> None:
+    consumer, parked = parking_consumer(state)
+    real_run = state.run
+    outage = [ConnectionRefusedError("db down")] * 8  # more than the retry limit
+
+    async def down_then_up(op):
+        if outage:
+            raise outage.pop()
+        return await real_run(op)
+
+    monkeypatch.setattr(state, "run", down_then_up)
+    monkeypatch.setattr("app.integrations.order_events.asyncio.sleep", _no_sleep)
+    msg = FakeMessage(body())
+    await consumer.handle(msg)
+    assert (msg.outcome, parked) == ("ack", [])
+    assert await order_chat(state) is not None
+
+
+async def test_malformed_events_go_to_the_dead_queue(state: AppState) -> None:
+    consumer, parked = parking_consumer(state)
+    msg = FakeMessage(b'{"event_type": "OrderAccepted"}', "evt-junk")
+    await consumer.handle(msg)
+    assert msg.outcome == "ack"
+    assert [mid for mid, _ in parked] == ["evt-junk"]
+    assert parked[0][1].startswith("malformed")
 
 
 async def _no_sleep(_: float) -> None:

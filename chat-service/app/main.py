@@ -19,6 +19,7 @@ from app.integrations.order_events import OrderEventConsumer, prune_processed_ev
 from app.realtime import ws
 from app.realtime.broker import AmqpBroker, Broker, LocalBroker
 from app.realtime.hub import Hub
+from app.repositories import outbox as outbox_repo
 from app.services import photos
 from app.services import tickets as ticket_store
 from app.services.outbox import (
@@ -33,8 +34,8 @@ log = logging.getLogger("chat")
 
 
 async def _purge_loop(state: AppState) -> None:
-    """Delete conversations past `purge_after`, expired tickets, old inbox ids, and
-    photos whose conversation or message is gone (or that were never sent)."""
+    """Delete conversations past `purge_after`, expired tickets, old inbox ids, published
+    outbox events, and photos whose conversation or message is gone (or never sent)."""
     while True:
         await asyncio.sleep(state.settings.purge_interval_s)
         try:
@@ -42,6 +43,7 @@ async def _purge_loop(state: AppState) -> None:
             async with state.sessionmaker() as session, session.begin():
                 await ticket_store.delete_expired(session)
                 await prune_processed_events(session)
+                await outbox_repo.prune_published(session, state.settings.outbox_keep_hours)
             if state.photos is not None:
                 await state.run(lambda s, store=state.photos: photos.sweep(s, store))
         except Exception:

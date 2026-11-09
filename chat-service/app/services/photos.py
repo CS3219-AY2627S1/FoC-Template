@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from typing import Protocol
@@ -52,6 +53,35 @@ def make_store(settings: Settings) -> PhotoStore | None:
     return PrivateImageStore(settings.chat_photo_bucket, settings.chat_photo_region)
 
 
+@dataclass(frozen=True)
+class StoredPhoto:
+    """A validated photo already in the bucket, not yet recorded."""
+
+    key: str
+    image: ImageData
+    width: int
+    height: int
+
+
+# An upload runs in three steps so no database connection is held during the slow part:
+#   check_upload  (short transaction)  member of an open chat, under the unsent limit
+#   store_image   (no transaction)     validate + re-encode in a thread, then the S3 PUT
+#   record        (short transaction)  check again (the chat may have closed), insert
+# If ``record`` fails, the caller deletes the object with ``discard``.
+
+
+async def check_upload(
+    s: ChatService, store: PhotoStore | None, user_id: uuid.UUID, conversation_id: uuid.UUID
+) -> None:
+    """Refuse early: photos switched off, not allowed to post, or too many unsent."""
+    if store is None:
+        raise errors.photos_unavailable()
+    await s.require_can_post(user_id, conversation_id)
+    limit = s.settings.chat_photo_max_unsent
+    if await attachment_repo.count_unbound(s.session, user_id) >= limit:
+        raise errors.too_many_uploads(limit)
+
+
 def _inspect(data: bytes, claimed_type: str | None) -> tuple[ImageData, int, int]:
     image = validate_image(data, claimed_type)
     with Image.open(BytesIO(image.data)) as opened:
@@ -59,48 +89,56 @@ def _inspect(data: bytes, claimed_type: str | None) -> tuple[ImageData, int, int
     return image, width, height
 
 
-async def upload(
-    s: ChatService,
+async def store_image(
     store: PhotoStore | None,
-    user_id: uuid.UUID,
+    settings: Settings,
     conversation_id: uuid.UUID,
     data: bytes,
     content_type: str | None,
-) -> Attachment:
-    """Validate, store and record a photo for a conversation the user may post in."""
+) -> StoredPhoto:
+    """Validate and re-encode the image off the event loop, then put it in the bucket."""
     if store is None:
         raise errors.photos_unavailable()
-    await s.require_can_post(user_id, conversation_id)
-    limit = s.settings.chat_photo_max_unsent
-    if await attachment_repo.count_unbound(s.session, user_id) >= limit:
-        raise errors.too_many_uploads(limit)
     try:
         image, width, height = await asyncio.to_thread(_inspect, data, content_type)
     except InvalidImageError as exc:
         raise errors.invalid_image(str(exc)) from exc
-    prefix = f"{s.settings.chat_photo_prefix}/{conversation_id}"
     try:
-        key = await store.upload(prefix, image)
+        key = await store.upload(f"{settings.chat_photo_prefix}/{conversation_id}", image)
     except ImageStorageError as exc:
         raise errors.photos_unavailable() from exc
+    return StoredPhoto(key=key, image=image, width=width, height=height)
+
+
+async def record(
+    s: ChatService,
+    store: PhotoStore | None,
+    user_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    photo: StoredPhoto,
+) -> Attachment:
+    """Insert the row for a stored photo, after checking again that the user may post."""
+    await check_upload(s, store, user_id, conversation_id)
+    return await attachment_repo.create(
+        s.session,
+        conversation_id=conversation_id,
+        uploader_id=user_id,
+        object_key=photo.key,
+        content_type=photo.image.content_type,
+        size=len(photo.image.data),
+        width=photo.width,
+        height=photo.height,
+    )
+
+
+async def discard(store: PhotoStore | None, key: str) -> None:
+    """Delete an object whose row was never written (it would be unreachable)."""
+    if store is None:
+        return
     try:
-        return await attachment_repo.create(
-            s.session,
-            conversation_id=conversation_id,
-            uploader_id=user_id,
-            object_key=key,
-            content_type=image.content_type,
-            size=len(image.data),
-            width=width,
-            height=height,
-        )
-    except Exception:
-        # The row was not written; do not leave an unreachable object behind.
-        try:
-            await store.delete(key)
-        except ImageStorageError:
-            log.warning("could not delete orphaned photo %s", key)
-        raise
+        await store.delete(key)
+    except ImageStorageError:
+        log.warning("could not delete orphaned photo %s", key)
 
 
 async def read(store: PhotoStore | None, attachment: Attachment) -> ImageData:

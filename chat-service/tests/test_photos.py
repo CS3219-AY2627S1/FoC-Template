@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from io import BytesIO
 from typing import Any
 
@@ -41,10 +41,14 @@ class FakeStore:
     def __init__(self) -> None:
         self.objects: dict[str, ImageData] = {}
         self.fail_deletes = False
+        # Runs during each upload, after the object is stored.
+        self.on_upload: Callable[[], Awaitable[None]] | None = None
 
     async def upload(self, prefix: str, image: ImageData) -> str:
         key = f"{prefix}/{uuid.uuid4().hex}"
         self.objects[key] = image
+        if self.on_upload is not None:
+            await self.on_upload()
         return key
 
     async def get(self, key: str) -> ImageData:
@@ -171,6 +175,58 @@ def test_closed_chats_take_no_photos(client: TestClient, users: dict[str, User])
     client.post(f"/internal/conversations/{conv}/close", headers=SERVICE).raise_for_status()
     res = upload(client, alice, conv)
     assert res.status_code == 409 and res.json()["code"] == "conversation_closed"
+
+
+def test_uploads_hold_no_database_connection_while_storing(
+    client: TestClient, store: FakeStore, users: dict[str, User]
+) -> None:
+    alice, bob = users["alice"], users["bob"]
+    conv = direct(client, alice, bob)
+    pool = client.app.state.chat.sessionmaker.kw["bind"].sync_engine.pool
+    in_use: list[int] = []
+
+    async def during_upload() -> None:
+        in_use.append(pool.checkedout())
+
+    store.on_upload = during_upload
+    assert upload(client, alice, conv).status_code == 201
+    assert in_use == [0]
+
+
+def test_chat_closed_during_an_upload_keeps_no_object(
+    client: TestClient, store: FakeStore, users: dict[str, User]
+) -> None:
+    alice, bob = users["alice"], users["bob"]
+    conv = direct(client, alice, bob)
+    state = client.app.state.chat
+
+    async def close_meanwhile() -> None:
+        async with state.sessionmaker() as session, session.begin():
+            await session.execute(
+                update(Conversation)
+                .where(Conversation.id == uuid.UUID(conv))
+                .values(closed_at=func.now())
+            )
+
+    store.on_upload = close_meanwhile
+    res = upload(client, alice, conv)
+    assert res.status_code == 409 and res.json()["code"] == "conversation_closed"
+    assert store.objects == {}
+
+
+def test_failed_insert_keeps_no_object(
+    client: TestClient, store: FakeStore, users: dict[str, User], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    alice, bob = users["alice"], users["bob"]
+    conv = direct(client, alice, bob)
+
+    async def broken(*_: Any, **__: Any) -> None:
+        raise RuntimeError("insert failed")
+
+    monkeypatch.setattr(photos.attachment_repo, "create", broken)
+    with pytest.raises(RuntimeError, match="insert failed"):
+        upload(client, alice, conv)
+    assert store.objects == {}
 
 
 def test_photos_switched_off_without_a_bucket(users: dict[str, User]) -> None:
@@ -305,7 +361,8 @@ async def _chat(state: AppState, a: uuid.UUID, b: uuid.UUID) -> uuid.UUID:
 
 
 async def _photo(state: AppState, user: uuid.UUID, conv: uuid.UUID) -> uuid.UUID:
-    row = await state.run(lambda s: photos.upload(s, state.photos, user, conv, png(), "image/png"))
+    stored = await photos.store_image(state.photos, state.settings, conv, png(), "image/png")
+    row = await state.run(lambda s: photos.record(s, state.photos, user, conv, stored))
     return row.id
 
 
