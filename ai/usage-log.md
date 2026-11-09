@@ -1,6 +1,8 @@
 <!--
 Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
-Scope: Credit history endpoint prompts and verification for #58. Author review: Pending.
+Scope: Credit frontend prompts and preview verification for #65. Author review: Reviewed and approved by @phuc.
+Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+Scope: Credit history endpoint prompts and verification for #58. Author review: Reviewed and approved by @phuc.
 AI Assistance Disclosure:
 Additional AI assistance: OpenAI Codex (GPT-6), date: 2026-11-09.
 Scope: Recorded the exact issue #64 fix-and-push authorization and browser validation.
@@ -2001,7 +2003,7 @@ Claude restructured the card so the link to the detail and the new Accept button
 ## 2026-11-09 — Credit transaction history endpoint (#58)
 
 - Tool/mode: OpenAI Codex (GPT-6), code generation, debugging and tests.
-- Author review: Pending.
+- Author review: Reviewed and approved by @phuc.
 - Exact prompts in this exchange:
   - "Implement the FE for the credit service view their own transaction with filter"
   - "does anyservice query to credit"
@@ -2030,3 +2032,76 @@ Claude restructured the card so the link to the detail and the new Accept button
   nginx configuration validation also passed in the production nginx image.
   Final startup inspection found that the native Kafka clients reject reconnects
   after disconnect; retry attempts now construct fresh producer/consumer instances.
+
+## 2026-11-09 - Credit transaction history frontend (#65)
+
+- Tool/mode: OpenAI Codex (GPT-6), code generation, debugging and tests.
+- Author review: Reviewed and approved by @phuc.
+- Exact prompt: "Implement fe for creditservice usign the endpoints"
+- Steering prompt: "run for me to see the web"
+- Key response: Added protected /credits and My credits navigation, the typed own-history
+  API helper, URL-backed date/pagination filters, inclusive Singapore calendar-day
+  conversion to the API's exclusive upper bound, all six transaction types, signed
+  available/reserved deltas, references, loading/empty/out-of-range/error/retry/refresh
+  states, and cancellation/late-response protection. Added focused tests and a live
+  browser journey. Updated the existing test runner to invoke Playwright through Node
+  for Windows/Linux compatibility. No backend or balance endpoint changes.
+- Verification: 98 frontend tests, production build and oxlint passed. Live browser
+  journey was prepared but had not run when the user requested the local website.
+  Started Docker Desktop, the local Compose stack, and Vite for the preview request.
+  The in-app browser host was unavailable; direct preview links are provided instead.
+- Local preview result: Vite is running at http://127.0.0.1:5173. User, Supplier,
+  Credit, Kafka and their required databases started successfully. /credits returned
+  HTTP 200 and the proxied own-history endpoint returned the expected HTTP 401
+  without a token. The full root Compose startup hit an existing Order database
+  credential mismatch (order_migrator authentication failure); no credentials or
+  existing volumes were changed. The credit preview works without Order Service.
+
+## 2026-11-09 - Current credit balance summary (#65)
+
+- Tool/mode: OpenAI Codex (GPT-6), implementation and tests. Author review: Reviewed and approved by @phuc.
+- Exact prompt: "show the available and reserve credit on top"
+- Key response: Added current available/reserved cards above the history filters.
+  Exposed the existing getBalance query through the previously proposed authenticated
+  GET /me/credit route, with public /api/v1/me/credit routing in Vite/nginx. Balance
+  loads independently of history filters/paging; Refresh reloads both. Unknown balances
+  display a placeholder with retry rather than zero; pending account creation returns
+  404 CREDIT_ACCOUNT_NOT_READY. No schema change or balance mutation.
+- Verification: All 103 frontend tests passed; frontend build and oxlint passed.
+  Credit source/test typechecks, build and all 8 focused HTTP/verifier tests passed.
+  Rebuilt/restarted only Credit; verified phuc through real login and the Vite gateway:
+  available 105, reserved 0, total 105, while a date-filtered history was empty.
+  The endpoint rejects unauthenticated calls and uses no-store caching.
+
+## 2026-11-09 - Compact balances beside username (#65)
+
+- Tool/mode: OpenAI Codex (GPT-6), implementation and verification. Author review: Reviewed and approved by @phuc.
+- Exact prompt: "put small available and reserve next to the username not like this reverst this change"
+- Key response: Removed the large history-page balance cards. Moved available/reserved
+  values into compact text beside @username in the shared TopBar. Kept the own-balance
+  API and existing cancellation/error/retry behavior; Credit Refresh still refreshes
+  the header balance. Unknown values show a dash with a small Retry control. Updated
+  existing component/browser expectations and current usage documentation.
+- Verification: All 103 frontend tests passed; production build and oxlint passed.
+  The running Vite preview picks up the layout change through hot reload.
+
+## 2026-11-09 - Stack balances separately from username (#65)
+
+- Tool/mode: OpenAI Codex (GPT-6), UI adjustment. Author review: Reviewed and approved by @phuc.
+- Exact prompt: "make it reserve on top of available dont in the same as username"
+- Key response: Moved the compact credit balances into a separate header block beside
+  the user details, with Reserved above Available. The @username line is separate.
+  Retained the existing balance reads, refresh, unknown-value and retry behavior.
+- Verification: All 5 focused balance/header tests passed; production build and lint passed.
+
+## 2026-11-10 - Credit author-review approval
+
+- Tool/mode: OpenAI Codex (GPT-6), attribution/documentation update.
+- Exact prompt: "*Author review: Pending. put all review by phuc*"
+- Author review: Reviewed and approved by @phuc, as explicitly supplied above.
+- Key response: Updated pending review attributions for the Credit endpoint, balance
+  summary, frontend, tests, gateways, dependency metadata and related disclosure/log
+  sections to Reviewed and approved by @phuc. Preserved unrelated Supplier/Order
+  reviewer records and the user's existing staged changes.
+- Verification: Checked the affected Credit review markers and git diff whitespace.
+  No runtime behavior changed; no tests were needed for attribution-only edits.

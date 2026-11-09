@@ -1,6 +1,6 @@
 /* AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-11-09.
  * Scope: Retriable Kafka startup independent of HTTP history for #58.
- * Author review: Pending. */
+ * Author review: Reviewed and approved by @phuc. */
 import { errorMessage, log } from "./log";
 
 /** A failed connect/subscribe is cleaned up before retrying; HTTP stays available. */

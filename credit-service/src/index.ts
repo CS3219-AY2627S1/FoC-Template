@@ -1,5 +1,5 @@
 /* Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
- * Scope: HTTP history and independent Kafka startup/shutdown for #58. Author review: Pending. */
+ * Scope: HTTP history and independent Kafka startup/shutdown for #58. Author review: Reviewed and approved by @phuc. */
 /*
  * AI Assistance Disclosure:
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-16

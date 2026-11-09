@@ -1,4 +1,4 @@
-<!-- Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09. Scope: Transaction history API and verification documentation for #58. Author review: Pending. -->
+<!-- Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09. Scope: Transaction history API and verification documentation for #58. Author review: Reviewed and approved by @phuc. -->
 <!-- Additional AI assistance: Codex (GPT-6), 2026-10-18. Scope: account-status publishing implementation and verification notes. Author review: Reviewed and approved by @phuc. -->
 <!--
 AI Assistance Disclosure:
@@ -24,11 +24,11 @@ Owns every credit balance on the platform. The design is in
 | Message handling: account status, initial grant, reserve, capture, release, forfeit | Done |
 | Account-status replay protection | `processed_account_status` (`0003`), written atomically with effects; retain markers indefinitely |
 | Outbox: insert, publish batch, retention cleanup | Done |
-| Balance read (`getBalance`) | Done; no HTTP route yet |
+| Balance read (`getBalance`) | Done; authenticated `GET /me/credit` |
 | Kafka topics, including the two DLQs | Created by the shared `kafka-init` Compose service, see [../kafka/README.md](../kafka/README.md) |
 | Kafka consumer, rejection replies, DLQ, outbox publisher loop | Done (`src/consumer.ts`, `src/publisher.ts`, `src/index.ts`) |
 | Own transaction history HTTP API | Implemented; see contract below |
-| Balance HTTP API, `/health` | Not implemented |
+| `/health` HTTP API | Not implemented |
 
 ## Layout
 
@@ -116,6 +116,14 @@ every database test, each balance is checked against the sum of its ledger delta
 reservations.
 
 ## Transaction history HTTP API
+
+Current balance is available separately at public `GET /api/v1/me/credit`
+(internal `GET /me/credit`). It uses the same live User Service verification and
+returns `{ available, reserved, total }` from the current account, without date or
+pagination parameters. Results use `Cache-Control: no-store`. An account not yet
+created returns 404 `CREDIT_ACCOUNT_NOT_READY`; callers can retry while the initial
+account notification propagates. Missing/inactive sessions return 401 and dependency
+outages return 503, matching history. It does not create an account or grant credits.
 
 `GET /api/v1/me/credit/transactions` through the frontend gateway maps to
 `GET /me/credit/transactions` on Credit (port 3003 by default).

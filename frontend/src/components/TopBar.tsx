@@ -1,3 +1,5 @@
+/* Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+ * Scope: Credit navigation and stacked balances beside user details for #65. Author review: Reviewed and approved by @phuc. */
 /*
  * AI Assistance Disclosure:
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-09-26
@@ -17,6 +19,7 @@
 import { Link, NavLink } from 'react-router'
 import { useAuth } from '../auth/authContext'
 import { APP_NAME } from '../config'
+import { CreditBalanceSummary } from '../credits/CreditBalanceSummary'
 
 // "Alice Tan" -> "AT", "bob_member" -> "BO"
 function initials(name: string): string {
@@ -25,7 +28,7 @@ function initials(name: string): string {
   return letters.toUpperCase()
 }
 
-export function TopBar() {
+export function TopBar({ creditRefreshKey = 0 }: { creditRefreshKey?: number }) {
   const { user, logout } = useAuth()
   if (!user) return null
 
@@ -50,6 +53,7 @@ export function TopBar() {
               <span className="hidden sm:inline">Manage Suppliers</span>
             </Link>
           )}
+          <CreditBalanceSummary key={user.username} refreshKey={creditRefreshKey} />
           <div className="min-w-0 text-right">
             <p className="truncate text-sm font-semibold text-navy-900">
               {user.displayName}
@@ -80,6 +84,7 @@ export function TopBar() {
           <MainLink to="/suppliers" end={false}>Suppliers</MainLink>
           <MainLink to="/errands" end>Open errands</MainLink>
           <MainLink to="/errands/mine" end>My errands</MainLink>
+          <MainLink to="/credits" end>My credits</MainLink>
           <Link
             to="/errands/new"
             className="ml-auto shrink-0 rounded-lg bg-accent-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-600"

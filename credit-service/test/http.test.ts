@@ -1,6 +1,6 @@
 /* AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-11-09.
- * Scope: History HTTP and real verifier failure/timeout tests for #58.
- * Author review: Pending. */
+ * Scope: History HTTP (#58), own-balance (#65), and verifier failure/timeout tests.
+ * Author review: Reviewed and approved by @phuc. */
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { after, before, describe, it } from "node:test";
@@ -70,10 +70,14 @@ describe("history HTTP", () => {
   let baseUrl: string;
   const calls: unknown[][] = [];
   let dbError: Error | undefined;
+  let missingAccount = false;
   before(async () => {
     const pool = { async query(...args: unknown[]) {
       calls.push(args);
       if (dbError) throw dbError;
+      if (String(args[0]).includes("SELECT available_balance")) {
+        return { rows: missingAccount ? [] : [{ available_balance: "91", reserved_balance: "14" }] };
+      }
       return { rows: [{ total: "0", items: [] }] };
     } } as unknown as Pool;
     const verifier = { async verify(header: string | undefined) {
@@ -110,5 +114,25 @@ describe("history HTTP", () => {
     assert.doesNotMatch(await res.text(), /secret/);
     dbError = undefined;
     assert.equal((await fetch(`${baseUrl}/unknown`)).status, 404);
+  });
+  it("returns only the verified user's current balance without caching", async () => {
+    const before = calls.length;
+    const unauthenticated = await fetch(`${baseUrl}/me/credit`);
+    assert.equal(unauthenticated.status, 401);
+    assert.equal(calls.length, before);
+    const res = await fetch(`${baseUrl}/me/credit`, { headers: { authorization: "Bearer valid" } });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await res.json(), { available: 91, reserved: 14, total: 105 });
+    assert.deepEqual(calls.at(-1)![1], [id]);
+    assert.equal((await fetch(`${baseUrl}/me/credit?userId=other`, { headers: { authorization: "Bearer valid" } })).status, 400);
+  });
+  it("reports an account still being created without claiming a zero balance", async () => {
+    missingAccount = true;
+    try {
+      const res = await fetch(`${baseUrl}/me/credit`, { headers: { authorization: "Bearer valid" } });
+      assert.equal(res.status, 404);
+      assert.equal((await res.json()).error, "CREDIT_ACCOUNT_NOT_READY");
+    } finally { missingAccount = false; }
   });
 });

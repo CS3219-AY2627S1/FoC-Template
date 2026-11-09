@@ -1,5 +1,5 @@
 /* Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
- * Scope: Credit history gateway for #58. Author review: Pending. */
+ * Scope: Credit history (#58) and current-balance (#65) gateways. Author review: Reviewed and approved by @phuc. */
 /*
  * AI Assistance Disclosure:
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-09-26
@@ -34,6 +34,7 @@ export default defineConfig({
   server: {
     // Dev gateway; keep in sync with nginx.conf. Keys starting with "^" are regexes.
     proxy: {
+      '^/api/v1/me/credit(\\?|$)': { target: CREDIT_SERVICE_URL, rewrite: stripApiPrefix },
       '^/api/v1/me/credit/transactions(\\?|$)': { target: CREDIT_SERVICE_URL, rewrite: stripApiPrefix },
       // user-service: public paths are rewritten to the service's own routes
       '^/api/v1/auth/(login|register)$': { target: USER_SERVICE_URL, rewrite: stripApiPrefix },

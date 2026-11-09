@@ -1,5 +1,5 @@
 # Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
-# Scope: Required HTTP verifier configuration for #58. Author review: Pending.
+# Scope: Required HTTP verifier configuration for #58. Author review: Reviewed and approved by @phuc.
 # AI Assistance Disclosure: Claude Code (Claude Opus 5.5), 2026-10-16. Scope: an isolated stack
 # for the Credit Service end-to-end test (author's choice: separate test stack). Mirrors the
 # kafka, credit-db, credit-migrate and credit-service definitions in the root compose.yaml.

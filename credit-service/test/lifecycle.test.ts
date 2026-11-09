@@ -1,6 +1,6 @@
 /* AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-11-09.
  * Scope: Kafka-independent startup and shutdown regressions for #58.
- * Author review: Pending. */
+ * Author review: Reviewed and approved by @phuc. */
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import { startWorkers } from "../src/lifecycle";

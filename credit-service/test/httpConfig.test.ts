@@ -1,6 +1,6 @@
 /* AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-11-09.
  * Scope: HTTP config validation and migration independence for #58.
- * Author review: Pending. */
+ * Author review: Reviewed and approved by @phuc. */
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import { loadHttpConfig, loadDatabaseConfig } from "../src/config";

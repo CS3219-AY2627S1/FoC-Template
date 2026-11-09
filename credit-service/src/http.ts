@@ -1,7 +1,8 @@
 /* AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-11-09.
- * Scope: Authenticated transaction history HTTP endpoint for issue #58.
- * Author review: Pending. */
+ * Scope: Authenticated history (#58) and own-balance read for the #65 summary.
+ * Author review: Reviewed and approved by @phuc. */
 import express from "express";
+import { getBalance } from "./accounts";
 import type { Pool } from "pg";
 import { isDatabaseUnavailable } from "./dbAvailability";
 import { errorMessage, log } from "./log";
@@ -11,7 +12,7 @@ import { InvalidTransactionQuery, listTransactions, parseTransactionQuery } from
 export function createHttpApp(pool: Pool, verifier: SessionVerifier) {
   const app = express();
   app.disable("x-powered-by");
-  app.get("/me/credit/transactions", async (req, res) => {
+  app.get(["/me/credit", "/me/credit/transactions"], async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     try {
       const principal = await verifier.verify(req.get("authorization"));
@@ -19,7 +20,18 @@ export function createHttpApp(pool: Pool, verifier: SessionVerifier) {
         res.status(401).json({ error: "UNAUTHENTICATED", message: "A valid active session is required." });
         return;
       }
-      const query = parseTransactionQuery(new URL(req.originalUrl, "http://credit.internal").searchParams);
+      const params = new URL(req.originalUrl, "http://credit.internal").searchParams;
+      if (req.path === "/me/credit") {
+        if (params.size > 0) throw new InvalidTransactionQuery("The balance endpoint does not accept query parameters.");
+        const balance = await getBalance(pool, principal.id);
+        if (balance === null) {
+          res.status(404).json({ error: "CREDIT_ACCOUNT_NOT_READY", message: "Your credit account is still being set up. Please try again shortly." });
+        } else {
+          res.json(balance);
+        }
+        return;
+      }
+      const query = parseTransactionQuery(params);
       res.json(await listTransactions(pool, principal.id, query));
     } catch (error) {
       if (error instanceof InvalidTransactionQuery) {

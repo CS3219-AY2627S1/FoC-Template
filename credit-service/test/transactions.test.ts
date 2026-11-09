@@ -1,6 +1,6 @@
 /* AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-11-09.
  * Scope: History validation, database isolation and pagination tests for #58.
- * Author review: Pending. */
+ * Author review: Reviewed and approved by @phuc. */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";

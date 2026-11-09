@@ -1,3 +1,5 @@
+/* Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+ * Scope: Credit route authentication tests for #65. Author review: Reviewed and approved by @phuc. */
 /*
  * AI Assistance Disclosure:
  * Tool: OpenAI Codex (GPT-6), date: 2026-09-27
@@ -20,6 +22,7 @@ vi.mock('./suppliers/SupplierDetailPage', () => ({
 }))
 
 vi.mock('./errands/OpenErrandsPage', () => ({ OpenErrandsPage: () => <h1>Open errands route</h1> }))
+vi.mock('./credits/CreditTransactionsPage', () => ({ CreditTransactionsPage: () => <h1>Credit history route</h1> }))
 vi.mock('./errands/MyErrandsPage', () => ({ MyErrandsPage: () => <h1>My errands route</h1> }))
 vi.mock('./errands/CreateErrandPage', () => ({ CreateErrandPage: () => <h1>Create errand route</h1> }))
 vi.mock('./errands/ErrandDetailPage', () => ({ ErrandDetailPage: () => <h1>Errand detail route</h1> }))
@@ -33,6 +36,16 @@ const loggedIn: AuthApi = {
 }
 
 describe('Supplier routes', () => {
+  it('routes authenticated members to Credit history', async () => {
+    renderApp('/credits', loggedIn)
+    expect(await screen.findByRole('heading', { name: 'Credit history route' })).toBeInTheDocument()
+  })
+
+  it('protects Credit history from logged-out visitors', async () => {
+    renderApp('/credits', { ...loggedIn, status: 'loggedOut', user: null })
+    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Credit history route' })).not.toBeInTheDocument()
+  })
   it('redirects the authenticated root route to the Supplier catalogue', async () => {
     renderApp('/', loggedIn)
     expect(await screen.findByRole('heading', { name: 'Supplier catalogue route' })).toBeInTheDocument()

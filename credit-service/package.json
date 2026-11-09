@@ -1,5 +1,5 @@
 {
-  "//": "AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-11-09; Express HTTP dependencies for issue #58. Author review pending. See AI-DISCLOSURES.md.",
+  "//": "AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-11-09; Express HTTP dependencies for issue #58. Author review: Reviewed and approved by @phuc. See AI-DISCLOSURES.md.",
   "name": "credit-service",
   "version": "1.0.0",
   "private": true,

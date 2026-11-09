@@ -1,4 +1,4 @@
-<!-- Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09. Scope: Record implemented history route for #58. Author review: Pending. -->
+<!-- Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09. Scope: Record implemented history route for #58. Author review: Reviewed and approved by @phuc. -->
 <!-- Additional AI assistance: Codex (GPT-6), 2026-10-18. Scope: account-status publishing implementation and verification notes. Author review: Reviewed and approved by @phuc. -->
 <!--
 AI Assistance Disclosure:
@@ -559,8 +559,11 @@ Implementation update (2026-11-09, issue #58): the own-history route is implemen
 at public `GET /api/v1/me/credit/transactions` and internal
 `GET /me/credit/transactions`, with optional inclusive `from`, exclusive `to`,
 zero-based `page`, and `size`. The exact implemented contract is documented in
-[the service README](../README.md#transaction-history-http-api). Balance and health
-HTTP routes remain unimplemented. New implementation is pending author review.
+[the service README](../README.md#transaction-history-http-api). The own-balance
+route `GET /me/credit` is also implemented for the #65 frontend summary, returning
+the existing `getBalance` result or 404 `CREDIT_ACCOUNT_NOT_READY` while account
+creation is pending. The health HTTP route remains unimplemented. New implementation
+was reviewed and approved by @phuc.
 
 The frontend reads balance and history over HTTP. Kafka is not involved in these reads.
 Requests are authenticated by calling User Service `/auth/verify`, the same way Supplier

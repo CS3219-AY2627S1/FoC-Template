@@ -1,6 +1,6 @@
 /* AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-11-09.
  * Scope: Own-user history query and date/pagination validation for issue #58.
- * Author review: Pending. */
+ * Author review: Reviewed and approved by @phuc. */
 import type { Pool } from "pg";
 import { toAmount } from "./db";
 

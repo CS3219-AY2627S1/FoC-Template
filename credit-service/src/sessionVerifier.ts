@@ -1,6 +1,6 @@
 /* AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-11-09.
  * Scope: Live User Service verification for issue #58, following Order's verifier.
- * Author review: Pending. */
+ * Author review: Reviewed and approved by @phuc. */
 export class VerificationUnavailable extends Error {}
 export class VerificationContractError extends Error {}
 
