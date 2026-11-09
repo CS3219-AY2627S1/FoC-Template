@@ -1,5 +1,5 @@
 image:
-  tag: "3f3fa2a193ce27bf281b07ace71c2eedc136194f" # git SHA, set by deploy/push-dev.sh
+  tag: "b6303c18c4a763fd3fa6322070d4edb26db6fea4" # git SHA, set by deploy/push-dev.sh
 mesh:
   # k6 (load-test/) calls Order directly with the identity headers.
   callers: [gateway, foc-load/k6]
