@@ -1,9 +1,10 @@
 // AI-assisted (OpenCode + Claude): responsive supplier browse page with live
 // search, category/zone filters, client-side sort and server pagination.
 // Reviewed by authors.
+// UI tweaks (Claude Opus 5.5): framed as "Request an Errand"; supplier management
+// stays on the admin Manage Suppliers page. Reviewed by authors.
 import {
   Alert,
-  Button,
   Center,
   Group,
   Loader,
@@ -17,12 +18,10 @@ import {
   Title,
 } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
-import { IconPlus, IconSearch } from "@tabler/icons-react";
+import { IconSearch } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { SupplierCard } from "../../components/SupplierCard";
 import { ApiError, suppliersApi } from "../../lib/api";
-import { useAuth } from "../../lib/auth";
 import {
   SUPPLIER_CATEGORIES,
   type Category,
@@ -34,9 +33,6 @@ import {
 const PAGE_SIZE = 12;
 
 export default function SupplierList() {
-  const { isAdmin } = useAuth();
-  const navigate = useNavigate();
-
   const [q, setQ] = useState("");
   const [debouncedQ] = useDebouncedValue(q, 300);
   const [category, setCategory] = useState<Category | null>(null);
@@ -91,22 +87,12 @@ export default function SupplierList() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-end" wrap="wrap">
-        <div>
-          <Title order={2}>Campus Suppliers</Title>
-          <Text c="dimmed" size="sm">
-            Browse vendors, stores and landmarks across campus
-          </Text>
-        </div>
-        {isAdmin && (
-          <Button
-            leftSection={<IconPlus size={16} />}
-            onClick={() => navigate("/admin/suppliers")}
-          >
-            Add supplier
-          </Button>
-        )}
-      </Group>
+      <div>
+        <Title order={2}>Request an Errand</Title>
+        <Text c="dimmed" size="sm">
+          Pick a vendor or spot across NUS and get someone to run it for you
+        </Text>
+      </div>
 
       <Stack gap="sm">
         <Group grow wrap="wrap">

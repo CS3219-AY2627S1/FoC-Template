@@ -41,6 +41,8 @@ USER_PW="${USER_PG_PASSWORD:-}";                [ -n "$USER_PW" ]      || { USER
 CREDIT_PW="${CREDIT_PG_PASSWORD:-}";            [ -n "$CREDIT_PW" ]    || { CREDIT_PW="$(gen)"; writeback CREDIT_PG_PASSWORD "$CREDIT_PW"; }
 ORDER_PW="${ORDER_PG_PASSWORD:-}";              [ -n "$ORDER_PW" ]     || { ORDER_PW="$(gen)";  writeback ORDER_PG_PASSWORD "$ORDER_PW"; }
 NOTIF_PW="${NOTIFICATION_PG_PASSWORD:-}";       [ -n "$NOTIF_PW" ]     || { NOTIF_PW="$(gen)";  writeback NOTIFICATION_PG_PASSWORD "$NOTIF_PW"; }
+CHAT_PW="${CHAT_PG_PASSWORD:-}";                [ -n "$CHAT_PW" ]      || { CHAT_PW="$(gen)";   writeback CHAT_PG_PASSWORD "$CHAT_PW"; }
+CHAT_SERVICE_KEYS="${CHAT_SERVICE_KEYS:-}";     [ -n "$CHAT_SERVICE_KEYS" ] || { CHAT_SERVICE_KEYS="$(gen)"; writeback CHAT_SERVICE_KEYS "$CHAT_SERVICE_KEYS"; }
 
 # shellcheck disable=SC2034  # consumed by build_secrets in lib.sh
 INCLUDE_BACKUP=0

@@ -1,5 +1,3 @@
-<!-- AI-INFLUENCED: Record Order Service photo and D3 Postman updates with Codex. -->
-
 # AI Usage Log
 
 Per the CS3219 AI Usage Policy (Project Document, Appendix 2). Record every
@@ -16,6 +14,29 @@ Format for each entry:
 - Prompt(s): <exact prompt(s) + key responses, or a link>
 - Author review: <how you validated/edited/tested the output>
 ```
+
+## 07/11/2026 — Javier
+
+- Tool: Claude (model: Claude Opus 5.5)
+- Scope: Integrated the standalone chat-service (supplied as a zip) into the
+  monorepo as the requester-courier chat N2H. Ported it to the repo layout and
+  conventions (`requirements.txt`, `ruff.toml`, `pytest.ini`, repo-root Dockerfile
+  with `foc_shared`, `GET /health`, gateway-trusted `X-User-Id`, `{code, message}`
+  errors, shared env names); added an order-event adapter (From slide deck) 
+  (`app/integrations/order_events.py`) that maps `foc.order.events` onto the 
+  generic chat operations with an idempotency inbox; added a WebSocket relay,
+  chat routes and an Origin allowlist to the API gateway; added the Messages page,
+  chat client and order chat button to the frontend; wired chat-service into compose,
+  `.env.example`, the Makefile and scripts, a Helm chart + namespace, the secrets 
+  scripts, CI (lint, Postgres-backed tests, compose e2e, k3d smoke, image build, tag bump)
+  and the docs. Top-level dirs changed: `chat-service` (new), `api-gateway`,
+  `frontend`, `infra`, `scripts`, `.github`, `docs`, root files.
+- Prompt(s): "Integrate this [chat-service.zip] to foc project main branch with
+  the project standard and format with this [chat-service.md] concept and architecture
+  design."
+- Author review: Passed pytests, and end to end tested chat feature. Did manual 
+  tweak on UI for better UX. Tweak backend to delete closed chat within a time
+  but deactivate for now. 
 
 ## 08/11/2026 — John
 

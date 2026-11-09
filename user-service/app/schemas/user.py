@@ -76,6 +76,15 @@ class ProfileResponse(BaseModel):
     email_verified: bool
 
 
+class PublicProfileResponse(BaseModel):
+    """What any signed-in user may see about another user: the name only."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    display_name: str
+
+
 class AdminUserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

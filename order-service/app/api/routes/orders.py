@@ -239,7 +239,8 @@ async def get_order(
     session: Annotated[AsyncSession, Depends(get_session)],
     response: Response,
 ) -> OrderDetailResponse:
-    """Returns an order to its requester or assigned courier."""
+    """Returns an order to its requester or assigned courier, or to any user while it
+    is open and unassigned (it is listed to everyone then)."""
 
     response.headers["Cache-Control"] = "private, no-store"
     order, photo = await order_service.get_order_for_participant(

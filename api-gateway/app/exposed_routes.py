@@ -17,6 +17,10 @@ To expose a route:
 3. If the route must work without a login, also add it to
    ``PUBLIC_ROUTE_PREFIXES`` in ``shared/foc_shared/auth.py``.
 
+WebSocket endpoints are listed separately in ``EXPOSED_WEBSOCKET_ROUTES``. They carry
+no bearer token (browsers cannot send one on the handshake); the backend authenticates
+the connection itself, e.g. with a one-time ticket from an authenticated HTTP route.
+
 Changes to this file need a review from its code owner (``.github/CODEOWNERS``).
 """
 
@@ -30,6 +34,7 @@ ROUTE_TABLE: dict[str, str] = {
     "/api/orders": settings.order_service_url,
     "/api/credits": settings.credit_service_url,
     "/api/notifications": settings.notification_service_url,
+    "/api/chat": settings.chat_service_url,
 }
 
 
@@ -43,6 +48,7 @@ EXPOSED_ROUTES: tuple[tuple[str, str], ...] = (
     ("POST", "/api/users/password/reset"),
     ("GET", "/api/users/me"),
     ("PATCH", "/api/users/me"),
+    ("GET", "/api/users/{user_id}/public"),
     ("GET", "/api/users/admin"),
     ("POST", "/api/users/admin"),
     ("POST", "/api/users/admin/{user_id}/suspend"),
@@ -80,4 +86,17 @@ EXPOSED_ROUTES: tuple[tuple[str, str], ...] = (
     ("GET", "/api/notifications/{user_id}"),
     ("POST", "/api/notifications/{user_id}/{notification_id}/read"),
     ("POST", "/api/notifications/{user_id}/read-all"),
+    # chat-service
+    ("POST", "/api/chat/ws-ticket"),
+    ("GET", "/api/chat/conversations"),
+    ("GET", "/api/chat/conversations/{conversation_id}"),
+    ("GET", "/api/chat/conversations/{conversation_id}/messages"),
+    ("POST", "/api/chat/conversations/{conversation_id}/attachments"),
+    ("GET", "/api/chat/conversations/{conversation_id}/attachments/{attachment_id}"),
+)
+
+
+EXPOSED_WEBSOCKET_ROUTES: tuple[str, ...] = (
+    # chat-service
+    "/api/chat/ws",
 )

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.exposed_routes import EXPOSED_ROUTES, ROUTE_TABLE
+from app.exposed_routes import EXPOSED_ROUTES, EXPOSED_WEBSOCKET_ROUTES, ROUTE_TABLE
 from app.services.auth import PUBLIC_PREFIXES
 
 _MANIFEST = Path(__file__).parent / "public_api_surface.json"
@@ -17,6 +17,7 @@ def _current_surface() -> dict[str, list[str]]:
         ],
         "proxied_prefixes": sorted(ROUTE_TABLE),
         "unauthenticated_prefixes": sorted(PUBLIC_PREFIXES),
+        "websocket_routes": sorted(EXPOSED_WEBSOCKET_ROUTES),
     }
 
 

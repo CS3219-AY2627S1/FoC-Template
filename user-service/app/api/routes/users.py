@@ -22,6 +22,7 @@ from app.schemas.user import (
     LoginResponse,
     ProfileResponse,
     ProfileUpdateRequest,
+    PublicProfileResponse,
     RegisterRequest,
     RegisterResponse,
     RoleUpdateRequest,
@@ -224,6 +225,27 @@ async def update_profile(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
     return ProfileResponse.model_validate(user)
+
+
+@router.get("/{user_id}/public", response_model=PublicProfileResponse)
+async def get_public_profile(
+    user_id: str,
+    session: SessionDep,
+    x_user_id: UserIdHeaderDep = None,
+) -> PublicProfileResponse:
+    """Display name of another user, e.g. the courier or requester of an order.
+
+    Only the name is returned; email, contact number and role stay private.
+    """
+    if x_user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="missing identity header"
+        )
+    service = UserService(session)
+    user = await service.get_profile(user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
+    return PublicProfileResponse.model_validate(user)
 
 
 @router.post("/admin", response_model=AdminUserResponse, status_code=status.HTTP_201_CREATED)

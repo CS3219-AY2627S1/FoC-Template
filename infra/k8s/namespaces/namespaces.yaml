@@ -46,6 +46,15 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: foc-chat
+  labels:
+    app.kubernetes.io/part-of: campus-errand
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false,Prune=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: foc-messaging
   labels:
     app.kubernetes.io/part-of: campus-errand

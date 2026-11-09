@@ -1,6 +1,7 @@
 // AI-assisted (OpenCode + Claude): typed fetch wrapper for the API gateway,
 // attaches the JWT bearer token and normalizes error payloads. Extended with
 // ordersApi and creditsApi for D3. Reviewed by authors.
+import type { ChatAttachment, ChatConversation, ChatHistoryPage, WsTicket } from "./chat/types";
 import type {
   AdminUser,
   AdminUserList,
@@ -59,20 +60,25 @@ async function request<T>(
   path: string,
   body?: unknown,
   extraHeaders?: Record<string, string>,
+  // "blob" returns the raw response body (e.g. an image) instead of parsed JSON.
+  responseType: "json" | "blob" = "json",
 ): Promise<T> {
   const headers: Record<string, string> = {};
   const token = getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  // FormData sets its own multipart Content-Type (with the boundary).
+  const isForm = typeof FormData !== "undefined" && body instanceof FormData;
+  if (body !== undefined && !isForm) headers["Content-Type"] = "application/json";
   if (extraHeaders) Object.assign(headers, extraHeaders);
 
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
   });
 
   if (res.status === 204) return undefined as T;
+  if (responseType === "blob" && res.ok) return (await res.blob()) as T;
 
   let payload: unknown = null;
   const text = await res.text();
@@ -173,6 +179,22 @@ export const authApi = {
     contact_number?: string | null;
   }) {
     return request<ProfileResponse>("PATCH", "/api/users/me", body);
+  },
+};
+
+// ---- Other users (name only) ----
+export interface PublicProfile {
+  id: string;
+  display_name: string;
+}
+
+export const usersApi = {
+  /** Display name of another user, e.g. the courier or requester of an order. */
+  publicProfile(userId: string) {
+    return request<PublicProfile>(
+      "GET",
+      `/api/users/${encodeURIComponent(userId)}/public`,
+    );
   },
 };
 
@@ -442,6 +464,50 @@ export const notificationsApi = {
     return request<{ marked_read: number; unread_count: number }>(
       "POST",
       `/api/notifications/${userId}/read-all`,
+    );
+  },
+};
+
+// ---- Chat (chat-service via the gateway) ----
+export function wsBaseUrl(): string {
+  const base = BASE_URL || window.location.origin;
+  return base.replace(/^http/, "ws").replace(/\/$/, "");
+}
+
+export const chatApi = {
+  /** One-time ticket for opening the chat WebSocket (valid for ~30 s). */
+  ticket() {
+    return request<WsTicket>("POST", "/api/chat/ws-ticket");
+  },
+  inbox() {
+    return request<ChatConversation[]>("GET", "/api/chat/conversations");
+  },
+  conversation(id: string) {
+    return request<ChatConversation>("GET", `/api/chat/conversations/${id}`);
+  },
+  history(
+    id: string,
+    params: { before_seq?: number; after_seq?: number; limit?: number } = {},
+  ) {
+    return request<ChatHistoryPage>(
+      "GET",
+      `/api/chat/conversations/${id}/messages${buildQuery(params)}`,
+    );
+  },
+  /** Upload a photo to a chat; then send it as {kind: "image", payload: {attachment_id}}. */
+  uploadPhoto(id: string, file: File) {
+    const form = new FormData();
+    form.append("file", file);
+    return request<ChatAttachment>("POST", `/api/chat/conversations/${id}/attachments`, form);
+  },
+  /** A photo's bytes. Fetched with the login token; <img> tags cannot send it. */
+  photo(id: string, attachmentId: string) {
+    return request<Blob>(
+      "GET",
+      `/api/chat/conversations/${id}/attachments/${attachmentId}`,
+      undefined,
+      undefined,
+      "blob",
     );
   },
 };
