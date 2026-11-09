@@ -1,0 +1,43 @@
+# Seeds the load users into the User and Credit databases. Re-running resets
+# credit balances. Start with:
+#   kubectl -n foc-load create job load-setup-$(date +%H%M) --from=cronjob/load-setup
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: load-setup
+spec:
+  suspend: true
+  schedule: "0 0 31 2 *" # never; started by hand
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          annotations:
+            linkerd.io/inject: disabled # talks only to RDS
+        spec:
+          restartPolicy: Never
+          initContainers:
+            {{- include "load-test.seedContainer" . | nindent 12 }}
+          containers:
+            - name: psql
+              image: {{ .Values.images.psql }}
+              command: [sh, -ec]
+              args:
+                - |
+                  psql "$USER_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f /work/data/users.sql
+                  psql "$CREDIT_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f /work/data/credits.sql
+                  echo "Seeded {{ .Values.seedVus }} users"
+              env:
+                - name: USER_DATABASE_URL
+                  valueFrom: { secretKeyRef: { name: user-db, key: DATABASE_URL } }
+                - name: CREDIT_DATABASE_URL
+                  valueFrom: { secretKeyRef: { name: credit-db, key: DATABASE_URL } }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: "1", memory: 1Gi }
+              volumeMounts:
+                - { name: data, mountPath: /work/data }
+          volumes:
+            {{- include "load-test.scriptVolumes" . | nindent 12 }}

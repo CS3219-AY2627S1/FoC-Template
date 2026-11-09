@@ -1,3 +1,11 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated the Fastify app and the error handler that returns the
+ *        team's { error, code } shape.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import { config } from './config.js';
 import { registerRoutes } from './routes/index.js';

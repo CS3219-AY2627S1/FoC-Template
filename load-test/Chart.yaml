@@ -1,0 +1,5 @@
+apiVersion: v2
+name: foc-load-test
+description: Seed and k6 load-test Jobs, started by hand from suspended CronJobs
+type: application
+version: 0.1.0

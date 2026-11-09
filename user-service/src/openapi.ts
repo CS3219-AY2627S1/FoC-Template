@@ -400,7 +400,7 @@ export const openApiDocument = {
       post: {
         tags: ["Authentication"],
         summary: "Log in and create a session",
-        description: "Public. Locks after five failed password attempts by default (configurable). Attempts one warning email when entering lockout, directing the owner to the frontend forgot-password page. Concurrent failures are counted under a row lock. Wrong/unknown credentials, active-account lockout and expired deletion keep the same generic 401, including email delivery failures. Exception: a correct password on a suspended account before its deletion deadline returns 403 ACCOUNT_SUSPENDED without a session, including when login is also locked. This does not clear lockout; password reset is still required before a locked account can appeal. Warnings are not durably queued or exactly-once. Responses are no-store.",
+        description: "Public. Locks after five failed password attempts by default (configurable). Attempts one warning email when entering lockout, directing the owner to the frontend forgot-password page. Concurrent failures are counted under a row lock. Wrong/unknown credentials, active-account lockout and expired deletion keep the same generic 401, including email delivery failures. Exception: a correct password on a suspended account before its deletion deadline returns 403 ACCOUNT_SUSPENDED without a session, including when login is also locked. After that credential check, User privately fetches Admin's latest appeal without forwarding credentials. A rejected appeal with a valid rejectionReason supplies the error string plus guidance to appeal again; absent/open/malformed/unavailable replies keep the default suspension message. This lookup runs outside account transactions. It does not clear lockout; password reset is still required before a locked account can appeal. Warnings are not durably queued or exactly-once. Responses are no-store.",
         requestBody: {
           required: true,
           content: {
@@ -506,11 +506,12 @@ export const openApiDocument = {
     "/api/v1/user/search": {
       get: {
         tags: ["User"], summary: "Admin Service: search users",
-        description: "Admin Service must forward the real administrator's Authorization bearer session. Caller-supplied identity headers alone are not accepted. Matches name/email case-insensitively or an exact UUID. Page size is 20; expired deletion records are excluded.",
+        description: "Admin Service must forward the real administrator's Authorization bearer session. Caller-supplied identity headers alone are not accepted. Matches name/email case-insensitively or an exact UUID. Optional status filters both items and total: Suspended means SUSPENDED access; Verified means active with both verifications; Created means active with at least one verification missing. Omitted status includes all. Page size is 20; expired deletion records are excluded.",
         security: [{ bearerAuth: [] }],
         parameters: [
           { name: "q", in: "query", schema: { type: "string", maxLength: 100, default: "" } },
           { name: "page", in: "query", schema: { type: "integer", minimum: 1, maximum: 100000, default: 1 } },
+          { name: "status", in: "query", schema: { type: "string", enum: ["Created", "Verified", "Suspended"] } },
         ],
         responses: {
           "200": { description: "{ items: [{ id, name, email, role: admin|user, status: Created|Verified|Suspended }], page, total }", content: {
@@ -521,7 +522,23 @@ export const openApiDocument = {
               } } }, page: { type: "integer" }, total: { type: "integer" },
             } } },
           } },
-          "400": { description: "Invalid q/page" }, "404": { description: "Missing/invalid session or caller is not an eligible admin" },
+          "400": { description: "Invalid q/page or INVALID_STATUS (including blank, repeated or unknown status)" }, "404": { description: "Missing/invalid session or caller is not an eligible admin" },
+        },
+      },
+    },
+    "/api/v1/user/{userId}/appeal-rejected": {
+      post: {
+        tags: ["Account support"], summary: "Admin Service: email an appeal rejection reason",
+        description: "Requires the real eligible admin bearer session, never identity headers alone. Sends the trimmed reason and permission to appeal again to the stored account email through the configured provider (development logs only). No account, appeal or session state is changed. Notification is best-effort, not durably queued or deduplicated; Admin keeps its already-stored rejection if this call fails. No-store response.",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "userId", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["reason"],
+          properties: { reason: { type: "string", minLength: 1, maxLength: 4000 } } } } } },
+        responses: {
+          "200": { description: "Notification accepted by the email provider or logged in development; not proof of inbox delivery" },
+          "400": { description: "INVALID_USER_ID or INVALID_REASON" },
+          "404": { description: "Missing/ineligible admin session or target missing/past its deletion deadline" },
+          "503": { description: "Email not configured or delivery failed; Admin rejection remains stored" },
         },
       },
     },

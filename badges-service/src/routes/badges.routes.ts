@@ -2,7 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
  * Scope: Generated the profile badges route (API contract GET /api/v1/badges/{userId}).
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';

@@ -8,8 +8,15 @@ image:
   tag: "" # git SHA in the cloud; anything locally
   pullPolicy: IfNotPresent
 
-replicas: 1
+replicas: 1 # ignored while autoscaling is enabled
 port: 3000
+
+# HPA on the app container's CPU (% of resources.requests.cpu), plus a PDB.
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilization: 70
 
 # Plain settings, exposed to the container as environment variables.
 env: {}
@@ -79,7 +86,8 @@ secretStore:
 mesh:
   enabled: true
   # Callers allowed on every path not matched under `internal`: "gateway" (the
-  # Envoy Gateway proxies, charts/foc-gateway) or another service's name.
+  # Envoy Gateway proxies, charts/foc-gateway), another service's name, or
+  # <namespace>/<serviceaccount> for a caller outside this namespace.
   callers: [gateway]
   # Path prefixes with their own, narrower caller list, e.g.
   #   - { path: /api/v1/credit/internal, callers: [order] }
@@ -89,9 +97,25 @@ mesh:
   gateway:
     namespace: envoy-gateway-system
     serviceAccount: ""
+  # The identity that may read the proxy's /metrics (charts/kube-prometheus-stack).
+  metrics:
+    enabled: false
+    namespace: monitoring
+    serviceAccount: prometheus
+  # Linkerd sidecar memory. "" = injector defaults (~20Mi/64Mi). Order under
+  # full load needs more (see deploy/values/envs/dev/services/order.yaml).
+  proxy:
+    memoryRequest: ""
+    memoryLimit: ""
 
 # HTTP health check path; "" disables the probes and the HTTP test.
+# readinessPath / livenessPath override when set (e.g. Order: /health vs /live).
 healthPath: /health
+readinessPath: ""
+livenessPath: ""
+# When set, probes use this container port (e.g. Spring management.server.port)
+# and Linkerd skips inbound on it so kubelet is not meshed onto a busy proxy.
+managementPort: ""
 
 # `helm test` pods (not used by Argo CD).
 tests:

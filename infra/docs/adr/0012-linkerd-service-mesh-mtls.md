@@ -84,7 +84,7 @@ are authenticated; it secures the hops after the gateway.
   | order | gateway | badges (metrics) |
   | supplier | gateway, order | — |
   | rating | gateway | order (ratings) |
-  | admin | gateway | order (escalations) |
+  | admin | gateway; `/api/v1/admin/internal/conflicts`: **order only**; `/api/v1/admin/internal/{reports,appeals}`: **user only** | — |
   | badges | gateway | — |
 
   **Rule:** a caller is added to a service's policy in the same change that adds

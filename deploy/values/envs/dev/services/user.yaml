@@ -1,8 +1,22 @@
 image:
-  tag: "2ae335483a8608f2f5c77ad6c0b79b9e140fa3c0" # git SHA, set by deploy/push-dev.sh
-replicas: 1 # TELEGRAM_POLLING_ENABLED must stay on one replica only
+  tag: "462739498fb0afa8571088622cd08268c690f877" # git SHA, set by deploy/push-dev.sh
+# Only one replica may poll the Telegram bot: before adding a bot token, run
+# the poller separately and set TELEGRAM_POLLING_ENABLED=false here.
+autoscaling:
+  enabled: true
+  # Idle/dev. Full-run peak needs min=max=8 — see load-test/README.md
+  # "Scale up / scale down". Create looks up telegram; CPU HPA is blind to that.
+  minReplicas: 1
+  maxReplicas: 1
+  targetCPUUtilization: 70
+resources:
+  requests: {cpu: 250m}
+  limits: {cpu: "1"}
 env:
   APP_ENV: dev
+  # minReplicas=4 for load: only one process may poll a bot. Polling spam was
+  # starving User under smoke and Order create returned 503 USER_FAILED.
+  TELEGRAM_POLLING_ENABLED: "false"
   # Password-reset links point here.
   FRONTEND_BASE_URL: https://djj7vqja8at5u.cloudfront.net
   # OTP and reset emails through SES; the node role may send only as this

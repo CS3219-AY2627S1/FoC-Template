@@ -1,3 +1,8 @@
+%% AI Assistance Disclosure
+%% Tool: Cursor (Auto), date: 2026-10-15
+%% Scope: Documentation wording for Order Service under author-fixed design.
+%% Author review: Varun Sivakumar generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+
 sequenceDiagram
     actor Requester
     participant Orders as Order service
@@ -10,7 +15,7 @@ sequenceDiagram
     opt dispute photo attached
         Orders->>Photos: store dispute photo
     end
-    Orders->>Admin: POST /api/v1/admin/conflicts
+    Orders->>Admin: POST /api/v1/admin/internal/conflicts
     Admin-->>Orders: accepted
     Orders->>DB: ESCALATED, dispute text, log, alert, status outbox
     Orders-->>Requester: 200 ESCALATED

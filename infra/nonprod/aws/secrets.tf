@@ -42,8 +42,8 @@ resource "aws_secretsmanager_secret_version" "db_service" {
 # Secrets that aren't database logins: Secret name → keys.
 locals {
   app_secrets = {
-    user-otp          = ["OTP_SECRET"]              # user-service, signs OTPs
-    order-user-lookup = ["ORDER_USER_LOOKUP_TOKEN"] # order → user Telegram lookup
+    user-otp      = ["OTP_SECRET"]     # user-service, signs OTPs
+    grafana-admin = ["admin-password"] # charts/kube-prometheus-stack
   }
   env_app_secrets = { for pair in setproduct(var.envs, keys(local.app_secrets)) : "${pair[0]}/${pair[1]}" => { env = pair[0], name = pair[1] } }
   env_app_keys = merge([for k, s in local.env_app_secrets : {

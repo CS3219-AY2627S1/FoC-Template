@@ -9,6 +9,12 @@ variable "github_repository" {
   default     = "junngithub/AY2627S1-CS3219-P15"
 }
 
+variable "github_repository_immutable" {
+  description = "The same repo as GitHub's immutable OIDC subject names it (gh api repos/<repo>/actions/oidc/customization/sub)."
+  type        = string
+  default     = "junngithub@127373610/AY2627S1-CS3219-P15@1357933367"
+}
+
 variable "deploy_branch" {
   description = "Only workflows running on this branch get the role (pushes to ECR are for merged code)."
   type        = string

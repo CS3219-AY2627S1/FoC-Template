@@ -83,6 +83,24 @@
   color: var(--color-text-subtle);
 }
 
+.label {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-subtle);
+}
+
+.verdict {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.note {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
 /* What the user wrote, kept as typed: line breaks stay, long words wrap. */
 .text {
   margin: 0;

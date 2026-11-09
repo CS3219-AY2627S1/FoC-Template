@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Cursor (Auto), date: 2026-11-09
+# Scope: Implementation assistance for Admin Service tests under author-fixed requirements and architecture.
+# Author review: Sahana Avantika generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+
 """Report and appeal queues. The database is in memory; User Service is stubbed."""
 
 import uuid
@@ -13,7 +18,7 @@ from sqlalchemy.sql.dml import Update
 from app.database import get_db
 from app.models.audit_log import AuditLog
 from app.models.moderation import AppealStatus, ReportStatus, SuspensionAppeal, UserReport
-from app.routers import moderation, users
+from app.routers import conflicts, moderation, users
 
 ADMIN = {
     "x-user-id": "admin-sahana",
@@ -133,12 +138,19 @@ class MemSession:
 
 
 @pytest.fixture
-def api():
+def api(monkeypatch):
+    monkeypatch.setattr(moderation.scheduler, "schedule_appeal_evaluation", lambda appeal_id: None)
+    monkeypatch.setattr(moderation.scheduler, "schedule_appeal_reassessment", lambda appeal_id: None)
+    monkeypatch.setattr(moderation.scheduler, "schedule_report_evaluation", lambda report_id: None)
+    monkeypatch.setattr(moderation.scheduler, "schedule_report_reassessment", lambda report_id: None)
     session = MemSession()
     app = FastAPI()
     app.include_router(users.router)
+    app.include_router(conflicts.router)
     app.include_router(moderation.reports)
     app.include_router(moderation.appeals)
+    app.include_router(moderation.internal_reports)
+    app.include_router(moderation.internal_appeals)
 
     async def _db():
         yield session
@@ -148,10 +160,19 @@ def api():
         yield client, session
 
 
+@pytest.mark.parametrize(
+    "path", ["/api/v1/admin/conflicts", "/api/v1/admin/reports", "/api/v1/admin/appeals"]
+)
+def test_intake_is_only_under_internal(api, path):
+    # The gateway forwards /api/v1/admin/* to any session; intake must not be there.
+    client, _session = api
+    assert client.post(path, json={}).status_code == 405
+
+
 def test_a_user_cannot_report_themselves(api):
     client, _session = api
     resp = client.post(
-        "/api/v1/admin/reports",
+        "/api/v1/admin/internal/reports",
         json={"reporterUserId": " u-1 ", "reportedUserId": "u-1", "comment": "me"},
     )
     assert resp.status_code == 422
@@ -161,14 +182,14 @@ def test_a_user_cannot_report_themselves(api):
 def test_open_report_is_reused_and_dismiss_does_not_block_another(api):
     client, session = api
     body = {"reporterUserId": "u-1", "reportedUserId": "u-2", "comment": "first"}
-    opened = client.post("/api/v1/admin/reports", json=body)
+    opened = client.post("/api/v1/admin/internal/reports", json=body)
     assert opened.status_code == 201
     assert opened.json()["reporterUserId"] == "u-1"
     assert opened.json()["reportedUserId"] == "u-2"
     assert "reporter_user_id" not in opened.json()
     report_id = opened.json()["id"]
 
-    again = client.post("/api/v1/admin/reports", json={**body, "comment": "second"})
+    again = client.post("/api/v1/admin/internal/reports", json={**body, "comment": "second"})
     assert again.status_code == 201
     assert again.json()["id"] == report_id
     assert again.json()["comment"] == "first"
@@ -188,11 +209,13 @@ def test_open_report_is_reused_and_dismiss_does_not_block_another(api):
 
     blocked = client.post(f"/api/v1/admin/reports/{report_id}/dismiss", headers=ADMIN)
     assert blocked.status_code == 409
+    closed_ai = client.post(f"/api/v1/admin/reports/{report_id}/reassess", headers=ADMIN)
+    assert closed_ai.status_code == 409
 
     missing = client.post(f"/api/v1/admin/reports/{uuid.uuid4()}/dismiss", headers=ADMIN)
     assert missing.status_code == 404
 
-    reopened = client.post("/api/v1/admin/reports", json=body)
+    reopened = client.post("/api/v1/admin/internal/reports", json=body)
     assert reopened.status_code == 201
     assert reopened.json()["id"] != report_id
     assert reopened.json()["status"] == "open"
@@ -212,7 +235,7 @@ def test_duplicate_open_report_returns_the_row_that_won_the_race(api):
     session.hide_open = True
 
     resp = client.post(
-        "/api/v1/admin/reports",
+        "/api/v1/admin/internal/reports",
         json={"reporterUserId": "u-1", "reportedUserId": "u-2", "comment": "late"},
     )
     assert resp.status_code == 201
@@ -266,16 +289,91 @@ def test_suspend_actions_only_open_reports_against_that_user(api, monkeypatch):
     assert [row.action for row in session.audits] == ["suspend"]
 
 
+def test_a_new_report_queues_an_assessment_and_a_repeat_does_not(api, monkeypatch):
+    client, session = api
+    queued: list[str] = []
+    monkeypatch.setattr(moderation.scheduler, "schedule_report_evaluation", queued.append)
+    opened = client.post(
+        "/api/v1/admin/internal/reports",
+        json={"reporterUserId": "u-1", "reportedUserId": "u-2", "comment": "never delivered"},
+    )
+    assert opened.status_code == 201
+    assert opened.json()["aiRecommendation"] is None
+    assert opened.json()["aiCompletedAt"] is None
+    assert queued == [opened.json()["id"]]
+
+    again = client.post(
+        "/api/v1/admin/internal/reports",
+        json={"reporterUserId": "u-1", "reportedUserId": "u-2", "comment": "second"},
+    )
+    assert again.json()["id"] == opened.json()["id"]
+    assert queued == [opened.json()["id"]]
+
+    reruns: list[str] = []
+    monkeypatch.setattr(moderation.scheduler, "schedule_report_reassessment", reruns.append)
+    again_ai = client.post(f"/api/v1/admin/reports/{opened.json()['id']}/reassess", headers=ADMIN)
+    assert again_ai.status_code == 202
+    assert reruns == [opened.json()["id"]]
+    assert [row.action for row in session.audits] == ["reassess_report"]
+
+
+def test_a_new_appeal_queues_an_assessment_and_lists_that_users_reports(api, monkeypatch):
+    client, session = api
+    queued: list[str] = []
+    monkeypatch.setattr(moderation.scheduler, "schedule_appeal_evaluation", queued.append)
+
+    report = UserReport(
+        id=uuid.uuid4(),
+        reporter_user_id="u-1",
+        reported_user_id="u-2",
+        comment="Left the order at the wrong block",
+        status=ReportStatus.actioned,
+        created_at=datetime.now(timezone.utc),
+    )
+    other = UserReport(
+        id=uuid.uuid4(),
+        reporter_user_id="u-3",
+        reported_user_id="u-9",
+        comment="someone else",
+        status=ReportStatus.open,
+        created_at=datetime.now(timezone.utc),
+    )
+    session.reports.extend([report, other])
+
+    opened = client.post("/api/v1/admin/internal/appeals", json={"userId": "u-2", "message": "I can explain"})
+    assert opened.status_code == 201
+    assert opened.json()["aiRecommendation"] is None
+    assert opened.json()["aiCompletedAt"] is None
+    assert queued == [opened.json()["id"]]
+
+    again = client.post("/api/v1/admin/internal/appeals", json={"userId": "u-2", "message": "second"})
+    assert again.json()["id"] == opened.json()["id"]
+    assert queued == [opened.json()["id"]]
+
+    listed = client.get("/api/v1/admin/appeals?status=open", headers=ADMIN)
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body[0]["message"] == "I can explain"
+    assert [row["comment"] for row in body[0]["reports"]] == ["Left the order at the wrong block"]
+
+    reruns: list[str] = []
+    monkeypatch.setattr(moderation.scheduler, "schedule_appeal_reassessment", reruns.append)
+    again_ai = client.post(f"/api/v1/admin/appeals/{opened.json()['id']}/reassess", headers=ADMIN)
+    assert again_ai.status_code == 202
+    assert reruns == [opened.json()["id"]]
+    assert [row.action for row in session.audits] == ["reassess_appeal"]
+
+
 def test_appeal_reject_leaves_it_closed_and_reinstate_closes_the_open_one(api, monkeypatch):
     client, session = api
-    opened = client.post("/api/v1/admin/appeals", json={"userId": "u-2", "message": "first"})
+    opened = client.post("/api/v1/admin/internal/appeals", json={"userId": "u-2", "message": "first"})
     assert opened.status_code == 201
     assert opened.json()["userId"] == "u-2"
     assert opened.json()["rejectionReason"] is None
     assert "user_id" not in opened.json()
     appeal_id = opened.json()["id"]
 
-    again = client.post("/api/v1/admin/appeals", json={"userId": "u-2", "message": "second"})
+    again = client.post("/api/v1/admin/internal/appeals", json={"userId": "u-2", "message": "second"})
     assert again.json()["id"] == appeal_id
     assert again.json()["message"] == "first"
 
@@ -296,6 +394,8 @@ def test_appeal_reject_leaves_it_closed_and_reinstate_closes_the_open_one(api, m
     )
     assert rejected.status_code == 200
     assert rejected.json()["status"] == "rejected"
+    closed = client.post(f"/api/v1/admin/appeals/{appeal_id}/reassess", headers=ADMIN)
+    assert closed.status_code == 409
     assert rejected.json()["rejectionReason"] == "Repeated abuse"
     assert [row.action for row in session.audits] == ["reject_appeal"]
     assert session.audits[0].detail == "Repeated abuse"
@@ -305,7 +405,7 @@ def test_appeal_reject_leaves_it_closed_and_reinstate_closes_the_open_one(api, m
     assert latest.json()["rejectionReason"] == "Repeated abuse"
     assert client.get("/api/v1/admin/appeals/latest", params={"userId": "nobody"}).json() is None
 
-    fresh = client.post("/api/v1/admin/appeals", json={"userId": "u-2", "message": "again"})
+    fresh = client.post("/api/v1/admin/internal/appeals", json={"userId": "u-2", "message": "again"})
     assert fresh.status_code == 201
     assert fresh.json()["id"] != appeal_id
 

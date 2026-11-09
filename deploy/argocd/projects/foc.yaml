@@ -17,6 +17,8 @@ spec:
       namespace: foc-dev
     - server: https://kubernetes.default.svc
       namespace: foc-stg
+    - server: https://kubernetes.default.svc
+      namespace: foc-load # load-test/ Jobs
   clusterResourceWhitelist:
     - group: ""
       kind: Namespace

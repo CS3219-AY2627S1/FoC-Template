@@ -1,0 +1,1 @@
+CREATE INDEX "rating_grant_pending_idx" ON "rating_grant" USING btree ("rater_id","granted_at") WHERE "rating_grant"."skipped_at" is null;

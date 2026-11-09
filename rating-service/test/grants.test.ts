@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated tests for the grant handler.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { handleRatingCommand } from '../src/messaging/grants.js';

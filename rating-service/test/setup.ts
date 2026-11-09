@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated per-test table cleanup.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach } from 'vitest';
 import { config } from '../src/config.js';
@@ -11,7 +18,7 @@ if (!config.databaseUrl.includes('rating_test')) {
 // Clean slate before every test; RESTART IDENTITY keeps ids deterministic.
 beforeEach(async () => {
   await db.execute(
-    sql`TRUNCATE rating_grant, rating, user_rating, outbox RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE rating_grant, rating, user_rating, outbox, deleted_user RESTART IDENTITY CASCADE`,
   );
 });
 

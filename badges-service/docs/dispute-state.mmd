@@ -1,0 +1,16 @@
+stateDiagram-v2
+    direction TB
+    [*] --> Counted: first counted status
+    [*] --> Uncounted: ESCALATED from COLLECTED
+    Counted --> Uncounted: ESCALATED, rows and counts taken back
+    Uncounted --> CourierOnly: verdict requester at fault
+    Uncounted --> RequesterOnly: verdict courier at fault
+    Uncounted --> Both: verdict no-fault
+    Counted: Counted for both
+    Uncounted: Disputed, counted for nobody
+    CourierOnly: Counted for the courier
+    RequesterOnly: Counted for the requester
+    Both: Counted for both
+    CourierOnly --> [*]
+    RequesterOnly --> [*]
+    Both --> [*]

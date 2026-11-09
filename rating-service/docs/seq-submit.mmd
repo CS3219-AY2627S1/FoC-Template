@@ -1,0 +1,26 @@
+sequenceDiagram
+    actor User
+    participant Gateway as Gateway
+    participant Rating as Rating service
+    participant DB as Postgres
+
+    User->>Gateway: POST /api/v1/rating/orders/{orderId}, score and comment
+    Gateway->>Rating: same request, x-user-id set after authorize
+    alt bad header, order id, score, or comment
+        Rating-->>User: 400 VALIDATION_ERROR
+    else valid request
+        Note over Rating,DB: one transaction
+        Rating->>DB: select rating_grant for order and caller
+        alt no grant
+            Rating-->>User: 403 RATING_NOT_PERMITTED
+        else grant found
+            Rating->>DB: insert rating, ratee and roles from the grant
+            alt order and rater already rated
+                Rating-->>User: 409 RATING_ALREADY_SUBMITTED
+            else stored
+                Rating->>DB: upsert user_rating, sum + score and count + 1
+                Rating->>DB: insert outbox user.rating.updated
+                Rating-->>User: 201 stored rating
+            end
+        end
+    end

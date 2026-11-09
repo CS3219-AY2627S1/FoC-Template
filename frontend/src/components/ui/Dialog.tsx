@@ -19,9 +19,11 @@ interface DialogProps {
   onClose: () => void;
   footer?: ReactNode;
   children: ReactNode;
+  /** Wider panel, for content such as evidence photos. */
+  wide?: boolean;
 }
 
-export function Dialog({ open, title, onClose, footer, children }: DialogProps) {
+export function Dialog({ open, title, onClose, footer, children, wide = false }: DialogProps) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
 
@@ -60,7 +62,7 @@ export function Dialog({ open, title, onClose, footer, children }: DialogProps) 
 
       <div
         ref={panel}
-        className={styles.panel}
+        className={wide ? `${styles.panel} ${styles.panelWide}` : styles.panel}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

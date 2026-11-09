@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Cursor (Auto), date: 2026-10-15
+ * Scope: Implementation assistance for Order Service tests under author-fixed requirements and architecture.
+ * Author review: Varun Sivakumar generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+ */
+
 package sg.edu.nus.cs3219.order.client;
 
 import com.sun.net.httpserver.HttpServer;
@@ -13,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -27,6 +35,7 @@ class HttpClientsTest {
     private final AtomicReference<String> lastPath = new AtomicReference<>();
     private final AtomicReference<String> lastBody = new AtomicReference<>();
     private final AtomicReference<String> lastUser = new AtomicReference<>();
+    private final AtomicInteger telegramFlakyHits = new AtomicInteger();
     private final UserAccount ada = new UserAccount("ada-id");
 
     @BeforeEach
@@ -78,7 +87,14 @@ class HttpClientsTest {
                     status = 500;
                     yield "{\"error\":\"nope\",\"code\":\"INTERNAL_ERROR\"}".getBytes(StandardCharsets.UTF_8);
                 }
-                case "/api/v1/admin/conflicts" -> {
+                case "/api/v1/user/internal/users/flaky/telegram" -> {
+                    if (telegramFlakyHits.incrementAndGet() < 2) {
+                        status = 503;
+                        yield "{\"error\":\"busy\",\"code\":\"INTERNAL_ERROR\"}".getBytes(StandardCharsets.UTF_8);
+                    }
+                    yield "{\"userId\":\"flaky\",\"telegramHandle\":\"retry_ok\"}".getBytes(StandardCharsets.UTF_8);
+                }
+                case "/api/v1/admin/internal/conflicts" -> {
                     if (requestBody.contains("\"comment\":\"\"")) {
                         status = 422;
                         yield "{\"detail\":\"rejected\"}".getBytes(StandardCharsets.UTF_8);
@@ -160,20 +176,38 @@ class HttpClientsTest {
     }
 
     @Test
+    void cachesTelegramHandles() {
+        HttpClients cached = clients(
+                "http://127.0.0.1:" + server.getAddress().getPort(), java.time.Duration.ofMinutes(5));
+        assertEquals("ada_tan", cached.telegramHandle("11111111-1111-1111-1111-111111111111"));
+        lastPath.set(null);
+        assertEquals("ada_tan", cached.telegramHandle("11111111-1111-1111-1111-111111111111"));
+        assertEquals(null, lastPath.get());
+    }
+
+    @Test
+    void retriesTransientTelegramFailures() {
+        telegramFlakyHits.set(0);
+        assertEquals("retry_ok", clients.telegramHandle("flaky"));
+        assertTrue(telegramFlakyHits.get() >= 2);
+    }
+
+    @Test
     void callsRating() {
         assertEquals(4.5, clients.ratingFor("11111111-1111-1111-1111-111111111111", ada));
         assertEquals("/api/v1/rating/11111111-1111-1111-1111-111111111111", lastPath.get());
         assertEquals("ada-id", lastUser.get());
         assertEquals(null, clients.ratingFor("00000000-0000-0000-0000-000000000000", ada));
         assertEquals(HttpStatus.BAD_REQUEST, assertThrows(ApiException.class, () -> clients.ratingFor("not-a-uuid", ada)).getStatus());
-        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, assertThrows(ApiException.class, () -> clients.ratingFor("down", ada)).getStatus());
+        // Rating outages must not fail create/accept — column is nullable.
+        assertEquals(null, clients.ratingFor("down", ada));
     }
 
     @Test
     void callsAdmin() {
         UUID orderId = UUID.randomUUID();
         clients.openConflict(orderId, "ada-id", "wrong item", java.util.List.of("a.png"));
-        assertEquals("/api/v1/admin/conflicts", lastPath.get());
+        assertEquals("/api/v1/admin/internal/conflicts", lastPath.get());
         assertTrue(lastBody.get().contains("\"orderId\":\"" + orderId + "\""));
         assertTrue(lastBody.get().contains("\"reporterUserId\":\"ada-id\""));
         assertTrue(lastBody.get().contains("\"comment\":\"wrong item\""));
@@ -224,7 +258,7 @@ class HttpClientsTest {
         assertThrows(ApiException.class, () -> down.returnReserved(orderId, ada));
         assertThrows(ApiException.class, () -> down.requirePlace("2", ada));
         assertThrows(ApiException.class, () -> down.telegramHandle("11111111-1111-1111-1111-111111111111"));
-        assertThrows(ApiException.class, () -> down.ratingFor("11111111-1111-1111-1111-111111111111", ada));
+        assertEquals(null, down.ratingFor("11111111-1111-1111-1111-111111111111", ada));
         assertThrows(ApiException.class, () -> down.openConflict(orderId, "ada-id", "wrong item", java.util.List.of()));
     }
 
@@ -257,6 +291,10 @@ class HttpClientsTest {
     }
 
     private static HttpClients clients(String baseUrl) {
+        return clients(baseUrl, java.time.Duration.ZERO);
+    }
+
+    private static HttpClients clients(String baseUrl, java.time.Duration telegramCacheTtl) {
         OrderProperties properties = new OrderProperties();
         properties.getClients().setTimeout(java.time.Duration.ofSeconds(1));
         properties.getClients().setCreditBaseUrl(baseUrl);
@@ -264,6 +302,9 @@ class HttpClientsTest {
         properties.getClients().setRatingBaseUrl(baseUrl);
         properties.getClients().setAdminBaseUrl(baseUrl);
         properties.getClients().setUserBaseUrl(baseUrl);
+        // Default tests assert live peer behaviour; keep caches off unless asked.
+        properties.getClients().setSupplierCacheTtl(java.time.Duration.ZERO);
+        properties.getClients().setTelegramCacheTtl(telegramCacheTtl);
         return new HttpClients(properties);
     }
 }

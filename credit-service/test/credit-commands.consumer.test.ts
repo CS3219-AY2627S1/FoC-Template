@@ -2,7 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import { handleCreditCommandMessage } from '../src/kafka/creditCommandsHandler.js';
-import { creditLog, creditOrder, creditUser, db, seedOrder, seedUser } from './helpers.js';
+import {
+  creditLog,
+  creditOrder,
+  creditUser,
+  db,
+  seedOrder,
+  seedRevokedUser,
+  seedUser,
+} from './helpers.js';
 
 // Shaped like order-service's OrderMessageFactory: a flat envelope keyed by order.
 function release(
@@ -167,6 +175,44 @@ describe('handleCreditCommandMessage (foc.credit.commands → settlement)', () =
     expect(await balanceOf(requester)).toBe(15);
     expect(await balanceOf(unknownCourier)).toBeUndefined();
     expect(await logsFor(orderId)).toHaveLength(0);
+  });
+
+  it('settles a release to a revoked courier without paying (forfeited)', async () => {
+    const requester = await seedUser(15);
+    const courier = await seedRevokedUser();
+    const orderId = await seedOrder(requester, 5);
+    const log = vi.fn();
+
+    await handleCreditCommandMessage(release(orderId, courier), log);
+
+    expect(await isReserved(orderId)).toBe(false);
+    expect(await balanceOf(courier)).toBe(0);
+    expect(await logsFor(orderId)).toHaveLength(0);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('credits forfeited'));
+  });
+
+  it('settles a return to a revoked requester without refunding (forfeited)', async () => {
+    const requester = await seedRevokedUser();
+    const orderId = await seedOrder(requester, 5);
+    const log = vi.fn();
+
+    await handleCreditCommandMessage(returned(orderId, { reason: 'CANCELLED' }), log);
+
+    expect(await isReserved(orderId)).toBe(false);
+    expect(await balanceOf(requester)).toBe(0);
+    expect(await logsFor(orderId)).toHaveLength(0);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('credits forfeited'));
+  });
+
+  it("still pays the courier for a revoked requester's order", async () => {
+    const requester = await seedRevokedUser();
+    const courier = await seedUser(20);
+    const orderId = await seedOrder(requester, 5);
+
+    await handleCreditCommandMessage(release(orderId, courier));
+
+    expect(await balanceOf(courier)).toBe(25);
+    expect((await logsFor(orderId)).map((l) => l.operationType)).toEqual(['COMPLETION']);
   });
 
   it('persists a null event_id when the command omits one', async () => {

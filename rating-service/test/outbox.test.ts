@@ -1,6 +1,19 @@
-import { isNull } from 'drizzle-orm';
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated tests for the outbox relay.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
+import { isNull, sql } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
-import { type MessageSender, relayOutboxBatch, startOutboxRelay } from '../src/messaging/outbox.js';
+import {
+  type MessageSender,
+  purgeSentOutbox,
+  relayOutboxBatch,
+  startOutboxPurge,
+  startOutboxRelay,
+} from '../src/messaging/outbox.js';
 import { db, outbox } from './helpers.js';
 
 function fakeSender(failOn?: number) {
@@ -64,6 +77,50 @@ describe('startOutboxRelay', () => {
     const { sender } = fakeSender(0);
     const onError = vi.fn();
     const stop = startOutboxRelay(sender, 10, onError);
+    await vi.waitFor(() => expect(onError).toHaveBeenCalled());
+    stop();
+  });
+});
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+describe('purgeSentOutbox', () => {
+  it('deletes rows sent before the retention window and keeps the rest', async () => {
+    await queue(3);
+    const [oldSent, recentSent] = await db.select().from(outbox).orderBy(outbox.outboxId);
+    await db.update(outbox).set({ sentAt: sql`now() - interval '8 days'` }).where(sql`${outbox.outboxId} = ${oldSent!.outboxId}`);
+    await db.update(outbox).set({ sentAt: sql`now() - interval '1 day'` }).where(sql`${outbox.outboxId} = ${recentSent!.outboxId}`);
+
+    expect(await purgeSentOutbox(7 * DAY_MS)).toBe(1);
+
+    const left = (await db.select().from(outbox)).map((row) => row.outboxId);
+    expect(left).toHaveLength(2);
+    expect(left).toContain(recentSent!.outboxId);
+    expect(left).not.toContain(oldSent!.outboxId);
+  });
+
+  it('never deletes unsent rows, however old', async () => {
+    await queue(1);
+    await db.update(outbox).set({ createdAt: sql`now() - interval '30 days'` });
+    expect(await purgeSentOutbox(0)).toBe(0);
+    expect(await db.select().from(outbox)).toHaveLength(1);
+  });
+});
+
+describe('startOutboxPurge', () => {
+  it('purges on a timer until stopped', async () => {
+    await queue(1);
+    await db.update(outbox).set({ sentAt: sql`now() - interval '8 days'` });
+    const onError = vi.fn();
+    const stop = startOutboxPurge(10, 7 * DAY_MS, onError);
+    await vi.waitFor(async () => expect(await db.select().from(outbox)).toHaveLength(0));
+    stop();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('calls onError when a purge fails', async () => {
+    const onError = vi.fn();
+    const stop = startOutboxPurge(10, Number.NaN, onError);
     await vi.waitFor(() => expect(onError).toHaveBeenCalled());
     stop();
   });

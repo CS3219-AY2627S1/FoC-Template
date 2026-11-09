@@ -2,7 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
  * Scope: Generated the user.rating.updated handler, the only source of rating metrics.
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { Value } from '@sinclair/typebox/value';
@@ -10,9 +10,10 @@ import { sql } from 'drizzle-orm';
 import { db } from '../database/index.js';
 import { userMetrics } from '../database/schema.js';
 import { evaluateUser } from '../services/badges.service.js';
+import { deletedAmong } from './counting.js';
 import { USER_RATING_UPDATED, UserRatingUpdated } from './messages.js';
 
-export type RatingOutcome = 'updated' | 'stale' | 'ignored' | 'invalid';
+export type RatingOutcome = 'updated' | 'stale' | 'deleted' | 'ignored' | 'invalid';
 
 /**
  * Handles one message from foc.user.rating. The message carries the user's whole
@@ -34,6 +35,7 @@ export async function handleRatingEvent(raw: string): Promise<RatingOutcome> {
   const { userId, newAverage, totalRatings } = message;
 
   return db.transaction(async (tx) => {
+    if ((await deletedAmong(tx, [userId])).size > 0) return 'deleted';
     const updated = await tx
       .insert(userMetrics)
       .values({ userId, averageRating: newAverage, ratingCount: totalRatings })

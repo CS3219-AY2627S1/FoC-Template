@@ -1,11 +1,12 @@
-import { onboardUser } from '../services/credit.service.js';
+import { onboardUser, revokeUser } from '../services/credit.service.js';
 import { asUuid, parseObject } from './messages.js';
 
 // The foc.user.status envelope, as published by the user service:
-// { eventId, type, occurredAt, data: { userId, email } }. Declared independently
+// { eventId, type, occurredAt, data: { userId, email? } }. UserVerified opens
+// the credit account; UserDeleted revokes it. Declared independently
 // here (no shared package across the service boundary) and parsed defensively —
 // anything unexpected is skipped, not trusted.
-interface UserVerifiedData {
+interface UserStatusData {
   userId?: unknown;
   email?: unknown;
 }
@@ -28,17 +29,27 @@ export async function handleUserStatusMessage(
     return;
   }
 
-  if (envelope.type !== 'UserVerified') {
-    log(`user.status: ignoring event type ${String(envelope.type)}`);
+  const { type } = envelope;
+  if (type !== 'UserVerified' && type !== 'UserDeleted') {
+    log(`user.status: ignoring event type ${String(type)}`);
     return;
   }
 
-  const data = (envelope.data ?? {}) as UserVerifiedData;
+  const data = (envelope.data ?? {}) as UserStatusData;
   const userId = asUuid(data.userId);
   if (!userId) {
-    log('user.status: UserVerified with missing/invalid userId, skipping');
+    log(`user.status: ${type} with missing/invalid userId, skipping`);
     return;
   }
 
-  await onboardUser(userId, asUuid(envelope.eventId));
+  const eventId = asUuid(envelope.eventId);
+  if (type === 'UserVerified') {
+    await onboardUser(userId, eventId);
+    return;
+  }
+
+  const outcome = await revokeUser(userId, eventId);
+  if (outcome === 'unknown') {
+    log(`user.status: UserDeleted for ${userId}, who has no credit account, skipping`);
+  }
 }

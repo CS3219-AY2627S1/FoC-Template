@@ -3,12 +3,12 @@
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-02
  * Scope: Generated the count adjustments shared by the order and admin event handlers,
  *        including the fault-aware rule for disputed orders.
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
-import { and, eq, notInArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import type { Executor } from '../database/index.js';
-import { countedOrder, type DisputedOrderRow, userMetrics } from '../database/schema.js';
+import { countedOrder, deletedUser, type DisputedOrderRow, userMetrics } from '../database/schema.js';
 import { evaluateUser } from '../services/badges.service.js';
 
 export type Role = 'COURIER' | 'REQUESTER';
@@ -34,6 +34,17 @@ export async function adjustCount(executor: Executor, userId: string, role: Role
       target: userMetrics.userId,
       set: { ...counts.update, lastOrderEventAt: sql`now()`, updatedAt: sql`now()` },
     });
+}
+
+/** Which of these users have deleted their account; events never count for them. */
+export async function deletedAmong(executor: Executor, userIds: (string | null)[]): Promise<Set<string>> {
+  const ids = userIds.filter((id): id is string => id !== null);
+  if (ids.length === 0) return new Set();
+  const rows = await executor
+    .select({ userId: deletedUser.userId })
+    .from(deletedUser)
+    .where(inArray(deletedUser.userId, ids));
+  return new Set(rows.map((row) => row.userId));
 }
 
 /**
@@ -69,7 +80,10 @@ export async function applyDispute(tx: Executor, dispute: DisputedOrderRow): Pro
   const { orderId, requesterId, courierId } = dispute;
   if (requesterId === null) return { removed: 0, added: 0 };
 
-  const userFor: Record<Role, string | null> = { REQUESTER: requesterId, COURIER: courierId };
+  // A party who has since deleted their account is never counted again.
+  const deleted = await deletedAmong(tx, [requesterId, courierId]);
+  const live = (id: string | null) => (id !== null && !deleted.has(id) ? id : null);
+  const userFor: Record<Role, string | null> = { REQUESTER: live(requesterId), COURIER: live(courierId) };
   const kept = rolesCounted(dispute.faultParty).filter((role) => userFor[role] !== null);
 
   const removed = await tx

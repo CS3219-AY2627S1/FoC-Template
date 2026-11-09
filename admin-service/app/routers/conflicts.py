@@ -1,8 +1,14 @@
+# AI Assistance Disclosure
+# Tool: Cursor (Auto), date: 2026-11-09
+# Scope: Implementation assistance for Admin Service REST layer under author-fixed requirements and architecture.
+# Author review: Sahana Avantika generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,11 +25,14 @@ from app.schemas.conflict import (
     ResolveConflictRequest,
     ResolveConflictResponse,
 )
-from app.services import audit, conflict_resolution, kafka_producer, scheduler
+from app.services import audit, conflict_resolution, kafka_producer, order_photos, scheduler
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/admin/conflicts", tags=["admin-conflicts"])
+# Order's escalation intake. Under /internal so the gateway never forwards it
+# and the mesh lets only Order call it (ADR-0012); it has no admin session.
+internal = APIRouter(prefix="/api/v1/admin/internal/conflicts", tags=["admin-intake"])
 
 # Contract documents ?status=pending|resolved; keep those working.
 _STATUS_ALIASES = {
@@ -43,7 +52,7 @@ def _parse_status(value: str | None) -> ConflictStatus | None:
         raise HTTPException(status_code=422, detail=f"Unknown status '{value}'")
 
 
-@router.post("", response_model=ConflictDetail, status_code=201)
+@internal.post("", response_model=ConflictDetail, status_code=201)
 async def create_conflict(
     body: CreateConflictRequest,
     db: AsyncSession = Depends(get_db),
@@ -101,6 +110,48 @@ async def get_conflict(case_id: uuid.UUID, admin: CurrentAdmin = AdminDep, db: A
     if not case:
         raise HTTPException(status_code=404)
     return case
+
+
+@router.get("/{case_id}/photos/{role}")
+async def get_conflict_photo(
+    case_id: uuid.UUID,
+    role: str,
+    admin: CurrentAdmin = AdminDep,
+    db: AsyncSession = Depends(get_db),
+):
+    """One evidence photo, while the case is still open. Resolved cases have had the objects deleted."""
+    case = await db.get(ConflictCase, case_id)
+    if not case or case.status == ConflictStatus.resolved:
+        raise HTTPException(status_code=404)
+    key = order_photos.key_for_role(case.evidence_photo_urls, role)
+    if key is None:
+        raise HTTPException(status_code=404)
+    photo = await order_photos.fetch_one(key)
+    if photo is None:
+        raise HTTPException(status_code=404)
+    return Response(
+        content=photo.data,
+        media_type=photo.mime_type,
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.post("/{case_id}/reassess", status_code=202)
+async def reassess_conflict(
+    case_id: uuid.UUID,
+    admin: CurrentAdmin = AdminDep,
+    db: AsyncSession = Depends(get_db),
+):
+    """Run Gemini again on a case this admin is reviewing. The status stays under_review."""
+    case = await db.get(ConflictCase, case_id)
+    if not case:
+        raise HTTPException(status_code=404)
+    if case.status != ConflictStatus.under_review or case.review_started_by_admin_id != admin.user_id:
+        raise HTTPException(status_code=409, detail="Only the admin reviewing this case can run the AI again")
+    await audit.record(db, admin_id=admin.user_id, action="reassess_conflict", target_id=str(case_id))
+    await db.commit()
+    scheduler.schedule_ai_reassessment(str(case_id))
+    return {"caseId": str(case_id)}
 
 
 @router.post("/{case_id}/review", response_model=ClaimConflictResponse)

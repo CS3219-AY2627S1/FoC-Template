@@ -2,7 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
  * Scope: Generated configuration loading for the Fastify port, modelled on rating-service.
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 // Load a local .env if present (dev); a missing file is fine in production.
@@ -61,6 +61,14 @@ export const config = {
     orderTopic: 'foc.order.status',
     ratingTopic: 'foc.user.rating',
     adminTopic: 'foc.admin.events',
+    userTopic: 'foc.user.status',
+    // Dead letters: messages the consumer skipped, kept for npm run replay:dlq.
+    dlqTopic: 'foc.badges.dlq',
+    dlqGroupId: process.env.KAFKA_DLQ_GROUP_ID ?? 'badges-service-dlq-replay',
+    // A dead letter that fails this many replays, or outlives the topic's 30-day
+    // retention, is logged and dropped instead of re-queued.
+    dlqMaxReplays: toInt(process.env.DLQ_MAX_REPLAYS, 5),
+    dlqMaxAgeMs: 30 * 24 * 60 * 60 * 1000,
     // NFR3.1.1: a message that fails more than 3 times is logged and skipped.
     maxAttempts: toInt(process.env.KAFKA_MAX_ATTEMPTS, 4),
   },

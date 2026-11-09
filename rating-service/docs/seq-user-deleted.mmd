@@ -1,0 +1,19 @@
+sequenceDiagram
+    participant User as User Service
+    participant Kafka as foc.user.status
+    participant Rating as Rating service
+    participant DB as Postgres
+
+    Note over User: six-month deletion period ends
+    User->>Kafka: type UserDeleted, data.userId
+    Kafka->>Rating: UserDeleted
+    alt another type, e.g. UserVerified
+        Rating-->>Kafka: ignored
+    else UserDeleted
+        Note over Rating,DB: one transaction
+        Rating->>DB: insert deleted_user, conflict does nothing
+        Rating->>DB: delete grants where the user is rater or ratee
+        Rating->>DB: delete ratings the user received, and their user_rating
+        Rating->>DB: set rater_id null on ratings the user gave
+        Note over Rating,DB: other users' sums and counts unchanged, nothing published
+    end

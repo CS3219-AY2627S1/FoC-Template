@@ -8,3 +8,7 @@ databaseCa:
 secretStore:
   name: aws-secrets-dev # charts/cluster-config
   prefix: foc/dev/ # infra/nonprod/aws/secrets.tf
+# Prometheus reads each proxy's metrics (charts/kube-prometheus-stack).
+mesh:
+  metrics:
+    enabled: true

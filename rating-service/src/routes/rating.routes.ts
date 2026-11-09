@@ -1,7 +1,13 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated the rating routes: averages, pending grants and submitting a
+ *        score.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
 import type { FastifyPluginAsyncTypebox } from '@fastify/type-provider-typebox';
 import {
-  BatchRatingsBody,
-  BatchRatingsResponse,
   MeHeaders,
   OrderParams,
   PendingRatingsResponse,
@@ -12,8 +18,8 @@ import {
 } from '../schemas/rating.js';
 import {
   getUserRating,
-  getUserRatings,
   listPendingRatings,
+  skipRating,
   submitRating,
 } from '../services/rating.service.js';
 
@@ -25,14 +31,6 @@ export const ratingRoutes: FastifyPluginAsyncTypebox = async (app) => {
     '/me/pending',
     { schema: { headers: MeHeaders, response: { 200: PendingRatingsResponse } } },
     async (request) => listPendingRatings(request.headers['x-user-id']),
-  );
-
-  // Badges' daily reconciliation poll. Blocked at the gateway; only badges may
-  // call it over the mesh (deploy/values/services/rating.yaml).
-  app.post(
-    '/internal/batch',
-    { schema: { body: BatchRatingsBody, response: { 200: BatchRatingsResponse } } },
-    async (request) => getUserRatings(request.body.userIds),
   );
 
   // F3 / contract: a user's unified average and the count behind it.
@@ -56,6 +54,17 @@ export const ratingRoutes: FastifyPluginAsyncTypebox = async (app) => {
     async (request, reply) => {
       reply.code(201);
       return submitRating(request.headers['x-user-id'], request.params.orderId, request.body);
+    },
+  );
+
+  // "Skip" in the rating modal (UI FR14.1.3): drops the grant from /me/pending
+  // on every device. The grant stays valid, so the order can still be rated.
+  app.post(
+    '/orders/:orderId/skip',
+    { schema: { headers: MeHeaders, params: OrderParams } },
+    async (request, reply) => {
+      await skipRating(request.headers['x-user-id'], request.params.orderId);
+      return reply.code(204).send();
     },
   );
 };

@@ -3,7 +3,7 @@
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
  * Scope: Service bootstrap (catalog seed, Kafka, listen), modelled on rating-service.
  *        2026-11-02: no schedule; a changed catalog triggers a one-off re-check.
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { buildApp } from './app.js';

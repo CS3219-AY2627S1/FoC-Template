@@ -2,9 +2,7 @@
 # Build FoC images for the dev env on AWS, push them to ECR as
 # foc/<service>:<git sha>, and commit the new tags to
 # deploy/values/envs/dev/services/; Argo CD deploys them once that commit is
-# on main. This is .github/workflows/deploy-dev.yml run from a laptop: the NUS
-# AWS account denies GitHub OIDC (infra/docs/cloud-dev.md, "NUS AWS account
-# limits").
+# on main. The laptop fallback for .github/workflows/deploy-dev.yml.
 #
 #   deploy/push-dev.sh                  every image dev runs
 #   deploy/push-dev.sh credit order     just these

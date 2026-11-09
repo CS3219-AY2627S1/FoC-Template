@@ -1,0 +1,210 @@
+"Time","check","scenario","testid","Value"
+2026-11-08 15:21:30,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:21:30,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:21:30,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:21:30,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:21:30,order created,traffic,full-1520,1
+2026-11-08 15:21:30,read ok,traffic,full-1520,1
+2026-11-08 15:22:00,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:22:00,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:22:00,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:22:00,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:22:00,escalated or already closed,traffic,full-1520,1
+2026-11-08 15:22:00,order created,traffic,full-1520,1
+2026-11-08 15:22:00,read ok,traffic,full-1520,1
+2026-11-08 15:22:30,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:22:30,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:22:30,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:22:30,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:22:30,escalated or already closed,traffic,full-1520,1
+2026-11-08 15:22:30,order created,traffic,full-1520,1
+2026-11-08 15:22:30,read ok,traffic,full-1520,1
+2026-11-08 15:23:00,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:23:00,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:23:00,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:23:00,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:23:00,escalated or already closed,traffic,full-1520,1
+2026-11-08 15:23:00,order created,traffic,full-1520,1
+2026-11-08 15:23:00,read ok,traffic,full-1520,1
+2026-11-08 15:23:30,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:23:30,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:23:30,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:23:30,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:23:30,escalated or already closed,traffic,full-1520,1
+2026-11-08 15:23:30,order created,traffic,full-1520,1
+2026-11-08 15:23:30,read ok,traffic,full-1520,1
+2026-11-08 15:24:00,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:24:00,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:24:00,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:24:00,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:24:00,escalated or already closed,traffic,full-1520,1
+2026-11-08 15:24:00,order created,traffic,full-1520,1
+2026-11-08 15:24:00,read ok,traffic,full-1520,1
+2026-11-08 15:24:30,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:24:30,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:24:30,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:24:30,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:24:30,escalated or already closed,traffic,full-1520,0.900
+2026-11-08 15:24:30,order created,traffic,full-1520,1
+2026-11-08 15:24:30,read ok,traffic,full-1520,1
+2026-11-08 15:25:00,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:25:00,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:25:00,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:25:00,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:25:00,escalated or already closed,traffic,full-1520,0.900
+2026-11-08 15:25:00,order created,traffic,full-1520,1
+2026-11-08 15:25:00,read ok,traffic,full-1520,1
+2026-11-08 15:25:30,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:25:30,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:25:30,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:25:30,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:25:30,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:25:30,order created,traffic,full-1520,1
+2026-11-08 15:25:30,read ok,traffic,full-1520,1
+2026-11-08 15:26:00,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:26:00,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:26:00,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:26:00,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:26:00,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:26:00,order created,traffic,full-1520,1
+2026-11-08 15:26:00,read ok,traffic,full-1520,1
+2026-11-08 15:26:30,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:26:30,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:26:30,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:26:30,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:26:30,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:26:30,order created,traffic,full-1520,1
+2026-11-08 15:26:30,read ok,traffic,full-1520,1
+2026-11-08 15:27:00,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:27:00,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:27:00,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:27:00,deliver stored a photo,traffic,full-1520,0.900
+2026-11-08 15:27:00,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:27:00,order created,traffic,full-1520,0.900
+2026-11-08 15:27:00,read ok,traffic,full-1520,0.900
+2026-11-08 15:27:30,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:27:30,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:27:30,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:27:30,deliver stored a photo,traffic,full-1520,0.900
+2026-11-08 15:27:30,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:27:30,order created,traffic,full-1520,0.900
+2026-11-08 15:27:30,read ok,traffic,full-1520,0.900
+2026-11-08 15:28:00,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:28:00,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:28:00,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:28:00,deliver stored a photo,traffic,full-1520,0.900
+2026-11-08 15:28:00,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:28:00,order created,traffic,full-1520,1
+2026-11-08 15:28:00,read ok,traffic,full-1520,1
+2026-11-08 15:28:30,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:28:30,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:28:30,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:28:30,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:28:30,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:28:30,order created,traffic,full-1520,1
+2026-11-08 15:28:30,read ok,traffic,full-1520,1
+2026-11-08 15:29:00,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:29:00,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:29:00,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:29:00,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:29:00,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:29:00,order created,traffic,full-1520,1
+2026-11-08 15:29:00,read ok,traffic,full-1520,1
+2026-11-08 15:29:30,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:29:30,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:29:30,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:29:30,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:29:30,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:29:30,order created,traffic,full-1520,1
+2026-11-08 15:29:30,read ok,traffic,full-1520,1
+2026-11-08 15:30:00,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:30:00,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:30:00,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:30:00,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:30:00,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:30:00,order created,traffic,full-1520,1
+2026-11-08 15:30:00,read ok,traffic,full-1520,1
+2026-11-08 15:30:30,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:30:30,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:30:30,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:30:30,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:30:30,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:30:30,order created,traffic,full-1520,1
+2026-11-08 15:30:30,read ok,traffic,full-1520,1
+2026-11-08 15:31:00,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:31:00,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:31:00,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:31:00,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:31:00,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:31:00,order created,traffic,full-1520,1
+2026-11-08 15:31:00,read ok,traffic,full-1520,1
+2026-11-08 15:31:30,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:31:30,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:31:30,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:31:30,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:31:30,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:31:30,order created,traffic,full-1520,1
+2026-11-08 15:31:30,read ok,traffic,full-1520,1
+2026-11-08 15:32:00,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:32:00,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:32:00,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:32:00,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:32:00,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:32:00,order created,traffic,full-1520,1
+2026-11-08 15:32:00,read ok,traffic,full-1520,1
+2026-11-08 15:32:30,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:32:30,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:32:30,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:32:30,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:32:30,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:32:30,order created,traffic,full-1520,1
+2026-11-08 15:32:30,read ok,traffic,full-1520,1
+2026-11-08 15:33:00,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:33:00,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:33:00,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:33:00,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:33:00,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:33:00,order created,traffic,full-1520,1
+2026-11-08 15:33:00,read ok,traffic,full-1520,1
+2026-11-08 15:33:30,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:33:30,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:33:30,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:33:30,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:33:30,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:33:30,order created,traffic,full-1520,1
+2026-11-08 15:33:30,read ok,traffic,full-1520,1
+2026-11-08 15:34:00,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:34:00,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:34:00,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:34:00,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:34:00,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:34:00,order created,traffic,full-1520,1
+2026-11-08 15:34:00,read ok,traffic,full-1520,1
+2026-11-08 15:34:30,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:34:30,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:34:30,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:34:30,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:34:30,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:34:30,order created,traffic,full-1520,1
+2026-11-08 15:34:30,read ok,traffic,full-1520,1
+2026-11-08 15:35:00,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:35:00,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:35:00,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:35:00,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:35:00,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:35:00,order created,traffic,full-1520,1
+2026-11-08 15:35:00,read ok,traffic,full-1520,1
+2026-11-08 15:35:30,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:35:30,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:35:30,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:35:30,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:35:30,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:35:30,order created,traffic,full-1520,1
+2026-11-08 15:35:30,read ok,traffic,full-1520,1
+2026-11-08 15:36:00,accept claimed or already taken,traffic,full-1520,1
+2026-11-08 15:36:00,acknowledged or already closed,traffic,full-1520,1
+2026-11-08 15:36:00,collect stored a photo,traffic,full-1520,1
+2026-11-08 15:36:00,deliver stored a photo,traffic,full-1520,1
+2026-11-08 15:36:00,escalated or already closed,traffic,full-1520,0.800
+2026-11-08 15:36:00,order created,traffic,full-1520,1
+2026-11-08 15:36:00,read ok,traffic,full-1520,1

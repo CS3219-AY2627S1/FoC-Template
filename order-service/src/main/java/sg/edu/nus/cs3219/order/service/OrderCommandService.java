@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Cursor (Auto), date: 2026-10-15
+ * Scope: Implementation assistance for Order Service application services under author-fixed requirements and architecture.
+ * Author review: Varun Sivakumar generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+ */
+
 package sg.edu.nus.cs3219.order.service;
 
 import org.springframework.stereotype.Service;
@@ -470,21 +477,35 @@ public class OrderCommandService {
             StatusExtras extras
     ) {
         orderLog.append(order.getId(), action, from, to, actorId, now);
+        boolean notifyCourier = notifyCourier(order, to, extras);
         AlertEntity alert = new AlertEntity();
         alert.setId(UUID.randomUUID());
         alert.setOrderId(order.getId());
         alert.setRequesterId(order.getRequesterId());
+        alert.setCourierId(order.getCourierId());
         alert.setFromStatus(from == null ? null : from.name());
         alert.setToStatus(to.name());
         alert.setNotifyRequester(extras.notifyRequester());
+        alert.setNotifyCourier(notifyCourier);
         alert.setCreatedAt(now);
         alerts.save(alert);
         outbox.append(
                 order.getId(),
                 KafkaTopics.ORDER_STATUS,
-                messages.statusChanged(order, from, to, extras.notifyRequester(), extras.faultParty(), now),
+                messages.statusChanged(
+                        order, from, to, extras.notifyRequester(), notifyCourier, extras.faultParty(), now),
                 now
         );
+    }
+
+    /** Dispute lifecycle: Escalated → Under review → case-resolved Completed. */
+    private static boolean notifyCourier(OrderEntity order, OrderStatus to, StatusExtras extras) {
+        if (order.getCourierId() == null || order.getCourierId().isBlank()) {
+            return false;
+        }
+        return to == OrderStatus.ESCALATED
+                || to == OrderStatus.UNDER_REVIEW
+                || extras.faultParty() != null;
     }
 
     private static String requireComment(String disputeText) {

@@ -23,6 +23,12 @@ spec:
         {{- end }}
         deleteClaim: {{ .Values.brokers.storage.deleteClaim }}
         kraftMetadata: shared
+  template:
+    pod:
+      metadata:
+        annotations:
+          # Single broker: Cluster Autoscaler must not drain its node.
+          cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
   {{- with .Values.brokers.resources }}
   resources:
     {{- toYaml . | nindent 4 }}

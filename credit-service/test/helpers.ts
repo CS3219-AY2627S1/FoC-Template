@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import { db } from '../src/database/index.js';
 import { creditOrder, creditUser } from '../src/database/schema.js';
 
@@ -17,4 +18,11 @@ export async function seedOrder(requesterId: string, reservedCredits = 5): Promi
   const orderId = randomUUID();
   await db.insert(creditOrder).values({ orderId, requesterId, reservedCredits });
   return orderId;
+}
+
+// Insert a user whose account was revoked (UserDeleted); returns the id.
+export async function seedRevokedUser(): Promise<string> {
+  const userId = randomUUID();
+  await db.insert(creditUser).values({ userId, balance: 0, deletedAt: sql`now()` });
+  return userId;
 }

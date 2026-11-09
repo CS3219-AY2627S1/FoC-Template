@@ -1,0 +1,25 @@
+sequenceDiagram
+    participant Orders as Order Service
+    participant Kafka as foc.rating.commands
+    participant Rating as Rating service
+    participant DB as Postgres
+    participant DLQ as foc.rating.dlq
+
+    Note over Orders: deliver, acknowledge, unacknowledge, or case resolve
+    Orders->>Kafka: rating.permission.granted, key is the order id
+    Kafka->>Rating: orderId, raterId, raterRole, rateeId, rateeRole
+    alt another eventType
+        Rating-->>Kafka: ignored
+    else not JSON or fails the schema
+        Rating->>DLQ: dead letter, reason invalid
+    else rater or ratee is in deleted_user
+        Rating-->>Kafka: deleted, nothing stored
+    else valid grant
+        Rating->>DB: insert rating_grant, conflict does nothing
+        alt row inserted
+            Note over Rating,DB: granted, the rater may now rate this order
+        else same order and rater, or same eventId
+            Note over Rating,DB: duplicate, nothing changes
+        end
+    end
+    Note over Rating,DLQ: a handler that throws 4 times is dead-lettered with reason failed

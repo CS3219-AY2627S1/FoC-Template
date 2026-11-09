@@ -1,0 +1,36 @@
+# Environment under test. deploy/values/envs/<env>/load-test.yaml sets these.
+orderUrl: ""
+secretStore: ""
+secretPrefix: "" # e.g. foc/dev/ → copies <prefix>user-db and <prefix>credit-db
+
+# Seed size (campus-scale roster). Runs may use fewer VUs; k6 uses the first N.
+seedVus: 60000
+
+images:
+  node: node:22-alpine
+  psql: postgres:16-alpine
+  k6: grafana/k6:1.0.0
+
+prometheusUrl: http://kps-prometheus.monitoring:9090/api/v1/write
+
+# One suspended CronJob per entry: load-run-<name>.
+runs:
+  smoke:
+    profile: soak
+    vus: 30
+    duration: 1m
+    resources:
+      requests: { cpu: 500m, memory: 512Mi }
+      limits: { cpu: "1", memory: 1Gi }
+    proxy: { cpu: 200m, memory: 128Mi }
+  full:
+    # Peak ramp in load.js (~15m); duration is unused when profile=peak.
+    profile: peak
+    vus: 9600
+    duration: 15m
+    # The loadgen node group (infra/nonprod/aws/eks.tf), 8 vCPU / 32 GiB.
+    nodePool: loadgen
+    resources:
+      requests: { cpu: "5", memory: 16Gi }
+      limits: { cpu: "6", memory: 24Gi }
+    proxy: { cpu: "1", memory: 512Mi }

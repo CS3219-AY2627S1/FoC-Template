@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Cursor (Auto), date: 2026-10-15
+ * Scope: Implementation assistance for Order Service tests under author-fixed requirements and architecture.
+ * Author review: Varun Sivakumar generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+ */
+
 package sg.edu.nus.cs3219.order.config;
 
 import org.junit.jupiter.api.Test;
@@ -61,12 +68,18 @@ class KubernetesProfileTest {
 
     @Test
     void healthIsAlsoServedAtThePlatformsHealthPath() throws IOException {
-        // Every FoC service answers GET /health: the chart's probes, and peers'
-        // `helm test` checks of their *_SERVICE_URL, call it.
         Binder binder = k8sProfile(chartEnv());
-        String group = "management.endpoint.health.group.platform.";
-        assertEquals("server:/health", binder.bind(group + "additional-path", String.class).get());
-        assertEquals(List.of("*"), binder.bind(group + "include", Bindable.listOf(String.class)).get());
+        assertEquals(8084, binder.bind("management.server.port", Integer.class).get());
+        // Peers' helm test still hits the main Service port.
+        String platform = "management.endpoint.health.group.platform.";
+        assertEquals("server:/health", binder.bind(platform + "additional-path", String.class).get());
+        assertEquals(List.of("*"), binder.bind(platform + "include", Bindable.listOf(String.class)).get());
+        // Kubelet probes use the management port (own thread pool).
+        String ready = "management.endpoint.health.group.ready.";
+        assertEquals("management:/health", binder.bind(ready + "additional-path", String.class).get());
+        String live = "management.endpoint.health.group.live.";
+        assertEquals("management:/live", binder.bind(live + "additional-path", String.class).get());
+        assertEquals(List.of("ping"), binder.bind(live + "include", Bindable.listOf(String.class)).get());
     }
 
     @Test
@@ -74,6 +87,12 @@ class KubernetesProfileTest {
         OrderProperties properties = k8sProfile(chartEnv()).bind("order", OrderProperties.class).get();
         assertEquals("file", properties.getPhotos().getMode());
         assertEquals("/app/photos", properties.getPhotos().getDirectory());
+    }
+
+    @Test
+    void peerClientTimeoutIsRaisedForMeshHiccups() throws IOException {
+        OrderProperties properties = k8sProfile(chartEnv()).bind("order", OrderProperties.class).get();
+        assertEquals(java.time.Duration.ofSeconds(5), properties.getClients().getTimeout());
     }
 
     private static MockEnvironment chartEnv() {

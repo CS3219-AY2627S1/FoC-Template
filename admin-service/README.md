@@ -42,15 +42,20 @@ admin-service/
 │   ├── services/
 │   │   ├── kafka_producer.py     # shared event envelope + topic publishes
 │   │   ├── kafka_consumer.py     # listener; no topics subscribed yet
-│   │   ├── ai_client.py          # Gemini Flash fault recommendation
+│   │   ├── ai_client.py          # Gemini Flash fault and appeal recommendations
 │   │   ├── order_photos.py       # fetch evidence bytes from Order Service
 │   │   ├── audit.py              # single write path into audit_logs
 │   │   ├── moderation.py         # report and appeal intake, dismiss, reject
 │   │   ├── conflict_resolution.py# the only resolve path (manual + auto)
 │   │   └── scheduler.py          # job registration / cancel (APScheduler)
 │   └── jobs/
+│       ├── appeal_jobs.py       # advisory appeal assessment (own DB session)
+│       ├── report_jobs.py       # advisory report assessment (own DB session)
 │       └── conflict_jobs.py      # AI eval, reminder, auto-resolve (own DB session)
-├── alembic/                      # migrations through 0004_user_reports_and_appeals
+├── scripts/
+│   └── resolve_open_escalations.py  # one-off ops: clear open cases as no-fault
+├── alembic/                      # migrations through 0007_report_ai
+│   └── versions/AI_ASSISTANCE.md # folder-level AI disclosure (no in-file headers)
 ├── tests/
 ├── mock_user_service.py          # local stub for User Service
 ├── docker-compose.yml            # Postgres, mock User Service, app (Kafka is Order's)
@@ -83,8 +88,8 @@ admin-service/
 | Caller | Mechanism | Failure |
 |---|---|---|
 | Admin UI / admin user | Gateway sets `x-user-id`, `x-is-admin=true`, and `x-permitted-action=true` (role `ADMIN`, account active, email and Telegram verified). Search and role/status changes also forward that caller's `Authorization` bearer to User Service | **404** (never 403) |
-| Order Service (intake) | No auth. `POST /api/v1/admin/conflicts` is open | — |
-| User Service (report and appeal intake) | No auth. `POST /api/v1/admin/reports` and `POST /api/v1/admin/appeals` are open. Call them from User Service, not from the browser | — |
+| Order Service (intake) | No admin session. `POST /api/v1/admin/internal/conflicts`: the gateway blocks `/api/v1/admin/internal`, and the Linkerd policy admits only Order | **403** from the mesh for any other caller |
+| User Service (report and appeal intake) | No admin session. `POST /api/v1/admin/internal/reports` and `POST /api/v1/admin/internal/appeals`: blocked at the gateway, and the mesh admits only User | **403** from the mesh for any other caller |
 
 A missing user id, a non-admin, and an admin who is not permitted all get the same **404**.
 
@@ -100,7 +105,7 @@ Health (no auth): `GET /health` → `{ "status": "ok" }`.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/v1/admin/users?search=&page=1` | Relays to User Service search |
+| GET | `/api/v1/admin/users?search=&page=1&status=` | Relays to User Service `GET /api/v1/user/search`. `status` is optional: `Created`, `Verified`, or `Suspended`. Omitted means every user. An unknown value is **422**. `total` is whatever User Service returns for that filter |
 | POST | `/api/v1/admin/users/{user_id}/promote` | Relays role=`admin`; audits; Kafka `UserPromoted` |
 | POST | `/api/v1/admin/users/{user_id}/demote` | Cannot demote self; role=`user`; `UserDemoted` |
 | POST | `/api/v1/admin/users/{user_id}/suspend` | Relays status=`suspended`; closes open reports against that user as `actioned`; `UserSuspended` |
@@ -108,10 +113,10 @@ Health (no auth): `GET /health` → `{ "status": "ok" }`.
 
 ### Reports — `/api/v1/admin/reports`
 
-**Intake (no auth).** Does not suspend the reported user.
+**Intake (service-only, under `/internal`).** Does not suspend the reported user.
 
 ```http
-POST /api/v1/admin/reports
+POST /api/v1/admin/internal/reports
 ```
 
 ```json
@@ -122,7 +127,9 @@ POST /api/v1/admin/reports
 }
 ```
 
-Returns **201**. While that pair has an open report, a retry returns the same row and keeps the original comment. A user cannot report themselves (**422**).
+Returns **201**. While that pair has an open report, a retry returns the same row and keeps the original comment. A user cannot report themselves (**422**). A new row queues a Gemini assessment after commit. A retry does not queue another one.
+
+The assessment is advisory. It reads this comment and every other report about the same person, then stores `aiRecommendation` (`dismiss`, `suspend`, or `unsure`), `aiConfidence`, `aiReasoning`, and `aiCompletedAt`. It does not dismiss or suspend. A failed first pass sets `aiCompletedAt` and leaves the recommendation null. A failed rerun keeps the previous verdict. The appeal assessment still reads the human comments only.
 
 **Admin:**
 
@@ -130,14 +137,15 @@ Returns **201**. While that pair has an open report, a retry returns the same ro
 |---|---|---|
 | GET | `/api/v1/admin/reports?status=` | `open`, `dismissed`, or `actioned` |
 | GET | `/api/v1/admin/reports/{report_id}` | Detail |
+| POST | `/api/v1/admin/reports/{report_id}/reassess` | **202.** Runs Gemini again on an open report. Audit action `reassess_report`. **409** if it is not open. The report stays open |
 | POST | `/api/v1/admin/reports/{report_id}/dismiss` | `open` → `dismissed`. Does not suspend. **409** if it is not open |
 
 ### Appeals — `/api/v1/admin/appeals`
 
-**Intake (no auth).** Does not reinstate the user. User Service checks the password and that the account is suspended before calling this.
+**Intake (service-only, under `/internal`).** Does not reinstate the user. User Service checks the password and that the account is suspended before calling this.
 
 ```http
-POST /api/v1/admin/appeals
+POST /api/v1/admin/internal/appeals
 ```
 
 ```json
@@ -147,22 +155,28 @@ POST /api/v1/admin/appeals
 }
 ```
 
-Returns **201**. While that user has an open appeal, a retry returns the same row and keeps the original message.
+Returns **201**. While that user has an open appeal, a retry returns the same row and keeps the original message. A new row queues a Gemini assessment after commit. A retry does not queue another one.
+
+The assessment is advisory. It reads the appeal message and every report comment about that user, then stores `aiRecommendation` (`uphold`, `reinstate`, or `unsure`), `aiConfidence`, `aiReasoning`, and `aiCompletedAt`. It does not reject or reinstate. A failed first pass sets `aiCompletedAt` and leaves the recommendation null. A failed rerun keeps the previous verdict.
 
 **Admin:**
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/v1/admin/appeals?status=` | `open`, `rejected`, or `reinstated` |
-| GET | `/api/v1/admin/appeals/{appeal_id}` | Detail |
-| POST | `/api/v1/admin/appeals/{appeal_id}/reject` | `open` → `rejected`. The suspension stays. **409** if it is not open |
+| GET | `/api/v1/admin/appeals/latest?userId=` | **No auth.** That user's latest appeal, or JSON `null`. Empty or oversized `userId` is **422**. Registered before `/{appeal_id}` |
+| GET | `/api/v1/admin/appeals?status=` | `open`, `rejected`, or `reinstated`. Each row includes `reports`, every report about that user |
+| GET | `/api/v1/admin/appeals/{appeal_id}` | Detail, including `reports` |
+| POST | `/api/v1/admin/appeals/{appeal_id}/reassess` | **202.** Runs Gemini again on an open appeal. Audit action `reassess_appeal`. **409** if it is not open. The appeal stays open |
+| POST | `/api/v1/admin/appeals/{appeal_id}/reject` | `open` → `rejected`. Body `{ "reason": "..." }`, trimmed, 1–4000 characters. Blank or missing is **422**. The reason is stored as `rejectionReason` and on the `reject_appeal` audit `detail`. The suspension stays. **409** if it is not open. After commit, Admin calls User Service `POST /api/v1/user/{userId}/appeal-rejected` with the same reason and the admin's `Authorization` header (2s). A failure there does not undo the rejection |
+
+An appeal response includes `rejectionReason` (`null` while the appeal is open) and the AI fields above (`null` until the job finishes).
 
 ### Conflicts — `/api/v1/admin/conflicts`
 
-**Intake (no auth):**
+**Intake (service-only, under `/internal`):**
 
 ```http
-POST /api/v1/admin/conflicts
+POST /api/v1/admin/internal/conflicts
 ```
 
 ```json
@@ -315,6 +329,25 @@ You still need Postgres, and Order's Kafka if you want publishes to succeed.
 Easiest path: start Order's Kafka, then `docker compose up db mock-user-service`,
 then run uvicorn on the host with `KAFKA_BOOTSTRAP_SERVERS=localhost:9092`.
 
+## Ops: clear open escalations (load-test cleanup)
+
+Not a migration. Resolves every open conflict case as `no-fault`, deletes leftover
+APScheduler jobs, and publishes `admin.case.resolved` so Order / Credit / Badges
+catch up. Dry-run by default.
+
+```bash
+cp .env.example .env   # DB + Kafka must point at the target environment
+pip install -r requirements.txt
+python scripts/resolve_open_escalations.py              # list only
+python scripts/resolve_open_escalations.py --apply      # write + publish
+python scripts/resolve_open_escalations.py --apply --limit 100
+python scripts/resolve_open_escalations.py --republish --apply   # retry Kafka after a broker blip
+```
+
+Order's Kafka must be reachable (`KAFKA_BOOTSTRAP_SERVERS`). If publish fails after
+the DB commit, use `--republish --apply` (Order only settles while still
+`ESCALATED` / `UNDER_REVIEW`, so a second event is safe once already `COMPLETED`).
+
 ## Tests
 
 ```bash
@@ -327,7 +360,9 @@ and the Kafka login (no live stack).
 `tests/test_order_photos.py` covers the S3 key read and the Gemini `inline_data`
 layout with a fake bucket (no live stack).
 `tests/test_moderation.py` covers report and appeal intake, dismiss, reject,
-and the suspend/reinstate close, with an in-memory session (no live stack).
+the suspend/reinstate close, and queueing an appeal assessment, with an in-memory session (no live stack).
+`tests/test_appeal_ai.py` covers the appeal job with Gemini stubbed.
+`tests/test_report_ai.py` covers the report job with Gemini stubbed.
 `tests/test_conflict.py` and `tests/test_user.py` call the Compose stack and
 skip when Admin Service is not reachable at `http://localhost:8084`. Admin
 calls send `x-user-id`, `x-is-admin`, and `x-permitted-action`.
@@ -342,9 +377,13 @@ calls send `x-user-id`, `x-is-admin`, and `x-permitted-action`.
 - A failed Kafka publish is only logged. The database commits first, and if
   Kafka is down the API still succeeds. There is no outbox to retry that event
   later.
-- User reports and suspension appeals are stored here. User Service does not
-  call `POST /api/v1/admin/reports` or `POST /api/v1/admin/appeals` yet, and
-  the frontend has no report form, appeal form, or admin queue for them.
+- User Service search does not yet apply `status`, so the forwarded filter is
+  ignored until that service does. `POST /api/v1/user/{userId}/appeal-rejected`
+  is called after a reject; User Service does not implement it yet, and the
+  stored rejection still stands when that call fails.
+- Intake has no application auth: it relies on the gateway block and the
+  mesh policy (`deploy/values/services/admin.yaml`). Outside the cluster (Compose,
+  `uvicorn` on a laptop) anything that can reach the port can call it.
 - First admin. Promote requires an existing admin, so this service cannot create
   the first one. The mock treats any `admin-*` bearer token as an admin. There
   is no bootstrap or seed for a real first admin account.
@@ -354,3 +393,24 @@ calls send `x-user-id`, `x-is-admin`, and `x-permitted-action`.
   `.env` and set `AI_PROVIDER_API_KEY` to a Google AI Studio key. Compose
   reads that file. An empty key, a timeout, a missing object, or an unusable
   reply records `ai_failed`.
+
+## AI Use Summary
+
+**Owner:** Sahana Avantika
+
+**Tools:** Cursor (Auto)
+
+Sahana Avantika defined Admin Service requirements and architecture (conflict
+state machine, HTTP/Kafka contracts, schema, AI evaluation and auto-resolve,
+claim/review, moderation reports/appeals, append-only audit, gateway auth,
+durable timers, evidence photo fetch). Cursor (Auto) assisted with
+implementation code, tests, config/Docker, and documentation under that
+design. Per-file `AI Assistance Disclosure` headers are on Python sources,
+application config, Docker/compose, scripts, and design docs.
+
+Alembic revision files are **not** edited with in-file headers (checksum /
+deploy safety). Collection disclosure:
+[`alembic/versions/AI_ASSISTANCE.md`](alembic/versions/AI_ASSISTANCE.md).
+
+Plan: [`../ai/plans/admin_service_plan.md`](../ai/plans/admin_service_plan.md).
+Usage log: [`../ai/usage-log.md`](../ai/usage-log.md).

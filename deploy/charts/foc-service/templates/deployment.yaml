@@ -6,7 +6,9 @@ metadata:
   labels:
     {{- include "foc-service.labels" . | nindent 4 }}
 spec:
+  {{- if not .Values.autoscaling.enabled }} {{/* else the HPA owns it */}}
   replicas: {{ .Values.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "foc-service.selectorLabels" . | nindent 6 }}
@@ -22,6 +24,18 @@ spec:
         # unless a policy (mesh-policy.yaml) allows them.
         linkerd.io/inject: enabled
         config.linkerd.io/default-inbound-policy: all-authenticated
+        {{- with .Values.mesh.proxy }}
+        {{- with .memoryRequest }}
+        config.linkerd.io/proxy-memory-request: {{ . | quote }}
+        {{- end }}
+        {{- with .memoryLimit }}
+        config.linkerd.io/proxy-memory-limit: {{ . | quote }}
+        {{- end }}
+        {{- end }}
+        {{- with .Values.managementPort }}
+        # Kubelet probes hit this port directly (see probes below).
+        config.linkerd.io/skip-inbound-ports: {{ . | quote }}
+        {{- end }}
         {{- end }}
     spec:
       serviceAccountName: {{ include "foc-service.name" . }}
@@ -35,6 +49,10 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.port }}
+            {{- with .Values.managementPort }}
+            - name: management
+              containerPort: {{ . }}
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "foc-service.name" . }}
@@ -95,18 +113,25 @@ spec:
               readOnly: true
             {{- end }}
           {{- end }}
-          {{- with .Values.healthPath }}
+          {{- $readiness := .Values.readinessPath | default .Values.healthPath }}
+          {{- $liveness := .Values.livenessPath | default .Values.healthPath }}
+          {{- if $readiness }}
           readinessProbe:
             httpGet:
-              path: {{ . }}
-              port: http
+              path: {{ $readiness }}
+              port: {{ if .Values.managementPort }}management{{ else }}http{{ end }}
             periodSeconds: 10
+            timeoutSeconds: 5
+          {{- end }}
+          {{- if $liveness }}
           livenessProbe:
             httpGet:
-              path: {{ . }}
-              port: http
+              path: {{ $liveness }}
+              port: {{ if .Values.managementPort }}management{{ else }}http{{ end }}
             initialDelaySeconds: 10
             periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 5
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

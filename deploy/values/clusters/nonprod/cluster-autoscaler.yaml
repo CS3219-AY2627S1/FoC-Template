@@ -1,0 +1,5 @@
+# infra/nonprod/aws: var.cluster_name and var.region.
+cluster-autoscaler:
+  autoDiscovery:
+    clusterName: foc-nonprod
+  awsRegion: ap-southeast-1

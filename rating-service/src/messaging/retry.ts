@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated the retry helper for message handling.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
 export type RetryResult<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
 // Runs fn up to maxAttempts times, waiting a little longer after each failure.

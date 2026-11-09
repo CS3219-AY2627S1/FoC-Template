@@ -13,7 +13,6 @@ kafka:
 env:
   # Peers this service calls over HTTP (short names resolve within the env's namespace).
   USER_SERVICE_BASE_URL: http://user:8080 # list / promote / suspend / reinstate users
-  ORDER_SERVICE_BASE_URL: http://order:8083
   # Kafka: only foc.admin.events is in the event catalog (charts/foc-kafka) and
   # the ACLs. An empty topic skips that publish; nothing consumes them yet.
   KAFKA_TOPIC_CONFLICT_CASE_CREATED: ""
@@ -30,5 +29,10 @@ secretEnv:
   # Secrets Manager foc/<env>/admin-ai (a placeholder until a key exists).
   AI_PROVIDER_API_KEY: { secret: admin-ai, key: AI_PROVIDER_API_KEY, optional: true }
 mesh: # who may call admin (ADR-0012)
-  # order opens an escalation: POST /api/v1/admin/conflicts.
-  callers: [gateway, order]
+  callers: [gateway] # the admin UI, as a logged-in admin
+  internal:
+    # Intake has no admin session, so only the owning service may call it.
+    - { path: /api/v1/admin/internal/conflicts, callers: [order] } # escalations
+    - { path: /api/v1/admin/internal/reports, callers: [user] } # user reports
+    - { path: /api/v1/admin/internal/appeals, callers: [user] } # suspension appeals
+    - { path: /api/v1/admin/appeals/latest, callers: [user] } # appeal lookup at login
