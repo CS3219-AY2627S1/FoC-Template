@@ -14,11 +14,11 @@ withdrawn, or exchanged for money, and only circulate within the platform.
 
 | Name | Role / Ownership |
 | ----- | ----- |
-| _TBD_ | _TBD_ |
-| _TBD_ | _TBD_ |
-| _TBD_ | _TBD_ |
-| _TBD_ | _TBD_ |
-| _TBD_ | _TBD_ |
+| John Gao Jiahao | supplier-service, notification-service, shared / infra / CI |
+| Javier Enrique Wong | api-gateway, user-service |
+| Alexander Gerald | order-service |
+| Frank Yu | credit-service |
+| Zhou Shiyao | frontend |
 
 ---
 
@@ -73,6 +73,8 @@ microservice lives in its own top-level folder.
 ├── shared/               # small shared Python lib (event schemas, contracts)
 ├── data/                 # provided supplier seed CSV + images
 ├── scripts/              # dev helper scripts (install/test/lint/wait)
+├── infra/                # Helm charts, Argo CD GitOps, Terraform, backups
+├── postman/              # Postman collections for API demos
 ├── docs/                 # architecture diagram, event catalog, ADRs
 ├── ai/                   # AI usage log (course policy)
 ├── Makefile              # developer entrypoint (see `make help`)
@@ -144,10 +146,14 @@ consolidates AI tool usage for the project. Requirements elicitation and
 architecture/design decisions were made by the team; AI assistance is limited
 to boilerplate/scaffolding, implementation, debugging, refactoring, and docs.
 
-- **Tools:** _TBD (record tool + model per use)_
+- **Tools:** Claude Code, Codex, OpenCode, GitHub Copilot, Claude (claude.ai),
+  DeepSeek Harness, and the draw.io MCP server, across models including
+  Claude Opus 4.8 / Sonnet 5, GPT-5 / GPT-6, and DeepSeek V4. Each use is
+  recorded per entry in [`ai/usage-log.md`](./ai/usage-log.md).
 - **Prohibited phases avoided:** requirements elicitation; architecture/design
   decisions.
-- **Used for:** initial repository scaffolding and boilerplate generation.
+- **Used for:** repository scaffolding, implementation, debugging, refactoring,
+  and documentation.
 - **Verification:** all AI outputs are reviewed, edited, and tested by the
   authors.
 - **Prompts / key exchanges:** see [`ai/usage-log.md`](./ai/usage-log.md).

@@ -83,3 +83,5 @@ make test-notification-service
 - [`docs/api-contract.md`](./docs/api-contract.md) the read API endpoints, headers, and errors.
 - [`docs/data-model.md`](./docs/data-model.md) the `notifications` table.
 - [`docs/requirements-traceability.md`](./docs/requirements-traceability.md) the D1 requirement to code to test map.
+
+Owner: John Gao Jiahao.

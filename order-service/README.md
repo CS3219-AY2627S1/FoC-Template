@@ -164,7 +164,7 @@ skipped; API, validation, and event retry tests still run.
 
 The order-service contract is documented in `docs/`:
 
-- [`order-service-api.md`](../docs/order-service-api.md) — human-readable
+- [`api-contract.md`](docs/api-contract.md) - human-readable
   reference covering endpoints, authentication, data models, dependency
   workflows, errors, filtering, and versioning.
 
@@ -262,3 +262,12 @@ starts at migration time.
 > `POST /orders/{order_id}/accept`, `POST /orders/{order_id}/deliver`, and
 > `POST /orders/{order_id}/approve` are implemented. Remaining lifecycle
 > operations belong to later sprints.
+
+## Docs
+
+- Architecture + lifecycle: [`docs/architecture.md`](docs/architecture.md)
+- API contract: [`docs/api-contract.md`](docs/api-contract.md)
+- Data model: [`docs/data-model.md`](docs/data-model.md)
+- State machine: [`docs/order-state-machine.svg`](docs/order-state-machine.svg)
+
+Owner: Alexander Gerald.

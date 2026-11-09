@@ -44,6 +44,18 @@ make test-api-gateway
 Published on host port `${GATEWAY_PORT:-8080}` → container `8000`.
 Exposes `GET /health`.
 
-> Status: **scaffold**. Routing + unknown-route rejection + header stripping
-> are implemented; token validation / RBAC enforcement are stubbed in
-> `app/auth.py` for the team to complete.
+## Status
+
+Implemented. The gateway resolves routes against the default-deny allowlist
+(unknown routes return `404`), validates the bearer JWT on protected routes
+(missing or invalid/expired token returns `401`), strips client-supplied
+trusted headers, and injects `X-User-Id` / `X-User-Role` before forwarding.
+See `app/services/auth.py` and `app/api/routes/proxy.py`.
+
+## Docs
+
+- Architecture: [`docs/architecture.md`](docs/architecture.md)
+- API contract: [`docs/api-contract.md`](docs/api-contract.md)
+- Request flow: [`docs/flowchart.md`](docs/flowchart.md)
+
+Owner: Javier Enrique Wong.

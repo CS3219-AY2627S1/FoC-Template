@@ -1,7 +1,8 @@
 # Architecture
 
-> Placeholder for the FoC architecture documentation. Keep the diagram source
-> here and export an image for slides/README.
+> Single source of truth for the FoC system architecture: the C4 L2 container
+> view and per-service component views. Diagram sources live alongside their
+> rendered images; keep both in sync when a diagram changes.
 
 ## Style
 
@@ -158,9 +159,9 @@ flowchart TB
 
 <!-- AI-influenced: diagram drafted with OpenCode (Claude Opus); see ai/usage-log.md -->
 
-![Supplier Service — C4 Component Diagram](./supplier-service-architecture.png)
+![Supplier Service - C4 Component Diagram](../supplier-service/docs/supplier-service-architecture.png)
 
-Source: `supplier-service-architecture.svg` (scalable). Built to the L6
+Source: [`supplier-service/docs/supplier-service-architecture.svg`](../supplier-service/docs/supplier-service-architecture.svg) (scalable). Built to the L6
 "Guidelines for Architecture Diagrams": titled + labelled, legend explaining notation,
 acronyms expanded (RBAC, CRUD), each element described in 1–2 lines, and every
 relationship labelled with direction + intent.
@@ -181,19 +182,22 @@ layered **Interface → Domain → Persistence**:
 External relationships: the **API Gateway** (sole entry for client traffic,
 supplies verified identity + role), the **Order Service** (validates a supplier
 by ID before creating orders), the read-only **baseline catalog data**, the
-shared **contracts library**, and **RabbitMQ** (dashed — the planned Sprint 3
-supplier-deactivation cascade). State is persisted to the service-owned
-`supplier-db`.
+shared **contracts library**, and **RabbitMQ** (the supplier-deactivation
+cascade to the Order Service, published via a Supplier outbox and relay). State
+is persisted to the service-owned `supplier-db`.
 
 The system-level Container (C4 L2) view above shows how this service fits
-among the others. TODO (other services): add matching component diagrams for
-user-, order-, and credit-service. The notification-service component view is
-done: see
-[`notification-service/docs/architecture.md`](../notification-service/docs/architecture.md)
-and its
-[`notification-service-architecture.svg`](../notification-service/docs/notification-service-architecture.svg).
+among the others. Each backend service now has its own component view under its
+`docs/`:
+
+- [`api-gateway/docs/architecture.md`](../api-gateway/docs/architecture.md)
+- [`user-service/docs/architecture.md`](../user-service/docs/architecture.md)
+- [`supplier-service/docs/architecture.md`](../supplier-service/docs/architecture.md)
+- [`order-service/docs/architecture.md`](../order-service/docs/architecture.md)
+- [`credit-service/docs/architecture.md`](../credit-service/docs/architecture.md)
+- [`notification-service/docs/architecture.md`](../notification-service/docs/architecture.md)
+
 Related design views:
-[`rbac.md`](./rbac.md) (role → capability matrix + supplier-write sequence),
-`user-service/docs/architecture.md` (user_db data model), and
-`supplier-service/docs/data-model.md` (supplier_db data model).
+[`rbac.md`](./rbac.md) (role to capability matrix + supplier-write sequence),
+and per-service data models under each service's `docs/data-model.md`.
 

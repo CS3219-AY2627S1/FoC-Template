@@ -78,3 +78,9 @@ starts a fresh one.
 ```bash
 cd frontend && npm run build   # tsc typecheck + vite production build
 ```
+
+## Docs
+
+- Architecture + data flow: [`docs/architecture.md`](docs/architecture.md)
+
+Owner: Zhou Shiyao.

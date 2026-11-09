@@ -50,9 +50,9 @@ Database: `supplier-db` (PostgreSQL). Exposes `GET /health`.
 
 The supplier-service contract is documented in `docs/`:
 
-- [`supplier-service-api.md`](../docs/supplier-service-api.md) — human-readable
+- [`api-contract.md`](docs/api-contract.md) - human-readable
   reference (endpoints, auth/RBAC, data model, errors, pagination, versioning).
-- [`supplier-service-openapi.yaml`](../docs/supplier-service-openapi.yaml) —
+- [`supplier-service-openapi.yaml`](../docs/supplier-service-openapi.yaml) -
   machine-readable OpenAPI 3.1 spec.
 
 At runtime, FastAPI also serves the live spec at `/openapi.json` and
@@ -60,5 +60,13 @@ interactive docs at `/docs`.
 
 > Status: **implemented**. List, detail, create, update, and deactivate are
 > served at `/suppliers`; run `make seed` to load the baseline catalog. Public
-> clients reach these through the API gateway at `/api/suppliers` — the gateway
+> clients reach these through the API gateway at `/api/suppliers` - the gateway
 > strips the `/api` prefix before forwarding to this service.
+
+## Docs
+
+- Architecture: [`docs/architecture.md`](docs/architecture.md)
+- Data model: [`docs/data-model.md`](docs/data-model.md)
+- API contract: [`docs/api-contract.md`](docs/api-contract.md)
+
+Owner: John Gao Jiahao.

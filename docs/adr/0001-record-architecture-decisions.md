@@ -1,7 +1,7 @@
 # ADR 0001: Record Architecture Decisions
 
 - Status: accepted
-- Date: TODO
+- Date: 2026-09-18
 
 ## Context
 

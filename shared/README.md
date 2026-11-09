@@ -14,6 +14,8 @@ Contents:
   `X-User-Role`) that the API Gateway injects and backend services read.
 - `foc_shared/errors.py` — a common error-envelope shape so all services
   return consistent error responses.
+- `foc_shared/images.py` — reusable image validation + private S3 storage
+  used for delivery proof photos.
 
 ## Usage
 
@@ -26,6 +28,3 @@ service's `requirements.txt`:
 
 In Docker, the shared package is copied into the image build context (see each
 service's Dockerfile).
-
-> NOTE: This is scaffolding only. Extend the event schemas and contracts as
-> the team finalizes them during the sprints.

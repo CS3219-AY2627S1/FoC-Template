@@ -58,12 +58,15 @@ Credit handles requests idempotently per `task_id` and always replies —
 including for business rejections and for transient failures that exceed its
 retry budget — so the Order Service saga never waits forever.
 
-## Order event envelope (scaffold)
+## Order event envelope
 
 See `OrderEvent` in `foc_shared.events`:
 
 - `event_type`, `order_id`, `requester_id`, `courier_id?`, `timestamp`,
-  `reason?`
+  `reason?`, `order_name?`
 
-TODO (team): finalize per-event payload fields (order name, new status, reward
-amount) and whether ordering matters for each flow.
+Consumers that need more than these fields (for example a new status or the
+reward amount) refetch from the owning service rather than widening the
+envelope. Handlers are idempotent, so redelivery is safe: the Credit Service
+keys on `task_id`, and the Notification Service keys on
+`(event_id, recipient_id)`.

@@ -28,11 +28,11 @@ The API Gateway is intended to be the only public entry point. It must remove
 client-supplied identity headers, authenticate the caller, and inject trusted
 identity headers before forwarding the request to the service.
 
-> Integration status: the gateway route table contains `/api/orders`, but its
-> current proxy forwards that prefix unchanged while this service exposes
-> `/orders`. Authentication and trusted-header injection are also scaffolded.
-> The gateway must rewrite the path and complete authentication before the
-> configured public prefix is operational.
+> Integration status: the gateway owns the public `/api` prefix. It
+> authenticates the caller, strips client-supplied identity headers, injects
+> trusted `X-User-Id` / `X-User-Role`, and rewrites `/api/orders/...` to
+> `/orders/...` before forwarding to this service. The public prefix is
+> operational.
 
 ---
 
@@ -366,7 +366,7 @@ transaction.
 
 ## 9. Related documents
 
-- [`order-state-machine.jpg`](./order-state-machine.jpg) — Order lifecycle diagram.
-- [`event-catalog.md`](./event-catalog.md) — planned asynchronous lifecycle events.
-- [`architecture.md`](./architecture.md) — repository architecture overview.
-- [`../order-service/README.md`](../order-service/README.md) — service responsibilities and run instructions.
+- [`order-state-machine.svg`](./order-state-machine.svg) - Order lifecycle diagram.
+- [`event-catalog.md`](../../docs/event-catalog.md) - planned asynchronous lifecycle events.
+- [`../../docs/architecture.md`](../../docs/architecture.md) - repository architecture overview.
+- [`README.md`](../README.md) - service responsibilities and run instructions.

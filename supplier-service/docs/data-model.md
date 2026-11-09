@@ -2,7 +2,7 @@
 
 Data model of **supplier-service** only. For how this service fits among the
 others, see the repo-root [`docs/architecture.md`](../../docs/architecture.md);
-for the API contract see [`docs/supplier-service-api.md`](../../docs/supplier-service-api.md).
+for the API contract see [`api-contract.md`](./api-contract.md).
 
 ## Data model
 
