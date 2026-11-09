@@ -3,7 +3,7 @@ import { ApiError } from "@/lib/api"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as React from "react"
 import { AdminReportsPage } from "./reports-page"
-const mocks = vi.hoisted(() => ({ mode: "mock", list: vi.fn(), detail: vi.fn(), resolve: vi.fn(), resolution: vi.fn(), refresh: vi.fn(), uid: "courier" }))
+const mocks = vi.hoisted(() => ({ mode: "mock", list: vi.fn(), detail: vi.fn(), resolve: vi.fn(), resolution: vi.fn(), refresh: vi.fn(), recordName: vi.fn(), uid: "courier" }))
 vi.mock("@/components/providers/config-provider", () => ({ useConfig: () => ({ adminApiMode: mocks.mode }) }))
 vi.mock("@/components/providers/auth-provider", () => ({ useAuth: () => ({ user: { uid: mocks.uid }, loading: false }) }))
 vi.mock("@/components/require-auth", () => ({ RequireAuth: ({ children }: { children: React.ReactNode }) => children }))
@@ -14,7 +14,7 @@ vi.mock("@/hooks/use-reports", () => ({ useReportApi: () => mocks,
     return { data, loading: !data && enabled, error: null, refresh: mocks.refresh }
   },
 }))
-vi.mock("@/hooks/use-admin-api", () => ({ useAdminApi: () => ({ mode: mocks.mode }) }))
+vi.mock("@/hooks/use-admin-api", () => ({ useAdminApi: () => mocks }))
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }))
 const report = { id: "report-1", reporterId: "owner", requesterId: "owner", courierId: "courier", status: "AWAITING_COURIER_RESPONSE",
   violationCategory: "WRONG_LOCATION_DELIVERY", requesterExplanation: "Delivered to a different building", requesterAttachments: [], courierAttachments: [],
@@ -23,6 +23,22 @@ const report = { id: "report-1", reporterId: "owner", requesterId: "owner", cour
 beforeEach(() => { vi.clearAllMocks(); sessionStorage.clear(); mocks.resolution.mockResolvedValue({ status: "PENDING" }); mocks.mode = "mock"; mocks.uid = "courier"; mocks.detail.mockResolvedValue(report); mocks.list.mockImplementation(async (_user: string, _mode: string, _page: number, status: string) => ({ items: status === "RESOLVED" ? [] : [report], page: 1, totalPages: status === "RESOLVED" ? 0 : 1, totalItems: status === "RESOLVED" ? 0 : 1 })); mocks.resolve.mockResolvedValue({ ...report, status: "RESOLVED" }) })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 describe("Reports", () => {
+  it("shows the recorded resolver's name, copyable ID, reply and time in account field order", async () => {
+    mocks.mode = "live"
+    mocks.recordName.mockResolvedValue("Yao Xiang")
+    mocks.detail.mockResolvedValue({ ...report, order: null, status: "RESOLVED", resolvedBy: "admin-resolver", resolutionNote: "Reviewed the evidence.", resolvedAt: "2026-11-09T10:00:00Z" })
+    const copy = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: copy } })
+    render(<AdminReportsPage reportId="report-1" />)
+    const name = await screen.findByRole("link", { name: "Yao Xiang" })
+    expect(name).toHaveAttribute("href", "/admin/users/admin-resolver")
+    expect(mocks.recordName).toHaveBeenCalledWith("users", "admin-resolver", expect.any(AbortSignal))
+    const section = screen.getByRole("region", { name: "Resolution" })
+    expect(Array.from(section.querySelectorAll("dt"), field => field.textContent)).toEqual(["Admin name", "Admin ID", "Admin reply", "Resolved"])
+    expect(section).toHaveTextContent("Reviewed the evidence.")
+    fireEvent.click(screen.getByRole("button", { name: "Copy admin-resolver ID" }))
+    await waitFor(() => expect(copy).toHaveBeenCalledWith("admin-resolver"))
+  })
   it("labels a courier submitter and the requester response separately", async () => {
     mocks.detail.mockResolvedValue({ ...report, reporterId: "courier", violationCategory: "ERRAND", status: "READY_FOR_REVIEW", responseDeadlineAt: null })
     render(<AdminReportsPage reportId="report-1" />)

@@ -600,3 +600,6 @@ User-approved frontend fix: Order creation follows Supplier pages beyond100 with
 ## CHANGE-182 - Searchable Supplier selectors (2026-11-09)
 
 User approves bounded browse/search pickup and delivery selectors. Existing installed Base UI Combobox and Input/Button styling; no eager requests,20 active suppliers per explicitly requested page,300ms optional search, Clear reset, stable selected ID/label, cancellation/late-response protection and retry/no-match handling. Replaces CHANGE-181 interim all-page Order loader only; its image null/type fixes remain. Backend indexing/cursors are not implemented; existing provider still scans a cached catalogue. Verification: changes/CHANGE-182-searchable-supplier-selection.md.
+## CHANGE-183 - Admin resolver display (2026-11-09)
+
+Approved report-detail presentation: Admin name/profile link, copyable Admin ID, reply and resolution time, using persisted resolvedBy and existing User name lookup even without an associated Order.21 focused tests, lint and TypeScript pass. Backend/contracts/concurrency unchanged; browser/staging not exercised. See changes/CHANGE-183-admin-resolver-display.md.

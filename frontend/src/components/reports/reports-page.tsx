@@ -137,7 +137,7 @@ function ReportCase({ id }: { id: string }) {
   const load = useCallback((signal: AbortSignal) => api.detail(id, user?.uid ?? "", signal), [api, id, user?.uid])
   const { data: report, error, loading, refresh } = useReportResource(load, Boolean(user) && !authLoading)
   const [resolving, setResolving] = useState(false)
-  const displayName = useOrderDisplayNames(report?.order ? [report.order] : [])
+  const displayName = useOrderDisplayNames(report?.order ? [report.order] : [], [report?.resolvedBy])
   if (!report) return <AdminLoadState loading={loading} error={error} empty={false} retry={refresh} />
   const root = "/admin/reports"
   const order = report.order ? { ...report.order, requesterName: displayName("users", report.order.requesterId, report.order.requesterName), courierName: displayName("users", report.order.courierId, report.order.courierName), pickupSupplierName: displayName("suppliers", report.order.pickupSupplierId, report.order.pickupSupplierName), deliverySupplierName: displayName("suppliers", report.order.deliverySupplierId, report.order.deliverySupplierName) } : null
@@ -173,7 +173,9 @@ function ReportCase({ id }: { id: string }) {
           ["Explanation", report.courierExplanation || "No response submitted."], ["Attachments", <Evidence key="courier-evidence" files={report.courierAttachments} />]]} />
       </ReportSection>}
       {report.status === "RESOLVED" && <ReportSection title="Resolution"><SummaryFields rows={[
-        ["Admin reply", report.resolutionNote], ["Resolved", adminDate(report.resolvedAt!)], ["Resolved by", report.resolvedBy],
+        ["Admin name", report.resolvedBy ? <Participant key="admin" id={report.resolvedBy} name={displayName("users", report.resolvedBy)} /> : "Not available"],
+        ["Admin ID", report.resolvedBy ? <CopyId key="admin-id" id={report.resolvedBy} /> : "Not available"],
+        ["Admin reply", report.resolutionNote], ["Resolved", adminDate(report.resolvedAt!)],
       ]} /></ReportSection>}
       {(report.status !== "RESOLVED" || savedResolution(resolutionKey(report.id, user?.uid ?? ""))) && <div className="flex justify-end border-t px-5 py-5 sm:px-8"><Button onClick={() => setResolving(true)}>{report.status === "RESOLVED" ? "Resume resolution" : "Mark report resolved"}</Button></div>}
     </Card>

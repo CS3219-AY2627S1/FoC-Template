@@ -739,3 +739,8 @@ contract = "existing Supplier list Page with active status,size20,name asc and o
 supersedes = "CHANGE-181 temporary all-pages Order loader only; null image and catalogue type fixes retained"
 limitations = "Supplier backend still caches findAll/in-memory search; index/cursor redesign not implemented; final build/browser status in CHANGE-182"
 verification = "18focused;354frontend/57files;lint/typecheck pass;production build native out-of-memory;Docker stopped;browser pending"
+[admin_report_resolver_display]
+change = "CHANGE-183"
+status = "implemented;21 focused tests,lint,Next typegen/TypeScript pass;human visual review pending"
+behavior = "Admin Reports Resolution shows saved resolver name/profile link,copyable ID,reply,time;User name enrichment also works without associated Order"
+scope = "Admin frontend presentation only;backend,contracts,saga,concurrency,schema/config unchanged"

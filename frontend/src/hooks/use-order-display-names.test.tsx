@@ -9,6 +9,13 @@ const order = { requesterId: "user", courierId: "user", pickupSupplierId: "place
 beforeEach(() => { api.mode = "live"; api.recordName.mockReset() })
 afterEach(cleanup)
 describe("Order display names", () => {
+  it("looks up additional account IDs without requiring an associated order", async () => {
+    api.recordName.mockResolvedValue("Resolver name")
+    const { result } = renderHook(() => useOrderDisplayNames([], ["admin", "admin", null]))
+    await waitFor(() => expect(result.current("users", "admin")).toBe("Resolver name"))
+    expect(api.recordName).toHaveBeenCalledTimes(1)
+    expect(api.recordName).toHaveBeenCalledWith("users", "admin", expect.any(AbortSignal))
+  })
   it("resolves repeated participants/locations once without mutating stored IDs", async () => {
     api.recordName.mockImplementation(async (kind: string) => kind === "users" ? "Alex" : "The Deck")
     const { result } = renderHook(() => useOrderDisplayNames([order, order]))
