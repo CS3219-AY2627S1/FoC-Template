@@ -1,19 +1,20 @@
-# AI usage log (Order Service + Load test)
+# AI usage log (Order Service + Load test + Admin Service)
 
-Shared FoC log for **Order Service** and **Load test** work owned by
-**Varun Sivakumar**. 
+Shared FoC log. **Order Service** and **Load test** work is owned by
+**Varun Sivakumar**. **Admin Service** work is owned by **Sahana Avantika**.
 
 **Tool:** Cursor (Auto)
 
-**Author review (applies to every entry below):** Varun Sivakumar generated
+**Author review:** For Order / Load test entries, Varun Sivakumar generated
 ideas, designed implementation, validated correctness, edited where needed,
-and verified behavior/tests.
+and verified behavior/tests. For Admin Service entries, Sahana Avantika did
+the same for that service.
 
 **Plans:** Cursor plan files under [`plans/`](plans/) are **author design
 notes** reworded for agent execution. They are not AI-originated architecture
 or requirements elicitation. Prohibited phases (requirements prioritization,
 architecture/design decisions, idea generation, decision rationales) were done
-by Varun Sivakumar before implementation assistance.
+by the owning author before implementation assistance.
 
 ---
 
@@ -97,6 +98,36 @@ and re-scan.
 
 ---
 
+## 4. Admin Service build-out
+
+| Field | Detail |
+| --- | --- |
+| Owner | Sahana Avantika |
+| Approx. dates | 2026-09 → 2026-11 |
+| Mode | generate / implement / test / docs |
+| Plan | [`plans/admin_service_plan.md`](plans/admin_service_plan.md) |
+
+**Already decided by author:** FastAPI Admin Service; conflict case state
+machine; single resolve path with Kafka `admin.case.resolved` fan-out;
+HTTP contracts with User / Order (intake + evidence); schema for
+`conflict_cases`, append-only `audit_logs`, reports and appeals; Gemini
+advisory AI; durable APScheduler timers; gateway 404-not-403 admin check;
+internal mesh-only intake.
+
+**What Cursor Auto produced:** Scaffold and implementation of routers,
+services, models, schemas, jobs, tests, Docker/compose, config, design docs
+under `admin-service/docs/`, and ops scripts (including open-escalation
+cleanup). Alembic revision **files were not given in-file headers**
+(checksum / deploy safety); see
+`admin-service/alembic/versions/AI_ASSISTANCE.md`.
+
+**Sample prompt scenario (summarized):** Implement the Admin Service from the
+author’s plan (F1 user admin, F3 conflicts, moderation queues, Kafka
+publishes, tests) without changing service boundaries or inventing new
+product requirements.
+
+---
+
 ## File attribution map
 
 | Location | How disclosed |
@@ -104,5 +135,7 @@ and re-scan.
 | `order-service/src/**/*.java`, config, Docker, docs | Per-file header |
 | `order-service/.../db/migration/*.sql` | `AI_ASSISTANCE.md` only (no SQL edits) |
 | `order-service/bruno/` | `AI_ASSISTANCE.md` only |
+| `admin-service/app/**/*.py`, tests, config, Docker, scripts, docs | Per-file header |
+| `admin-service/alembic/versions/*.py` | `AI_ASSISTANCE.md` only (no revision edits) |
 | `load-test/k6/load.js`, inference notes | Per-file header |
 | `load-test` Helm + `setup/` | `load-test/AI_ASSISTANCE.md` |
