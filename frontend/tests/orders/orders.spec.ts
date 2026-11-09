@@ -194,4 +194,58 @@ test.describe("orders", () => {
     await page.getByTestId("credits-badge").click();
     await expect(page).toHaveURL(/\/profile#credits$/);
   });
+
+  test("an open errand card opens the order, where it can be accepted", async ({ page }) => {
+    await seedToken(page);
+    const requester = "66666666-6666-6666-6666-666666666666";
+    const open = order({ order_id: "o-open", requester_id: requester });
+    let accepted = false;
+    const api = await mockApi(page, {
+      ...COMMON,
+      "GET /api/suppliers": () => ({ body: supplierList([makeSupplier()]) }),
+      "GET /api/orders": () => ({ body: [open] }),
+      "GET /api/orders/o-open": () => ({
+        body: accepted ? { ...open, status: "ACCEPTED", courier_id: ME } : open,
+      }),
+      [`GET /api/users/${requester}/public`]: () => ({
+        body: { id: requester, display_name: "Ada Lovelace" },
+      }),
+      "POST /api/orders/o-open/accept": () => {
+        accepted = true;
+        return { body: { ...open, status: "ACCEPTED", courier_id: ME } };
+      },
+    });
+
+    await page.goto("/errands");
+    await page.getByTestId("errand-card").click();
+
+    await expect(page).toHaveURL(/\/orders\/o-open$/);
+    await expect(page.getByText("Ada Lovelace")).toBeVisible();
+    await expect(page.getByText("Not assigned yet")).toBeVisible();
+    await page.getByRole("button", { name: "Accept" }).click();
+
+    await expect(page.getByText("You're the courier for this errand")).toBeVisible();
+    await expect(page.getByText("Heading to vendor").first()).toBeVisible();
+    expect(api.callsTo("POST", "/api/orders/o-open/accept")).toHaveLength(1);
+  });
+
+  test("Accept on an errand card accepts without opening the order", async ({ page }) => {
+    await seedToken(page);
+    const open = order({ order_id: "o-open", requester_id: "someone-else" });
+    await mockApi(page, {
+      ...COMMON,
+      "GET /api/suppliers": () => ({ body: supplierList([makeSupplier()]) }),
+      "GET /api/orders": () => ({ body: [open] }),
+      "POST /api/orders/o-open/accept": () => ({
+        body: { ...open, status: "ACCEPTED", courier_id: ME },
+      }),
+      "GET /api/orders/assigned": () => ({ body: [] }),
+      "GET /api/orders/assigned/completed": () => ({ body: [] }),
+    });
+
+    await page.goto("/errands");
+    await page.getByTestId("errand-card").getByRole("button", { name: "Accept" }).click();
+
+    await expect(page).toHaveURL(/\/deliveries$/);
+  });
 });

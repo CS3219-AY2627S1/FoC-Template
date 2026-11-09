@@ -232,13 +232,45 @@ async def test_get_order_as_unrelated_user_raises_access_denied(
         await order_service.get_order_for_participant(_Session(), "order-1", "user-2")
 
 
-async def test_get_order_as_withdrawn_courier_raises_access_denied(
+async def test_get_open_order_as_any_user_succeeds(
     monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Listed under Take Errands, so anyone may open it before accepting.
+    order = _order(requester_id="user-1", courier_id=None, status=OrderStatus.OPEN)
+    monkeypatch.setattr(order_service.order_repository, "get_order", AsyncMock(return_value=order))
+
+    result = await order_service.get_order_for_participant(_Session(), "order-1", "user-2")
+    assert result == (order, None)
+
+
+@pytest.mark.parametrize(
+    "status", [OrderStatus.CANCELLED, OrderStatus.EXPIRED, OrderStatus.COMPLETED]
+)
+async def test_get_closed_unassigned_order_as_other_user_raises_access_denied(
+    monkeypatch: pytest.MonkeyPatch, status: OrderStatus
 ) -> None:
     monkeypatch.setattr(
         order_service.order_repository,
         "get_order",
-        AsyncMock(return_value=_order(requester_id="user-1", courier_id=None)),
+        AsyncMock(return_value=_order(requester_id="user-1", courier_id=None, status=status)),
+    )
+
+    with pytest.raises(OrderAccessDeniedError):
+        await order_service.get_order_for_participant(_Session(), "order-1", "user-2")
+
+
+async def test_get_order_as_withdrawn_courier_raises_access_denied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The courier withdrew and someone else has since taken the order.
+    monkeypatch.setattr(
+        order_service.order_repository,
+        "get_order",
+        AsyncMock(
+            return_value=_order(
+                requester_id="user-1", courier_id="courier-2", status=OrderStatus.ACCEPTED
+            )
+        ),
     )
 
     with pytest.raises(OrderAccessDeniedError):

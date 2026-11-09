@@ -1,6 +1,6 @@
 // AI-assisted: browse available errands page with reward filters, sort, and accept action.
 // UI tweaks (Claude Opus 5.5): "Take Errands" framing, supplier-page filter layout
-// and client-side search. Reviewed by authors.
+// and client-side search; cards open the order. Reviewed by authors.
 import {
   Badge,
   Box,
@@ -187,7 +187,22 @@ export default function BrowseErrands() {
       ) : (
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
           {visible.map((order) => (
-            <Card key={order.order_id} withBorder padding="md">
+            <Card
+              key={order.order_id}
+              withBorder
+              padding="md"
+              role="link"
+              tabIndex={0}
+              aria-label={`Open ${order.name}`}
+              onClick={() => navigate(`/orders/${order.order_id}`)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && e.target === e.currentTarget) {
+                  navigate(`/orders/${order.order_id}`);
+                }
+              }}
+              style={{ cursor: "pointer" }}
+              data-testid="errand-card"
+            >
               <Text fw={600}>{order.name}</Text>
               <Text size="xs" c="dimmed">
                 {supplierNames[order.supplier_id] ?? order.supplier_id}
@@ -200,7 +215,14 @@ export default function BrowseErrands() {
               </Group>
               <Text size="sm">{order.pickup_location} → {order.delivery_location}</Text>
               <OrderStatusBadge status={order.status} />
-              <Button fullWidth mt="sm" onClick={() => handleAccept(order.order_id)}>
+              <Button
+                fullWidth
+                mt="sm"
+                onClick={(e) => {
+                  e.stopPropagation(); // accept without opening the order
+                  void handleAccept(order.order_id);
+                }}
+              >
                 Accept
               </Button>
             </Card>

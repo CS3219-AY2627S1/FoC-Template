@@ -161,6 +161,12 @@ export default function OrderDetail() {
     setActionLoading(true);
     try {
       await ordersApi.accept(id);
+      window.dispatchEvent(new Event("credits-changed"));
+      notifications.show({
+        color: "green",
+        title: "Accepted",
+        message: "You're the courier for this errand",
+      });
       await refreshOrder();
     } catch (err) {
       notifications.show({
