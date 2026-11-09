@@ -262,6 +262,10 @@ for svc in "${ordered[@]}"; do
   else
     echo "::error title=Deploy failed::$svc-$ENVIRONMENT was not deployed; traffic stays on the previous revision."
     not_deployed+=("$svc")
+    # The failed revision would keep its rollout tag; drop it so failed revisions don't pile up in
+    # the traffic list. Best effort: the tag doesn't exist if the deploy failed before creating one.
+    gcloud run services update-traffic "$svc-$ENVIRONMENT" --project "$PROJECT_ID" --region "$REGION" \
+      --remove-tags "$REVISION_TAG" --quiet >/dev/null 2>&1 || true
   fi
 done
 

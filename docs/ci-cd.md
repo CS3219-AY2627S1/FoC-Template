@@ -123,6 +123,7 @@ For each service (backends → frontend → gateway):
    service) is also curled on its tagged URL (12 tries, 5 s apart).
 5. Healthy → switch 100% of traffic to it. Unhealthy → the previous revision keeps serving, and the
    remaining services **still roll out**; the job fails at the end, naming what wasn't deployed.
+   Either way the `sha-xxxxxxx` tag is removed again, so failed revisions don't pile up in the traffic list.
    Order is the exception: if the gateway or a provider deployed before it (User, Supplier, Credit)
    fails, Order is skipped, because it must not run ahead of them.
 6. After all services: smoke-test each deployed one **through the public gateway** (its
@@ -239,4 +240,4 @@ Adding required reviewers to the `production` environment is optional.
 | Deploy fails with "Missing runtime identity" | Same cause, caught at deploy time. `deploy.sh` never falls back to the default (over-privileged) identity. |
 | First request is slow | Services scale to zero; a cold start takes 10–20 s. Set `--min-instances=1` in `EXTRA_FLAGS` for demos. |
 | A deploy failed ("Partly deployed") | The services it names keep their previous revision; the others are out. Fix the problem and re-run the failed job (`gh run rerun <id> --failed`), or push a fix. |
-| Order or Credit fails its startup probe with `remaining connection slots are reserved` | The shared `order-postgres` instance is out of connections (#114). Both services cap their Hikari pool at 3 in `deploy/env.yaml`, and `test-order-workflows.py` checks that every instance of both fits in about 20 connections. If you raise a pool or `--max-instances`, keep within that budget. The other services still deploy. |
+| Order or Credit fails its startup probe with `remaining connection slots are reserved` | The shared `order-postgres` instance is out of connections (#114). Both services cap their Hikari pool at 3 in `deploy/env.yaml`, and `test-order-workflows.py` checks that every instance of both fits in about 20 connections. If you raise a pool or `--max-instances`, keep within that budget. A replaced revision can keep running, with its connections, after a rollout (Credit's have stayed up for about 2 hours), so count it too. The other services still deploy. |
