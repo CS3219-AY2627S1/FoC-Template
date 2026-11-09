@@ -79,7 +79,7 @@ export function DescribeErrand({ onRequestStart, onFilled, onRequestEnd }: Descr
             maxLength={MAX_DESCRIPTION}
             aria-describedby={counterId}
             onChange={(event) => setDescription(event.target.value.slice(0, MAX_DESCRIPTION))}
-            placeholder="e.g. Two ice lattes from TOMORO COFFEE, bring them to COM2 level 2 study area, i will pay 15 credits. By 9pm tonight"
+            placeholder="e.g. Two iced lattes from TOMORO COFFEE to the COM2 level 2 study area by 9pm tonight. I'll pay 15 credits."
             className="mt-3 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-navy-700 focus:ring-2 focus:ring-navy-100"
           />
           <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
