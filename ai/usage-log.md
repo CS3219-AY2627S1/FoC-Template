@@ -2068,3 +2068,30 @@ Claude created `feat/order-nl-errand-creation` from `feat/order-member-frontend`
 
 Claude recorded rounds 2 and 3 in the spec, then implemented it in conventional commits. Order Service gained `GET /errands/extract/status` and `POST /errands/extract`, registered before `/errands/:id` and open to any logged-in user. Each call fetches every page of active Suppliers with the caller's token. It then makes one `@anthropic-ai/sdk` call with a structured-output schema: Supplier ids as an enum or null, effort `medium`, `max_tokens` 16000, `maxRetries: 0`, `LLM_TIMEOUT_MS` defaulting to 50 s. Every value is checked against the `POST /errands` rules, now shared through `parseIsoTimestamp` and `CREATE_LIMITS` in `validation.ts`. Calls are limited by a 3-per-minute in-memory sliding window per user, with `Retry-After`, and each call logs one `errand_extraction` line without the description. The stub gives the fixed reply and fails on `stub:fail` and `stub:slow`. Compose passes `ORDER_LLM_*`. The frontend gained the "Describe your errand" box on `/errands/new` and `ApiError.retryAfterSeconds`. Two log outcomes were added beyond the approved list, `unauthenticated` (Supplier 401) and `supplier_error` (an unexpected Supplier reply), as the round 3 Supplier mapping needed them. No test calls the real Anthropic API, and nothing was run against it. Checks: order-service typecheck clean and 209/209 tests on a throwaway PostgreSQL; frontend lint clean, 90/90 tests, build passes. On the Compose stack, with no key the box showed as unavailable (`NOT_CONFIGURED`). With `ORDER_LLM_MODE=stub` the form filled seven fields and left the delivery deadline at its default. `stub:fail` showed the failure message at once and `stub:slow` after 50.5 s. A fourth call showed the rate-limit countdown, no errand was created, and no log line held the description.
 
+
+## 2026-11-09 — Order Service and frontend: N2 round 4, the first real call, example wording
+
+- **Tool:** Claude Code (Claude Opus 5.5)
+- **Mode:** implementation
+- **Allowed-use scope:** implementation code, tests and documentation for the author's round 4 answers to the open questions left after the N2 implementation; one real Anthropic API call the author approved; UI wording the author supplied.
+- **Repository files affected:** `order-service/src/domain/extraction.ts`, `order-service/test/extraction.test.ts`, `order-service/README.md`, `docs/superpowers/specs/2026-11-09-order-n2-natural-language-errand-creation.md` (commit 8b2ecab); `frontend/src/errands/DescribeErrand.tsx` (commits 90281b3, 531425a); `ai/usage-log.md`
+- **Author review:** Pending review by @mattis.
+
+### Prompts
+
+> count after dropping, status is fine, you can test the real call now, I have put in a key in .env
+
+> can you change the example in the form to Two ice lattes from TOMORO COFFEE, bring them to COM2 level 2 study area, i will pay 15 credits. By 9pm tonight
+
+> fix the wording of the placeholder sentence
+
+> can you add the past three commit to ai-usage log,
+>
+>    - round 4, the 20-item fix (8b2ecab);
+>    - the two TOMORO COFFEE wording commits (90281b3, 531425a).
+>
+>    All three carry the Claude co-author line, so their prompts need to be logged.
+
+### Key response
+
+Round 4 (8b2ecab): Claude moved the 20-item check to run after dropping items with a bad name, so `items` is `null` only if more than 20, or none, are left. It added test cases for 25 sent with 5 bad names (20 kept) and 22 sent with 1 bad name (21 left, `null`). A mutation check confirmed the new test fails under the old raw count, and 36/36 extraction tests pass. The author's answers are recorded word for word as spec section 10, the README's reply-checks row was updated, and the status endpoint was left unchanged as the author decided. With the author's approval and their key in `.env`, Claude rebuilt Order Service in `anthropic` mode and made exactly one real call through the create page for a new member. The description named A Hot Hideout, two iced lattes (one with less ice) and a croissant, the COM1 level 2 study area, 15 credits and 9pm delivery. The round trip took about 5.4 s, using 4,092 input and 378 output tokens. Six fields were filled correctly (Supplier, items, drop-off, notes, credits, delivery deadline), the other two deadlines kept their defaults, no errand was created, and the log line held no description. Wording (90281b3, 531425a): the description box's example was first set to the author's sentence verbatim (TOMORO COFFEE was confirmed as an active Supplier), then tidied on request to "e.g. Two iced lattes from TOMORO COFFEE to the COM2 level 2 study area by 9pm tonight. I'll pay 15 credits." The description box tests (11/11) and oxlint pass, and the frontend container was rebuilt.
