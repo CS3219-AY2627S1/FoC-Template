@@ -202,7 +202,7 @@ async def withdraw_order(
 
 
 async def deliver_order(
-    session: AsyncSession, order_id: str, courier_id: str, photo: proof_photo.Photo | None
+    session: AsyncSession, order_id: str, courier_id: str, photo: proof_photo.Photo
 ) -> OrderTable:
     photo_key = None
     committed = False
@@ -221,8 +221,7 @@ async def deliver_order(
                 )
 
             assert_transition(current_status, OrderStatus.AWAITING_APPROVAL)
-            if photo is not None:
-                photo_key = await proof_photo.upload(order_id, photo)
+            photo_key = await proof_photo.upload(order_id, photo)
             delivered_at = datetime.now(UTC)
             order.proof_of_delivery_photo_key = photo_key
             order.awaiting_approval_at = delivered_at

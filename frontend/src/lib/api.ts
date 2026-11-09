@@ -63,13 +63,14 @@ async function request<T>(
   const headers: Record<string, string> = {};
   const token = getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const isFormData = body instanceof FormData;
+  if (body !== undefined && !isFormData) headers["Content-Type"] = "application/json";
   if (extraHeaders) Object.assign(headers, extraHeaders);
 
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: isFormData ? body : body !== undefined ? JSON.stringify(body) : undefined,
   });
 
   if (res.status === 204) return undefined as T;
@@ -278,6 +279,10 @@ export interface OrderResponse {
   created_at: string;
 }
 
+export interface OrderDetailResponse extends OrderResponse {
+  proof_of_delivery_photo: string | null;
+}
+
 export interface OrderCreate {
   name: string;
   details: string;
@@ -324,7 +329,7 @@ export const ordersApi = {
     );
   },
   get(id: string) {
-    return request<OrderResponse>("GET", `/api/orders/${id}`);
+    return request<OrderDetailResponse>("GET", `/api/orders/${id}`);
   },
   create(body: OrderCreate) {
     return request<OrderResponse>("POST", "/api/orders", body);
@@ -341,8 +346,10 @@ export const ordersApi = {
   pickup(id: string) {
     return request<OrderResponse>("POST", `/api/orders/${id}/pickup`);
   },
-  deliver(id: string) {
-    return request<OrderResponse>("POST", `/api/orders/${id}/deliver`);
+  deliver(id: string, photo: File) {
+    const body = new FormData();
+    body.append("photo", photo);
+    return request<OrderResponse>("POST", `/api/orders/${id}/deliver`, body);
   },
   withdraw(id: string) {
     return request<OrderResponse>(

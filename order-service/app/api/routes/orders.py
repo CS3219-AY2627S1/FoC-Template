@@ -88,13 +88,13 @@ async def deliver_order(
     courier_id: Annotated[str, Header(alias=HEADER_USER_ID, min_length=1)],
     role: Annotated[str, Header(alias=HEADER_USER_ROLE)],
     session: Annotated[AsyncSession, Depends(get_session)],
-    photo: Annotated[UploadFile | None, File()] = None,
+    photo: Annotated[UploadFile, File()],
 ) -> OrderResponse:
-    """Marks a picked-up order delivered, storing a photo when supplied."""
+    """Marks a picked-up order delivered with required photo proof."""
 
     if role not in {Role.CLIENT.value, Role.ADMIN.value}:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Unsupported user role.")
-    validated_photo = await proof_photo.read_upload(photo) if photo is not None else None
+    validated_photo = await proof_photo.read_upload(photo)
     return await order_service.deliver_order(session, order_id, courier_id, validated_photo)
 
 

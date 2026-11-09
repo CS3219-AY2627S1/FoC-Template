@@ -15,7 +15,8 @@ import { notifications } from "@mantine/notifications";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useAuth } from "../../lib/auth";
-import { ApiError, type OrderResponse, type OrderStatus, ordersApi, parseUtcDate } from "../../lib/api";
+import { DeliveryPhotoModal } from "../../components/DeliveryPhotoModal";
+import { ApiError, type OrderDetailResponse, type OrderResponse, type OrderStatus, ordersApi, parseUtcDate } from "../../lib/api";
 
 const POLL_INTERVAL = 2000;
 const POLL_TIMEOUT = 15000;
@@ -97,11 +98,12 @@ export default function OrderDetail() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
 
-  const [order, setOrder] = useState<OrderResponse | null>(null);
+  const [order, setOrder] = useState<OrderDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [deliveryModalOpen, setDeliveryModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   useEffect(() => {
     if (!id) return;
@@ -187,23 +189,6 @@ export default function OrderDetail() {
         color: "red",
         title: "Pick up failed",
         message: err instanceof ApiError ? err.message : "Failed to pick up",
-      });
-    } finally {
-      setActionLoading(false);
-    }
-  }
-
-  async function handleDeliver() {
-    if (!id) return;
-    setActionLoading(true);
-    try {
-      await ordersApi.deliver(id);
-      await refreshOrder();
-    } catch (err) {
-      notifications.show({
-        color: "red",
-        title: "Deliver failed",
-        message: err instanceof ApiError ? err.message : "Failed to deliver",
       });
     } finally {
       setActionLoading(false);
@@ -323,6 +308,17 @@ export default function OrderDetail() {
         </Stack>
       </Box>
 
+      {order.proof_of_delivery_photo && (
+        <Box>
+          <Text fw={600} mb="xs">Proof of delivery</Text>
+          <img
+            src={order.proof_of_delivery_photo}
+            alt="Proof of delivery"
+            style={{ maxWidth: "100%", maxHeight: 360, borderRadius: 8 }}
+          />
+        </Box>
+      )}
+
       <Box>
         <Text fw={600} mb="xs">
           Status
@@ -359,11 +355,17 @@ export default function OrderDetail() {
         )}
 
         {!actionLoading && isCourier && order.status === "PICKED_UP" && (
-          <Button color="green" onClick={handleDeliver}>
+          <Button color="green" onClick={() => setDeliveryModalOpen(true)}>
             Mark delivered
           </Button>
         )}
       </Group>
+
+      <DeliveryPhotoModal
+        orderId={deliveryModalOpen ? id ?? null : null}
+        onClose={() => setDeliveryModalOpen(false)}
+        onDelivered={() => void refreshOrder()}
+      />
 
       <Modal
         opened={cancelModalOpen}

@@ -1,3 +1,4 @@
+# AI-INFLUENCED: Check S3Mock readiness using its documented endpoint with Codex.
 # ─────────────────────────────────────────────────────────────
 # FoC — Friend on Campus · Docker Compose (local deployment)
 # ─────────────────────────────────────────────────────────────
@@ -277,10 +278,11 @@ services:
       - "9090:9090"     # S3 API (HTTP)
     networks: [foc-net]
     healthcheck:
-      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:9090/ >/dev/null 2>&1 || exit 1"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/favicon.ico"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 180s
 
 networks:
   foc-net:

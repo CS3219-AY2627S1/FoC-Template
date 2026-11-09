@@ -11,6 +11,7 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useEffect, useState } from "react";
+import { DeliveryPhotoModal } from "../../components/DeliveryPhotoModal";
 import { OrderStatusBadge } from "../../components/StatusPill";
 import { ApiError, type OrderResponse, ordersApi, parseUtcDate } from "../../lib/api";
 
@@ -23,6 +24,7 @@ export default function MyDeliveries() {
   const [loadingCompleted, setLoadingCompleted] = useState(false);
 
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
+  const [deliveryOrderId, setDeliveryOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,22 +121,15 @@ export default function MyDeliveries() {
     }
   }
 
-  async function handleDeliver(id: string) {
-    addLoading(id);
-    try {
-      await ordersApi.deliver(id);
-      window.dispatchEvent(new Event("credits-changed"));
-      const updated = await ordersApi.assignedActive();
-      setActiveItems(updated);
-    } catch (err) {
+  function handleDelivered() {
+    window.dispatchEvent(new Event("credits-changed"));
+    ordersApi.assignedActive().then(setActiveItems).catch((err) => {
       notifications.show({
         color: "red",
-        title: "Deliver failed",
-        message: err instanceof ApiError ? err.message : "Failed to deliver",
+        title: "Failed to refresh deliveries",
+        message: err instanceof ApiError ? err.message : "Failed to refresh",
       });
-    } finally {
-      removeLoading(id);
-    }
+    });
   }
 
   function renderRow(order: OrderResponse, showActions: boolean) {
@@ -185,7 +180,7 @@ export default function MyDeliveries() {
                 <Button
                   size="xs"
                   color="green"
-                  onClick={() => handleDeliver(order.order_id)}
+                  onClick={() => setDeliveryOrderId(order.order_id)}
                 >
                   Mark delivered
                 </Button>
@@ -200,6 +195,11 @@ export default function MyDeliveries() {
   return (
     <Stack gap="lg">
       <Title order={2}>My Deliveries</Title>
+      <DeliveryPhotoModal
+        orderId={deliveryOrderId}
+        onClose={() => setDeliveryOrderId(null)}
+        onDelivered={handleDelivered}
+      />
 
       <Tabs value={activeTab} onChange={setActiveTab}>
         <Tabs.List>

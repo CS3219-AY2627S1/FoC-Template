@@ -1,3 +1,4 @@
+# AI-INFLUENCED: Configure the deployed proof-of-delivery photo bucket with Codex.
 # Host and origin placeholders are filled by scripts/render-ec2-values.sh after terraform apply.
 # Image tags (global.backup.image.tag and each <svc>.image.tag) are managed by CI; do not edit by hand.
 createNamespaces: false
@@ -23,7 +24,7 @@ credit-service:
 order-service:
   image: {repository: order-service, tag: e2d7e87a91106dd338937137197547b4a8608a56}
   env:
-    ORDER_PHOTO_BUCKET: ""
+    ORDER_PHOTO_BUCKET: cs3219-g31-foc-photos-e102d87e
     ORDER_PHOTO_REGION: ap-southeast-1
 notification-service:
   image: {repository: notification-service, tag: e2d7e87a91106dd338937137197547b4a8608a56}

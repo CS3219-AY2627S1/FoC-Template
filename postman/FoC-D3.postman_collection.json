@@ -2,7 +2,7 @@
   "info": {
     "name": "FoC D3 Demo (Order + Credit async via Gateway)",
     "_postman_id": "f0c00d33-0000-4000-8000-000000000d3a",
-    "description": "AI-influenced: Postman collection and polling scripts authored with Claude Code (Claude Opus 4.8); delivery and cancellation requests updated with Codex; see ai/usage-log.md.\n\nMilestone D3 demo of the Order Service and Credit Service and their async (RabbitMQ/outbox) workflows, exercised end-to-end through the API Gateway (http://localhost:8080), no UI. Folders 00-11 run top to bottom; every email embeds a per-run runId so the whole collection is re-runnable with no manual steps. Auth is a per-request Bearer token (never raw X-User-* headers; the gateway strips those and injects identity from the JWT). Async terminal states are reached by polling (GET re-issues itself via setNextRequest, capped, failing loudly on timeout). OTP codes are read from Mailpit. See postman/README.md.",
+    "description": "AI-influenced: Postman collection and polling scripts authored with Claude Code (Claude Opus 4.8); delivery, photo proof, and cancellation requests updated with Codex; see ai/usage-log.md.\n\nMilestone D3 demo of the Order Service and Credit Service and their async (RabbitMQ/outbox) workflows, exercised end-to-end through the API Gateway (http://localhost:8080), no UI. Folders 00-11 run top to bottom; every email embeds a per-run runId so the whole collection is re-runnable with no manual steps. Auth is a per-request Bearer token (never raw X-User-* headers; the gateway strips those and injects identity from the JWT). Async terminal states are reached by polling (GET re-issues itself via setNextRequest, capped, failing loudly on timeout). OTP codes are read from Mailpit. See postman/README.md.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -2311,7 +2311,7 @@
           ]
         },
         {
-          "name": "Courier deliver -> 200 AWAITING_APPROVAL",
+          "name": "Deliver without photo -> 422",
           "request": {
             "method": "POST",
             "header": [],
@@ -2327,7 +2327,58 @@
                 "deliver"
               ]
             },
-            "description": "D3 Part 1.2: delivery without the optional photo moves the order to AWAITING_APPROVAL.",
+            "description": "Delivery requires a photo and leaves the picked-up order unchanged when omitted.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('D3 Order 1.2: photo is required (422)', function () { pm.response.to.have.status(422); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Courier deliver -> 200 AWAITING_APPROVAL",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "photo",
+                  "type": "file",
+                  "src": "postman/fixtures/proof.png"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/deliver",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "deliver"
+              ]
+            },
+            "description": "D3 Part 1.2: delivery with a required photo moves the order to AWAITING_APPROVAL.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -2347,6 +2398,48 @@
                 "exec": [
                   "pm.test('D3 Order 1.2: deliver (200)', function () { pm.response.to.have.status(200); });",
                   "pm.test('AWAITING_APPROVAL', function () { pm.expect(pm.response.json().status).to.eql('AWAITING_APPROVAL'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Requester GET delivered order -> photo proof",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}"
+              ]
+            },
+            "description": "The requester can retrieve the stored proof through order details.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('D3 Order 1.2: requester sees photo proof (200)', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Private photo is returned as a data URI', function () { pm.expect(pm.response.json().proof_of_delivery_photo).to.match(/^data:image\\/png;base64,/); });",
+                  "pm.test('S3 key remains private', function () { pm.expect(pm.response.json()).not.to.have.property('proof_of_delivery_photo_key'); });"
                 ]
               }
             }
