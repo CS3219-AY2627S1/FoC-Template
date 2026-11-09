@@ -630,3 +630,6 @@ CHANGE-181 final verification (2026-11-09): explicit null create image implement
 
 
 CHANGE-182 final verification (2026-11-09):18 focused tests and354 full frontend tests across57 files pass; full lint and Next route generation/tsc pass. Initial browse tests reproduced2 failures; whitespace-query edge separately reproduced/fixed. The only final change after the full run was a responsive popup max-height/overflow class using the existing available-height convention; no behavior logic changed. Bounded production build attempt still failed native process out-of-memory despite heap/Rust-thread caps. Docker stopped; image/browser/320px/staging verification pending. Current SupplierSelector is integrated in USER Requester Order creation; no backend/API/schema/dependency/config/index/cloud/data changes. Earlier CHANGE-181 Admin null image/type patches retained, fetch-all Order loader superseded. No commit/push; current source/tests/docs left for user review. See CHANGE-182 for file/contract/sequence and verification evidence.
+## CHANGE-183 - Admin resolver presentation (2026-11-09)
+
+Implemented requested name/ID/reply/time field ordering in Admin Report details using existing User lookup and controls; no resolution-flow/backend/API change.21 focused tests, lint and TypeScript pass. Human browser/staging review pending; see CHANGE-183.

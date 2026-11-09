@@ -919,3 +919,6 @@ Sequence/classes: Order creation -> useApi -> Supplier active paginated list -> 
 | NFR2.1; existing shared UI baseline | Installed Base UI keyboard/focus/escape semantics; viewport-bounded popup, wrapping text and scrollable list; no new dependency | Keyboard Enter/Escape test, existing Input/Button palette/classes. Real320px visual verification pending |
 
 Sequence/classes: open/type -> SupplierSelector request state -> existing useApi bearer gateway query -> one Supplier page -> ID selection -> unchanged Order command/validation. Removed legacy page-wide eager/fetch-all loader; shared global layout/auth/client unchanged. Admin null image/type changes from CHANGE-181 retained.18 focused tests, lint/typecheck pass at this stage; final suite/build/runtime evidence in CHANGE-182. Backend indexing/cursor work is not approved/implemented here.
+## CHANGE-183 - Resolution account display (2026-11-09)
+
+Existing Admin report review presentation -> ReportCase Resolution account-first rows -> shared authenticated User name enrichment using resolvedBy -> profile link/full-ID copy and no-Order regression checks.21 focused tests, full lint and TypeScript pass; browser/staging not exercised. No new D1 capability, backend rule, schema or contract. Details: changes/CHANGE-183-admin-resolver-display.md.
