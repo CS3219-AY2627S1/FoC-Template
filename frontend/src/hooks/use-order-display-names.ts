@@ -5,7 +5,7 @@ import { ApiError } from "@/lib/api"
 import type { AdminOrder } from "@/lib/admin-api"
 type Kind = "users" | "suppliers"
 /** Display enrichment only: names never become Order-owned persistence or block primary data. */
-export function useOrderDisplayNames(orders: AdminOrder[]) {
+export function useOrderDisplayNames(orders: AdminOrder[], additionalUserIds: (string | null | undefined)[] = []) {
   const api = useAdminApi()
   const missing = new Map<string, [Kind, string]>()
   for (const order of orders) {
@@ -15,6 +15,9 @@ export function useOrderDisplayNames(orders: AdminOrder[]) {
     ] as [Kind, string | null, string | null][]) {
       if (id && !name?.trim()) missing.set(kind + "/" + id, [kind, id])
     }
+  }
+  for (const id of additionalUserIds) {
+    if (id) missing.set("users/" + id, ["users", id])
   }
   const key = JSON.stringify([...missing.values()].sort(([a, b], [c, d]) => (a + b).localeCompare(c + d)))
   const [state, setState] = useState<{ api: typeof api; key: string; names: Record<string, string> } | null>(null)

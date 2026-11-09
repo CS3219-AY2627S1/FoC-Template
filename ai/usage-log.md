@@ -3539,6 +3539,7 @@ OpenAI Codex; Yao Xiang on hfix/report-service; authorized frontend implementati
 
 
 - **Verification update (CHANGE-182):**18 focused and354 full frontend tests/57files pass; full lint and TypeScript pass. Capped production build still fails native allocation; Docker is stopped. Responsive popup height-only class added after full run using existing convention. No image/browser/staging verification or data/backend/config mutations. Human review pending; no commit/push.
+<<<<<<< HEAD
 
 ## Automatic repost retry-policy and replacement slide assistance (Order Service)
 
@@ -3549,3 +3550,14 @@ OpenAI Codex; Yao Xiang on hfix/report-service; authorized frontend implementati
 - **Prompt:** "Can u first generate the updated slide first ? say i wanna rectify this auto repost flow"
 - **Key response:** AI supported comparison of business rejection, temporary failure and uncertain Credit effects. User selected stopping definite business rejections while preserving confirmed-compensation barriers and manual repost. Six actual integration regressions reproduce the old retry behavior (6 expected failures,0 errors/skips). Production policy code is not changed yet. One native editable replacement slide and separate notes describe the intended revised policy, not a verified cloud deployment. Template and PowerPoint rendering inspected; file-validation outcome follows in active work.
 - **Author verification:** Vincent explicitly confirmed identity/branch and policy scope, then prioritized the slide. Human review of the slide and implementation remains pending; AI did not independently approve architecture. No push/deployment or GCP mutation.
+=======
+## Admin Report resolver display assistance (Order Service / Frontend)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-09
+- **Mode:** Implementation, verification and documentation.
+- **Affected locations:** frontend/src/components/reports/reports-page.tsx and tests; frontend/src/hooks/use-order-display-names.ts and tests; Order CHANGE-183 and workflow records.
+- **Prompt:** User requests Resolution fields in admin name, ID, reply and time order, matching requester/courier account sections because multiple admins can resolve reports.
+- **Key response:** Reused shared account rows, profile/copy controls and authenticated User lookup using persisted resolvedBy, including reports without an Order. Historical missing IDs show Not available. Two new tests reproduced missing behavior;21 focused tests, full lint and route generation/TypeScript pass. Backend, contracts, data, config, saga and concurrent-conflict behavior unchanged; browser/staging not exercised. No commit/push.
+- **Author verification:** Yao Xiang specified the presentation and name requirement. Human source/visual review pending; automated verification is not human approval.
+>>>>>>> 2a42abb057a8bb8febaeff4b02006b44b23d0cb9
