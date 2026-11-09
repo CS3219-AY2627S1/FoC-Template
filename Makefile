@@ -4,7 +4,7 @@
 # ─────────────────────────────────────────────────────────────
 
 # Backend Python services (each has its own venv + requirements.txt).
-PY_SERVICES := api-gateway user-service supplier-service order-service credit-service notification-service
+PY_SERVICES := api-gateway user-service supplier-service order-service credit-service notification-service chat-service
 
 # Docker Compose command (v2).
 COMPOSE := docker compose

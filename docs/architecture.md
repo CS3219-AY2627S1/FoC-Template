@@ -20,6 +20,7 @@ internally **layered** (`api/routes` → `services` → `repositories`).
 | order-service | Errand lifecycle + state machine | order-db | sync + publishes events |
 | credit-service | Closed credit economy | credit-db | sync + consumes events |
 | notification-service | User notifications from order events; read API for the bell | notification-db | consumes events + sync (HTTP read API) |
+| chat-service (N2H) | Generic real-time chat; one chat per accepted order, driven by order events | chat-db | sync (HTTP + WebSocket via gateway) + consumes order events + publishes chat events |
 | frontend | Responsive SPA (requester/courier/admin) | — | sync (HTTP) |
 | rabbitmq | Event broker | — | async |
 
@@ -58,12 +59,14 @@ flowchart TB
         ORD["order-service :8000<br/><i>PR #5, unmerged</i>"]
         CR["credit-service :8000"]
         NOT["notification-service :8000"]
+        CHAT["chat-service :8000"]
 
         USDB[("user-db")]
         SUPDB[("supplier-db")]
         ORDDB[("order-db")]
         CRDB[("credit-db")]
         NOTDB[("notification-db")]
+        CHATDB[("chat-db")]
     end
 
     MQ(["RabbitMQ broker (foc-net)"])
@@ -76,12 +79,14 @@ flowchart TB
     GW -->|"proxy /api/orders/* (PR #5)"| ORD
     GW -->|"proxy /api/credits/*"| CR
     GW -->|"proxy /api/notifications/*"| NOT
+    GW -->|"proxy /api/chat/*<br/>relay WebSocket /api/chat/ws"| CHAT
 
     US --- USDB
     SUP --- SUPDB
     ORD --- ORDDB
     CR --- CRDB
     NOT --- NOTDB
+    CHAT --- CHATDB
 
     US -.->|"publishes UserRegistered<br/>on foc.user.events (fanout)"| MQ
     MQ -.->|"consumes UserRegistered<br/>-> allocate initial credits"| CR
@@ -89,6 +94,7 @@ flowchart TB
     ORD -.->|"publishes order events<br/>on foc.order.events (topic, PR #5)"| MQ
     MQ -.->|"consumes order events (PR #5)"| CR
     MQ -.->|"consumes order events<br/>-> builds notifications"| NOT
+    MQ -.->|"consumes order events<br/>-> open/close order chats"| CHAT
 
     ORD -.->|"GET /suppliers/id<br/>validate supplier (PR #5)"| SUP
     ORD -.->|"POST /credits/reservations<br/>reserve credits (PR #5)"| CR
@@ -99,9 +105,9 @@ flowchart TB
     classDef async fill:#fdf3e6,stroke:#b8863a,color:#1a1a1a;
     classDef planned fill:#f6ecfb,stroke:#8a4aa5,color:#1a1a1a,stroke-dasharray:4 3;
     class Browser,FE,GW pub;
-    class US,SUP,CR,NOT svc;
+    class US,SUP,CR,NOT,CHAT svc;
     class ORD planned;
-    class USDB,SUPDB,ORDDB,CRDB,NOTDB store;
+    class USDB,SUPDB,ORDDB,CRDB,NOTDB,CHATDB store;
     class MQ async;
 ```
 
@@ -153,6 +159,14 @@ flowchart TB
   frontend bell. The `MQ -> notification-service` edge is drawn as an active
   consume path, not a pending one. See
   [`notification-service/docs/architecture.md`](../notification-service/docs/architecture.md).
+
+- **chat-service is a generic chat service.** It only stores conversations, 
+  members and messages. Order chats come from an optional adapter
+  that consumes `foc.order.events` on its own queue (see
+  [`event-catalog.md`](./event-catalog.md));
+  Browsers reach it only through the gateway: HTTP under `/api/chat/*`, and a
+  WebSocket at `/api/chat/ws` that the gateway relays after chat-service accepts
+  a one-time ticket. Diagrams: [`chat-service/docs/architecture.md`](../chat-service/docs/architecture.md).
 
 ### Supplier Service (C4 Level 3 — Component)
 

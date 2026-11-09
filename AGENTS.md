@@ -45,6 +45,7 @@ individual contributions.
 | order-service | _TBD_ |
 | credit-service | _TBD_ |
 | notification-service | John |
+| chat-service (N2H) | _TBD_ |
 | frontend | _TBD_ |
 | shared / infra / CI | _TBD_ |
 

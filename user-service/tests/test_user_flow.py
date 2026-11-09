@@ -183,3 +183,27 @@ def test_profile_round_trip(monkeypatch):
     )
     assert update_resp.status_code == 200
     assert update_resp.json()["contact_number"] == "91234567"
+
+
+def test_public_profile_requires_identity_header(monkeypatch):
+    reg_resp, _ = _register(monkeypatch)
+    resp = client.get(f"/users/{reg_resp.json()['id']}/public")
+    assert resp.status_code == 401
+
+
+def test_public_profile_returns_display_name_only(monkeypatch):
+    alice, _ = _register(monkeypatch)
+    bob, _ = _register(monkeypatch, email="bob@u.nus.edu", display_name="Bob")
+
+    resp = client.get(
+        f"/users/{alice.json()['id']}/public",
+        headers={"X-User-Id": bob.json()["id"]},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"id": alice.json()["id"], "display_name": "Alice"}
+
+
+def test_public_profile_unknown_user_returns_404(monkeypatch):
+    bob, _ = _register(monkeypatch, email="bob@u.nus.edu", display_name="Bob")
+    resp = client.get("/users/no-such-user/public", headers={"X-User-Id": bob.json()["id"]})
+    assert resp.status_code == 404

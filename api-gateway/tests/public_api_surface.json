@@ -1,5 +1,11 @@
 {
   "exposed_routes": [
+    "GET /api/chat/conversations",
+    "GET /api/chat/conversations/{conversation_id}",
+    "POST /api/chat/conversations/{conversation_id}/attachments",
+    "GET /api/chat/conversations/{conversation_id}/attachments/{attachment_id}",
+    "GET /api/chat/conversations/{conversation_id}/messages",
+    "POST /api/chat/ws-ticket",
     "GET /api/credits/{user_id}/balance",
     "GET /api/credits/{user_id}/transactions",
     "GET /api/notifications/{user_id}",
@@ -40,9 +46,11 @@
     "POST /api/users/otp/verify",
     "POST /api/users/password/forgot",
     "POST /api/users/password/reset",
-    "POST /api/users/register"
+    "POST /api/users/register",
+    "GET /api/users/{user_id}/public"
   ],
   "proxied_prefixes": [
+    "/api/chat",
     "/api/credits",
     "/api/notifications",
     "/api/orders",
@@ -57,5 +65,8 @@
     "/api/users/password/reset",
     "/api/users/register",
     "/health"
+  ],
+  "websocket_routes": [
+    "/api/chat/ws"
   ]
 }
