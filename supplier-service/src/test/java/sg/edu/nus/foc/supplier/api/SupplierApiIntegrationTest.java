@@ -247,6 +247,19 @@ class SupplierApiIntegrationTest {
     }
 
     @Test
+    void createTreatsBlankOptionalFieldsAsUnset() throws Exception {
+        // A form left blank sends empty strings, as PATCH does to clear a field.
+        String blank = body(unique("Blank Kiosk"))
+                .replace("\"B1\"", "\"\"").replace("\"Beside the lift\"", "\"\"")
+                .replace("\"https://example.com/k.jpg\"", "\"\"");
+        mvc.perform(post("/api/suppliers").with(as(ADMIN)).contentType(MediaType.APPLICATION_JSON).content(blank))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.floor").doesNotExist())
+                .andExpect(jsonPath("$.locationDescription").doesNotExist())
+                .andExpect(jsonPath("$.imageUrl").doesNotExist());
+    }
+
+    @Test
     void adminsCanPartiallyUpdateAndOthersCannot() throws Exception {
         String id = createAsAdmin(unique("Patch Kiosk"));
         mvc.perform(patch("/api/suppliers/{id}", id).with(as(STUDENT)).contentType(MediaType.APPLICATION_JSON)

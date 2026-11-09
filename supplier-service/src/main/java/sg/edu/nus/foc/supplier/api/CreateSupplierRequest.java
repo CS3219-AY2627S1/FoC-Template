@@ -21,7 +21,7 @@ public record CreateSupplierRequest(
         String openingTime,
         @NotNull @Pattern(regexp = SupplierRequests.TIME_PATTERN, message = SupplierRequests.TIME_MESSAGE)
         String closingTime,
-        @Size(max = 500) @Pattern(regexp = SupplierRequests.URL_PATTERN, message = "must be an http(s) URL")
+        @Size(max = 500) @Pattern(regexp = SupplierRequests.OPTIONAL_URL_PATTERN, message = "must be an http(s) URL")
         String imageUrl) {
 
     SupplierDetails toDetails() {
