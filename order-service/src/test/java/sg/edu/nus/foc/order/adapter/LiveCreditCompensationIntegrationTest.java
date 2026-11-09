@@ -551,6 +551,27 @@ class LiveCreditCompensationIntegrationTest {
         assertNull(orderDb.queryForObject("select reposted_order_id from orders where id=?", String.class, original.getId()));
     }
 
+    @Test void olderBusinessRejectionCannotBeBypassedByALaterSafeFailureFromThePreviousPolicy() throws Exception {
+        String actor = account();
+        OrderResponse original = automaticOriginal(actor);
+        doThrow(new OrderProblem("SERVICE_UNAVAILABLE", "Temporary lookup failure"))
+                .when(backgroundChecks).validate(eq(actor), anyString(), anyString());
+        CommandView first = commands.submitAutomatic(original.getId(), Instant.now());
+        CommandView latest = commands.submitAutomatic(original.getId(), Instant.now());
+        assertEquals("REJECTED", first.outcome());
+        assertEquals("REJECTED", latest.outcome());
+        assertNotEquals(first.commandId(), latest.commandId());
+        // Model persisted history from the previous policy, which retried even
+        // business rejections. A later temporary outcome must not erase the stop.
+        orderDb.update("update order_commands set reason='INSUFFICIENT_CREDITS' where command_id=?", first.commandId());
+        assertFalse(orderRepository.findDueAutomaticRepostIds(Instant.now()).contains(original.getId()));
+        assertFalse(store.automaticRetrySafe(latest.commandId()));
+        doNothing().when(backgroundChecks).validate(eq(actor), anyString(), anyString());
+        assertEquals(latest.commandId(), commands.submitAutomatic(original.getId(), Instant.now()).commandId());
+        assertEquals(2, automaticCount(original.getId()));
+        assertNull(orderDb.queryForObject("select reposted_order_id from orders where id=?", String.class, original.getId()));
+    }
+
     @Test void unresolvedAutomaticCreditEffectBlocksANewAttemptUntilCompensationCommits() throws Exception {
         String actor = account(); OrderResponse original = automaticOriginal(actor);
         String firstKey = "AUTO_REPOST:" + original.getId();

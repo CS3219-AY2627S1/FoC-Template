@@ -57,4 +57,36 @@ class HttpBackgroundRepostChecksTest {
         assertEquals("SERVICE_UNAVAILABLE", assertThrows(OrderProblem.class, () -> checks.validate("U", "P", "D")).getCode());
         assertEquals("SERVICE_UNAVAILABLE", assertThrows(OrderProblem.class, () -> checks.fundingReady("O", "U")).getCode());
     }
+
+    @Test
+    void confirmedMissingRequesterStopsButRouteErrorsAndOutagesRemainTemporary() throws Exception {
+        AtomicReference<String> body = new AtomicReference<>(
+                "{\"status\":404,\"error\":\"NOT_FOUND\",\"message\":\"User not found\"}");
+        java.util.concurrent.atomic.AtomicInteger status = new java.util.concurrent.atomic.AtomicInteger(404);
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/users/internal/order-requesters/U", exchange -> {
+            assertNull(exchange.getRequestHeaders().getFirst("Authorization"));
+            byte[] bytes = body.get().getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(status.get(), bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        server.start();
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort();
+            HttpBackgroundRepostChecks checks = new HttpBackgroundRepostChecks(url, url, url,
+                    Duration.ofSeconds(1), Duration.ofSeconds(1));
+            assertEquals("NOT_FOUND", assertThrows(OrderProblem.class, () -> checks.validate("U", "P", "D")).getCode());
+            body.set("{\"error\":\"NOT_FOUND\",\"message\":\"No endpoint handles this path.\"}");
+            assertEquals("SERVICE_UNAVAILABLE", assertThrows(OrderProblem.class, () -> checks.validate("U", "P", "D")).getCode());
+            body.set("not a JSON response");
+            assertEquals("SERVICE_UNAVAILABLE", assertThrows(OrderProblem.class, () -> checks.validate("U", "P", "D")).getCode());
+            body.set("{\"error\":\"NOT_FOUND\",\"message\":\"User not found\"}");
+            status.set(503);
+            assertEquals("SERVICE_UNAVAILABLE", assertThrows(OrderProblem.class, () -> checks.validate("U", "P", "D")).getCode());
+        } finally {
+            server.stop(0);
+        }
+    }
 }
