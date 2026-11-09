@@ -1998,12 +1998,12 @@ Claude built four member pages (open errands, my errands, post an errand, errand
 
 Claude restructured the card so the link to the detail and the new Accept button are siblings (a button may not sit inside a link), reused the detail page's confirmation dialog, and on success or a lost race both drops the card at once and reloads the page of results; a 503 or network failure leaves it listed. The item count is the total quantity across lines. Tests: 72/72 Vitest (a mutation check confirmed the race test fails if the card is not dropped), oxlint clean, and a scratch Playwright run against the Compose stack where a second courier won the race through the API.
 
-## 2026-11-09 — Order Service: N2 natural language errand creation (spec)
+## 2026-11-09 — Order Service: N2 natural language errand creation
 
 - **Tool:** Claude Code (Claude Opus 5.5)
-- **Mode:** explain
-- **Allowed-use scope:** requirements work (transcribing the author's decisions word for word and drafting only the details the author asked Claude to propose); learning support (reading the Order, Supplier and frontend code and Anthropic's structured-outputs documentation). No requirement, interface or trade-off decided by the AI.
-- **Repository files affected:** `docs/superpowers/specs/2026-11-09-order-n2-natural-language-errand-creation.md`, `ai/usage-log.md`
+- **Mode:** explain (spec), then implementation
+- **Allowed-use scope:** requirements work (transcribing the author's decisions word for word and drafting only the details the author asked Claude to propose); learning support (reading the Order, Supplier and frontend code and Anthropic's structured-outputs documentation); implementation code, tests, configuration and documentation once the author had approved the spec. No requirement, interface or trade-off decided by the AI.
+- **Repository files affected:** `docs/superpowers/specs/2026-11-09-order-n2-natural-language-errand-creation.md`, `order-service/package.json`, `order-service/package-lock.json` (adds `@anthropic-ai/sdk`), `order-service/src/config.ts`, `order-service/src/adapters/{supplierDirectory,errandExtractor}.ts`, `order-service/src/domain/{validation,extraction}.ts`, `order-service/src/http/{extractionRateLimit,extractionRoutes,routes,app}.ts`, `order-service/src/index.ts`, `order-service/test/extraction.test.ts`, `order-service/README.md`, `compose.yaml`, `.env.example`, `frontend/src/api/{client,client.spec,errandApi,errandApi.spec}.ts`, `frontend/src/errands/{DescribeErrand.tsx,DescribeErrand.spec.tsx,extractionCopy.ts,CreateErrandPage.tsx,CreateErrandPage.spec.tsx,errandFormModel.ts,errandFormModel.spec.ts,types.ts}`, `frontend/README.md`, `frontend/AI-DISCLOSURES.md`, `ai/usage-log.md`
 - **Author review:** Pending review by @mattis.
 
 ### Prompts
@@ -2055,4 +2055,16 @@ Claude restructured the card so the link to the detail and the new Accept button
 ### Key response
 
 Claude created `feat/order-nl-errand-creation` from `feat/order-member-frontend` (9e90c6c; `feat/order-frontend` does not exist yet) and wrote the spec. It records the facts the decisions rest on (the gateway already forwards `/api/v1/errands`; Supplier Service lists `ACTIVE` suppliers 100 per page; Order's Supplier adapter only looks up one supplier; `ApiError` keeps no headers; structured outputs support nullable type arrays and `date-time` but not numeric or length limits, and a refusal or `max_tokens` reply may break the schema). It quotes every decision word for word and gives proposals, pending approval, for the setting names (`LLM_MODE`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_TIMEOUT_MS`, mapped from `ORDER_`-prefixed `.env` names), a 60-second sliding rate-limit window with `Retry-After = max(1, ceil((oldest + 60000 - now) / 1000))`, the order of checks, the fixed stub extraction, the page wording, the log line and the `ApiError` change. It lists eleven open questions, among them the nginx 60-second default timeout against the 60-second LLM timeout, what administrators see, item handling, and effort and `max_tokens`. No code was written; Claude stopped for the author's approval.
+
+### Prompts (after the spec)
+
+> yes you can add it here no worries you can update the saved preference.
+
+> proposals in section 3 approved, lower timeout to 50 seconds, we should allow adminstrators to have access to this feature extraction should not refuse them with a 403, drop item with bad name, returned items replace existing rows, and yes keep default deadline or quantity. medium effort, we can use anthropic defaults for max tokens, and we can use an enum of the sent ids, or null
+
+> take the suggestions and go ahead
+
+### Key response (implementation)
+
+Claude recorded rounds 2 and 3 in the spec, then implemented it in conventional commits. Order Service gained `GET /errands/extract/status` and `POST /errands/extract`, registered before `/errands/:id` and open to any logged-in user. Each call fetches every page of active Suppliers with the caller's token. It then makes one `@anthropic-ai/sdk` call with a structured-output schema: Supplier ids as an enum or null, effort `medium`, `max_tokens` 16000, `maxRetries: 0`, `LLM_TIMEOUT_MS` defaulting to 50 s. Every value is checked against the `POST /errands` rules, now shared through `parseIsoTimestamp` and `CREATE_LIMITS` in `validation.ts`. Calls are limited by a 3-per-minute in-memory sliding window per user, with `Retry-After`, and each call logs one `errand_extraction` line without the description. The stub gives the fixed reply and fails on `stub:fail` and `stub:slow`. Compose passes `ORDER_LLM_*`. The frontend gained the "Describe your errand" box on `/errands/new` and `ApiError.retryAfterSeconds`. Two log outcomes were added beyond the approved list, `unauthenticated` (Supplier 401) and `supplier_error` (an unexpected Supplier reply), as the round 3 Supplier mapping needed them. No test calls the real Anthropic API, and nothing was run against it. Checks: order-service typecheck clean and 209/209 tests on a throwaway PostgreSQL; frontend lint clean, 90/90 tests, build passes. On the Compose stack, with no key the box showed as unavailable (`NOT_CONFIGURED`). With `ORDER_LLM_MODE=stub` the form filled seven fields and left the delivery deadline at its default. `stub:fail` showed the failure message at once and `stub:slow` after 50.5 s. A fourth call showed the rate-limit countdown, no errand was created, and no log line held the description.
 
