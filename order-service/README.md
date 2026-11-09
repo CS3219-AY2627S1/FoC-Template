@@ -19,6 +19,9 @@ Author review: Reviewed and approved by @mattis.
 Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
 Scope: Noted that the member frontend pages now exist.
 Author review: Reviewed and approved by @mattis.
+Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
+Scope: N2 natural language errand creation section (endpoints, settings, errors, decisions), per the approved N2 spec.
+Author review: Pending review by @mattis.
 -->
 
 # Order Service
@@ -126,6 +129,9 @@ responses carry `details` (one entry per bad field).
 | 503 | `SERVICE_UNAVAILABLE` | the database, User Service or Supplier Service is unreachable or too slow |
 | 500 | `INTERNAL_ERROR` | anything else |
 
+The N2 extraction endpoints add `429 RATE_LIMITED`, `502 EXTRACTION_FAILED` and `503 EXTRACTION_UNAVAILABLE`; see
+[N2: natural language errand creation](#n2-natural-language-errand-creation).
+
 ## Design calls (decided: accepted by the author on 2026-10-16)
 
 1. **Database: PostgreSQL 17, own `order-db`.** Row locks and conditional updates give single-winner accepts, and the outbox row is written in the same transaction as the errand change.
@@ -150,6 +156,56 @@ responses carry `details` (one entry per bad field).
   `withdraw`s after the listing deadline) is already past its listing deadline. No other courier can accept it,
   and the sweeper expires it in the same tick, releasing the credits through `OrderExpired`. OS-F2.2.2 promises
   re-listing for another courier. The behaviour is kept for now and the author decides whether to change it.
+
+## N2: natural language errand creation
+
+A requester describes the errand in their own words; Order asks Claude to work out the create-errand fields; the
+frontend fills the create form with them, and the requester reviews, edits and submits it as usual. Nothing is created
+by these endpoints. Spec and the author's decisions:
+[docs/superpowers/specs/2026-11-09-order-n2-natural-language-errand-creation.md](../docs/superpowers/specs/2026-11-09-order-n2-natural-language-errand-creation.md).
+
+| Method and path | Who | Success | Notes |
+|---|---|---|---|
+| `GET /errands/extract/status` | any logged-in user | 200 | `{ available, reason }`; `reason` is `null`, `"DISABLED"` (mode `off`) or `"NOT_CONFIGURED"` (mode `anthropic`, no key) |
+| `POST /errands/extract` | any logged-in user (members and administrators) | 200 | body `{ "description" }`, 1 to 1000 characters (JavaScript string length), not blank; returns the eight `POST /errands` fields, each `null` if it couldn't be worked out |
+
+Both routes are registered before `/errands/:id`. The gateway already forwards `/api/v1/errands`.
+
+| Status | `error` | When |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | body not exactly `{ description }`, description missing, not a string, blank or over 1000 characters |
+| 401 | `UNAUTHENTICATED` | no valid session, or Supplier Service answered `401` to the Supplier list call |
+| 429 | `RATE_LIMITED` | more than 3 calls reaching the LLM in 60 s; `Retry-After` header in seconds |
+| 502 | `EXTRACTION_FAILED` | the LLM call timed out, failed, was refused, was cut off (`max_tokens`) or wasn't usable JSON |
+| 503 | `EXTRACTION_UNAVAILABLE` | mode `off`, or `anthropic` with no key |
+| 503 | `SERVICE_UNAVAILABLE` | the Supplier list couldn't be fetched (5xx, timeout, unreachable); the LLM isn't called |
+| 500 | `INTERNAL_ERROR` | Supplier Service answered the list call in a way Order doesn't expect |
+
+**How a call runs:** session check (401), body check (400), feature check (503), rate-limit check (429), every page of
+`ACTIVE` Suppliers from Supplier Service with the caller's `Authorization` (`SUPPLIER_SERVICE_LOOKUP_TIMEOUT_MS` per
+page), rate-limit check and record in one step (429), one LLM call, then the reply checks.
+
+| Decision | Detail |
+|---|---|
+| Model call | One call to `LLM_MODEL` (default Claude Haiku 5.5) with a structured-output JSON schema, effort `medium`, `max_tokens` 16000, SDK `maxRetries: 0`, timeout `LLM_TIMEOUT_MS`. Sent: the description (as data, never as instructions), each Supplier's id, name, building label, building code, floor, location description and categories, and the current Singapore date and time. Nothing about the requester is sent. |
+| Supplier | The schema allows only the ids sent, or `null`, and Order checks the id against the list again. No clear match, or several, is `null`. |
+| Deadlines | Read in Singapore time and returned as ISO 8601 with an offset. One time fills only the deadline its wording points to; vague, past or ambiguous times are `null`. |
+| Reply checks | Every value must pass the `POST /errands` rule or becomes `null`: credits 1 to 1000; drop-off 1 to 200 characters; notes at most 500; deadlines in the future. More than 20 items makes `items` `null`. An item whose name isn't 1 to 100 characters is dropped (`items` is `null` if none are left); a quantity outside 1 to 99, or not stated, is `null` and the item is kept. If the deadlines left are out of order (listing, pickup, delivery), all three become `null`. |
+| Rate limit | 3 calls per user per 60 s (any role), in memory in this process: a restart resets it and each replica counts on its own. Only calls that reach the LLM (stub included) count, whether they succeed or fail. The limit is checked before the Supplier fetch and checked and recorded in one synchronous step before the LLM call. `Retry-After = max(1, ceil((oldest + 60000 - now) / 1000))`. |
+| Logging | One `errand_extraction` line per call: `userId`, `durationMs`, `outcome`, `filledFields`, `inputTokens`, `outputTokens` (`null` when the LLM wasn't reached, `0` for the stub). Never the description, the reply or the Supplier list. |
+| Stub mode | A fixed reply whatever the text: the first listed Supplier, `[{ "Iced latte", 2 }, { "Croissant", null }]`, drop-off `"COM1 level 2 study area"`, notes `"Less ice, please"`, 15 credits, listing deadline now + 1 h rounded up to the quarter hour, pickup one hour later, delivery `null`, then the same checks. `stub:fail` in the description gives `502` at once; `stub:slow` waits `LLM_TIMEOUT_MS`, then `502`. |
+
+`outcome` is one of `ok`, `invalid_request`, `unavailable`, `rate_limited`, `unauthenticated`, `supplier_unavailable`,
+`supplier_error`, `timeout`, `llm_error`, `refused`, `truncated` or `unusable_reply`.
+
+| Variable (service) | `.env` name (Compose) | Default outside Compose | Compose default | Meaning |
+|---|---|---|---|---|
+| `LLM_MODE` | `ORDER_LLM_MODE` | `stub` | `anthropic` | `anthropic`, `stub` or `off`; any other value stops startup |
+| `LLM_API_KEY` | `ORDER_LLM_API_KEY` | unset | blank | Anthropic API key; never commit one. With `anthropic` and no key the feature is off (`NOT_CONFIGURED`) |
+| `LLM_MODEL` | `ORDER_LLM_MODEL` | `claude-haiku-5-5` | `claude-haiku-5-5` | the Claude model |
+| `LLM_TIMEOUT_MS` | `ORDER_LLM_TIMEOUT_MS` | 50000 | 50000 | time one LLM call may take (below nginx's 60 s default) |
+
+The frontend's create page (`/errands/new`) shows the description box; see `frontend/README.md`.
 
 ## Run
 
@@ -268,6 +324,9 @@ cd order-service
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:55432/postgres npm test
 npm run typecheck   # src and test
 ```
+
+The N2 tests (`test/extraction.test.ts`) need no database and never call the real Anthropic API: they use the stub
+or a fake client injected in code.
 
 The Kafka integration suite (`test/kafka.integration.test.ts`) is skipped unless `TEST_KAFKA_BROKERS` is set.
 `npm run test:kafka` (`scripts/test-kafka.sh`) starts a throwaway PostgreSQL and a single-node Kafka with the
