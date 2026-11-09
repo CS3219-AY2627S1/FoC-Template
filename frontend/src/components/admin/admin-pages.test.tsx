@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   recordName: vi.fn(),
   supplier: vi.fn(), userTransactions: vi.fn(), userBalance: vi.fn(),
   suspendUser: vi.fn(), unsuspendUser: vi.fn(), promoteUser: vi.fn(), deactivateUser: vi.fn(),
-  createSupplier: vi.fn(), updateSupplier: vi.fn(), deactivateSupplier: vi.fn(), reactivateSupplier: vi.fn(),
+  createSupplier: vi.fn(), updateSupplier: vi.fn(), deactivateSupplier: vi.fn(), reactivateSupplier: vi.fn(), supplierTypes: vi.fn(),
 }))
 vi.mock("@/hooks/use-admin-api", () => ({ useAdminApi: () => mocks }))
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }))
@@ -64,6 +64,7 @@ beforeEach(() => {
   mocks.supplier.mockResolvedValue(supplier)
   mocks.userTransactions.mockResolvedValue(page([]))
   mocks.suppliers.mockResolvedValue(page([supplier]))
+  mocks.supplierTypes.mockResolvedValue(["Food/Coffee", "Library", "Shopping"])
   mocks.promoteUser.mockResolvedValue({ ...user, roles: [...user.roles, "admin"] })
   mocks.suspendUser.mockResolvedValue({ ...user, penalty: 10, isCourierSuspended: true, suspensionEndDate: "2026-12-04T00:00:00Z" })
   mocks.unsuspendUser.mockResolvedValue({ ...user, penalty: 10 })
@@ -551,6 +552,27 @@ describe("Admin pages", () => {
     expect(screen.getByRole("button", { name: "Back to orders" })).toBeEnabled()
     fireEvent.click(screen.getByRole("button", { name: "Try again" }))
     expect(await screen.findByText("Lunch delivery")).toBeInTheDocument()
+  })
+
+  it.each(["create", "edit"])("loads actual Supplier catalogue type suggestions for %s", async (mode) => {
+    render(<AdminSuppliers initialSupplierId={mode === "edit" ? "supplier-1" : undefined} />)
+    fireEvent.click(await screen.findByRole("button", { name: mode === "edit" ? "Edit details" : "Create supplier" }))
+    await waitFor(() => expect(mocks.supplierTypes).toHaveBeenCalledWith(expect.any(AbortSignal)))
+    await waitFor(() => expect(Array.from(document.querySelectorAll("#supplier-types option")).map(option => option.getAttribute("value")))
+      .toEqual(["Food/Coffee", "Library", "Shopping"]))
+    const type = screen.getByLabelText("Type")
+    fireEvent.change(type, { target: { value: "Campus residence" } })
+    expect(type).toHaveValue("Campus residence")
+  })
+
+  it("keeps supplier creation editable when type suggestions are unavailable", async () => {
+    mocks.supplierTypes.mockRejectedValue(new Error("Types unavailable"))
+    render(<AdminSuppliers />)
+    fireEvent.click(screen.getByRole("button", { name: "Create supplier" }))
+    await waitFor(() => expect(mocks.supplierTypes).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText("Type"), { target: { value: "Food" } })
+    expect(screen.getByLabelText("Type")).toHaveValue("Food")
+    expect(screen.getByLabelText("Image link")).not.toBeRequired()
   })
 
   it("places supplier actions above details and confirms deactivation", async () => {

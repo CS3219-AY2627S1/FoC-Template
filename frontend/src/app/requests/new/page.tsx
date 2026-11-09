@@ -1,11 +1,12 @@
 "use client"
 
 import type { FormEvent } from "react"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import { QuarterHourDateTimePicker } from "@/components/orders/quarter-hour-date-time-picker"
+import { SupplierSelector } from "@/components/orders/supplier-selector"
 import { RequireAuth } from "@/components/require-auth"
 import { useAuth } from "@/components/providers/auth-provider"
 import { Button } from "@/components/ui/button"
@@ -13,14 +14,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useApi } from "@/hooks/use-api"
 import { useOrderCommand } from "@/hooks/use-order-command"
 import { OrderCommandNotice } from "@/components/orders/order-command-notice"
 import { ApiError } from "@/lib/api"
 import { buildCreateOrderPayload, minOrderExpiryDateTimeLocal, quarterHourDateTimeLocal, validateCreateOrderFields, type CreateOrderForm, type OrderFieldErrors } from "@/lib/orders"
 import { invalidateCreditBalance } from "@/lib/credit-balance-events"
-import { supplierOptionLabel, type Page, type Supplier } from "@/lib/suppliers"
 
 const inputClass = "h-9 rounded-lg border bg-transparent px-3 text-sm"
 const localDate = (hoursFromNow: number) => quarterHourDateTimeLocal(new Date(Date.now() + hoursFromNow * 60 * 60_000))
@@ -40,14 +38,10 @@ const initialForm = (): CreateOrderForm => ({
 })
 
 export default function NewRequestPage() {
-  const api = useApi()
   const router = useRouter()
-  const { user, loading: authLoading } = useAuth()
+  const { user } = useAuth()
   const [form, setForm] = useState(initialForm)
   const [busy, setBusy] = useState(false)
-  const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [suppliersLoading, setSuppliersLoading] = useState(true)
-  const [suppliersError, setSuppliersError] = useState<string | null>(null)
   const [postError, setPostError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<OrderFieldErrors>({})
   const command = useOrderCommand("create", () => {
@@ -55,22 +49,6 @@ export default function NewRequestPage() {
     toast.success("Order posted")
     router.push("/my-requests")
   }, (message) => { setPostError(message); toast.error(message) })
-
-  useEffect(() => {
-    if (authLoading || !user) return
-
-    const controller = new AbortController()
-    void api<Page<Supplier>>("/api/suppliers?status=active&page=1&size=100&sort=name&order=asc", {
-      signal: controller.signal,
-    })
-      .then((page) => setSuppliers(page.items))
-      .catch((error) => {
-        if (error instanceof DOMException && error.name === "AbortError") return
-        setSuppliersError(error instanceof Error ? error.message : "Could not load suppliers.")
-      })
-      .finally(() => setSuppliersLoading(false))
-    return () => controller.abort()
-  }, [api, authLoading, user])
 
   function update<K extends keyof CreateOrderForm>(key: K, value: CreateOrderForm[K]) {
     setForm((current) => ({ ...current, [key]: value }))
@@ -139,12 +117,13 @@ export default function NewRequestPage() {
           <fieldset disabled={busy || command.pending || !command.ready} className="contents">
           <Card><CardHeader><CardTitle>Request details</CardTitle><CardDescription>Select suppliers from the active Supplier Service catalogue.</CardDescription></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-1 text-sm sm:col-span-2"><Label htmlFor="item-description">What do you need?</Label><Input id="item-description" {...fieldProps("itemDescription")} required maxLength={100} className={inputClass} value={form.itemDescription} onChange={(event) => update("itemDescription", event.target.value)} placeholder="Pick up a parcel from the campus store" />{fieldError("itemDescription")}</label>
-            {suppliersError && <Alert variant="destructive" className="sm:col-span-2"><AlertTitle>Suppliers unavailable</AlertTitle><AlertDescription>{suppliersError} Refresh and try again.</AlertDescription></Alert>}
             {(["pickupSupplierId", "deliverySupplierId"] as const).map((field) => {
               const pickup = field === "pickupSupplierId"
               const label = pickup ? "Pickup supplier" : "Delivery supplier"
               const id = pickup ? "pickup-supplier" : "delivery-supplier"
-              return <div key={field} className="space-y-1 text-sm"><Label htmlFor={id}>{label}</Label><Select items={Object.fromEntries(suppliers.map((supplier) => [supplier.id, supplierOptionLabel(supplier)]))} value={form[field]} onValueChange={(value) => update(field, String(value ?? ""))} disabled={suppliersLoading || suppliers.length === 0}><SelectTrigger id={id} aria-label={label} {...fieldProps(field)} className="h-9 w-full"><SelectValue placeholder={suppliersLoading ? "Loading suppliers…" : `Select a ${pickup ? "pickup" : "delivery"} supplier`} /></SelectTrigger><SelectContent>{suppliers.map((supplier) => <SelectItem key={supplier.id} value={supplier.id}>{supplierOptionLabel(supplier)}</SelectItem>)}</SelectContent></Select>{fieldError(field)}</div>
+              return <div key={field} className="space-y-1 text-sm"><Label htmlFor={id}>{label}</Label>
+                <SupplierSelector id={id} label={label} value={form[field]} onChange={(value) => update(field, value)}
+                  disabled={busy || command.pending || !command.ready} {...fieldProps(field)} />{fieldError(field)}</div>
             })}
             <label className="space-y-1 text-sm"><Label htmlFor="credits">Offered credits</Label><Input id="credits" {...fieldProps("offeredCredits")} required type="number" min="1" className={inputClass} value={form.offeredCredits} onChange={(event) => update("offeredCredits", Number(event.target.value))} />{fieldError("offeredCredits")}</label>
             <label className="space-y-1 text-sm"><Label htmlFor="delivery-limit">Delivery time limit (minutes)</Label><Input id="delivery-limit" {...fieldProps("deliveryTimeLimitMinutes")} required type="number" min="15" className={inputClass} value={form.deliveryTimeLimitMinutes} onChange={(event) => update("deliveryTimeLimitMinutes", Number(event.target.value))} />{fieldError("deliveryTimeLimitMinutes")}</label>
@@ -159,7 +138,7 @@ export default function NewRequestPage() {
               <label className="space-y-1 text-sm"><Label htmlFor="repost-duration">Repost delivery minutes</Label><Input id="repost-duration" {...fieldProps("repostDeliveryDurationMinutes")} type="number" min="15" disabled={!form.automaticRepost} className={inputClass} value={form.repostDeliveryDurationMinutes} onChange={(event) => update("repostDeliveryDurationMinutes", Number(event.target.value))} />{fieldError("repostDeliveryDurationMinutes")}</label>
             </div>
           </CardContent></Card>
-          <Button type="submit" disabled={busy || command.pending || !command.ready || suppliersLoading || suppliers.length === 0 || !form.pickupSupplierId || !form.deliverySupplierId}>{busy || command.pending ? "Request pending…" : "Post request"}</Button>
+          <Button type="submit" disabled={busy || command.pending || !command.ready || !form.pickupSupplierId || !form.deliverySupplierId}>{busy || command.pending ? "Request pending…" : "Post request"}</Button>
           </fieldset>
         </form>
         <OrderCommandNotice {...command} />

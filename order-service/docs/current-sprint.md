@@ -614,3 +614,19 @@ CHANGE-179 verification amendment:701Order+13common full scoped verify passes, n
 ## CHANGE-180 - Admin suspension controls (2026-11-04)
 
 [~] User-approved Admin Users profile suspension/unsuspension UI implemented against ready User endpoints. Automated frontend checks pass:331 tests, lint and TypeScript. Docker engine unresponsive and direct production build hit Windows OutOfMemoryException; no new image/runtime verification. Existing local User image lacks Unsuspend until rebuilt. Human/browser/staging verification pending. No backend scope expansion; see CHANGE-180.
+
+
+## CHANGE-181 - Supplier frontend API alignment (2026-11-09)
+
+[~] Yao Xiang, hfix/suppplier-not-showing-up: user-approved missing supplier/optional image/types fixes implemented. Existing Supplier GET list/types and POST/PATCH only; Order backend and all peers unchanged. Follow-up requires explicit null on create, implemented. All-pages loading fixes the current catalogue; search-based large-scale design is a proposal, not approved implementation. Verification and production-build limitations in CHANGE-181; browser/actual record verification pending.
+
+
+CHANGE-181 final verification (2026-11-09): explicit null create image implemented; initial7 expected RED failures, focused82 pass, explicit-null refinement RED1/12 pass, final343 frontend tests across56 files pass. Full lint and Next route generation/tsc pass. Docker stopped (engine pipe absent); direct production build failed host memory allocation. No image/browser/live account or Supplier writes verified/performed. No backend/source/auth/schema/config/cloud changes. Large-scale searchable selector/backend index/cursor design remains proposed only, pending developer approval. No commit/push; frontend and required documentation changes remain for user review. See changes/CHANGE-181-supplier-catalogue-form-alignment.md for exact scope and logs.
+
+
+## CHANGE-182 - Supplier selection UI approved (2026-11-09)
+
+[~] Yao Xiang continues on hfix/suppplier-not-showing-up. Approved browse20/search300ms/Show more design implemented in USER Requester Order form using installed Base UI and existing Supplier GET. No supplier reads before opening. Abort/late-response/selected-label/error/keyboard tests and existing creation validation verified; final full suite/build evidence follows CHANGE-182. No backend/schema/auth/index/shared config changes. Preserves CHANGE-181 optional-image/type fixes. Backend100million-scale indexing remains separately proposed; browser/runtime verification pending.
+
+
+CHANGE-182 final verification (2026-11-09):18 focused tests and354 full frontend tests across57 files pass; full lint and Next route generation/tsc pass. Initial browse tests reproduced2 failures; whitespace-query edge separately reproduced/fixed. The only final change after the full run was a responsive popup max-height/overflow class using the existing available-height convention; no behavior logic changed. Bounded production build attempt still failed native process out-of-memory despite heap/Rust-thread caps. Docker stopped; image/browser/320px/staging verification pending. Current SupplierSelector is integrated in USER Requester Order creation; no backend/API/schema/dependency/config/index/cloud/data changes. Earlier CHANGE-181 Admin null image/type patches retained, fetch-all Order loader superseded. No commit/push; current source/tests/docs left for user review. See CHANGE-182 for file/contract/sequence and verification evidence.

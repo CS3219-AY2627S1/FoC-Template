@@ -45,6 +45,44 @@ async function selectOption(name: string, option: string) {
 }
 
 describe("request creation quarter-hour time integration", () => {
+  it("loads only 20 suppliers when opened and browses later pages on demand", async () => {
+    const first = Array.from({ length: 20 }, (_, i) => ({ id: `supplier-${i}`, name: `Campus ${i}`, building: "NUS" }))
+    const later = [{ id: "vincent", name: "Vincent House", building: "NUS", openNow: false }]
+    mocks.api.mockImplementation(async (path: string) => ({
+      items: path.includes("page=2&") ? later : first, page: path.includes("page=2&") ? 2 : 1,
+      size: 20, totalItems: 21, totalPages: 2,
+    }))
+    render(<NewRequestPage />)
+    expect(mocks.api.mock.calls.filter(([path]) => path.startsWith("/api/suppliers?"))).toHaveLength(0)
+    await waitFor(() => expect(combobox("Pickup supplier")).toBeEnabled())
+    fireEvent.click(combobox("Pickup supplier"))
+    await screen.findByRole("option", { name: "Campus 0 — NUS" })
+    expect(mocks.api).toHaveBeenCalledWith("/api/suppliers?status=active&page=1&size=20&sort=name&order=asc",
+      { signal: expect.any(AbortSignal) })
+    expect(mocks.api.mock.calls.filter(([path]) => path.startsWith("/api/suppliers?"))).toHaveLength(1)
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }))
+    fireEvent.click(await screen.findByRole("option", { name: "Vincent House — NUS" }))
+    expect(mocks.api).toHaveBeenCalledWith("/api/suppliers?status=active&page=2&size=20&sort=name&order=asc",
+      { signal: expect.any(AbortSignal) })
+    expect(combobox("Pickup supplier")).toHaveTextContent("Vincent House")
+    expect(mocks.api.mock.calls.filter(([path]) => path.startsWith("/api/suppliers?"))).toHaveLength(2)
+  })
+
+  it("shows a later-page error with retry while retaining previously loaded options", async () => {
+    mocks.api.mockImplementation(async (path: string) => {
+      if (path.includes("page=2&")) throw new Error("Supplier Service is temporarily unavailable.")
+      return { items: [{ id: "store", name: "Store", building: "A" }], totalPages: 2 }
+    })
+    render(<NewRequestPage />)
+    await waitFor(() => expect(combobox("Pickup supplier")).toBeEnabled())
+    fireEvent.click(combobox("Pickup supplier"))
+    await screen.findByRole("option", { name: "Store — A" })
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }))
+    expect(await screen.findByRole("alert")).toHaveTextContent("Supplier Service is temporarily unavailable.")
+    expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled()
+    expect(screen.getByRole("option", { name: "Store — A" })).toBeInTheDocument()
+  })
+
   it("shows only the actual same-supplier error inline and does not post", async () => {
     render(<NewRequestPage />)
     await waitFor(() => expect(combobox("Pickup supplier")).not.toBeDisabled())

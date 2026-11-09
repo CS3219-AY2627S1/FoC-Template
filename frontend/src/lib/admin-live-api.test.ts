@@ -66,6 +66,17 @@ describe("Live Admin API adapter", () => {
     expect(request.mock.calls.every(([path]) => !path.includes("admin-mock"))).toBe(true)
   })
 
+  it("loads actual Supplier types with authentication transport and propagates failures", async () => {
+    const request = vi.fn().mockResolvedValue({ items: ["Food/Coffee", "Library"] })
+    const api = createAdminApi(request)
+    const controller = new AbortController()
+    expect(await api.supplierTypes(controller.signal)).toEqual(["Food/Coffee", "Library"])
+    expect(request).toHaveBeenCalledWith("/api/suppliers/types", { signal: controller.signal })
+    const failure = new ApiError(503, "SERVICE_UNAVAILABLE", "Types unavailable")
+    request.mockRejectedValue(failure)
+    await expect(api.supplierTypes()).rejects.toBe(failure)
+  })
+
   it("reuses Supplier search/create/edit/soft-deactivation contracts", async () => {
     const request = vi.fn().mockResolvedValue({ items: [] })
     const api = createAdminApi(request)
@@ -74,7 +85,14 @@ describe("Live Admin API adapter", () => {
     const input = { name: "Deck", type: "Food", building: "Arts", floor: "", locationDescription: "",
       latitude: 1.3, longitude: 103.8, openingTime: "09:00", closingTime: "18:00", imageUrl: "" }
     await api.createSupplier(input)
-    expect(request).toHaveBeenLastCalledWith("/api/suppliers", { method: "POST", body: input })
+    expect(request).toHaveBeenLastCalledWith("/api/suppliers", { method: "POST", body: { ...input, imageUrl: null } })
+    await api.createSupplier({ ...input, imageUrl: "   " })
+    expect(request).toHaveBeenLastCalledWith("/api/suppliers", { method: "POST", body: { ...input, imageUrl: null } })
+    await api.createSupplier({ ...input, imageUrl: "https://example.com/location.jpg" })
+    expect(request).toHaveBeenLastCalledWith("/api/suppliers", { method: "POST",
+      body: { ...input, imageUrl: "https://example.com/location.jpg" } })
+    await api.updateSupplier("supplier/1", { imageUrl: "" })
+    expect(request).toHaveBeenLastCalledWith("/api/suppliers/supplier%2F1", { method: "PATCH", body: { imageUrl: "" } })
     await api.updateSupplier("supplier/1", { closingTime: "21:30" })
     expect(request).toHaveBeenLastCalledWith("/api/suppliers/supplier%2F1", { method: "PATCH", body: { closingTime: "21:30" } })
     await api.deactivateSupplier("supplier/1")

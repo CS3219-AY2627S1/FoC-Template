@@ -143,3 +143,6 @@ Owner: Yao Xiang; branch feat/reporting-service. User explicitly requests Report
 Current authorized work (2026-11-04): Yao Xiang on hfix/suspended-courier-acceptance. User approves Order/frontend acceptance suspension fix using colleague-provided role-context flag. Earlier branches are historical.
 
 Continued Yao Xiang ownership (2026-11-04), feat/suspend-unsuspend: user-approved Admin suspension UI for ready User endpoints, frontend/source/tests/docs only.
+
+
+CHANGE-181 (2026-11-09): Yao Xiang continued ownership on hfix/suppplier-not-showing-up. User approves diagnosed frontend Supplier pagination/optional image/types alignment. Initial tree clean; sibling backends/data/config remain read-only. Test-first underway; see changes/CHANGE-181-supplier-catalogue-form-alignment.md.
