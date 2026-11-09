@@ -3539,3 +3539,13 @@ OpenAI Codex; Yao Xiang on hfix/report-service; authorized frontend implementati
 
 
 - **Verification update (CHANGE-182):**18 focused and354 full frontend tests/57files pass; full lint and TypeScript pass. Capped production build still fails native allocation; Docker is stopped. Responsive popup height-only class added after full run using existing convention. No image/browser/staging verification or data/backend/config mutations. Human review pending; no commit/push.
+
+## Automatic repost retry-policy and replacement slide assistance (Order Service)
+
+- **Tool:** OpenAI Codex
+- **Date:** 2026-11-09
+- **Mode:** Test generation, verification and presentation.
+- **Affected locations:** CHANGE-183, Vincent profile/active work, LiveCreditCompensationIntegrationTest; replacement PPTX and TXT outside the checkout under output/d4-auto-repost-policy.
+- **Prompt:** "Can u first generate the updated slide first ? say i wanna rectify this auto repost flow"
+- **Key response:** AI supported comparison of business rejection, temporary failure and uncertain Credit effects. User selected stopping definite business rejections while preserving confirmed-compensation barriers and manual repost. Six actual integration regressions reproduce the old retry behavior (6 expected failures,0 errors/skips). Production policy code is not changed yet. One native editable replacement slide and separate notes describe the intended revised policy, not a verified cloud deployment. Template and PowerPoint rendering inspected; file-validation outcome follows in active work.
+- **Author verification:** Vincent explicitly confirmed identity/branch and policy scope, then prioritized the slide. Human review of the slide and implementation remains pending; AI did not independently approve architecture. No push/deployment or GCP mutation.

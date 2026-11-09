@@ -505,18 +505,50 @@ class LiveCreditCompensationIntegrationTest {
         } finally { org.springframework.test.util.ReflectionTestUtils.setField(lifecycleProcessing, "automaticRepostEnabled", false); }
     }
 
-    @Test void automaticRepostRetriesAnAuthoritativeCreditRejectionWithAFreshKey() throws Exception {
+    @Test void insufficientCreditsStopsAutomaticPlanEvenAfterBalanceRecoversButAllowsManualRepost() throws Exception {
         String actor = account(); OrderResponse original = automaticOriginal(actor);
         creditDb().update("update credit_accounts set total_balance=0 where user_id=?", actor);
         CommandView rejected = commands.submitAutomatic(original.getId(), Instant.now());
         assertEquals("REJECTED", rejected.outcome()); assertEquals("INSUFFICIENT_CREDITS", rejected.reason());
-        assertTrue(orderRepository.findDueAutomaticRepostIds(Instant.now()).contains(original.getId()));
+        assertFalse(store.automaticRetrySafe(rejected.commandId()));
+        assertFalse(orderRepository.findDueAutomaticRepostIds(Instant.now()).contains(original.getId()));
+        assertTrue(orderDb.queryForObject("select repost_failure_message from orders where id=?", String.class,
+                original.getId()).contains("insufficient"));
         creditDb().update("update credit_accounts set total_balance=50 where user_id=?", actor);
-        CommandView success = commands.submitAutomatic(original.getId(), Instant.now());
-        assertEquals("SUCCESS", success.outcome()); assertNotEquals(rejected.commandId(), success.commandId());
+        for (int scan = 0; scan < 3; scan++) {
+            assertEquals(rejected.commandId(), commands.submitAutomatic(original.getId(), Instant.now()).commandId());
+        }
+        assertEquals(1, automaticCount(original.getId()));
         assertEquals("REJECTED", store.get(rejected.commandId()).outcome());
-        assertEquals(4L, creditDb().queryForObject("select reserved_balance from credit_accounts where user_id=?", Long.class, actor));
+        assertFalse(orderDb.queryForObject("select used from orders where id=?", Boolean.class, original.getId()));
+        assertEquals(0L, creditDb().queryForObject("select reserved_balance from credit_accounts where user_id=?", Long.class, actor));
+        long version = orderDb.queryForObject("select version from orders where id=?", Long.class, original.getId());
+        CommandView success = commands.submit(key(), new CommandRequest("REPOST", actor, original.getId(),
+                version, input(actor).creation()), token(actor));
+        assertEquals("SUCCESS", success.outcome());
+        assertEquals(5L, creditDb().queryForObject("select reserved_balance from credit_accounts where user_id=?", Long.class, actor));
         assertEquals(1, orderDb.queryForObject("select count(*) from orders where original_order_id=?", Integer.class, original.getId()));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+        "FORBIDDEN", "ACCOUNT_NOT_FOUND", "NOT_FOUND", "VALIDATION_ERROR", "REPOST_EXPIRED"
+    })
+    void confirmedBusinessRejectionStopsBothSelectionAndDirectAutomaticRetries(String code) throws Exception {
+        String actor = account();
+        OrderResponse original = automaticOriginal(actor);
+        doThrow(new OrderProblem(code, "The saved repost details need attention."))
+                .when(backgroundChecks).validate(eq(actor), anyString(), anyString());
+        CommandView rejected = commands.submitAutomatic(original.getId(), Instant.now());
+        assertEquals("REJECTED", rejected.outcome());
+        assertEquals(code, rejected.reason());
+        assertFalse(store.automaticRetrySafe(rejected.commandId()));
+        assertFalse(orderRepository.findDueAutomaticRepostIds(Instant.now()).contains(original.getId()));
+        doNothing().when(backgroundChecks).validate(eq(actor), anyString(), anyString());
+        assertEquals(rejected.commandId(), commands.submitAutomatic(original.getId(), Instant.now()).commandId());
+        assertEquals(1, automaticCount(original.getId()));
+        verify(gateway, never()).execute(eq(rejected.commandId()), any(), anyLong(), any());
+        assertNull(orderDb.queryForObject("select reposted_order_id from orders where id=?", String.class, original.getId()));
     }
 
     @Test void unresolvedAutomaticCreditEffectBlocksANewAttemptUntilCompensationCommits() throws Exception {

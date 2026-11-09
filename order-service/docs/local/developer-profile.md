@@ -1,5 +1,12 @@
 # Current Developer Profile
 
+## Effective confirmation - 2026-11-09
+
+- Developer: Vincent.
+- Branch: auto-repost-fix.
+- Scope: user-approved automatic repost business-rejection stop policy, tests and one replacement presentation slide (CHANGE-183).
+- Authority: explicit "yes" and subsequent request to resume in this chat. Prior developer allocations remain historical; no peer-service reassignment.
+
 ## Effective confirmation - 2026-11-01
 
 - Developer: Yao Xiang.
