@@ -123,6 +123,7 @@ For each service (backends → frontend → gateway):
    service) is also curled on its tagged URL (12 tries, 5 s apart).
 5. Healthy → switch 100% of traffic to it. Unhealthy → the previous revision keeps serving, and the
    remaining services **still roll out**; the job fails at the end, naming what wasn't deployed.
+   Either way the `sha-xxxxxxx` tag is removed again, so failed revisions don't pile up in the traffic list.
    Order is the exception: if the gateway or a provider deployed before it (User, Supplier, Credit)
    fails, Order is skipped, because it must not run ahead of them.
 6. After all services: smoke-test each deployed one **through the public gateway** (its
