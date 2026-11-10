@@ -10,7 +10,7 @@ autoscaling:
   # Idle/dev. Full-run peak needs min=max=8 — see load-test/README.md
   # "Scale up / scale down". Create reserves credit; CPU HPA is blind to that.
   minReplicas: 1
-  maxReplicas: 1
+  maxReplicas: 2 # room for one extra pod under CPU load
   targetCPUUtilization: 70
 resources:
   requests: {cpu: 250m}
