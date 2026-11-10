@@ -20,6 +20,10 @@
  * Scope: http mode for AUTH_MODE and SUPPLIER_MODE, with the User and Supplier base URLs and
  *        timeouts, per the User and Supplier integration plan.
  * Author review: Reviewed and approved by @mattis.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
+ * Scope: LLM_MODE, LLM_API_KEY, LLM_MODEL and LLM_TIMEOUT_MS for N2 errand extraction, per the
+ *        approved N2 spec.
+ * Author review: Reviewed and approved by @mattis.
  */
 
 // The only file that reads process.env. Each part loads only what it needs, so the
@@ -119,6 +123,26 @@ export function loadAdapterConfig(): {
     stubCreditDelayMs: positiveInteger("STUB_CREDIT_DELAY_MS", 500),
     // A ReserveRequested for exactly this amount gets no reply, to demonstrate the timeout
     stubCreditSilentAmount: positiveInteger("STUB_CREDIT_SILENT_AMOUNT", 999),
+  };
+}
+
+export type LlmMode = "anthropic" | "stub" | "off";
+
+export interface LlmConfig {
+  mode: LlmMode;
+  /** null when unset or blank; in anthropic mode that turns the feature off (NOT_CONFIGURED) */
+  apiKey: string | null;
+  model: string;
+  timeoutMs: number;
+}
+
+/** N2 errand extraction. Never log apiKey. */
+export function loadLlmConfig(): LlmConfig {
+  return {
+    mode: mode<LlmMode>("LLM_MODE", ["anthropic", "stub", "off"]),
+    apiKey: process.env.LLM_API_KEY?.trim() || null,
+    model: process.env.LLM_MODEL || "claude-haiku-5-5",
+    timeoutMs: positiveInteger("LLM_TIMEOUT_MS", 50_000),
   };
 }
 

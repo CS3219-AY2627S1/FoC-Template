@@ -4,23 +4,33 @@
  * Scope: Member page to post an errand (OS-F1): supplier, items, drop-off, notes, credits and
  *        the three deadlines, with client checks and the server's field errors shown inline.
  * Author review: Reviewed and approved by @mattis.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
+ * Scope: N2 description box above the form, filling only fields that came back with a value and not ones
+ *        edited during the request, with "From your description" labels that go on edit, per the approved
+ *        N2 spec. Author review: Reviewed and approved by @mattis.
  */
-import { useId, useState, type FormEvent } from 'react'
+import { useId, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { ApiError } from '../api/client'
 import { createErrand } from '../api/errandApi'
 import { FormField } from '../components/FormField'
 import { TopBar } from '../components/TopBar'
+import { DescribeErrand } from './DescribeErrand'
 import { describeCreateError, type ErrorCopy } from './errandErrors'
 import {
+  applyExtraction,
   defaultFormValues,
+  fieldsToFill,
+  FILLABLE_FIELDS,
   validateErrandForm,
   type ErrandFormErrors,
   type ErrandFormValues,
+  type FillableField,
   type ItemDraft,
 } from './errandFormModel'
+import { FILLED_LABEL } from './extractionCopy'
 import { SupplierPicker } from './SupplierPicker'
-import { ERRAND_LIMITS } from './types'
+import { ERRAND_LIMITS, type ExtractedErrand } from './types'
 
 export function CreateErrandPage() {
   const [searchParams] = useSearchParams()
@@ -32,9 +42,37 @@ export function CreateErrandPage() {
   const [failure, setFailure] = useState<ErrorCopy | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const notesId = useId()
+  // Fields filled from the description; each shows a label until the requester edits it
+  const [fromDescription, setFromDescription] = useState<ReadonlySet<FillableField>>(new Set())
+  // Fields edited by hand while an extraction is running; the requester's edit wins (null when none is running)
+  const editedDuringRequest = useRef<Set<FillableField> | null>(null)
+
+  function markEdited(field: FillableField) {
+    editedDuringRequest.current?.add(field)
+    setFromDescription((current) => {
+      if (!current.has(field)) return current
+      const next = new Set(current)
+      next.delete(field)
+      return next
+    })
+  }
 
   function set<K extends keyof ErrandFormValues>(field: K, value: ErrandFormValues[K]) {
+    if ((FILLABLE_FIELDS as readonly string[]).includes(field)) markEdited(field as FillableField)
     setValues((current) => ({ ...current, [field]: value }))
+  }
+
+  function fill(extracted: ExtractedErrand) {
+    const skip = editedDuringRequest.current ?? new Set<FillableField>()
+    const filled = fieldsToFill(extracted, skip)
+    setValues((current) => applyExtraction(current, extracted, skip))
+    setFromDescription((current) => new Set([...current, ...filled]))
+    // Errors for the filled fields no longer apply
+    setErrors((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([key]) => ![...filled].some((field) => key === field || key.startsWith(`${field}[`))),
+      ),
+    )
   }
 
   function setItem(index: number, change: Partial<ItemDraft>) {
@@ -98,6 +136,18 @@ export function CreateErrandPage() {
           confirm delivery, and released back to you if the errand is cancelled or expires.
         </p>
 
+        <div className="mt-6">
+          <DescribeErrand
+            onRequestStart={() => {
+              editedDuringRequest.current = new Set()
+            }}
+            onFilled={fill}
+            onRequestEnd={() => {
+              editedDuringRequest.current = null
+            }}
+          />
+        </div>
+
         <form onSubmit={submit} noValidate className="mt-6 space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
           {failure && (
             <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
@@ -107,10 +157,14 @@ export function CreateErrandPage() {
             </div>
           )}
 
-          <SupplierPicker supplierId={values.supplierId} error={errors.supplierId} onChange={(id) => set('supplierId', id)} />
+          <div>
+            <SupplierPicker supplierId={values.supplierId} error={errors.supplierId} onChange={(id) => set('supplierId', id)} />
+            <FilledLabel show={fromDescription.has('supplierId')} />
+          </div>
 
           <fieldset className="space-y-3">
             <legend className="text-sm font-medium text-navy-900">What to get</legend>
+            <FilledLabel show={fromDescription.has('items')} />
             {values.items.map((item, index) => (
               <div key={item.key} className="grid grid-cols-[minmax(0,1fr)_5.5rem] items-end gap-2 sm:grid-cols-[minmax(0,1fr)_6rem_auto]">
                 <FormField
@@ -152,14 +206,17 @@ export function CreateErrandPage() {
             </button>
           </fieldset>
 
-          <FormField
-            label="Drop-off location"
-            value={values.dropoffLocation}
-            maxLength={ERRAND_LIMITS.maxDropoff}
-            placeholder="e.g. COM1 level 2 study area, by the window"
-            onChange={(event) => set('dropoffLocation', event.target.value)}
-            error={errors.dropoffLocation}
-          />
+          <div>
+            <FormField
+              label="Drop-off location"
+              value={values.dropoffLocation}
+              maxLength={ERRAND_LIMITS.maxDropoff}
+              placeholder="e.g. COM1 level 2 study area, by the window"
+              onChange={(event) => set('dropoffLocation', event.target.value)}
+              error={errors.dropoffLocation}
+            />
+            <FilledLabel show={fromDescription.has('dropoffLocation')} />
+          </div>
 
           <div className="space-y-1">
             <label htmlFor={notesId} className="block text-sm font-medium text-navy-900">
@@ -182,6 +239,7 @@ export function CreateErrandPage() {
                 {values.notes.length}/{ERRAND_LIMITS.maxNotes}
               </span>
             </div>
+            <FilledLabel show={fromDescription.has('notes')} />
           </div>
 
           <div className="max-w-xs">
@@ -195,6 +253,7 @@ export function CreateErrandPage() {
               onChange={(event) => set('creditAmount', event.target.value)}
               error={errors.creditAmount}
             />
+            <FilledLabel show={fromDescription.has('creditAmount')} />
           </div>
 
           <fieldset className="space-y-3">
@@ -204,27 +263,36 @@ export function CreateErrandPage() {
               expires and your credits come back.
             </p>
             <div className="grid gap-3 sm:grid-cols-3">
-              <FormField
-                label="Accepted by"
-                type="datetime-local"
-                value={values.listingDeadline}
-                onChange={(event) => set('listingDeadline', event.target.value)}
-                error={errors.listingDeadline}
-              />
-              <FormField
-                label="Picked up by"
-                type="datetime-local"
-                value={values.pickupDeadline}
-                onChange={(event) => set('pickupDeadline', event.target.value)}
-                error={errors.pickupDeadline}
-              />
-              <FormField
-                label="Delivered by"
-                type="datetime-local"
-                value={values.deliveryDeadline}
-                onChange={(event) => set('deliveryDeadline', event.target.value)}
-                error={errors.deliveryDeadline}
-              />
+              <div>
+                <FormField
+                  label="Accepted by"
+                  type="datetime-local"
+                  value={values.listingDeadline}
+                  onChange={(event) => set('listingDeadline', event.target.value)}
+                  error={errors.listingDeadline}
+                />
+                <FilledLabel show={fromDescription.has('listingDeadline')} />
+              </div>
+              <div>
+                <FormField
+                  label="Picked up by"
+                  type="datetime-local"
+                  value={values.pickupDeadline}
+                  onChange={(event) => set('pickupDeadline', event.target.value)}
+                  error={errors.pickupDeadline}
+                />
+                <FilledLabel show={fromDescription.has('pickupDeadline')} />
+              </div>
+              <div>
+                <FormField
+                  label="Delivered by"
+                  type="datetime-local"
+                  value={values.deliveryDeadline}
+                  onChange={(event) => set('deliveryDeadline', event.target.value)}
+                  error={errors.deliveryDeadline}
+                />
+                <FilledLabel show={fromDescription.has('deliveryDeadline')} />
+              </div>
             </div>
           </fieldset>
 
@@ -246,5 +314,14 @@ export function CreateErrandPage() {
         </form>
       </main>
     </>
+  )
+}
+
+function FilledLabel({ show }: { readonly show: boolean }) {
+  if (!show) return null
+  return (
+    <span className="mt-1 inline-flex rounded-full bg-accent-500/10 px-2 py-0.5 text-xs font-semibold text-accent-600">
+      {FILLED_LABEL}
+    </span>
   )
 }

@@ -91,6 +91,9 @@ Author review: Reviewed and approved by @mattis.
 Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
 Scope: Recorded the member errand frontend pages entry.
 Author review: Reviewed and approved by @mattis.
+Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
+Scope: Recorded the N2 natural language errand creation entry.
+Author review: Reviewed and approved by @mattis.
 -->
 
 # AI Usage Log
@@ -1995,3 +1998,100 @@ Claude built four member pages (open errands, my errands, post an errand, errand
 
 Claude restructured the card so the link to the detail and the new Accept button are siblings (a button may not sit inside a link), reused the detail page's confirmation dialog, and on success or a lost race both drops the card at once and reloads the page of results; a 503 or network failure leaves it listed. The item count is the total quantity across lines. Tests: 72/72 Vitest (a mutation check confirmed the race test fails if the card is not dropped), oxlint clean, and a scratch Playwright run against the Compose stack where a second courier won the race through the API.
 
+## 2026-11-09 — Order Service: N2 natural language errand creation
+
+- **Tool:** Claude Code (Claude Opus 5.5)
+- **Mode:** explain (spec), then implementation
+- **Allowed-use scope:** requirements work (transcribing the author's decisions word for word and drafting only the details the author asked Claude to propose); learning support (reading the Order, Supplier and frontend code and Anthropic's structured-outputs documentation); implementation code, tests, configuration and documentation once the author had approved the spec. No requirement, interface or trade-off decided by the AI.
+- **Repository files affected:** `docs/superpowers/specs/2026-11-09-order-n2-natural-language-errand-creation.md`, `order-service/package.json`, `order-service/package-lock.json` (adds `@anthropic-ai/sdk`), `order-service/src/config.ts`, `order-service/src/adapters/{supplierDirectory,errandExtractor}.ts`, `order-service/src/domain/{validation,extraction}.ts`, `order-service/src/http/{extractionRateLimit,extractionRoutes,routes,app}.ts`, `order-service/src/index.ts`, `order-service/test/extraction.test.ts`, `order-service/README.md`, `compose.yaml`, `.env.example`, `frontend/src/api/{client,client.spec,errandApi,errandApi.spec}.ts`, `frontend/src/errands/{DescribeErrand.tsx,DescribeErrand.spec.tsx,extractionCopy.ts,CreateErrandPage.tsx,CreateErrandPage.spec.tsx,errandFormModel.ts,errandFormModel.spec.ts,types.ts}`, `frontend/README.md`, `frontend/AI-DISCLOSURES.md`, `ai/usage-log.md`
+- **Author review:** Reviewed and approved by @mattis.
+
+### Prompts
+
+> The next piece of work is our N2 nice-to-have, Natural Language Errand Creation, from the team's D1 backlog. A requester describes their errand in their own words, an LLM pulls out the details, and those details fill in the existing create-errand form. The requester then reviews, edits and submits it as normal. I own the Order Service, and I've already made the requirements and design decisions, which are all written out below. The course's AI policy says the author makes requirements, architecture, interface and trade-off decisions, not the AI. So please don't decide anything that isn't covered here. If you hit a gap, write it into the spec as an open question and I'll answer it.
+>
+>   Work in two stages. First, write a spec at docs/superpowers/specs/2026-11-09-order-n2-natural-language-errand-creation.md that records every decision below in the style of the existing spec in that folder, plus a short list of open questions. Then stop and wait for my approval. Only start writing code after I've approved the spec. Create the branch
+> Work in two stages. First, write a spec at docs/superpowers/specs/2026-11-09-order-n2-natural-language-errand-creation.md that records every decision below in the style of the existing spec in that folder, plus a short list of open questions. Then stop and wait for my approval. Only start writing code after I've approved the spec. Create the branch feat/order-nl-errand-creation from feat/order-frontend, the member-frontend branch, which might still be called feat/order-member-frontend if the rename hasn't happened yet. It's stacked on that branch because the create form lives there, and I'll retarget it to main once the frontend PR merges.
+>
+> Read these first: order-service/README.md, order-service/src/config.ts, src/http/routes.ts, src/http/auth.ts, src/domain/validation.ts and the adapters in src/adapters/, especially supplierDirectory.ts and upstream.ts, which show how Order already calls Supplier Service with the caller's Authorization header and how its stub modes work. Also read compose.yaml's order-service block, .env.example, and on the frontend, src/errands/CreateErrandPage.tsx, src/errands/errandFormModel.ts, src/api/errandApi.ts and src/api/client.ts. For the Anthropic SDK, use the official TypeScript SDK, @anthropic-ai/sdk, and follow Anthropic's current documentation for structured outputs instead of going from memory. Adding that one dependency to order-service is approved. No other new packages.
+>
+> Here's what the requester sees. At the top of /errands/new there's a description box with a "Fill in the form" button above the existing form. The box takes at most 1000 characters, stops accepting text at that point, and shows a character counter. Clicking the button sends the description to the server, which tries to work out every create field: the Supplier, the items, the drop-off location, the credit amount, the notes, and the listing, pickup and delivery deadlines. Any field it can't work out comes back as null and stays blank. Filling only overwrites the fields that came back with a value, and anything else the requester has typed is left alone. Each field that got filled shows a small "From your description" label, which disappears as soon as the requester edits that field. While the request is running, the button says "Filling in…" and is disabled, the form stays editable, and there's no cancel. If the requester edits a field by hand while the request is running, their edit wins, even if the extraction later comes back with a value for that field. Nothing is ever submitted automatically.
+>
+> When the page loads, it calls the status endpoint. If the feature is unavailable, or the status call itself fails, the description box is shown as unavailable from the start, using one piece of text whatever the reason. Suggest that wording in the spec. There's no "demo mode" note when the stub is running. If an extraction fails, show one short message under the box saying we couldn't fill the form and they can fill it in themselves, and leave the form exactly as it was. The one exception is the rate limit: then show a specific message with a countdown in seconds, taken from the Retry-After header. The shared ApiError in client.ts doesn't keep response headers yet, so make a small, additive change for that, and the Supplier behaviour must stay exactly the same.
+>
+> There are two new routes in the Order Service, and both must be registered before /errands/:id so Express doesn't read them as an errand id. The gateway already forwards /api/v1/errands, so don't touch nginx.conf or vite.config.ts. The first is POST /errands/extract, for logged-in members only. Its body is { "description": string }. Unknown fields, a missing description, or one that's blank or only spaces get a 400 VALIDATION_ERROR, and so does one over 1000 characters. On success it returns 200 with exactly the field names of the POST /errands body: supplierId, items, dropoffLocation, notes, creditAmount, listingDeadline, pickupDeadline, deliveryDeadline. Any field it couldn't work out is null, and that includes items. An item whose name is clear but whose quantity wasn't stated keeps its name, with quantity null. The second route is GET /errands/extract/status, for any logged-in user. It always answers 200 with { available, reason }, where reason is null when the feature is available, "DISABLED" when the mode is off, and "NOT_CONFIGURED" when the mode is anthropic but there's no API key.
+>
+> The extraction errors use Order's usual { error, message } body. If the feature is off, the response is 503 EXTRACTION_UNAVAILABLE. If a member goes over the rate limit, it's 429 RATE_LIMITED with a Retry-After header in seconds. If the LLM call times out, errors, or gives back something unusable, it's 502 EXTRACTION_FAILED. A refusal or a cut-off reply counts as unusable. If the Supplier list can't be fetched, it's 503 SERVICE_UNAVAILABLE, the same as Order's existing outage response. An administrator gets 403 FORBIDDEN.
+>
+> Here's how the extraction works. On every call, Order Service fetches the active Suppliers fresh from Supplier Service, passing on the caller's Authorization header, and gets every page if there are more than one. If that fails, the whole extraction fails with the 503 above and the LLM isn't called. It then makes one call to Claude Haiku 5.5 with a structured output schema shaped like the response. That call includes the description, each Supplier's id, name, building, location description and categories, and the current date and time in Singapore time. Nothing about the requester goes to Anthropic: no user id, no username, no email. The model has to pick a supplierId from the list it was sent, or none. An id that isn't in the list is treated as no match. Several plausible Suppliers, or none, also means no match. In those cases the Supplier stays null.
+>
+> For deadlines: if the text gives one time, only fill the deadline the wording clearly points to. Vague times like "tomorrow morning", times that are already past, and anything ambiguous stay null. All times are read in Singapore time and returned as ISO 8601 with an offset, the same format the create form uses. Make no retries, so set the SDK's maxRetries to 0. One attempt is allowed the configured timeout, which defaults to 60 seconds.
+>
+> After the reply comes back, Order Service checks every value against the same rules POST /errands uses. Any value that fails becomes null. That covers credits outside 1 to 1000, item names outside 1 to 100 characters, quantities outside 1 to 99, more than 20 items, a drop-off location outside 1 to 200 characters, notes over 500 characters, and deadlines not in the future. If the deadlines that are left are out of order (listing, then pickup, then delivery), set all three to null. Treat the description purely as data. All of these checks are what keep a description that tries to instruct the model from getting a bad value through.
+>
+> Each member can make 3 extraction calls per minute, counted in memory in the Order Service process. A restart resets the count, and each replica keeps its own count, which is fine. Only calls that actually reach the LLM count, and they count whether they succeed or fail. Validation errors, the feature being off, a Supplier outage, and calls already over the limit don't count. In the spec, propose exactly how the window works and how Retry-After is calculated.
+>
+> Each call logs one JSON line in the same style as Order's other logs. It contains the user id, how long the call took, the outcome, which fields were filled, and the token counts. It must never contain the description text or the model's reply.
+>
+> There are four settings. ORDER_LLM_MODE can be anthropic, stub or off. Outside Compose it defaults to stub, and Compose sets anthropic. ORDER_LLM_API_KEY is the API key. It goes into .env.example with a blank value, Compose passes it through, and it must never be committed. In anthropic mode with no key, the feature is off. There's also a model setting that defaults to claude-haiku-5-5, and a timeout setting that defaults to 60 seconds. Name those two the same way the existing Order settings are named and put the names in the spec. Follow the existing pattern in config.ts and compose.yaml for how the ORDER_ names map onto the service's own variable names.
+>
+> Stub mode always returns the same fixed extraction, whatever the text says, and it still goes through the same validation. Put the exact fixed values in the spec. It should take its Supplier from the list it was given, so the value is valid with either Supplier mode. In stub mode, two magic words trigger the failure paths: a description containing "stub:fail" gives a 502, and one containing "stub:slow" waits until the timeout is reached. The unit tests use stub mode or a fake client injected in code, and nothing in the test suite calls the real API. Please don't run anything against the real Anthropic API without asking me first, because it costs money.
+>
+> Testing. On the backend, cover the following: validation and unknown fields; members against administrators against no login; the status endpoint in all three cases; Supplier matching, including an id that wasn't in the list; nulling out invalid values and deadlines that are out of order; the rate limit and its Retry-After, including that only calls reaching the LLM count; the stub's failure and timeout words; the 503 when the Supplier list can't be fetched; and that logs never contain the description. On the frontend, cover the following: the counter and the 1000-character cap; the unavailable state, including when the status call fails; filling only the fields that came back with a value; the labels disappearing on edit; a manual edit made during a request winning over the result; the general failure message; the rate-limit countdown; and the Retry-After change in client.ts, with Supplier behaviour unchanged.
+>
+> For docs, add an N2 section to order-service/README.md in the same table style as the rest of that README. It should list the two endpoints, the settings, the error codes and the decisions above. Add the new settings to .env.example and compose.yaml. Don't add an ADR, don't change the root README's text about the feature, and don't touch CONTEXT.md. Every file you create or change needs the AI disclosure header in the repo's usual format, using Claude Code (Claude Opus 5.5) and today's date, with "Author review: Pending review by @mattis." Append an entry to ai/usage-log.md with this full prompt and a summary of the key response, in the same format as the existing entries.
+>
+> Please don't touch user-service, supplier-service, credit-service, nginx.conf or vite.config.ts, and don't touch any Supplier frontend files. Don't add admin screens, Playwright tests or CI changes, and don't push or open a PR. Use conventional commits split into logical pieces, each ending with:
+> Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+>
+> Before you tell me it's done, run these and paste the summary lines from each:
+> - In order-service: npm run typecheck, and npm test against a throwaway Postgres as the README describes.
+> - In frontend: npm run lint, npm test and npm run build.
+>
+> If you can, also start the stack with docker compose up -d --build. With no key set, check that the box shows as unavailable. Then set ORDER_LLM_MODE=stub and check that the form fills in, and that "stub:fail" and "stub:slow" show the failure message. Report what you saw.
+>
+> Then tell me which files you changed, anything you skipped, and any open questions you still have for me.
+
+### Key response
+
+Claude created `feat/order-nl-errand-creation` from `feat/order-member-frontend` (9e90c6c; `feat/order-frontend` does not exist yet) and wrote the spec. It records the facts the decisions rest on (the gateway already forwards `/api/v1/errands`; Supplier Service lists `ACTIVE` suppliers 100 per page; Order's Supplier adapter only looks up one supplier; `ApiError` keeps no headers; structured outputs support nullable type arrays and `date-time` but not numeric or length limits, and a refusal or `max_tokens` reply may break the schema). It quotes every decision word for word and gives proposals, pending approval, for the setting names (`LLM_MODE`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_TIMEOUT_MS`, mapped from `ORDER_`-prefixed `.env` names), a 60-second sliding rate-limit window with `Retry-After = max(1, ceil((oldest + 60000 - now) / 1000))`, the order of checks, the fixed stub extraction, the page wording, the log line and the `ApiError` change. It lists eleven open questions, among them the nginx 60-second default timeout against the 60-second LLM timeout, what administrators see, item handling, and effort and `max_tokens`. No code was written; Claude stopped for the author's approval.
+
+### Prompts (after the spec)
+
+> yes you can add it here no worries you can update the saved preference.
+
+> proposals in section 3 approved, lower timeout to 50 seconds, we should allow adminstrators to have access to this feature extraction should not refuse them with a 403, drop item with bad name, returned items replace existing rows, and yes keep default deadline or quantity. medium effort, we can use anthropic defaults for max tokens, and we can use an enum of the sent ids, or null
+
+> take the suggestions and go ahead
+
+### Key response (implementation)
+
+Claude recorded rounds 2 and 3 in the spec, then implemented it in conventional commits. Order Service gained `GET /errands/extract/status` and `POST /errands/extract`, registered before `/errands/:id` and open to any logged-in user. Each call fetches every page of active Suppliers with the caller's token. It then makes one `@anthropic-ai/sdk` call with a structured-output schema: Supplier ids as an enum or null, effort `medium`, `max_tokens` 16000, `maxRetries: 0`, `LLM_TIMEOUT_MS` defaulting to 50 s. Every value is checked against the `POST /errands` rules, now shared through `parseIsoTimestamp` and `CREATE_LIMITS` in `validation.ts`. Calls are limited by a 3-per-minute in-memory sliding window per user, with `Retry-After`, and each call logs one `errand_extraction` line without the description. The stub gives the fixed reply and fails on `stub:fail` and `stub:slow`. Compose passes `ORDER_LLM_*`. The frontend gained the "Describe your errand" box on `/errands/new` and `ApiError.retryAfterSeconds`. Two log outcomes were added beyond the approved list, `unauthenticated` (Supplier 401) and `supplier_error` (an unexpected Supplier reply), as the round 3 Supplier mapping needed them. No test calls the real Anthropic API, and nothing was run against it. Checks: order-service typecheck clean and 209/209 tests on a throwaway PostgreSQL; frontend lint clean, 90/90 tests, build passes. On the Compose stack, with no key the box showed as unavailable (`NOT_CONFIGURED`). With `ORDER_LLM_MODE=stub` the form filled seven fields and left the delivery deadline at its default. `stub:fail` showed the failure message at once and `stub:slow` after 50.5 s. A fourth call showed the rate-limit countdown, no errand was created, and no log line held the description.
+
+
+## 2026-11-09 — Order Service and frontend: N2 round 4, the first real call, example wording
+
+- **Tool:** Claude Code (Claude Opus 5.5)
+- **Mode:** implementation
+- **Allowed-use scope:** implementation code, tests and documentation for the author's round 4 answers to the open questions left after the N2 implementation; one real Anthropic API call the author approved; UI wording the author supplied.
+- **Repository files affected:** `order-service/src/domain/extraction.ts`, `order-service/test/extraction.test.ts`, `order-service/README.md`, `docs/superpowers/specs/2026-11-09-order-n2-natural-language-errand-creation.md` (commit 8b2ecab); `frontend/src/errands/DescribeErrand.tsx` (commits 90281b3, 531425a); `ai/usage-log.md`
+- **Author review:** Reviewed and approved by @mattis.
+
+### Prompts
+
+> count after dropping, status is fine, you can test the real call now, I have put in a key in .env
+
+> can you change the example in the form to Two ice lattes from TOMORO COFFEE, bring them to COM2 level 2 study area, i will pay 15 credits. By 9pm tonight
+
+> fix the wording of the placeholder sentence
+
+> can you add the past three commit to ai-usage log,
+>
+>    - round 4, the 20-item fix (8b2ecab);
+>    - the two TOMORO COFFEE wording commits (90281b3, 531425a).
+>
+>    All three carry the Claude co-author line, so their prompts need to be logged.
+
+### Key response
+
+Round 4 (8b2ecab): Claude moved the 20-item check to run after dropping items with a bad name, so `items` is `null` only if more than 20, or none, are left. It added test cases for 25 sent with 5 bad names (20 kept) and 22 sent with 1 bad name (21 left, `null`). A mutation check confirmed the new test fails under the old raw count, and 36/36 extraction tests pass. The author's answers are recorded word for word as spec section 10, the README's reply-checks row was updated, and the status endpoint was left unchanged as the author decided. With the author's approval and their key in `.env`, Claude rebuilt Order Service in `anthropic` mode and made exactly one real call through the create page for a new member. The description named A Hot Hideout, two iced lattes (one with less ice) and a croissant, the COM1 level 2 study area, 15 credits and 9pm delivery. The round trip took about 5.4 s, using 4,092 input and 378 output tokens. Six fields were filled correctly (Supplier, items, drop-off, notes, credits, delivery deadline), the other two deadlines kept their defaults, no errand was created, and the log line held no description. Wording (90281b3, 531425a): the description box's example was first set to the author's sentence verbatim (TOMORO COFFEE was confirmed as an active Supplier), then tidied on request to "e.g. Two iced lattes from TOMORO COFFEE to the COM2 level 2 study area by 9pm tonight. I'll pay 15 credits." The description box tests (11/11) and oxlint pass, and the frontend container was rebuilt.
