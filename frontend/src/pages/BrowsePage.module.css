@@ -147,10 +147,6 @@
 }
 
 .count {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--space-3);
   margin: 0;
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-bold);
@@ -175,7 +171,7 @@
   background: none;
   padding: 0;
   color: var(--color-accent);
-  font-size: var(--font-size-sm);
+  font: inherit;
   cursor: pointer;
 }
 
@@ -265,9 +261,6 @@
     font-size: var(--font-size-xs);
   }
 
-  .refresh {
-    font-size: var(--font-size-xs);
-  }
 
   .grid {
     grid-template-columns: 1fr;

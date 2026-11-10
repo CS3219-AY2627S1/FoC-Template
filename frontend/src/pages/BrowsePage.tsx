@@ -286,17 +286,17 @@ export function BrowsePage() {
         <section className={styles.results}>
           <div className={styles.resultsHead}>
             <div className={styles.countRow}>
-              <h1 className={styles.count}>
-                {countLabel}
-                <span className={styles.countMeta}>
-                  {sort === 'nearest' ? 'nearest first' : sort === 'reward' ? 'highest reward first' : 'most recent first'}
-                  {' · refreshed '}
-                  {formatElapsed(loadedAt)}
-                </span>
-              </h1>
-              <button type="button" className={styles.refresh} disabled={loading} onClick={refresh}>
-                {loading ? 'Refreshing…' : 'Refresh'}
-              </button>
+              <h1 className={styles.count}>{countLabel}</h1>
+              {/* The button runs on with the text, so it stays beside "refreshed". */}
+              <span className={styles.countMeta}>
+                {sort === 'nearest' ? 'nearest first' : sort === 'reward' ? 'highest reward first' : 'most recent first'}
+                {' · refreshed '}
+                {formatElapsed(loadedAt)}
+                {' · '}
+                <button type="button" className={styles.refresh} disabled={loading} onClick={refresh}>
+                  {loading ? 'Refreshing…' : 'Refresh'}
+                </button>
+              </span>
             </div>
 
             {banner?.kind === 'accepted' ? (
