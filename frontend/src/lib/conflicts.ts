@@ -41,6 +41,12 @@ export interface ConflictSummary {
   aiFaultParty: FaultParty | null;
   /** 0 to 1. */
   aiConfidence: number | null;
+  /**
+   * When the Admin Service's reminder job fired (F3.7.1), 24 hours before the
+   * deadline by default; null until then. Optional, as an older Admin Service
+   * does not send it.
+   */
+  reminderSentAt?: string | null;
 }
 
 export interface ConflictDetail extends ConflictSummary {
@@ -138,4 +144,13 @@ export async function resolveConflict(case_: ConflictDetail, faultParty: FaultPa
 /** Still needs someone: not yet resolved. */
 export function isOpen(status: ConflictStatus): boolean {
   return status !== 'resolved';
+}
+
+/**
+ * An open case whose deadline reminder has fired (F3.7.1): its deadline is
+ * within a day. At the deadline it resolves on the AI's verdict if there is a
+ * usable one; otherwise it stays open for an admin.
+ */
+export function isDueSoon(row: ConflictSummary): boolean {
+  return isOpen(row.status) && row.reminderSentAt != null;
 }

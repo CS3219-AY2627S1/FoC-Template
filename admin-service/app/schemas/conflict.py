@@ -20,6 +20,9 @@ class ConflictSummary(CamelModel):
     resolution_deadline: datetime
     ai_fault_party: FaultParty | None
     ai_confidence: float | None
+    # F3.7.1: set by the reminder job (reminder_before_deadline_hours before the
+    # deadline). The admin pages show it as "due soon" (Claude Code, 2026-11-10).
+    reminder_sent_at: datetime | None = None
 
 
 class ConflictDetail(ConflictSummary):
