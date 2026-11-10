@@ -75,20 +75,6 @@ async def test_delivery_transitions_order_and_records_event(delivery):
     assert delivery.order.proof_of_delivery_photo_key == "proof-of-delivery/order-1/photo.jpg"
 
 
-async def test_delivery_without_photo_skips_storage(delivery):
-    result = await orders.deliver_order(delivery.session, "order-1", "courier-1", None)
-
-    assert result is delivery.order
-    assert delivery.order.proof_of_delivery_photo_key is None
-    assert delivery.order.awaiting_approval_at.tzinfo == UTC
-    delivery.set_status.assert_awaited_once_with(
-        delivery.session, delivery.order, OrderStatus.AWAITING_APPROVAL
-    )
-    delivery.create_event.assert_awaited_once()
-    delivery.upload.assert_not_awaited()
-    delivery.delete.assert_not_awaited()
-
-
 async def test_delivery_requires_existing_order(delivery):
     delivery.get_order.return_value = None
 

@@ -55,7 +55,7 @@ test.describe("login", () => {
     // The session survives a full reload (token is persisted, not just state).
     await page.reload();
     await expect(page).toHaveURL(/\/profile$/);
-    await expect(page.getByText("Client", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
     expect(api.callsTo("POST", "/api/users/login")).toHaveLength(1);
   });
 

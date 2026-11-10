@@ -33,6 +33,7 @@ headers, forwards the request via `httpx`, and returns the upstream response.
 | `/api/orders` | order-service |
 | `/api/credits` | credit-service |
 | `/api/notifications` | notification-service |
+| `/api/chat` | chat-service (HTTP, plus the WebSocket relay at `/api/chat/ws`) |
 
 ## Run
 

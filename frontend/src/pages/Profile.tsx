@@ -1,6 +1,7 @@
 // AI-assisted (OpenCode + Claude): profile view/edit and credits balance/history.
 // Role, email and account status are read-only (server rejects changes); only
 // display name and contact number are editable. Reviewed by authors.
+// UI tweaks (Claude Opus 5.5): log out lives here; no verified/client fields. Reviewed by authors.
 import {
   Badge,
   Button,
@@ -15,7 +16,9 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import { useEffect, useState } from "react";
+import { IconLogout } from "@tabler/icons-react";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   ApiError,
   BalanceResponse,
@@ -38,7 +41,10 @@ function ReadonlyField({ label, value }: { label: string; value: React.ReactNode
 }
 
 export default function Profile() {
-  const { user, refresh } = useAuth();
+  const { user, refresh, isAdmin, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const creditsRef = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
   const [balance, setBalance] = useState<BalanceResponse | null>(null);
   const [transactions, setTransactions] = useState<TransactionResponse[]>([]);
@@ -92,6 +98,18 @@ export default function Profile() {
     return () => { cancelled = true; };
   }, [user]);
 
+  // The header credits badge links to /profile#credits.
+  useEffect(() => {
+    if (location.hash === "#credits" && !creditsLoading) {
+      creditsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [location.hash, creditsLoading]);
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login", { replace: true });
+  };
+
   const handleSubmit = form.onSubmit(async (values) => {
     setSaving(true);
     try {
@@ -124,22 +142,16 @@ export default function Profile() {
         <Stack gap="md">
           <Group>
             <ReadonlyField label="Email" value={user?.email ?? "—"} />
-            <ReadonlyField
-              label="Role"
-              value={
-                <Badge
-                  variant="light"
-                  color={user?.role === "admin" ? "brand" : "gray"}
-                  tt="capitalize"
-                >
-                  {user?.role ?? "—"}
-                </Badge>
-              }
-            />
-            <ReadonlyField
-              label="Email verified"
-              value={user?.email_verified ? "Yes" : "No"}
-            />
+            {isAdmin && (
+              <ReadonlyField
+                label="Role"
+                value={
+                  <Badge variant="light" color="brand">
+                    Admin
+                  </Badge>
+                }
+              />
+            )}
           </Group>
 
           <form onSubmit={handleSubmit}>
@@ -164,7 +176,7 @@ export default function Profile() {
         </Stack>
       </Card>
 
-      <Card withBorder radius="md" padding="lg">
+      <Card withBorder radius="md" padding="lg" id="credits" ref={creditsRef}>
         <Stack gap="md">
           <Title order={4}>Credits</Title>
           {creditsLoading ? (
@@ -181,6 +193,10 @@ export default function Profile() {
                   <Text>{balance?.reserved_balance ?? "—"}</Text>
                 </div>
               </Group>
+              <Text size="xs" c="dimmed">
+                Reserved credits are held for your open requests and return to
+                Available if a request is cancelled or expires.
+              </Text>
               <Table striped highlightOnHover withTableBorder>
                 <Table.Thead>
                   <Table.Tr>
@@ -217,6 +233,17 @@ export default function Profile() {
           )}
         </Stack>
       </Card>
+
+      <Group>
+        <Button
+          variant="outline"
+          color="red"
+          leftSection={<IconLogout size={16} />}
+          onClick={handleLogout}
+        >
+          Log out
+        </Button>
+      </Group>
     </Stack>
   );
 }
