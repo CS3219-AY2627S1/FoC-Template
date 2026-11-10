@@ -31,6 +31,8 @@
 # User Service MongoDB, per environment:
 #   - its connection-string secret exists and user-service's identity can read it
 #   - the secret has a value once user-service-<environment> is deployed
+# User Service Pub/Sub push, per environment:
+#   - Order's courier-penalty subscriptions push to that environment's User Service, as its push identity
 # Credit Service Pub/Sub push (when enabled in project.env):
 #   - two Order-topic and one User-topic subscription target authenticated Credit push endpoints
 #   - shared dead-letter topic/recovery subscription and required IAM bindings exist
@@ -245,6 +247,35 @@ for env in "${environments[@]}"; do
   else
     ok "user-service: secret '$secret' has no value yet (add it before the first $env deploy)"
   fi
+done
+
+echo "User Service Pub/Sub push (courier penalties)"
+for env in "${environments[@]}"; do
+  push_sa=$(environment_value "$env" USER_PUBSUB_PUSH_SERVICE_ACCOUNT)
+  push_url="https://user-service-$env-$PROJECT_NUMBER.$REGION.run.app"
+  for kind in addition deduction; do
+    key=$(tr '[:lower:]' '[:upper:]' <<<"$kind")
+    subscription=$(environment_value "$env" "USER_PUBSUB_PENALTY_${key}_SUBSCRIPTION")
+    topic=$(environment_value "$env" "ORDER_COURIER_PENALTY_${key}_TOPIC")
+    if [[ -z $subscription || -z $push_sa ]]; then
+      problem "user-service: infra/environments/$env.env has no USER_PUBSUB_PENALTY_${key}_SUBSCRIPTION or USER_PUBSUB_PUSH_SERVICE_ACCOUNT"
+    elif ! subscription_json=$(gcloud pubsub subscriptions describe "$subscription" \
+        --project "$PROJECT_ID" --format=json 2>/dev/null); then
+      problem "user-service: Pub/Sub subscription '$subscription' does not exist"
+    elif jq -e \
+        --arg topic "projects/$PROJECT_ID/topics/$topic" \
+        --arg endpoint "$push_url/api/users/internal/penalties/$kind" \
+        --arg audience "$push_url" \
+        --arg service_account "$push_sa" \
+        '.topic == $topic
+          and .pushConfig.pushEndpoint == $endpoint
+          and .pushConfig.oidcToken.audience == $audience
+          and .pushConfig.oidcToken.serviceAccountEmail == $service_account' <<<"$subscription_json" >/dev/null; then
+      ok "user-service: Pub/Sub push subscription '$subscription'"
+    else
+      problem "user-service: Pub/Sub push subscription '$subscription' does not push to user-service-$env as '$push_sa'"
+    fi
+  done
 done
 
 echo "Credit Service Pub/Sub push"

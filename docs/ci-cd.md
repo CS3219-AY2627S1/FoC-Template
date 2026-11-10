@@ -204,6 +204,8 @@ infra/gcp/configure-credit-pubsub.sh staging     # User topic + Credit push subs
 infra/gcp/configure-credit-pubsub.sh production
 infra/gcp/configure-compensation-pubsub.sh staging     # Compensation request/result topics, push subscription and DLQ
 infra/gcp/configure-compensation-pubsub.sh production
+infra/gcp/configure-user-pubsub.sh staging       # Order's courier-penalty events → User push subscriptions
+infra/gcp/configure-user-pubsub.sh production
 ```
 
 `configure-compensation-pubsub.sh` runs the Order and Credit provisioning scripts first, then

@@ -81,6 +81,14 @@ jobs:
             echo "::warning title=actionlint::GitHub release download failed; running ${ACTIONLINT_IMAGE} instead."
             docker run --rm -v "$PWD:/repo" -w /repo "$ACTIONLINT_IMAGE" -color
           fi
+      - name: Staging and production define the same settings
+        run: |
+          # A key added to one environment only renders as empty in the other's deploy.
+          if ! diff <(grep -oE '^[A-Z_]+=' infra/environments/staging.env | sort) \
+                    <(grep -oE '^[A-Z_]+=' infra/environments/production.env | sort); then
+            echo "::error::infra/environments/staging.env (<) and production.env (>) must define the same keys."
+            exit 1
+          fi
       - name: Validate compose.yaml (must work on a fresh clone, without a .env)
         run: docker compose -f compose.yaml config --quiet
       - name: Ensure no credentials are committed
