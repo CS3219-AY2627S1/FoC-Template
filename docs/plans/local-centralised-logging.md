@@ -9,7 +9,7 @@ Author review: Plan and shared understanding reviewed and approved by Ron on
 
 # Optional local centralised logging: rough implementation plan
 
-Status: approved for implementation on 2026-11-10. Tracking: [GitHub issue #66](https://github.com/Y2627S1-CS3219-P5/FoC/issues/66).
+Status: approved on 2026-11-10; implemented in [PR #68](https://github.com/Y2627S1-CS3219-P5/FoC/pull/68), pending human review. Tracking: [GitHub issue #66](https://github.com/Y2627S1-CS3219-P5/FoC/issues/66).
 
 ## Goal and agreed boundary
 
@@ -110,6 +110,13 @@ vendored dependencies, application source changes or AWS files are planned.
 - Report changed files and actual results. Do not add a CI job or claim unexecuted checks pass.
 
 ## Limitations and operational notes
+
+Implementation verification: the isolated smoke, actual-service HTTP/SQL/log
+queries, restart persistence and logging-only shutdown checks pass. Both code
+review axes have no outstanding findings after remediation. Interactive Grafana
+Explore verification remains unperformed because this session has no available
+browser surface; successful authenticated API checks are not visual evidence.
+See `ai/usage-log.md` for the exact verification scope and results.
 
 The Docker socket grants broad daemon access; a `:ro` bind mount is not an API
 authorisation boundary. This choice is accepted for a trusted laptop-only collector,

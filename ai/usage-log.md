@@ -141,7 +141,30 @@ including all five sources, source/project exclusions, actual nginx streams,
 mixed/nested JSON, Bearer/PostgreSQL-URL masking, login enforcement, configured
 retention, restart persistence and independent application operation while logging
 is stopped. Its owned containers/network/volumes were removed. A seven-day
-deletion test is not claimed. Browser/review results will follow before readiness.
+deletion test is not claimed.
+
+Standards and spec reviews found two smoke-test gaps: three Node HTTP probes
+lacked explicit abort deadlines, and the privacy test did not assert exclusion of
+the actual nginx client IP. One implementer commit added five-second deadlines
+and a real extracted IP canary/masked-error-context assertion. A merger integrated
+that commit; the final full smoke passes and both re-reviews report no outstanding
+findings. Bash syntax, documentation links, ignore rules and whitespace checks pass.
+
+An isolated real FoC stack reused the four cached backend images and freshly built
+the frontend. A dummy administrator authenticated; Supplier GET returned 200 and
+PostgreSQL contained 21 seeded suppliers. Authenticated Grafana/Loki queries found
+actual logs from User, Supplier, Order and Credit, including the Supplier request
+ID and Credit account-status processing. After stopping only logging, frontend,
+User, Supplier and Order remained healthy. After logging restart, its data source
+health was OK and the documented nested-JSON query found the earlier Supplier
+record. All owned demo containers/networks/volumes and temporary secrets were removed.
+This is not a fresh backend-build result or a visual UI test.
+
+The interactive Grafana Explore check was not performed: computer-use inventory
+had no browser surfaces, and both in-app-browser and Chrome entry points reported
+unavailable. API verification is not presented as visual verification. Existing
+automatic PR checks passed 6/6 on implementation commit 8be4fe5; the final evidence
+commit triggers the normal workflow again. No CI jobs or application code changed.
 
 The Supplier UI entries for issues #29, #30, #31, and #34 continue the same workstream.
 To avoid duplicating prompt text, their initiating implementation request is quoted once
