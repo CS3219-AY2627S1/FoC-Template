@@ -95,6 +95,38 @@ Author review: Reviewed and approved by @mattis.
 
 # AI Usage Log
 
+## 2026-11-10 — Optional local centralised logging (#66)
+
+- **Tool/mode:** OpenAI Codex; design interview, official-documentation research,
+  isolated implementation and local verification.
+- **Files:** The approved `docs/plans/local-centralised-logging.md`, optional
+  `observability/` stack, README summary and this usage log.
+- **Author review:** Ron selected Q1–Q9 and approved the written plan on 2026-11-10.
+  Implementation/disclosure review remains pending; plan approval is not attributed
+  as approval of code that had not yet been written.
+
+### Exact initiating prompt
+
+> $grill-with-docs could we draft a rough implementaiton plan for this
+
+### Exact implementation authorisation
+
+> agreed, i just looked through the local-centralised-logging spec, looks good proceed with implementation in a separate PR
+
+### Key response and scope
+
+The approved first increment reuses existing logs from the four backends and
+frontend nginx errors using an optional local Alloy/Loki/Grafana Compose stack.
+It excludes nginx access logs, application refactoring, metrics, distributed
+tracing, AWS and new CI jobs. Logs use persistent owned storage with a seven-day
+retention target; Grafana requires login on loopback port 3300. Direct Docker
+socket access is explicitly accepted for a trusted local collector. A bounded
+isolated smoke check and manual browser demonstration will provide evidence.
+
+An isolated worktree preserves the author's dirty main checkout and unrelated
+research/disclosures. Implementation and verification results will be recorded
+before the PR is marked ready for review.
+
 The Supplier UI entries for issues #29, #30, #31, and #34 continue the same workstream.
 To avoid duplicating prompt text, their initiating implementation request is quoted once
 under [Supplier frontend API and test foundation](#2026-09-27--supplier-frontend-api-and-test-foundation),
