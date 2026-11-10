@@ -206,15 +206,6 @@ class CreditEventConsumer:
                 verify_routing_key=True,
                 queue=settings.order_events_queue,
             )
-        elif event_type == "OrderApprovalRequested":
-            await self._dispatch(
-                message,
-                model=OrderApprovalRequestedEvent,
-                handler=handle_approval_requested,
-                retry_exchange=exchange,
-                on_exhausted=_transfer_retries_exhausted,
-                verify_routing_key=True,
-            )
         else:
             await self._dispatch(
                 message,
