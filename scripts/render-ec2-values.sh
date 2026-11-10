@@ -31,7 +31,9 @@ IP="$IP" BUCKET="$BUCKET" PHOTO_BUCKET="$PHOTO_BUCKET" AWS_REGION="$AWS_REGION" 
   .["frontend"].env.API_BASE_URL = "https://" + strenv(IP) + ".nip.io" |
   .global.backup.bucket = strenv(BUCKET) |
   .["order-service"].env.ORDER_PHOTO_BUCKET = strenv(PHOTO_BUCKET) |
-  .["order-service"].env.ORDER_PHOTO_REGION = strenv(AWS_REGION)
+  .["order-service"].env.ORDER_PHOTO_REGION = strenv(AWS_REGION) |
+  .["chat-service"].env.CHAT_PHOTO_BUCKET = strenv(PHOTO_BUCKET) |
+  .["chat-service"].env.CHAT_PHOTO_REGION = strenv(AWS_REGION)
 ' "$VALUES"
 
 IP="$IP" yq -i '

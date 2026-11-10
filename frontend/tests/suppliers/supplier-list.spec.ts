@@ -139,10 +139,10 @@ test.describe("supplier list", () => {
     await expect(page.getByRole("alert")).toContainText(
       "Supplier service unavailable",
     );
-    await expect(page.getByRole("heading", { name: "Campus Suppliers" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Request an Errand" })).toBeVisible();
   });
 
-  test("shows the add-supplier shortcut to admins", async ({ page }) => {
+  test("leaves adding suppliers to Manage Suppliers, even for admins", async ({ page }) => {
     await seedToken(page, fakeJwt({ role: "admin" }));
     await mockApi(page, {
       "GET /api/users/me": () => ({ body: ADMIN_PROFILE }),
@@ -150,8 +150,9 @@ test.describe("supplier list", () => {
     });
 
     await page.goto("/suppliers");
-    await page.getByRole("button", { name: "Add supplier" }).click();
-
-    await expect(page).toHaveURL(/\/admin\/suppliers$/);
+    await expect(page.getByRole("heading", { name: "Request an Errand" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add supplier" })).toHaveCount(0);
+    await page.getByTestId("desktop-nav").getByRole("button", { name: "Admin" }).click();
+    await expect(page.getByRole("menuitem", { name: "Manage Suppliers" })).toBeVisible();
   });
 });

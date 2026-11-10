@@ -1,4 +1,9 @@
+<!-- AI-influenced: Document the internal display-name lookup for Order Service. -->
 # User Service API Contract
+
+## Internal display-name lookup
+
+`GET /users/internal/{user_id}/name` returns only `id` and `display_name` for an existing user, or 404 if the user does not exist. This route is called directly by Order Service after its order participant check. It is not exposed by the API Gateway.
 
 This contract describes the user-service HTTP API and its gateway-facing paths.
 

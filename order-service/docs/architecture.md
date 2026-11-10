@@ -1,4 +1,4 @@
-<!-- AI-INFLUENCED: Order Service architecture and lifecycle diagrams updated with Codex from current code, the D1 submission, and course materials. -->
+<!-- AI-INFLUENCED: Order Service architecture, lifecycle, and detail-name lookup documented with Codex. -->
 
 # Order Service architecture and order lifecycle
 
@@ -10,7 +10,7 @@ These diagrams describe the **current repository**, with the D1 submission used 
 
 [Editable Graphviz source](./order-service-architecture.dot)
 
-**Scope.** The green boundary is the single FastAPI Order Service process. The blue boxes are external interfaces or services; the yellow boxes are RabbitMQ topic exchanges; the cylinder is the Order Service's own PostgreSQL database. The diagram shows source-level components inside Order Service, while Supplier and Credit remain external containers.
+**Scope.** The green boundary is the single FastAPI Order Service process. The blue boxes are external interfaces or services; the yellow boxes are RabbitMQ topic exchanges; the cylinder is the Order Service's own PostgreSQL database. The diagram shows source-level components inside Order Service, while Supplier, User, and Credit remain external containers.
 
 | Notation | Meaning |
 | --- | --- |
@@ -29,7 +29,7 @@ These diagrams describe the **current repository**, with the D1 submission used 
 | `app/api/routes/orders.py`, `health.py` | Exposes order creation, discovery, assignment, pickup, withdrawal, delivery, update, deletion, cancellation, approval, task polling, and health. Reads gateway-injected identity headers. |
 | `app/services/orders.py` | Applies order use cases and authorization/eligibility checks; saves order changes together with local task and outbox records where applicable. |
 | `app/services/lifecycle.py` | Defines seven persisted statuses and the allowed status changes. |
-| `app/services/clients/` | Uses `httpx` for Supplier lookup/category search and Credit reservation. If order insertion fails after reservation, calls Credit's release API as compensation. |
+| `app/services/clients/`, `app/services/order_details.py` | Uses `httpx` for Supplier lookup/category search, User display names, and Credit reservation. Resolves detail names after participant authorization and leaves them nullable on lookup failure. If order insertion fails after reservation, calls Credit's release API as compensation. |
 | `app/repositories/`, `app/models/`, `app/db.py` | Owns PostgreSQL access to `orders`, idempotent withdrawal requests, release/update/approval tasks, `supplier_deactivation_inbox`, and `order_event_outbox`. Other services do not access these tables. |
 | `expiry_worker.py`, `auto_approval_worker.py` | Every 5 seconds, expires due `OPEN` orders; every 60 seconds, completes due `AWAITING_APPROVAL` orders after 24 hours. Both write status and outbox facts atomically. |
 | `release_consumer.py`, `update_consumer.py`, `approval_consumer.py` and corresponding handlers | Bind dedicated queues on `foc.credit.events`, correlate credit results with pending local tasks, and commit the resulting order/task changes before acknowledging. |
@@ -41,7 +41,8 @@ These diagrams describe the **current repository**, with the D1 submission used 
 | Direction | Protocol / contract | Meaning in the current code |
 | --- | --- | --- |
 | Web client → API Gateway → Order API | HTTPS/HTTP JSON; bearer JWT at gateway; `X-User-Id` and `X-User-Role` forwarded to Order | Gateway is the public entry point. Order uses the injected identity for its local access checks. |
-| Order → Supplier | HTTP `GET /suppliers/{id}`, `GET /suppliers` | Validate the supplier on creation and obtain supplier IDs for category filtering. |
+| Order → Supplier | HTTP `GET /suppliers/{id}`, `GET /suppliers` | Validate the supplier on creation, obtain supplier IDs for category filtering, and resolve the supplier name on detail reads. |
+| Order → User | HTTP `GET /users/internal/{id}/name` | Resolve requester and assigned courier display names on detail reads; the gateway does not expose this internal route. |
 | Order → Credit | HTTP `POST /credits/reservations`; `POST /credits/reservations/{id}/release` only after failed local insertion | Reserve the reward before an order becomes `OPEN`; compensate if the Order DB write fails. Normal cancel/delete/update/approve workflows use events. |
 | Order → `foc.order.events` | AMQP topic via transactional outbox | Publishes **facts about Order Service's own state or recorded local requests**. The broker routes them; each subscriber chooses its own response. |
 | Supplier → `foc.supplier.events` → Order | AMQP `SupplierDeactivated` fact; Order-owned durable queue | Order independently cancels matching `OPEN` orders and publishes its own `OrderCancelled` facts. The Supplier message describes Supplier Service's change; it does not direct Order's action. |

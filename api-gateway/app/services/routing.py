@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import re
 
-from app.exposed_routes import EXPOSED_ROUTES, ROUTE_TABLE
+from app.exposed_routes import EXPOSED_ROUTES, EXPOSED_WEBSOCKET_ROUTES, ROUTE_TABLE
 
 __all__ = [
     "EXPOSED_ROUTES",
+    "EXPOSED_WEBSOCKET_ROUTES",
     "ROUTE_TABLE",
     "is_canonical",
     "is_exposed",
     "resolve_upstream",
+    "resolve_websocket_upstream",
 ]
 
 
@@ -42,10 +44,20 @@ def is_exposed(method: str, path: str) -> bool:
     return any(m == method and pattern.match(path) for m, pattern in _EXPOSED)
 
 
-def resolve_upstream(method: str, path: str) -> str | None:
-    if not is_exposed(method, path):
-        return None
+def _upstream_for(path: str) -> str | None:
     for prefix, base_url in ROUTE_TABLE.items():
         if path == prefix or path.startswith(prefix + "/"):
             return base_url
     return None
+
+
+def resolve_upstream(method: str, path: str) -> str | None:
+    if not is_exposed(method, path):
+        return None
+    return _upstream_for(path)
+
+
+def resolve_websocket_upstream(path: str) -> str | None:
+    if not is_canonical(path) or path not in EXPOSED_WEBSOCKET_ROUTES:
+        return None
+    return _upstream_for(path)

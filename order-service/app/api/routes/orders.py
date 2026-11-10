@@ -1,4 +1,4 @@
-# AI-influenced: Order Service routes; get_order accepts requester or assigned courier.
+# AI-influenced: Order Service routes; get_order includes supplier and participant names.
 from __future__ import annotations
 
 from base64 import b64encode
@@ -30,6 +30,7 @@ from app.schemas.orders import (
 )
 from app.services import orders as order_service
 from app.services import proof_photo
+from app.services.order_details import get_order_names
 from foc_shared.auth import HEADER_USER_ID, HEADER_USER_ROLE, Role
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -88,13 +89,13 @@ async def deliver_order(
     courier_id: Annotated[str, Header(alias=HEADER_USER_ID, min_length=1)],
     role: Annotated[str, Header(alias=HEADER_USER_ROLE)],
     session: Annotated[AsyncSession, Depends(get_session)],
-    photo: Annotated[UploadFile | None, File()] = None,
+    photo: Annotated[UploadFile, File()],
 ) -> OrderResponse:
-    """Marks a picked-up order delivered, storing a photo when supplied."""
+    """Marks a picked-up order delivered with required photo proof."""
 
     if role not in {Role.CLIENT.value, Role.ADMIN.value}:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Unsupported user role.")
-    validated_photo = await proof_photo.read_upload(photo) if photo is not None else None
+    validated_photo = await proof_photo.read_upload(photo)
     return await order_service.deliver_order(session, order_id, courier_id, validated_photo)
 
 
@@ -239,7 +240,8 @@ async def get_order(
     session: Annotated[AsyncSession, Depends(get_session)],
     response: Response,
 ) -> OrderDetailResponse:
-    """Returns an order to its requester or assigned courier."""
+    """Returns an order to its requester or assigned courier, or to any user while it
+    is open and unassigned (it is listed to everyone then)."""
 
     response.headers["Cache-Control"] = "private, no-store"
     order, photo = await order_service.get_order_for_participant(
@@ -248,6 +250,9 @@ async def get_order(
         user_id,
     )
     detail = OrderDetailResponse.model_validate(order)
+    detail.supplier_name, detail.requester_name, detail.courier_name = await get_order_names(
+        order.supplier_id, order.requester_id, order.courier_id
+    )
     if photo is not None:
         detail.proof_of_delivery_photo = (
             f"data:{photo.content_type};base64,{b64encode(photo.data).decode('ascii')}"

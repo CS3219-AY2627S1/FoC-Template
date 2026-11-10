@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SERVICES=(api-gateway user-service supplier-service order-service credit-service notification-service)
+SERVICES=(api-gateway user-service supplier-service order-service credit-service notification-service chat-service)
 
 failed=0
 for svc in "${SERVICES[@]}"; do
