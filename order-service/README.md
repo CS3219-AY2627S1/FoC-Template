@@ -14,8 +14,8 @@ and expiry (backlog: Order Service; project M4).
   cannot accept own order, single courier per order, ≤3 concurrent.
 - **F3** courier flow: pickup → deliver → requester approve/complete; courier
   withdraw; requester cancellation of an assigned `ACCEPTED` order before pickup.
-- **F4** cancel `OPEN` and `ACCEPTED` orders when their supplier is deactivated
-  (event-driven); orders from `PICKED_UP` onward continue.
+- **F4** cancel `OPEN` orders when their supplier is deactivated
+  (event-driven); accepted and later orders continue.
 - **F5** lifecycle **state machine** — see `app/services/lifecycle.py`
   (status set: `OPEN, ACCEPTED, PICKED_UP, AWAITING_APPROVAL, COMPLETED,
   CANCELLED, EXPIRED`). Invalid transitions are rejected.
@@ -25,8 +25,8 @@ and expiry (backlog: Order Service; project M4).
 Requester deletion is available only for an unassigned `OPEN` order and removes
 the row after credit release. Requester cancellation is available only for an
 assigned `ACCEPTED` order before pickup and retains the row as `CANCELLED` after
-credit release. Supplier deactivation may independently cancel `OPEN` or
-`ACCEPTED` orders and publishes an Order-owned cancellation fact.
+credit release. Supplier deactivation independently cancels `OPEN` orders
+and publishes an Order-owned cancellation fact.
 
 ## Events
 

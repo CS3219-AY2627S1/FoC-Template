@@ -19,7 +19,7 @@ BATCH_SIZE = 100
 async def process_supplier_deactivated(
     session: AsyncSession, event: SupplierDeactivatedEvent
 ) -> int:
-    """Cancel matching pre-pickup orders; commits each bounded batch with its facts."""
+    """Cancel matching open orders; commit each bounded batch with its facts."""
     cancelled = 0
     while True:
         async with session.begin():
@@ -30,7 +30,7 @@ async def process_supplier_deactivated(
                 select(OrderTable)
                 .where(
                     OrderTable.supplier_id == event.supplier_id,
-                    OrderTable.status.in_((OrderStatus.OPEN, OrderStatus.ACCEPTED)),
+                    OrderTable.status == OrderStatus.OPEN,
                 )
                 .order_by(OrderTable.order_id)
                 .limit(BATCH_SIZE)
@@ -45,8 +45,8 @@ async def process_supplier_deactivated(
             now = datetime.now(UTC)
             facts: list[OrderEvent] = []
             for order in orders:
-                # Recheck after the lock: pickup may have won the race.
-                if order.status not in (OrderStatus.OPEN, OrderStatus.ACCEPTED):
+                # Recheck after the lock: acceptance may have won the race.
+                if order.status != OrderStatus.OPEN:
                     continue
                 assert_transition(OrderStatus(order.status), OrderStatus.CANCELLED)
                 order.status = OrderStatus.CANCELLED

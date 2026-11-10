@@ -27,7 +27,7 @@ digraph OrderServiceArchitecture {
     http_adapters [label="Outbound HTTP clients\nclients/supplier + clients/user + clients/credit\nhttpx transport and response contracts", fillcolor="#e6f3f7"];
     timed [label="Timed workers\nexpiry_worker.py (5 s)\nauto_approval_worker.py (60 s)", fillcolor="#fff2dc", color="#ba8c49"];
     results [label="Credit-result consumers / handlers\nrelease, update, approval consumers\ncorrelate task + reservation; apply outcome", fillcolor="#fff2dc", color="#ba8c49"];
-    supplier_listener [label="Supplier-deactivation consumer / handler\nsupplier_consumer.py + supplier_deactivation.py\ndeduplicate fact; cancel pre-pickup orders", fillcolor="#fff2dc", color="#ba8c49"];
+    supplier_listener [label="Supplier-deactivation consumer / handler\nsupplier_consumer.py + supplier_deactivation.py\ndeduplicate fact; cancel OPEN orders", fillcolor="#fff2dc", color="#ba8c49"];
     repos [label="Persistence repositories\norders, requests, workflow tasks,\nevent outbox + supplier-deactivation inbox"];
     relay [label="Event relay\nevent_worker.py + events.py\nconfirmed, persistent AMQP publish; retry", fillcolor="#fff2dc", color="#ba8c49"];
 
