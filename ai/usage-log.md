@@ -101,6 +101,9 @@ Author review: Reviewed and approved by @mattis.
 Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
 Scope: Recorded the N2 natural language errand creation entry.
 Author review: Reviewed and approved by @mattis.
+Additional AI assistance: Claude Code (Claude Sonnet 5.5, Claude Opus 5.5), date: 2026-11-08 to 2026-11-10
+Scope: Drafted the User Service author's four N2H1a login-audit-log entries; the author approved them.
+Author review: Reviewed and approved by @t-leongchuan
 -->
 
 # AI Usage Log
@@ -2295,3 +2298,105 @@ Claude recorded rounds 2 and 3 in the spec, then implemented it in conventional 
 ### Key response
 
 Round 4 (8b2ecab): Claude moved the 20-item check to run after dropping items with a bad name, so `items` is `null` only if more than 20, or none, are left. It added test cases for 25 sent with 5 bad names (20 kept) and 22 sent with 1 bad name (21 left, `null`). A mutation check confirmed the new test fails under the old raw count, and 36/36 extraction tests pass. The author's answers are recorded word for word as spec section 10, the README's reply-checks row was updated, and the status endpoint was left unchanged as the author decided. With the author's approval and their key in `.env`, Claude rebuilt Order Service in `anthropic` mode and made exactly one real call through the create page for a new member. The description named A Hot Hideout, two iced lattes (one with less ice) and a croissant, the COM1 level 2 study area, 15 credits and 9pm delivery. The round trip took about 5.4 s, using 4,092 input and 378 output tokens. Six fields were filled correctly (Supplier, items, drop-off, notes, credits, delivery deadline), the other two deadlines kept their defaults, no errand was created, and the log line held no description. Wording (90281b3, 531425a): the description box's example was first set to the author's sentence verbatim (TOMORO COFFEE was confirmed as an active Supplier), then tidied on request to "e.g. Two iced lattes from TOMORO COFFEE to the COM2 level 2 study area by 9pm tonight. I'll pay 15 credits." The description box tests (11/11) and oxlint pass, and the frontend container was rebuilt.
+
+## 2026-11-08 — User Service: login audit log (N2H1a) implementation decisions
+
+- **Tool:** Claude Code (Claude Sonnet 5.5)
+- **Allowed-use scope:** interpreting the author's earlier N2H1 decisions; explaining the existing login route, database roles and gateway so the author could decide; presenting general alternatives; recording the author's answers word for word (no design decisions by Claude)
+- **Repository files affected:** none (decisions recorded in the author's own notes)
+- **Author review:** All decisions were made by the author.
+
+### Prompts
+
+> "pose the N2H1a login-audit-log questions in the usual format"
+
+> "1) Give the full context (as detailed as possible) [...] such that it is self-contained [...] 2) Provide the questions, and i will answer in the chat here rather than having an option presented to me."
+
+> "1) My pick: the database owner (user_migrator) writes one small stored procedure, essentially a saved command: “delete login records older than 90 days.” user_app is allowed to run that command and nothing else. Q2) My pick: a timer inside the User Service itself. It runs once when the service starts, then once a day. [...] once the first copy has deleted the old rows, the others find nothing to delete. Q3) Let's defer this for now, since it might be cross-service."
+
+> "Login succeeded: if the record can’t be saved, refuse the login (return a “try again later” error). [...] Login failed or was blocked: the user is rejected either way, so just print an error message for the developers and carry on."
+
+> "Every login attempt gets two labels: What happened: it worked (SUCCESS), [...] (FAILED), or the password was right but the account isn’t allowed in (BLOCKED). Why: wrong password, no such account, suspended, closed, or not yet verified."
+
+> "Q6) Seeing them: one admin list shows everything. You can narrow it to one account. [...] Floods: add a speed limit at nginx [...] Don’t cap stored rows [...] Q7) One address: /admin/login-events, with optional filters for account, what happened, and why. Newest first, 50 per page (100 at most), plus a “load more” marker [...] Q8) [...] cut it to 500 characters before saving. Don’t reject long values. [...] IP address: use Postgres’s built-in IP type [...] If a value somehow doesn’t parse, save it as empty rather than failing the login"
+
+> "Yes, table is correct."
+
+### Key response
+
+Claude summarised the project, the User Service as built, and the author's earlier N2H1 decisions. It explained how the login route decides each outcome, the two database roles, and that nginx forwards `X-Forwarded-For` while port 3001 is also published. It pointed out that "INSERT + SELECT only" and "delete after 90 days" conflict. It then posed eight questions in two batches, each with general alternatives and no recommendation: retention, scheduler, client IP, write failures, outcome labels, visibility and floods, the list API, and input sizes. After the answers it noted three consequences without proposing changes: the nginx limit applies only through the gateway, refused attempts are not logged, and the IP column must allow empty. It also checked its reading of the outcome/reason table with the author. The answers were recorded in the author's own words.
+
+## 2026-11-08 — User Service: login audit log (N2H1a) implementation
+
+- **Tool:** Claude Code (Claude Sonnet 5.5)
+- **Mode:** generate
+- **Allowed-use scope:** implementation code, tests and documentation for the author's decisions above; no new design
+- **Repository files affected:** `user-service/migrations/0004_login_events.sql` (new), `user-service/src/loginEvents.ts` (new), `user-service/src/adminLoginEvents.ts` (new), `user-service/src/loginEventsRetention.ts` (new), `user-service/src/auth.ts`, `user-service/src/index.ts`, `user-service/test/loginEvents.test.ts` (new), `user-service/README.md`, `frontend/nginx.conf`, `frontend/vite.config.ts`
+- **Author review:** Reviewed and approved by @t-leongchuan
+
+### Prompts
+
+> "i suppose you can rebase if it doesn't touch the FoC Repo. [...] so long as we are in a separate branch, test things out extensively and it works with no serious flaws, it should be good."
+
+### Key response
+
+Claude implemented the author's decisions:
+- migration `0004` with the outcome/reason labels and CHECK rules, and INSERT + SELECT only for `user_app`;
+- `purge_old_login_events()`, a function that runs with its owner's rights, as the author's "stored procedure", with only `user_app` allowed to run it;
+- recording in `POST /auth/login`: a `SUCCESS` that cannot be saved returns 503; other failed saves are logged and the user is answered as before;
+- `GET /admin/login-events` (filters, 50/100, cursor), following the audit viewer's code;
+- the startup and daily cleanup timer, stopped on shutdown;
+- the nginx limit and the gateway/Vite routes;
+- a README section.
+
+Claude's own implementation choices, listed for the author: the reason value names (`WRONG_PASSWORD`, `NO_SUCH_ACCOUNT`, `SUSPENDED`, `CLOSED`, `NOT_VERIFIED`) and the first nginx burst size (10).
+
+Tests: 35 new and existing tests on a scratch PostgreSQL. They found a flaw in Claude's first CHECK constraint: a missing reason or account passed, because SQL treats NULL as "pass". Claude fixed it and added tests. It also ran the built service under the real `user_app` role: events were recorded and listed, the startup cleanup deleted an old row, and shutdown was clean.
+
+## 2026-11-08 — User Service: login audit log testing on the Compose stack, and the demo rate limit
+
+- **Tool:** Claude Code (Claude Opus 5.5)
+- **Mode:** review and test, with small fixes
+- **Allowed-use scope:** testing, debugging, documentation of measured behaviour, and changes the author chose; no new design
+- **Repository files affected:** `frontend/nginx.conf`, `user-service/README.md`, `user-service/AGENTS.md`, `AGENTS.md`, `user-service/test/loginEvents.test.ts`
+- **Author review:** Reviewed and approved by @t-leongchuan
+
+### Prompts
+
+> "Try again. Docker Desktop should be up now, [...] i suppose you can be more thorough with things."
+
+> "1. The rate limit during the demo: raise the numbers. [...] i know my teammates have a journey/saga in the form of a bash script that does some form of testing as a demo. Perhaps look in Ron's AWS PR to see what is already there. 2,4) I think it's fine. Just put it in any README that an agent would read to make the agent aware of the issue. 3) I suppose [the] logins failing in a burst issue existed older and we have to accept it for now."
+
+> "A, and go ahead"
+
+### Key response
+
+Claude ran the full stack in an isolated Compose project (own ports and image names), plus the tests on PostgreSQL 17.11: 36/36. Gateway checks passed: outcomes, per-account list, no typed text stored, validation, a forged `X-Forwarded-For` ignored, `/auth/verify` still hidden. The upgrade from migrations 0001–0003 applied only 0004. A restart ran the cleanup and shut down cleanly.
+
+Claude made nginx return 429 as JSON, because the login page showed nginx's HTML page as "Something went wrong". The message wording is Claude's placeholder.
+
+It reported, without choosing fixes:
+- locally all host traffic shares one rate-limit bucket;
+- the AWS cloud gateway (PR #54) lacks the route and the limit, and a per-IP limit behind its load balancer would be shared by all users;
+- the expected merge conflicts with PR #54;
+- under login bursts some 503s now come from the record write. Against the old code, the total 503s did not measurably change.
+
+It counted gateway logins in the team's demo scripts by reading them (Supplier `api-demo` about 19, Order demo 4, the author's D3 kit 9) and gave four rate/burst options with their effects. The author chose 30/min with a burst of 30. All three scripts then passed back to back through the gateway with no 429, and 80 rapid attempts still gave 36 refusals. The cross-team issues, and the author's acceptance of burst 503s, were written in `user-service/AGENTS.md`, with a pointer in the root `AGENTS.md`.
+
+## 2026-11-10 — User Service: login-events notes after the AWS deployment was dropped
+
+- **Tool:** Claude Code (Claude Opus 5.5)
+- **Mode:** documentation, and merge testing of the open team branches
+- **Allowed-use scope:** updating documentation to match a team decision; testing; no new design
+- **Repository files affected:** `user-service/AGENTS.md`, `user-service/README.md`, `frontend/nginx.conf`, `AGENTS.md`
+- **Author review:** Reviewed and approved by @t-leongchuan
+
+### Prompts
+
+> "Take a look again. There might be more PR's and what not that require you to test etc."
+
+> "3) I think the AWS thing might not be a viable or thing we are pursuing anymore. Message from Ron: Could someone help to approve both PRs for the n2h, i decided to go with CI and centralised logging instead of deploying it to aws."
+
+### Key response
+
+Claude removed the AWS cloud-gateway items (PR #54) from the login-events notes, keeping one line on what would be missing if that deployment were revived, and kept the client-IP, shared rate-limit bucket and login-burst notes. It rebased the branch onto `main` at `1c7823b` and trial-merged it with the open branches (PR 63 CI, PR 68 logging, `credit_fe`): no conflicts in its files. Tests on the combined code: User Service 36/36, frontend 121/121, Credit Service 52/52, and Credit's new session verifier against the real User Service routes (member, administrator, bad token, suspended account, service down).

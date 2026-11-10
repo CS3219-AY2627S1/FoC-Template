@@ -13,6 +13,9 @@
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-10-16
  * Scope: Dev-proxy rules for the Order Service errand endpoints.
  * Author review of additional changes: Reviewed and approved by @mattis.
+ * Additional AI assistance: Claude Code (Claude Sonnet 5.5), date: 2026-11-08
+ * Scope: Dev-proxy rule for the admin login-events endpoint (N2H1a).
+ * Author review of additional changes: Reviewed and approved by @t-leongchuan
  */
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -43,6 +46,7 @@ export default defineConfig({
       '^/api/v1/users/[^/]+/(suspend|restore)$': { target: USER_SERVICE_URL, rewrite: stripApiPrefix },
       // (matched against the URL including its query string, e.g. ?limit=50)
       '^/api/v1/admin/audit(/verify)?(\\?|$)': { target: USER_SERVICE_URL, rewrite: stripApiPrefix },
+      '^/api/v1/admin/login-events(\\?|$)': { target: USER_SERVICE_URL, rewrite: stripApiPrefix },
       // (user-service's /auth/verify is intentionally NOT listed: it is for services only)
 
       // order-service: public paths are rewritten to the service's own routes

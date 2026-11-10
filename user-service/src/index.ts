@@ -17,6 +17,9 @@
  * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-10-10
  * Scope: Mounted the admin audit routes; refuse to start without a valid AUDIT_HMAC_KEY.
  * Author review of additional changes: Reviewed and approved by @t-leongchuan
+ * Additional AI assistance: Claude Code (Claude Sonnet 5.5), date: 2026-11-08
+ * Scope: Mounted the admin login-events router and started/stopped the daily 90-day cleanup (N2H1a).
+ * Author review of additional changes: Reviewed and approved by @t-leongchuan
  */
 import { authRouter } from "./auth";
 import { profileRouter } from "./profile";
@@ -27,6 +30,8 @@ import express, { Request, Response, NextFunction } from "express";
 import { loadAppConfig, loadAuditKey, DB_RESILIENCE } from "./config";
 import { adminAuditRouter } from "./adminAudit";
 import { pool } from "./db";
+import { adminLoginEventsRouter } from "./adminLoginEvents";
+import { startLoginEventsCleanup } from "./loginEventsRetention";
 import { createProducer } from "./kafka";
 import { startOutboxPublisher } from "./publisher";
 import {
@@ -69,6 +74,7 @@ app.use("/auth", authRouter);
 app.use(profileRouter);
 app.use(usersRouter);
 app.use(adminAuditRouter);
+app.use(adminLoginEventsRouter);
 
 app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
   // Expected: the database is temporarily unreachable. Tell callers to try again later.
@@ -98,6 +104,8 @@ async function main(): Promise<void> {
   await retryWhileDatabaseUnavailable("First-admin bootstrap", bootstrapFirstAdmin);
   // Connect/retry in the background; Kafka outages must not block HTTP readiness.
   const publisher = startOutboxPublisher(pool, createProducer());
+  // 90-day retention of login events: once now, then daily
+  const loginEventsCleanup = startLoginEventsCleanup(pool);
   const server = app.listen(PORT, () => console.log(`user-service listening on ${PORT}`));
 
   // Graceful shutdown (docker compose stop sends SIGTERM, then force-kills after 10 s):
@@ -114,6 +122,7 @@ async function main(): Promise<void> {
     server.close(async () => {
       try {
         await publisher.stop();
+        await loginEventsCleanup.stop();
         await pool.end();
         console.log("Shutdown complete");
         process.exit(0);

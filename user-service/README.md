@@ -16,6 +16,13 @@ Author review of additional changes: Reviewed and approved by @t-leongchuan
 Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-10-10
 Scope: "Rules for changing this service" section and the endpoint template pointer.
 Author review of additional changes: Reviewed and approved by @t-leongchuan
+Additional AI assistance: Claude Code (Claude Sonnet 5.5), date: 2026-11-08
+Scope: Documented the login events (N2H1a): endpoint, table, retention and known limits.
+Author review of additional changes: Reviewed and approved by @t-leongchuan
+Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-08
+Scope: Login-events known limitations and the speed-limit numbers, from tests on the Compose stack;
+2026-11-10: removed the AWS limitation after the team stopped the AWS deployment.
+Author review of additional changes: Reviewed and approved by @t-leongchuan
 -->
 
 # User Service
@@ -99,6 +106,7 @@ The gateway strips `/api/v1` before forwarding.
 | `POST /api/v1/users/{id}/restore` | ADMINISTRATOR | `{ reason }` (required). SUSPENDED → ACTIVE |
 | `GET /api/v1/admin/audit` | ADMINISTRATOR | Audit entries, newest first. Filters `targetId`, `actorId`, `action`; paging `?before=<nextCursor>`, `limit` (default 50, max 200) |
 | `GET /api/v1/admin/audit/verify` | ADMINISTRATOR | Checks the hash chain → `{ valid, checkedEntries, firstInvalidId, latestHash }` |
+| `GET /api/v1/admin/login-events` | ADMINISTRATOR | Login attempts, newest first. Filters `accountId`, `outcome`, `reason`; paging `?before=<nextCursor>`, `limit` (default 50, max 100). Without `accountId`, attempts on unknown usernames are included |
 | `GET /auth/verify` | **other services only** (not exposed by the gateway) | → `{ id, role }` for the bearer token |
 | `GET /health` | Docker healthcheck, other services (not exposed by the gateway) | Readiness: 200 `{ "status": "ok" }` if the database answers within 1 s, else 503 `{ "status": "not_ready" }` |
 
@@ -183,6 +191,54 @@ Timings are in `src/config.ts` (`DB_RESILIENCE`).
 service retries **forever** while the database stays unreachable, with each failure
 visible in `docker compose ps` and the logs. That's intended for local Compose; revisit it
 (e.g. alerting on repeated restarts) before any cloud deployment.
+
+## Login events (admin evidence log)
+
+Every call to `POST /auth/login` that has an `identifier` and `password` writes one row to
+`login_events` (migration `0004`). Each row has two labels:
+
+| What happened (`outcome`) | Why (`reason`) |
+| --- | --- |
+| `SUCCESS` | none |
+| `FAILED` | `WRONG_PASSWORD`, or `NO_SUCH_ACCOUNT` (no account is attached to the row) |
+| `BLOCKED` (password was right, account may not log in) | `SUSPENDED`, `CLOSED`, `NOT_VERIFIED` |
+
+- **Also stored:** time, account (when there is one), IP address, user agent (cut to 500
+  characters). **Never stored:** what the user typed in the username or password field.
+- **Users see the same answers as before.** A correct password on a CLOSED account still gets the
+  generic 401; only the log says `BLOCKED / CLOSED`.
+- **If the record cannot be saved:** a `SUCCESS` is refused with 503 (nobody gets in without a
+  record); a `FAILED` or `BLOCKED` attempt is rejected as usual and the error goes to the
+  service log. An IP that does not parse is saved as empty and never stops a login.
+- **Append-only for the service:** `user_app` has INSERT and SELECT only. Old rows are removed by
+  the stored function `purge_old_login_events()` (owned by the migration role, `user_app` may
+  only execute it), which deletes rows older than 90 days.
+- **Cleanup schedule:** a timer inside the service runs it once at startup, then once a day.
+  Several copies of the service may all run it; the repeat runs find nothing to delete.
+- **Speed limit:** the gateway (`frontend/nginx.conf`) allows 30 login attempts per minute per
+  client IP (one every 2 s) plus a burst of 30 at once (about 61 in the first minute), then
+  answers 429 with `{ "error": "TOO_MANY_REQUESTS", "message": "..." }`, which the login page
+  shows. Sized so the team's demo scripts fit when run back to back (tested 2026-11-08 through
+  the gateway: Supplier `api-demo/run-all.sh` 19 logins, `order-service/scripts/demo.sh` 4, the
+  User Service D3 demo 9; all passed, no 429). To show the limit, send 40+ attempts quickly.
+
+Known limitations (measured on the local Compose stack, 2026-11-08):
+
+- The speed limit only applies to calls through the gateway. Port 3001 is also published, so a
+  caller who goes to the service directly skips it.
+- Attempts refused with 429 never reach the service, so they are not in the log.
+- **Locally, everyone shares one speed-limit bucket.** Docker Desktop delivers all host traffic
+  to nginx from one address (the Docker network gateway, e.g. `172.19.0.1`). Browser logins and
+  scripts on the same machine count together: 80 rapid attempts gave 44 accepted, 36 refused.
+- **Client IP is not settled yet.** Express's "trust proxy" is not set, so behind nginx the IP
+  stored is nginx's own address (e.g. `::ffff:172.19.0.10`), not the user's. Direct calls to
+  3001 store the caller's address; a forged `X-Forwarded-For` header is ignored. Needs a team decision.
+- **Login bursts:** a successful login now needs a second database call (the record) after the
+  password check. Under a burst this call can hit the existing 500 ms connection limit, and the
+  login is refused with 503 (by design: no record, no login). Compared with the code before this
+  change, the total number of 503s in a burst did not measurably change (5 rounds each of 8 and
+  16 simultaneous logins), but some 503s now come from this call.
+- Not built yet: checkpoints of this table in the audit chain, and users seeing their own history.
 
 ## Suspension and the audit log
 
