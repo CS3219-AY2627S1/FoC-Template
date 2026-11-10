@@ -355,7 +355,15 @@ public class ReportSubmissionStore {
     private void reserve(Transaction tx, ReportSubmission submission) throws Exception {
         var slotRef = db.collection(SLOTS).document(submission.orderId());
         var slot = tx.get(slotRef).get();
-        if (slot.exists() && !submission.submissionId().equals(slot.getString("submissionId"))) throw activeConflict();
+        if (slot.exists() && !submission.submissionId().equals(slot.getString("submissionId"))) {
+            String previousReportId = slot.getString("reportId");
+            if ("PENDING".equals(slot.getString("state")) || previousReportId == null) throw activeConflict();
+            var previousReport = tx.get(db.collection(FirestoreReportRepository.COLLECTION)
+                    .document(previousReportId)).get();
+            if (previousReport.exists() && !"RESOLVED".equals(previousReport.getString("status"))) {
+                throw activeConflict();
+            }
+        }
         var legacy = tx.get(db.collection(FirestoreReportRepository.COLLECTION)
                 .whereEqualTo("orderId", submission.orderId())
                 .whereIn("status", List.of("AWAITING_COURIER_RESPONSE", "READY_FOR_REVIEW", "OPEN")).limit(1)).get();
