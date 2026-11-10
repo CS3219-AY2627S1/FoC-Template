@@ -1,0 +1,29 @@
+%% AI Assistance Disclosure
+%% Tool: Cursor (Auto), date: 2026-11-10
+%% Scope: Documentation wording for Supplier Service under author-fixed design.
+%% Author review: Sahana Avantika generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+%% Order accepts the listing as a pickup only when status is approved.
+sequenceDiagram
+    actor Student
+    participant Supplier as Supplier Service
+    actor Reviewer as Admin
+    participant Order as Order Service
+
+    Student->>Supplier: submit a listing
+    Note over Supplier: saved as pending
+    Supplier-->>Student: 201
+
+    alt admin approves
+        Reviewer->>Supplier: set status to approved
+        Note over Supplier,Reviewer: visible in the catalogue
+    else admin rejects
+        Reviewer->>Supplier: set status to rejected, with a reason
+        Note over Supplier,Reviewer: stays off the catalogue
+    end
+
+    Order->>Supplier: read the listing by id
+    alt status is approved
+        Supplier-->>Order: used as the pickup
+    else pending or rejected
+        Note over Supplier,Order: Order refuses it
+    end

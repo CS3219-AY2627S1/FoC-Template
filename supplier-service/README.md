@@ -12,7 +12,7 @@ Protected routes without `x-user-id` return **401**. A signed-in user who is not
 | --- | --- | --- | --- |
 | POST | `/api/v1/supplier` | `{ name, building, floor, locationDescription, latitude, longitude, startingTime, closingTime, categories[] }` | F1.1. Permitted user (`x-permitted-action=true`). Validates lat/long bounds and time format (F1.1.1/F1.1.2). Created as `pending`. Stores the caller as `createdByUserId` and logs `created` with a timestamp. |
 | GET | `/api/v1/supplier` | `?category=&page=&pageSize=` public | F1.2/F1.4. No gateway check. `category` accepts one or more comma-separated values (e.g. `?category=Food,Coffee`), matched as OR. Pending/Rejected suppliers excluded (F1.4.1). |
-| GET | `/api/v1/supplier/{id}` | — | No gateway check. Used by Order Service to validate pickup/dropoff locations (F1.5.1/F1.6.1 in Order FR). |
+| GET | `/api/v1/supplier/{id}` | — | No gateway check. Returns the listing in any status. Order Service uses it for the pickup and accepts the id only when `status` is `approved`. |
 | GET | `/api/v1/supplier/admin` | `?status=` | F1.4.1. Verified admin (`x-is-admin=true` and `x-permitted-action=true`). Includes Pending/Rejected. |
 | PATCH | `/api/v1/supplier/{id}` | Any of `{ name, building, floor, locationDescription, latitude, longitude, startingTime, closingTime, categories[] }` | Verified admin. Edits listing details only. Status is unchanged. Logged as `edited` with timestamp, admin user id, and the fields changed. |
 | PATCH | `/api/v1/supplier/{id}/status` | `{ status: pending\|approved\|rejected, reason? }` | F1.3.1. Verified admin. `rejected` requires `reason`, trimmed, 1–4000 characters. Missing, blank, or too long is **400**. The trimmed reason is stored as `rejectionReason` and as the action `detail`. `approved` and `pending` set `rejectionReason` to `null`. Logged as `approved`, `rejected`, or `pending` with timestamp and admin user id. |
@@ -32,7 +32,7 @@ npm test
 
 ## Data
 
-Prisma schema: `prisma/schema.prisma`. Postgres columns stay camelCase.
+Prisma schema: `prisma/schema.prisma`. Tables, the status changes, and the audit row are described in [`docs/schema.md`](docs/schema.md). The status diagram is [`docs/status-diagram.mmd`](docs/status-diagram.mmd) ([png](docs/status-diagram.png)). The submit, review, and pickup path is [`docs/seq-pickup.mmd`](docs/seq-pickup.mmd) ([png](docs/seq-pickup.png)). Postgres columns stay camelCase.
 
 `Supplier.rejectionReason` is nullable `TEXT`, added in `20261103120000_supplier_rejection_reason`. It is set only when status becomes `rejected`. Approving or moving the listing back to `pending` clears it. The public catalogue is still approved-only, so a rejection reason is not in `GET /api/v1/supplier`. It is on the supplier JSON from the admin list and from `GET /api/v1/supplier/{id}`.
 
