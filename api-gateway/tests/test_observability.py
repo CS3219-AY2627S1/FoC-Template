@@ -3,18 +3,75 @@
 
 from __future__ import annotations
 
+import random
+import string
 import urllib.request
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.exposed_routes import ROUTE_TABLE
 from app.main import app
 from app.observability import OBS, route_label
+
+BOUNDED_LABELS = {f"{prefix}/*" for prefix in ROUTE_TABLE} | {"<other>"}
 
 
 def test_gateway_route_label_collapses_to_the_downstream_service():
     assert route_label("/api/credits/u-1/balance") == "/api/credits/*"
     assert route_label("/api/orders/abc/approve") == "/api/orders/*"
-    assert route_label("/health") == "/health"
+    assert route_label("/api/chat/ws-ticket") == "/api/chat/*"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/unknown/x",
+        "/api",
+        "/api/",
+        "/random/path",
+        "/",
+        "/wp-admin.php",
+        "/api/../etc/passwd",
+        "/API/credits/x",
+        "/health",
+    ],
+)
+def test_gateway_route_label_collapses_unknown_paths_to_other(path):
+    assert route_label(path) == "<other>"
+
+
+def _random_path(rng: random.Random) -> str:
+    alphabet = string.ascii_letters + string.digits + "-_."
+    heads = ["api", "API", "", "metrics", *(p.strip("/").split("/")[1] for p in ROUTE_TABLE)]
+    segments = [rng.choice(heads)]
+    for _ in range(rng.randint(0, 4)):
+        segments.append("".join(rng.choices(alphabet, k=rng.randint(1, 12))))
+    return "/" + "/".join(segments)
+
+
+def test_gateway_route_labels_stay_within_the_bounded_set():
+    rng = random.Random(37)
+    paths = [_random_path(rng) for _ in range(50)]
+
+    labels = {route_label(path) for path in paths}
+
+    assert labels <= BOUNDED_LABELS
+
+
+def test_requests_through_the_gateway_record_only_bounded_route_labels():
+    client = TestClient(app)
+    for path in ["/wp-admin.php", "/api/unknown/x", "/random/a/b/c", "/api"]:
+        client.get(path)
+
+    recorded = {
+        sample.labels["route"]
+        for family in OBS.http_requests.collect()
+        for sample in family.samples
+    }
+
+    assert "<other>" in recorded
+    assert recorded <= BOUNDED_LABELS
 
 
 def test_observability_uses_the_service_prefix():
