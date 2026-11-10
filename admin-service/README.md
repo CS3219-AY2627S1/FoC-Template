@@ -379,12 +379,39 @@ calls send `x-user-id`, `x-is-admin`, and `x-permitted-action`.
 
 ## Future plans
 
-- Let an admin add or edit a badge (title, who it is for, and the count or rating it needs) without changing Badges Service's catalog file. The seven badges today are fixed.
-- Let an admin grant or take away one badge on a person, for a campus award the delivery and rating counters would not earn.
-- Let an admin open the order behind an escalation. Order currently returns an order only to its requester and courier.
-- Let an admin add a supplier category, and mark a stall as featured on the catalogue.
-- Keep a short note on a user that later reports and appeals show, so the next admin can see what happened last time.
-- Show how often an admin's decision matched the Gemini advice, so that advice can be tuned.
+### Reliability
+
+- **Transactional outbox for Kafka.** Intake and resolve commit the database first and only log a Kafka failure, so a broker blip can leave Order out of sync. That is why `scripts/resolve_open_escalations.py --republish` exists. Write the event to an outbox table in the same transaction and have a relay publish it, so recovery no longer needs that script.
+- **Durable retry for appeal rejection.** If the call to User Service fails, the rejection stands and the user is never told. Queue it as a scheduler job with backoff instead of one 2-second attempt.
+- **Contract tests against Order and User Service.** The live tests skip when the stack is down. Check the Kafka envelopes and the internal intake payloads in CI, so a change on either side fails there.
+
+### Admin workflow
+
+- **Release or hand off a claimed case.** Another admin can already resolve a case that is `under_review`. They cannot reassess it, and nothing releases or reassigns the claim, so the case stays with an absent admin until someone resolves it or the deadline does. Add release and reassign, both audited.
+- **Audit log read API.** `audit_logs` is append-only and has no read endpoint. Add a filterable, paginated view by admin, target, action, and date range, and audit evidence-photo views too.
+- **Reasons on user actions.** Require a reason on suspend, promote, and demote, stored on the audit row, so a later reviewer can see why.
+- **Temporary suspensions.** An optional expiry, with a scheduled job that reinstates the account when it passes.
+- **Two-person approval for promote.** Another admin confirms before a new admin gets access.
+
+### Moderation quality
+
+- **Per-user history note.** A short admin note that later reports and appeals display, so the next admin sees what happened last time.
+- **Report abuse signals.** Flag users who file many reports that get dismissed, and surface people who are reported repeatedly. Do not auto-suspend from that signal.
+- **Appeal cool-down.** After a rejection, require a wait before a new appeal. User Service already caps appeal attempts at ten per fifteen minutes. That cap does not stop a new appeal as soon as the last one is rejected.
+- **Link reports to orders.** Let a report carry an optional `orderId`, so a report about a courier can show the related conflict case.
+- **AI agreement.** Record how often an admin's decision matched Gemini on conflicts, reports, and appeals. Use that to tune the prompts and to set `AUTO_RESOLVE_MIN_CONFIDENCE` from data.
+
+### Visibility
+
+- **Queue summary endpoint.** Counts by status, the oldest open item, cases nearing their deadline, and the median time to resolve. The admin dashboard already shows a few of these by listing each queue.
+- **Metrics.** Prometheus series for the AI job failure rate, auto-resolve count, outbox lag, and scheduler backlog.
+
+### Needs other services
+
+- **Order Service.** Let an admin open the order behind an escalation. Order currently returns an order only to its requester and courier.
+- **Badges Service.** Let an admin add or edit a badge, and grant or take away one badge for a campus award the counters would not earn. The seven badges today are a fixed catalog file.
+- **Supplier Service.** Let an admin add a category, and mark a stall as featured on the catalogue.
+- **Kafka.** Add the topics and ACLs in `foc-kafka` so the user events and `admin.conflict-case-created` can be published. The cluster chart leaves those topic names empty because nothing consumes them yet.
 
 ## AI Use Summary
 
