@@ -18,7 +18,8 @@ What a service gets:
 - ``GET /health/ready`` - database (when a session dependency is given) and
   broker readiness; ``GET /health`` is left untouched
 - HTTP request/latency/status metrics labelled by **route template** and by
-  ``service``, so one Grafana dashboard can compare services
+  ``service``, so one Grafana dashboard can compare services; unknown HTTP
+  methods are labelled ``OTHER`` so clients cannot grow the label set
 - error-envelope ``code`` counters (call ``record_error_code`` from the service
   exception handlers, which are the only layer that knows the code)
 - JSON log formatting with ``request_id`` / ``user_id`` / ``order_id`` /
@@ -91,6 +92,10 @@ DEFAULT_EXCLUDED_PATHS: frozenset[str] = frozenset(
         "/docs/oauth2-redirect",
         "/redoc",
     }
+)
+
+HTTP_METHODS: frozenset[str] = frozenset(
+    {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 )
 
 HTTP_BUCKETS: tuple[float, ...] = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
@@ -607,7 +612,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             status = response.status_code
         finally:
             self.obs.observe_http_request(
-                method=request.method,
+                method=request.method if request.method in HTTP_METHODS else "OTHER",
                 route=self.obs.route_label(request.scope),
                 status=str(status),
                 duration=time.perf_counter() - started,

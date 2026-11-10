@@ -86,3 +86,25 @@ def test_install_can_skip_the_metrics_and_readiness_routes():
 
     assert client.get("/metrics").status_code == 404
     assert client.get("/health/ready").status_code == 404
+
+
+def test_http_method_label_collapses_unknown_methods_to_other():
+    app = FastAPI()
+    obs = Observability("svc-test", prefix="svctest")
+    obs.install(app, check_broker=False)
+
+    @app.api_route("/thing", methods=["GET", "XFOO"])
+    async def thing() -> dict[str, str]:
+        return {"ok": "yes"}
+
+    client = TestClient(app)
+    client.request("XFOO", "/thing")
+    client.request("XBAR", "/thing")
+    client.get("/thing")
+
+    recorded = {
+        sample.labels["method"]
+        for family in obs.http_requests.collect()
+        for sample in family.samples
+    }
+    assert recorded == {"GET", "OTHER"}
