@@ -48,7 +48,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         return
     skip = pytest.mark.skip(reason="pass --postgres-url (or CHAT_TEST_DATABASE_URL) to run")
     for item in items:
-        item.add_marker(skip)
+        if item.path.name != "test_observability.py":
+            item.add_marker(skip)
 
 
 def make_settings(**overrides: Any) -> Settings:

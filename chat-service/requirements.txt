@@ -11,6 +11,8 @@ aio-pika>=9.4
 pyjwt>=2.8
 # photo uploads (multipart/form-data); image handling comes from foc_shared
 python-multipart>=0.0.9
+# metrics exposed on /metrics (shared observability layer)
+prometheus-client>=0.20
 
 # shared contracts library is installed separately (see Dockerfile / make install)
 # because its path differs between local venv (../shared) and Docker (/shared).

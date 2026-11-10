@@ -48,6 +48,13 @@ scrape_configs:
         labels:
           service: notification-service
 
+  - job_name: chat-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["chat-service:8000"]
+        labels:
+          service: chat-service
+
   # The gateway is the edge: its metrics show 401/403/404/5xx that never reach
   # a backend. Its route label is collapsed to /api/<service>/* so it does not
   # duplicate the per-service panels. Its /metrics lives on the internal-only
