@@ -55,15 +55,15 @@ def main():
     expected = {
         "openRefund": ("OpenOrderRefundTaskEvent", "open-order-refund", "ORDER_OPEN_REFUND_TOPIC", "open-order-refund-dev-v1", "2"),
         "completion": ("OrderCompletionTaskEvent", "order-completion", "ORDER_COMPLETION_TOPIC", "order-completion-dev-v1", "2"),
-        "penaltyAddition": ("PenaltyScoreAdditionEvent", "courier-penalty-addition", "ORDER_COURIER_PENALTY_ADDITION_TOPIC", "courier-penalty-addition-dev-v1", "1"),
-        "penaltyDeduction": ("PenaltyScoreDeductionEvent", "courier-penalty-deduction", "ORDER_COURIER_PENALTY_DEDUCTION_TOPIC", "courier-penalty-deduction-dev-v1", "1"),
+        "penaltyAddition": ("PenaltyScoreAdditionEvent", "courier-penalty-event", "ORDER_COURIER_PENALTY_EVENT_TOPIC", "courier-penalty-event-dev-v1", "2"),
+        "penaltyDeduction": ("PenaltyScoreDeductionEvent", "courier-penalty-event", "ORDER_COURIER_PENALTY_EVENT_TOPIC", "courier-penalty-event-dev-v1", "2"),
     }
-    require(set(spec["channels"]) == set(expected) | {"compensationRequest", "compensationResult", "reportCompensationRequest", "reportCompensationResult"},
-            "Expected four lifecycle/penalty and four opt-in compensation channels")
-    require(len(spec["operations"]) == 8, "Expected six sends and two receives")
+    require(set(spec["channels"]) == {"openRefund", "completion", "penaltyEvents", "compensationRequest", "compensationResult", "reportCompensationRequest", "reportCompensationResult", "reportCreationCompensationRequest", "reportCreationCompensationResult"},
+            "Expected three lifecycle/penalty and six compensation channels")
+    require(len(spec["operations"]) == 10, "Expected seven sends and three receives")
     checked_examples = 0
     for channel_id, (event_type, config_key, env_key, topic, version) in expected.items():
-        channel = spec["channels"][channel_id]
+        channel = spec["channels"]["penaltyEvents" if channel_id.startswith("penalty") else channel_id]
         require(channel["parameters"]["topicId"]["default"] == topic, "Topic default drift")
         require(channel["x-topic-environment-variable"] == env_key, "Topic variable drift")
         require(f"{config_key}: ${{{env_key}:{topic}}}" in config, "Configuration source drift")
@@ -104,7 +104,7 @@ def main():
 
     for operation in spec["operations"].values():
         channel_id = operation["channel"]["$ref"].split("/")[-1]
-        require(operation["action"] == ("receive" if channel_id in {"compensationResult", "reportCompensationResult"} else "send"),
+        require(operation["action"] == ("receive" if channel_id in {"compensationResult", "reportCompensationResult", "reportCreationCompensationRequest"} else "send"),
                 "Wrong operation direction")
         require("reply" not in operation, "Publication acknowledgment is not a business reply")
         require(channel_id in spec["channels"], "Unknown channel")
@@ -152,10 +152,10 @@ def main():
     require("enabled: ${ORDER_COMPENSATION_ENABLED:false}" in config, "Compensation default must remain off")
     publisher = (JAVA / "messagingpublisher/publisher/GoogleCloudPubSubEventPublisher.java").read_text(encoding="utf-8")
     require(set(re.findall(r'\.putAttributes\("([^"]+)"', publisher)) == {"eventId", "eventType", "eventVersion"}, "Publisher attribute drift")
-    require("setOrderingKey" not in publisher, "Ordering behavior changed; review documentation")
+    require("setOrderingKey" in publisher, "Unified penalty ordering key is required")
     scheduler = (JAVA / "application/OrderOutboxScheduler.java").read_text(encoding="utf-8")
     require("0 */15 * * * *" in scheduler, "Outbox default cadence drift")
-    print(f"PASS: 6 send/2 receive operations, 8 DTO field sets, {checked_examples} examples, negative schemas and source/default/topic/cadence parity.")
+    print(f"PASS: 7 send/3 receive operations, current DTO field sets, {checked_examples} examples, negative schemas and source/default/topic/cadence parity.")
 
 
 if __name__ == "__main__":

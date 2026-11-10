@@ -20,11 +20,14 @@ class LocalPubSubSetupTest(unittest.TestCase):
         calls = [call.args[0] for call in request.call_args_list]
         topics = {call.full_url.rsplit("/", 1)[-1] for call in calls if "/topics/" in call.full_url}
         self.assertEqual({"order-completion-local-v1", "open-order-refund-local-v1",
+                          "courier-penalty-event-local-v1",
                           "courier-penalty-addition-local-v1",
-                          "courier-penalty-deduction-local-v1"}, topics)
+                          "courier-penalty-deduction-local-v1", "user-created-local-v1",
+                          "credit-command-compensation-local-v1",
+                          "credit-command-compensation-result-local-v1"}, topics)
         subscriptions = [json.loads(call.data) for call in calls if "/subscriptions/" in call.full_url]
-        self.assertEqual(2, len(subscriptions))
-        self.assertTrue(all("/order-events/" in item["pushConfig"]["pushEndpoint"] for item in subscriptions))
+        self.assertEqual(5, len(subscriptions))
+        self.assertEqual(2, sum("/order-events/" in item.get("pushConfig", {}).get("pushEndpoint", "") for item in subscriptions))
         self.assertTrue(all("penalty" not in item["topic"] for item in subscriptions))
         self.assertTrue(all(call.full_url.startswith("http://pubsub-emulator:8085/") for call in calls))
 
@@ -33,7 +36,7 @@ class LocalPubSubSetupTest(unittest.TestCase):
         with patch.dict(os.environ, {"PUBSUB_EMULATOR_HOST": "pubsub-emulator:8085"}, clear=True), \
                 patch("urllib.request.urlopen", side_effect=conflict) as request:
             runpy.run_path(str(self.script))
-        self.assertEqual(6, request.call_count)
+        self.assertEqual(13, request.call_count)
 
     def test_rejects_non_private_host_before_network_access(self):
         with patch.dict(os.environ, {"PUBSUB_EMULATOR_HOST": "pubsub.googleapis.com"}, clear=True), \

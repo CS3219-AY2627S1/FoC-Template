@@ -198,7 +198,7 @@ fi
 
 echo "Order Service Pub/Sub topics"
 for env in "${environments[@]}"; do
-  for key in ORDER_COMPLETION_TOPIC ORDER_OPEN_REFUND_TOPIC ORDER_COURIER_PENALTY_ADDITION_TOPIC ORDER_COURIER_PENALTY_DEDUCTION_TOPIC ORDER_CREDIT_COMPENSATION_TOPIC; do
+  for key in ORDER_COMPLETION_TOPIC ORDER_OPEN_REFUND_TOPIC ORDER_COURIER_PENALTY_EVENT_TOPIC ORDER_COURIER_PENALTY_ADDITION_TOPIC ORDER_COURIER_PENALTY_DEDUCTION_TOPIC ORDER_CREDIT_COMPENSATION_TOPIC; do
     topic=$(environment_value "$env" "$key")
     if ! gcloud pubsub topics describe "$topic" --project "$PROJECT_ID" >/dev/null 2>&1; then
       problem "order-service: Pub/Sub topic '$topic' ($env) does not exist"
@@ -253,7 +253,9 @@ echo "User Service Pub/Sub push (courier penalties)"
 for env in "${environments[@]}"; do
   push_sa=$(environment_value "$env" USER_PUBSUB_PUSH_SERVICE_ACCOUNT)
   push_url="https://user-service-$env-$PROJECT_NUMBER.$REGION.run.app"
-  for kind in addition deduction; do
+  for kind in addition deduction event; do
+    route=$kind
+    if [[ $kind == event ]]; then route=events; fi
     key=$(tr '[:lower:]' '[:upper:]' <<<"$kind")
     subscription=$(environment_value "$env" "USER_PUBSUB_PENALTY_${key}_SUBSCRIPTION")
     topic=$(environment_value "$env" "ORDER_COURIER_PENALTY_${key}_TOPIC")
@@ -264,14 +266,18 @@ for env in "${environments[@]}"; do
       problem "user-service: Pub/Sub subscription '$subscription' does not exist"
     elif jq -e \
         --arg topic "projects/$PROJECT_ID/topics/$topic" \
-        --arg endpoint "$push_url/api/users/internal/penalties/$kind" \
+        --arg endpoint "$push_url/api/users/internal/penalties/$route" \
         --arg audience "$push_url" \
         --arg service_account "$push_sa" \
         '.topic == $topic
           and .pushConfig.pushEndpoint == $endpoint
           and .pushConfig.oidcToken.audience == $audience
           and .pushConfig.oidcToken.serviceAccountEmail == $service_account' <<<"$subscription_json" >/dev/null; then
-      ok "user-service: Pub/Sub push subscription '$subscription'"
+      if [[ $kind == event ]] && ! jq -e ' .enableMessageOrdering == true' <<<"$subscription_json" >/dev/null; then
+        problem "user-service: unified penalty subscription must enable message ordering"
+      else
+        ok "user-service: Pub/Sub push subscription '$subscription'"
+      fi
     else
       problem "user-service: Pub/Sub push subscription '$subscription' does not push to user-service-$env as '$push_sa'"
     fi

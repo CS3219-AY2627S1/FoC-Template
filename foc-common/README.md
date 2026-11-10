@@ -1,6 +1,8 @@
 # FoC common penalty policy
 
-CHANGE-147 (2026-10-19): six active policies. Courier unresponsive is no longer selectable or accepted for new admin penalties. The deprecated enum value remains readable for historical rows and pending events; do not use values() as an active-choice API. Existing historical penalties are not erased.
+Effective CHANGE-186 (2026-11-10): courier unresponsiveness is selectable at 3 points.
+Bad attitude is retired from new selections; its 2-point enum value remains readable
+for historical rows and pending events. Do not use values() as an active-choice API.
 
 Ordinary Maven library in the monorepo. No Git submodule, separate repository,
 server or container. Currently contains only `PenaltySystemPolicy` under
@@ -12,7 +14,7 @@ amounts and serialized event reasons remain unchanged. The shared query API is:
 | Static method | Result |
 | --- | --- |
 | `getSuccessfulDeliveryReward()` | `SUCCESSFUL_DELIVERY` policy, amount1 |
-| `getCourierPenaltyCases()` | Immutable wrong-location, damage, theft and bad-attitude list; excludes automatic outcomes and retired unresponsiveness |
+| `getCourierPenaltyCases()` | Immutable ascending list: unresponsive3, wrong location4, damage4, theft10; excludes automatic outcomes and retired bad attitude |
 | `getFullPenaltyPolicy()` | Immutable list of all seven active policies in declaration order |
 
 For example, `PenaltySystemPolicy.getSuccessfulDeliveryReward().getPenaltyAmount()`
@@ -29,8 +31,8 @@ events. The methods do not publish, mutate user scores or enforce suspension.
 | WRONG_LOCATION_DELIVERY | 4 | Admin cancellation addition |
 | ITEM_MISHANDLING_OR_DAMAGE | 4 | Admin cancellation addition |
 | DELIBERATE_ITEM_RETENTION_OR_THEFT | 10 | Admin cancellation addition; suspension enforcement belongs to User Service |
-| COURIER_BAD_ATTITUDE | 2 | Admin-confirmed misconduct; existing deferred final-outcome addition |
-| COURIER_UNRESPONSIVE (retired) | 3 | Historical compatibility only; no new selection |
+| COURIER_BAD_ATTITUDE (retired) | 2 | Historical compatibility only; no new selection |
+| COURIER_UNRESPONSIVE | 3 | Admin-confirmed misconduct; existing deferred final-outcome addition |
 
 Direction stays in the existing event type; the enum does not apply scores.
 Order is the first consumer. User's old HTTP outcome handlers and the pending

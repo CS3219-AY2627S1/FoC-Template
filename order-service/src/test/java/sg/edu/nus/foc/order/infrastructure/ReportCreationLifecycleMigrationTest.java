@@ -25,7 +25,7 @@ class ReportCreationLifecycleMigrationTest {
 
     @Test void cleanSchemaHasCreationLifecycleAndDeduplication(){
         Flyway flyway=migration("creation_clean",null);flyway.migrate();
-        assertEquals("20",flyway.info().current().getVersion().toString());
+        assertEquals("21",flyway.info().current().getVersion().toString());
         assertNotNull(sql().queryForObject("select to_regclass('creation_clean.order_report_creation_lifecycles')::text",String.class));
         assertNotNull(sql().queryForObject("select to_regclass('creation_clean.order_report_creation_compensations')::text",String.class));
     }
@@ -43,7 +43,7 @@ class ReportCreationLifecycleMigrationTest {
                 values ('existing-report','existing-order','owner',now())
                 """);
         Flyway latest=migration("creation_upgrade",null);latest.migrate();
-        assertEquals("20",latest.info().current().getVersion().toString());
+        assertEquals("21",latest.info().current().getVersion().toString());
         assertEquals(0,sql().queryForObject("select count(*) from creation_upgrade.order_report_creation_lifecycles",Integer.class));
         assertEquals(1,sql().queryForObject("select count(*) from creation_upgrade.order_completion_holds where report_id='existing-report' and released_at is null",Integer.class));
         assertTrue(sql().queryForObject("select completion_hold from creation_upgrade.orders where id='existing-order'",Boolean.class));

@@ -33,7 +33,7 @@ class PubSubPushSecurityTest {
                 "https://user.example.com",
                 "push@u.nus.edu",
                 "penalty-addition",
-                "penalty-deduction");
+                "penalty-deduction", "penalty-events");
 
         validator = new PubSubPushTokenValidator(properties);
     }

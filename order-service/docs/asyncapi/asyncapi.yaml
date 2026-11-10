@@ -2,14 +2,15 @@ asyncapi: 3.0.0
 id: urn:foc:order-service:pubsub
 info:
   title: Friend on Campus - Order Service Pub/Sub
-  version: 1.6.0
+  version: 1.8.0
   description: |
     Existing lifecycle/penalty contracts plus ADR-055 Credit and ADR-059 Report opt-in compensation request/result.
     Compensation transport is disabled by default; no cloud deployment is implied.
-    Refund/completion use compact schema v2; explicit penalty add/deduct use seven fields v1.
+    Refund/completion use compact schema v2; penalty add/deduct use eight-field v2 on one sequenced courier topic.
     Accepted-cancellation publishing/replay is retired (CHANGE-155). Published history is retained.
     ADR-044 adds admin cancellation refunds and one highest optional addition;
-    addition reasons include report misconduct; retired COURIER_UNRESPONSIVE remains historical read compatibility only.
+    addition reasons include report misconduct and COURIER_UNRESPONSIVE at 3 points;
+    COURIER_BAD_ATTITUDE at 2 points remains wire compatibility for saved historical outcomes only.
     ADR-050 removes admin completion; requester and automatic completion remain.
     Topic suffix v1 is a resource name, NOT the payload schema version.
     Order state, checkpoint, receipt and outbox intent commit atomically. Publication is
@@ -146,18 +147,13 @@ channels:
     messages:
       completed:
         $ref: '#/components/messages/OrderCompletionTaskEvent'
-  penaltyAddition:
+  penaltyEvents:
     address: projects/{projectId}/topics/{topicId}
-    title: Courier penalty score addition
-    description: |
-      ADR-041: User Service applies transmitted positive amount in the event's direction.
-      Addition follows successful ACCEPTED cancellation (+2) or overdue completion (+1).
-      Admin cancellation with an explicit penalty emits the highest stored/selected addition:
-      wrong location (+4), damage (+4), theft (+10). No penalty overrides provisional scoring.
-      Deduction follows on-time requester/automatic completion (-1). Admin resolution
-      never adds an automatic penalty or reward; null/empty selection means no score event.
-      Target is the courier, never requester/lifecycle. Consumer integration is pending.
-      Two topics provide no cross-topic ordering guarantee; score clamping needs owner policy.
+    title: Sequenced courier penalty and reward events
+    description: >-
+      Order assigns a per-courier commit sequence atomically with each final scoring outcome/outbox. User
+      durably receives both directions and applies only the next sequence. Gaps are retained and logged; event
+      IDs deduplicate. Legacy separate topics remain drain-only. Requires a coordinated cutover.
     servers:
       - $ref: '#/servers/googlePubSub'
       - $ref: '#/servers/localEmulator'
@@ -166,37 +162,16 @@ channels:
         description: PUBSUB_PROJECT_ID.
         default: protean-vigil-509704-q4
       topicId:
-        description: ORDER_COURIER_PENALTY_ADDITION_TOPIC; explicitly configure environment.
-        default: courier-penalty-addition-dev-v1
-    x-topic-environment-variable: ORDER_COURIER_PENALTY_ADDITION_TOPIC
+        description: Unified topic for both event types.
+        default: courier-penalty-event-dev-v1
+    x-topic-environment-variable: ORDER_COURIER_PENALTY_EVENT_TOPIC
     x-intended-consumer: User Service
     messages:
-      penalty:
+      addition:
         $ref: '#/components/messages/PenaltyScoreAdditionEvent'
-  penaltyDeduction:
-    address: projects/{projectId}/topics/{topicId}
-    title: Courier penalty score deduction
-    description: |
-      ADR-041: User Service applies transmitted positive amount in the event's direction.
-      Addition follows successful ACCEPTED cancellation (+2) or overdue completion (+1).
-      Deduction follows on-time requester/automatic completion (-1); never admin resolution.
-      Target is the courier, never requester/lifecycle. Consumer integration is pending.
-      Two topics provide no cross-topic ordering guarantee; score clamping needs owner policy.
-    servers:
-      - $ref: '#/servers/googlePubSub'
-      - $ref: '#/servers/localEmulator'
-    parameters:
-      projectId:
-        description: PUBSUB_PROJECT_ID.
-        default: protean-vigil-509704-q4
-      topicId:
-        description: ORDER_COURIER_PENALTY_DEDUCTION_TOPIC; explicitly configure environment.
-        default: courier-penalty-deduction-dev-v1
-    x-topic-environment-variable: ORDER_COURIER_PENALTY_DEDUCTION_TOPIC
-    x-intended-consumer: User Service
-    messages:
-      penalty:
+      deduction:
         $ref: '#/components/messages/PenaltyScoreDeductionEvent'
+    x-ordering-key: courierId
 operations:
   receiveReportCreationCompensation:
     action: receive
@@ -240,16 +215,16 @@ operations:
     action: send
     title: Publish stored courier penalty addition after Order commit
     channel:
-      $ref: '#/channels/penaltyAddition'
+      $ref: '#/channels/penaltyEvents'
     messages:
-      - $ref: '#/channels/penaltyAddition/messages/penalty'
+      - $ref: '#/channels/penaltyEvents/messages/addition'
   publishPenaltyDeduction:
     action: send
     title: Publish stored courier penalty deduction after Order commit
     channel:
-      $ref: '#/channels/penaltyDeduction'
+      $ref: '#/channels/penaltyEvents'
     messages:
-      - $ref: '#/channels/penaltyDeduction/messages/penalty'
+      - $ref: '#/channels/penaltyEvents/messages/deduction'
 components:
   correlationIds:
     eventIdentity:
@@ -358,24 +333,35 @@ components:
     PenaltyScoreAdditionEvent:
       name: PenaltyScoreAdditionEvent
       contentType: application/json
-      description: Seven-field explicit courier penalty; direction from event type, positive amount.
+      description: >-
+        Eight-field v2 courier score event; positive amount and per-courier source sequence. User enforces
+        sequence across directions.
       correlationId:
         $ref: '#/components/correlationIds/eventIdentity'
       headers:
         type: object
         additionalProperties: false
-        required: [eventId, eventType, eventVersion]
+        required:
+          - eventId
+          - eventType
+          - eventVersion
         properties:
-          eventId: {type: string, format: uuid}
-          eventType: {type: string, const: PenaltyScoreAdditionEvent}
-          eventVersion: {type: string, const: '1'}
+          eventId:
+            type: string
+            format: uuid
+          eventType:
+            type: string
+            const: PenaltyScoreAdditionEvent
+          eventVersion:
+            type: string
+            const: '2'
       payload:
         $ref: '#/components/schemas/PenaltyScoreAdditionEvent'
       examples:
         - headers:
             eventId: 39b595d0-c954-3a96-b2b1-008688ba3a80
             eventType: PenaltyScoreAdditionEvent
-            eventVersion: '1'
+            eventVersion: '2'
           payload:
             eventId: 39b595d0-c954-3a96-b2b1-008688ba3a80
             eventType: PenaltyScoreAdditionEvent
@@ -384,10 +370,11 @@ components:
             penaltyAmount: 2
             occurredAt: '2026-10-14T08:00:00Z'
             appliedReason: ACCEPTED_TASK_CANCELLATION
+            courierSequence: 1
         - headers:
             eventId: 2d9303b6-a1bb-3b16-8eaf-b065419155f7
             eventType: PenaltyScoreAdditionEvent
-            eventVersion: '1'
+            eventVersion: '2'
           payload:
             eventId: 2d9303b6-a1bb-3b16-8eaf-b065419155f7
             eventType: PenaltyScoreAdditionEvent
@@ -396,27 +383,39 @@ components:
             penaltyAmount: 3
             occurredAt: '2026-10-16T08:00:00Z'
             appliedReason: COURIER_UNRESPONSIVE
+            courierSequence: 2
     PenaltyScoreDeductionEvent:
       name: PenaltyScoreDeductionEvent
       contentType: application/json
-      description: Seven-field explicit courier penalty; direction from event type, positive amount.
+      description: >-
+        Eight-field v2 courier score event; positive amount and per-courier source sequence. User enforces
+        sequence across directions.
       correlationId:
         $ref: '#/components/correlationIds/eventIdentity'
       headers:
         type: object
         additionalProperties: false
-        required: [eventId, eventType, eventVersion]
+        required:
+          - eventId
+          - eventType
+          - eventVersion
         properties:
-          eventId: {type: string, format: uuid}
-          eventType: {type: string, const: PenaltyScoreDeductionEvent}
-          eventVersion: {type: string, const: '1'}
+          eventId:
+            type: string
+            format: uuid
+          eventType:
+            type: string
+            const: PenaltyScoreDeductionEvent
+          eventVersion:
+            type: string
+            const: '2'
       payload:
         $ref: '#/components/schemas/PenaltyScoreDeductionEvent'
       examples:
         - headers:
             eventId: 39b595d0-c954-3a96-b2b1-008688ba3a80
             eventType: PenaltyScoreDeductionEvent
-            eventVersion: '1'
+            eventVersion: '2'
           payload:
             eventId: 39b595d0-c954-3a96-b2b1-008688ba3a80
             eventType: PenaltyScoreDeductionEvent
@@ -425,6 +424,7 @@ components:
             penaltyAmount: 1
             occurredAt: '2026-10-14T08:00:00Z'
             appliedReason: SUCCESSFUL_DELIVERY
+            courierSequence: 3
     OpenOrderRefundTaskEvent:
       name: OpenOrderRefundTaskEvent
       title: Refund task - compact schema v2
@@ -602,46 +602,125 @@ components:
     PenaltyScoreAdditionEvent:
       type: object
       additionalProperties: false
-      required: [eventId, eventType, orderId, courierId, penaltyAmount, occurredAt, appliedReason]
+      required:
+        - eventId
+        - eventType
+        - orderId
+        - courierId
+        - penaltyAmount
+        - occurredAt
+        - appliedReason
+        - courierSequence
       properties:
-        eventId: {type: string, format: uuid}
-        eventType: {type: string, const: PenaltyScoreAdditionEvent}
-        orderId: {type: string, minLength: 1}
-        courierId: {type: string, minLength: 1}
-        penaltyAmount: {type: integer, enum: [1, 2, 3, 4, 10]}
-        occurredAt: {type: string, format: date-time}
-        appliedReason: {type: string, enum: [ACCEPTED_TASK_CANCELLATION, OVERDUE_DELIVERY, WRONG_LOCATION_DELIVERY, ITEM_MISHANDLING_OR_DAMAGE, DELIBERATE_ITEM_RETENTION_OR_THEFT, COURIER_UNRESPONSIVE]}
+        eventId:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+          const: PenaltyScoreAdditionEvent
+        orderId:
+          type: string
+          minLength: 1
+        courierId:
+          type: string
+          minLength: 1
+        penaltyAmount:
+          type: integer
+          enum:
+            - 1
+            - 2
+            - 3
+            - 4
+            - 10
+        occurredAt:
+          type: string
+          format: date-time
+        appliedReason:
+          type: string
+          enum:
+            - ACCEPTED_TASK_CANCELLATION
+            - OVERDUE_DELIVERY
+            - WRONG_LOCATION_DELIVERY
+            - ITEM_MISHANDLING_OR_DAMAGE
+            - DELIBERATE_ITEM_RETENTION_OR_THEFT
+            - COURIER_BAD_ATTITUDE
+            - COURIER_UNRESPONSIVE
+        courierSequence:
+          type: integer
+          minimum: 1
       oneOf:
         - properties:
-            appliedReason: {const: ACCEPTED_TASK_CANCELLATION}
-            penaltyAmount: {const: 2}
+            appliedReason:
+              const: ACCEPTED_TASK_CANCELLATION
+            penaltyAmount:
+              const: 2
         - properties:
-            appliedReason: {const: OVERDUE_DELIVERY}
-            penaltyAmount: {const: 1}
+            appliedReason:
+              const: OVERDUE_DELIVERY
+            penaltyAmount:
+              const: 1
         - properties:
-            appliedReason: {const: WRONG_LOCATION_DELIVERY}
-            penaltyAmount: {const: 4}
+            appliedReason:
+              const: WRONG_LOCATION_DELIVERY
+            penaltyAmount:
+              const: 4
         - properties:
-            appliedReason: {const: ITEM_MISHANDLING_OR_DAMAGE}
-            penaltyAmount: {const: 4}
+            appliedReason:
+              const: ITEM_MISHANDLING_OR_DAMAGE
+            penaltyAmount:
+              const: 4
         - properties:
-            appliedReason: {const: DELIBERATE_ITEM_RETENTION_OR_THEFT}
-            penaltyAmount: {const: 10}
+            appliedReason:
+              const: DELIBERATE_ITEM_RETENTION_OR_THEFT
+            penaltyAmount:
+              const: 10
         - properties:
-            appliedReason: {const: COURIER_UNRESPONSIVE}
-            penaltyAmount: {const: 3}
+            appliedReason:
+              const: COURIER_BAD_ATTITUDE
+            penaltyAmount:
+              const: 2
+        - properties:
+            appliedReason:
+              const: COURIER_UNRESPONSIVE
+            penaltyAmount:
+              const: 3
     PenaltyScoreDeductionEvent:
       type: object
       additionalProperties: false
-      required: [eventId, eventType, orderId, courierId, penaltyAmount, occurredAt, appliedReason]
+      required:
+        - eventId
+        - eventType
+        - orderId
+        - courierId
+        - penaltyAmount
+        - occurredAt
+        - appliedReason
+        - courierSequence
       properties:
-        eventId: {type: string, format: uuid}
-        eventType: {type: string, const: PenaltyScoreDeductionEvent}
-        orderId: {type: string, minLength: 1}
-        courierId: {type: string, minLength: 1}
-        penaltyAmount: {type: integer, const: 1}
-        occurredAt: {type: string, format: date-time}
-        appliedReason: {type: string, const: SUCCESSFUL_DELIVERY}
+        eventId:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+          const: PenaltyScoreDeductionEvent
+        orderId:
+          type: string
+          minLength: 1
+        courierId:
+          type: string
+          minLength: 1
+        penaltyAmount:
+          type: integer
+          const: 1
+        occurredAt:
+          type: string
+          format: date-time
+        appliedReason:
+          type: string
+          const: SUCCESSFUL_DELIVERY
+        courierSequence:
+          type: integer
+          minimum: 1
     OpenOrderRefundTaskEvent:
       type: object
       additionalProperties: false

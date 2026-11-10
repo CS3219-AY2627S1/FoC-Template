@@ -2,7 +2,6 @@
 
 import { useCallback, useRef, useState } from "react"
 import Link from "next/link"
-import { ArrowUpRightIcon } from "lucide-react"
 import { toast } from "sonner"
 import { useAuth } from "@/components/providers/auth-provider"
 import { useOrderDisplayNames } from "@/hooks/use-order-display-names"
@@ -22,7 +21,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { AdminFilterActions, AdminFilterForm, AdminHeading, AdminLoadState, AdminPagination, CopyId, adminDate } from "@/components/admin/admin-ui"
+import { AdminFilterActions, AdminFilterForm, AdminHeading, AdminLoadState, AdminPagination, AdminRecordLink, CopyId, adminDate } from "@/components/admin/admin-ui"
 
 type ResolutionStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">
 
@@ -118,9 +117,9 @@ function ReportSection({ title, children }: { title: string; children: React.Rea
 function ReportOrderSummary({ order }: { order: AdminOrder }) {
   const displayName = useOrderDisplayNames([order])
   const content = <>
-    <div className="flex items-center justify-between gap-3"><h2 className="text-base font-medium">Order</h2><ArrowUpRightIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden /></div>
+    <h2 className="text-base font-medium">Order</h2>
     <SummaryFields rows={[
-      ["Order ID", order.id], ["Description", order.itemDescription], ["Order status", formatOrderStatus(order.status)],
+      ["Order ID", <CopyId key="order-id" id={order.id} href={"/admin/orders?orderId=" + encodeURIComponent(order.id)} linkLabel={"Open order " + order.id + " in Orders"} />], ["Description", order.itemDescription], ["Order status", formatOrderStatus(order.status)],
       ["Requester", displayName("users", order.requesterId, order.requesterName)], ["Courier", displayName("users", order.courierId, order.courierName) || "Unassigned"],
       ["Pickup", displayName("suppliers", order.pickupSupplierId, order.pickupSupplierName)], ["Delivery", displayName("suppliers", order.deliverySupplierId, order.deliverySupplierName)],
       ["Offered credits", order.offeredCredits], ["Delivery time limit", order.deliveryTimeLimitMinutes + " minutes"],
@@ -131,8 +130,7 @@ function ReportOrderSummary({ order }: { order: AdminOrder }) {
       ["Overdue", order.isOverdue == null ? "Not available" : order.isOverdue ? (order.overduePenaltyWaived ? "Yes — penalty waived" : "Yes") : "No"],
     ]} />
   </>
-  return <Link href={"/admin/orders?orderId=" + encodeURIComponent(order.id)} aria-label={"Open order " + order.id + " in Orders"}
-    className="block min-w-0 px-5 py-6 transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:px-8">{content}</Link>
+  return <section aria-label="Order" className="min-w-0 space-y-3 px-5 py-6 sm:px-8">{content}</section>
 }
 function ReportCase({ id, resolutionStorage }: { id: string; resolutionStorage?: ResolutionStorage }) {
   const api = useReportApi(); const { user, loading: authLoading } = useAuth()
@@ -185,7 +183,7 @@ function ReportCase({ id, resolutionStorage }: { id: string; resolutionStorage?:
   </>
 }
 function Participant({ id, name }: { id: string; name: string | null }) {
-  return <Link href={"/admin/users/" + encodeURIComponent(id)} className="text-sm underline underline-offset-4">{name || "Deactivated user"}</Link>
+  return <AdminRecordLink href={"/admin/users/" + encodeURIComponent(id)} className="text-sm">{name || "Deactivated user"}</AdminRecordLink>
 }
 function ResolveReportDialog({ report, onClose, onDone, resolutionStorage }: { report: DeliveryReport; onClose: () => void; onDone: () => void; resolutionStorage?: ResolutionStorage }) {
   const api = useReportApi(); const { user } = useAuth()

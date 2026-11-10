@@ -30,7 +30,7 @@ class ReportResolutionMigrationTest {
         migration("report_upgrade", "17").migrate();
         sql().update("insert into report_upgrade.order_commands(command_id,actor_id,kind,order_id,input_hash,payload) values ('old','owner','CREATE',?,'hash','{}'::jsonb)", UUID.randomUUID().toString());
         Flyway latest = migration("report_upgrade", null); latest.migrate();
-        assertEquals("20", latest.info().current().getVersion().toString());
+        assertEquals("21", latest.info().current().getVersion().toString());
         assertEquals("PENDING", sql().queryForObject("select status from report_upgrade.order_commands where command_id='old'", String.class));
         assertEquals(0, sql().queryForObject("select count(*) from report_upgrade.order_report_resolutions", Integer.class));
     }

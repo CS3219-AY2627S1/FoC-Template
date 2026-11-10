@@ -35,7 +35,7 @@ class OrderTaskEventFactoryTest {
     private final JsonMapper objectMapper = JsonMapper.builder().build();
 
     private final OrderTaskEventFactory factory = new OrderTaskEventFactory(
-            Mappers.getMapper(OrderTaskEventMapper.class));
+            Mappers.getMapper(OrderTaskEventMapper.class), TestPenaltySequences.store());
 
     @Test
     void mapsOrderFieldsWithoutSerializingCheckpointHistoryIntoTypedEvents() {

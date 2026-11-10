@@ -109,6 +109,8 @@ gc run services add-iam-policy-binding "reporting-service-$environment" --region
   --member "serviceAccount:$REPORT_CREATION_SCHEDULER_SERVICE_ACCOUNT" --role roles/run.invoker >/dev/null
 gc run services add-iam-policy-binding "order-service-$environment" --region "$REGION" \
   --member "serviceAccount:$ORDER_REPORT_COMPENSATION_PUSH_SERVICE_ACCOUNT" --role roles/run.invoker >/dev/null
+gc run services add-iam-policy-binding "order-service-$environment" --region "$REGION" \
+  --member "serviceAccount:$runtime" --role roles/run.invoker >/dev/null
 exists gc pubsub topics describe "$dlq" ||
   gc pubsub topics create "$dlq" --labels "service=reporting-service,environment=$environment,purpose=dead-letter"
 gc pubsub topics add-iam-policy-binding "$dlq" --member "$agent" --role roles/pubsub.publisher >/dev/null

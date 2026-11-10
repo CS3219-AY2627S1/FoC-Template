@@ -2,6 +2,7 @@ package sg.edu.nus.foc.user.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.nio.file.Files;
@@ -41,6 +42,13 @@ class OpenApiDocumentationTest {
     private JsonMapper mapper;
 
     @Test
+    void unifiedPenaltyPushRejectsUnauthenticatedRequests() throws Exception {
+        mvc.perform(post(PREFIX + "/internal/penalties/events")
+                .contentType("application/json").content("{}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void everyEndpointIsDocumented() throws Exception {
         String json = mvc.perform(get(PREFIX + "/v3/api-docs"))
                 .andExpect(status().isOk())
@@ -50,6 +58,8 @@ class OpenApiDocumentationTest {
 
         JsonNode paths = mapper.readTree(json).path("paths");
         assertThat(paths.isEmpty()).as("OpenAPI document lists no paths").isFalse();
+        JsonNode penalty = paths.path(PREFIX + "/internal/penalties/events").path("post");
+        for (String code : List.of("200", "400", "401", "409")) assertThat(penalty.path("responses").has(code)).isTrue();
         JsonNode directory = paths.path(PREFIX + "/admin/search").path("get");
         assertThat(directory.path("responses").has("200")).isTrue();
         for (String code : List.of("400", "401", "403", "503")) assertThat(directory.path("responses").has(code)).isTrue();

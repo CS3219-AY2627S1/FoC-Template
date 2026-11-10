@@ -38,13 +38,21 @@ public class GoogleCloudPubSubEventPublisher implements IEventPublisher<Object> 
         OrderTaskEvent orderTaskEvent = (OrderTaskEvent) event;
         try {
             byte[] eventJson = objectMapper.writeValueAsBytes(event);
-            PubsubMessage message = PubsubMessage.newBuilder()
+            PubsubMessage.Builder messageBuilder = PubsubMessage.newBuilder()
                     .setData(ByteString.copyFrom(eventJson))
                     .putAttributes("eventType", orderTaskEvent.getEventType())
                     .putAttributes("eventId", orderTaskEvent.getEventId())
-                    .putAttributes("eventVersion", Integer.toString(orderTaskEvent.getEventVersion()))
-                    .build();
+                    .putAttributes("eventVersion", Integer.toString(orderTaskEvent.getEventVersion()));
+            if (event instanceof sg.edu.nus.foc.order.messagingpublisher.dto.PenaltyScoreAdditionEvent penalty && penalty.getCourierSequence() != null) {
+                messageBuilder.setOrderingKey(penalty.getCourierId());
+            } else if (event instanceof sg.edu.nus.foc.order.messagingpublisher.dto.PenaltyScoreDeductionEvent penalty && penalty.getCourierSequence() != null) {
+                messageBuilder.setOrderingKey(penalty.getCourierId());
+            }
+            PubsubMessage message = messageBuilder.build();
             Publisher publisher = publisherFactory.forTopic(projectId, topicId);
+            // The SDK pauses an ordering key on publication errors. The durable outbox
+            // retries it; User's sequence inbox protects against ambiguous/late publishes.
+            if (!message.getOrderingKey().isEmpty()) publisher.resumePublish(message.getOrderingKey());
             ApiFuture<String> messageId = publisher.publish(message);
             return messageId.get(publishTimeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (ExecutionException | TimeoutException exception) {

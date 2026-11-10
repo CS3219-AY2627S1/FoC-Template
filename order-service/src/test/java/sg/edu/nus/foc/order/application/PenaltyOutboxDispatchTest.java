@@ -57,7 +57,8 @@ class PenaltyOutboxDispatchTest {
         assertEquals(add.getEventId(), added.getValue().getEventId());
         assertEquals(4, added.getValue().getPenaltyAmount());
         assertEquals(add.getOrderVersion(), added.getValue().getOrderVersion());
-        assertEquals(1, added.getValue().getEventVersion());
+        assertEquals(2, added.getValue().getEventVersion());
+        assertEquals(1L, added.getValue().getCourierSequence());
         ArgumentCaptor<PenaltyScoreDeductionEvent> deducted = ArgumentCaptor.forClass(PenaltyScoreDeductionEvent.class);
         verify(deduction).publishPenaltyScoreDeduction(deducted.capture());
         assertEquals(1, deducted.getValue().getPenaltyAmount());
@@ -87,7 +88,7 @@ class PenaltyOutboxDispatchTest {
 
     private OrderTaskEvent event(PenaltySystemPolicy reason) {
         Order order = Order.open("requester", "item", "pickup", "delivery", 3, 15, NOW, NOW.plusSeconds(3600));
-        return new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class))
+        return new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class), TestPenaltySequences.store())
                 .penalty("command", order, "courier", NOW, reason);
     }
 

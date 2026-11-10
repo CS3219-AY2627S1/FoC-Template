@@ -68,7 +68,7 @@ public class SecurityConfig {
         boolean emulatorEnabled = emulatorPushEnabled(
                 pushMode, emulatorHost, environment);
 
-        http.securityMatcher(ADDITION_PATH, DEDUCTION_PATH)
+        http.securityMatcher(ADDITION_PATH, DEDUCTION_PATH, "/api/users/internal/penalties/events")
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(

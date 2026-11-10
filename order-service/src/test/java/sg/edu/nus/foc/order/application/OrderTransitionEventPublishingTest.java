@@ -454,7 +454,7 @@ class OrderTransitionEventPublishingTest {
             return checkpoint;
         }).when(checkpoints).save(any(OrderCheckpoint.class));
         return new TestDependencies(orders, checkpoints, receipts, users, credits, outbox, applicationEvents,
-                spy(new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class))));
+                spy(new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class), TestPenaltySequences.store())));
     }
 
     private OrderTransitionService service(TestDependencies dependencies) {

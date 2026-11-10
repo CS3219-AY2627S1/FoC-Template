@@ -188,6 +188,9 @@ gcloud() {
                     self.assertFalse(any(c[:4] == ['pubsub', 'subscriptions', 'create', topic + '-sub'] for c in state['calls']))
                 self.assertEqual(5, len(state['subscriptions']))  # Four saga pushes plus retained DLQ recovery.
                 self.assertTrue(any('roles/run.invoker' in c for c in state['calls']))
+                self.assertTrue(any(c[:4] == ['run', 'services', 'add-iam-policy-binding', 'order-service-' + environment]
+                                    and 'serviceAccount:foc-reporting-service@protean-vigil-509704-q4.iam.gserviceaccount.com' in c
+                                    and 'roles/run.invoker' in c for c in state['calls']))
                 self.assertTrue(any('roles/iam.serviceAccountTokenCreator' in c for c in state['calls']))
                 self.assertTrue(any('--dead-letter-topic' in c for c in state['calls']))
 

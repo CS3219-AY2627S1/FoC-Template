@@ -1740,3 +1740,28 @@ User explicitly approves the revised optional-search-and-browse proposal. A sing
 - Affected artifacts: Reporting creation/storage/API/scheduler, Order hold API,
   V20 persistence and compensation push/result contracts, frontend Report form,
   AsyncAPI/OpenAPI, gateway and environment/provisioning records.
+
+
+## CHANGE-185 / ADR-069 - sequenced penalty stream (2026-11-10)
+
+Yao Xiang approves one courier-penalty-event topic per environment and per-courier transactional source numbering, durable User inbox/cursor/recovery, and coordinated legacy drain. Order/User plus necessary topic wiring are in scope; no frontend, scoring-policy or cloud-resource mutation. See [CHANGE-185](../changes/CHANGE-185-sequenced-penalty-events.md). Implemented and locally verified: 727 Order and 284 User tests pass with no failures/errors/skips; both verify/coverage gates pass. AsyncAPI, 21 CI wiring tests, three local-emulator tests, Bash syntax and Compose configuration pass. Human review, cloud provisioning, broker smoke test and coordinated legacy drain remain pending. Detailed evidence is in CHANGE-185.
+
+
+## CHANGE-186 - Active unresponsiveness and ordered admin choices (2026-11-10)
+
+Approved Yao Xiang: unresponsive3 replaces bad-attitude2 for new Admin apply/cancel selections. Report policy API and both existing Admin dialogs sort ascending (3,4,4,10), preserving ties. Old bad-attitude enum/orders/attempts/events remain readable; User accepts both historical2 and restored3 without changing scoring timing. No new component, schema/migration, topic, env, auth or live data/cloud change. Shared policy14 tests, affected Order37 tests, User287 tests and coverage/verify pass; frontend360 tests across57 files, lint/typecheck and AsyncAPI pass. Full Order suite was not repeated for this policy-only amendment; CHANGE-185 has the prior full run. Human/browser/deployed verification pending. See [CHANGE-186](../changes/CHANGE-186-unresponsive-penalty-ordering.md) and ADR-070. Report hyperlink/copy consistency remains a proposal only.
+
+
+## CHANGE-187 - Explicit Admin links/copy and Report review (2026-11-10)
+
+Approved Yao Xiang on hfix/penalty-event-ordering. Implemented shared visible underlined/arrow navigation plus separate copy icons, no text-click copying, explicit Report Order ID link to filtered Orders, and consistent profile affordances. Existing Admin components/style reused; no backend API, database, dependency, auth or infrastructure changes. RED3 assertions; 29 focused and363 full frontend tests/58files, lint/typecheck pass. Reporting read-only recheck:23 isolated tests/probes pass; resolved reservation reuse is fixed, stale-upload rejection during HOLD_PENDING remains reproducible, and participant-only hold placement still lacks trusted Reporting proof by code inspection. Temporary probes cleaned, no live records changed. Browser/deployed verification pending. Current pending contracts are in peer-service-api-feedback.md. See [CHANGE-187](../changes/CHANGE-187-admin-identifiers-report-review.md).
+
+
+## CHANGE-188 - Admin link presentation refinement (2026-11-10)
+
+Approved Yao Xiang: table navigation underlines on hover/focus only; detail navigation retains a permanent 2px underline. Remove navigation arrows and supplier-card title navigation; keep its View details link and separate copy icon. ID text never copies. Existing Admin components/theme/routes reused; no backend/API/auth/model/config change. RED3 then74 focused frontend cases, lint, route type generation/TypeScript and whitespace checks pass. Full suite/browser/Docker not rerun for this style amendment; CHANGE-187 full363 test evidence is separate. Existing backend review and policy work preserved. See [CHANGE-188](../changes/CHANGE-188-admin-link-context-styling.md).
+
+
+## CHANGE-189 / ADR-071 - Internal Reporting hold placement (2026-11-11)
+
+Approved Yao Xiang on hfix/penalty-event-ordering. Implemented PUT /api/orders/internal/report-holds/{orderId}/{reportId}; removed public placement alias, retained eligible-Orders GET. Reporting supplies a runtime service ID token separately from the delegated Firebase participant token; Order verifies both identities before unchanged scoped SQL hold logic. New client credential cache/verifier/settings and deployment/local auth wiring reuse existing identities and gateway protection; no new schema/topic/key/frontend or saga change. Full verify passes734 Order,14 common,111 Report tests with coverage/no skips;21 mocked wiring checks, both Compose variants, shell syntax, generated OpenAPI and local gateway404 check pass. No cloud/local-application restart or data change. Coordinate both deployments with linked submissions paused and wire scoped Run Invoker; deployed Google/IAM smoke pending. Separate stale-upload recovery race remains pending. [Contract/classes/sequence/rollout](internal-report-hold-auth.md).

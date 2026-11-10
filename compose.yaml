@@ -54,6 +54,7 @@ x-order-pubsub-topics: &order-pubsub-topics
   PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
   ORDER_COMPLETION_TOPIC: order-completion-local-v1
   ORDER_OPEN_REFUND_TOPIC: open-order-refund-local-v1
+  ORDER_COURIER_PENALTY_EVENT_TOPIC: courier-penalty-event-local-v1
   ORDER_COURIER_PENALTY_ADDITION_TOPIC: courier-penalty-addition-local-v1
   ORDER_COURIER_PENALTY_DEDUCTION_TOPIC: courier-penalty-deduction-local-v1
   ORDER_CREDIT_COMPENSATION_TOPIC: credit-command-compensation-local-v1
@@ -263,6 +264,7 @@ services:
       ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
       SPRING_PROFILES_ACTIVE: prod
       USER_MESSAGING_MODE: emulator
+      USER_PUBSUB_PENALTY_EVENT_SUBSCRIPTION: user-courier-penalty-event-local-v1
       USER_PUBSUB_PUSH_MODE: emulator
       PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
       PUBSUB_PROJECT_ID: demo-foc-local
@@ -332,6 +334,8 @@ services:
       REPORT_CREATION_COMPENSATION_RESULT_TOPIC: report-creation-compensation-result-local-v1
       ORDER_REPORT_CREATION_COMPENSATION_SUBSCRIPTION: projects/demo-foc-local/subscriptions/order-report-creation-compensation-local
       ORDER_REPORT_CREATION_PUSH_MODE: emulator
+      ORDER_REPORT_HOLD_AUTH_MODE: local
+      REPORT_HOLD_LOCAL_CREDENTIAL: ${REPORT_HOLD_LOCAL_CREDENTIAL:-local-emulator-report-hold-development-credential}
       REPORT_SERVICE_URL: http://reporting-service:8080
       ORDER_REPORT_RESOLUTION_TIMEOUT: 5s
       ORDER_REPORT_COMPENSATION_TOPIC: report-resolution-compensation-local-v1
@@ -385,6 +389,8 @@ services:
       REPORT_CREATION_COMPENSATION_TOPIC: report-creation-compensation-local-v1
       REPORT_CREATION_COMPENSATION_RESULT_SUBSCRIPTION: projects/demo-foc-local/subscriptions/report-creation-compensation-result-local
       REPORT_CREATION_RESULT_PUSH_MODE: emulator
+      REPORT_ORDER_HOLD_AUTH_MODE: local
+      REPORT_HOLD_LOCAL_CREDENTIAL: ${REPORT_HOLD_LOCAL_CREDENTIAL:-local-emulator-report-hold-development-credential}
       REPORT_PUBSUB_PROJECT_ID: demo-foc-local
       PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
       REPORT_RESOLUTION_RESULT_TOPIC: report-resolution-compensation-result-local-v1

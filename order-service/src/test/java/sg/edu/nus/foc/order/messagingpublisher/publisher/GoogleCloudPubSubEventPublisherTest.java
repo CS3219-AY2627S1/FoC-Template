@@ -24,6 +24,21 @@ class GoogleCloudPubSubEventPublisherTest {
     private static final String PROJECT_ID = "order-local";
     private static final String TOPIC_ID = "order-completion";
 
+    @Test void sequencedPenaltyCarriesCourierOrderingKeyAndResumesRetryableKey() {
+        var factory=mock(PubSubPublisherFactory.class);var publisher=mock(Publisher.class);
+        when(factory.forTopic(PROJECT_ID,"courier-penalty-event")).thenReturn(publisher);
+        when(publisher.publish(any(PubsubMessage.class))).thenReturn(ApiFutures.immediateFuture("broker-id"));
+        var transport=new GoogleCloudPubSubEventPublisher(factory,JsonMapper.builder().build(),PROJECT_ID,Duration.ofSeconds(2));
+        var event=new sg.edu.nus.foc.order.messagingpublisher.dto.PenaltyScoreAdditionEvent();
+        event.setEventId("event");event.setEventType("PenaltyScoreAdditionEvent");event.setEventVersion(2);
+        event.setCourierId("courier");event.setCourierSequence(42L);
+        transport.publish("courier-penalty-event",event);
+        var sent=ArgumentCaptor.forClass(PubsubMessage.class);verify(publisher).publish(sent.capture());
+        assertEquals("courier",sent.getValue().getOrderingKey());
+        assertEquals(42,JsonMapper.builder().build().readTree(sent.getValue().getData().toStringUtf8()).get("courierSequence").asLong());
+        verify(publisher).resumePublish("courier");
+    }
+
     @Test
     void waitsForPubSubMessageIdAndPublishesTypedAttributes() {
         PubSubPublisherFactory publisherFactory = mock(PubSubPublisherFactory.class);

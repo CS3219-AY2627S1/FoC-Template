@@ -31,7 +31,7 @@ def create(path, body):
 
 
 for topic in ("order-completion", "open-order-refund",
-              "courier-penalty-addition", "courier-penalty-deduction",
+              "courier-penalty-event", "courier-penalty-addition", "courier-penalty-deduction",
               "user-created", "credit-command-compensation",
               "credit-command-compensation-result",
               "report-resolution-compensation", "report-resolution-compensation-result",
@@ -64,6 +64,14 @@ create("/subscriptions/order-credit-compensation-result-local-v1", {
     "topic": "projects/demo-foc-local/topics/credit-command-compensation-result-local-v1",
     "ackDeadlineSeconds": 30,
     "pushConfig": {"pushEndpoint": "http://order-service:8080/api/orders/internal/credit-compensations"},
+})
+
+# Unified scoring stream. Existing two subscriptions remain only for backlog drain.
+create("/subscriptions/user-courier-penalty-event-local-v1", {
+    "topic": "projects/demo-foc-local/topics/courier-penalty-event-local-v1",
+    "ackDeadlineSeconds": 30,
+    "enableMessageOrdering": True,
+    "pushConfig": {"pushEndpoint": "http://user-service:8080/api/users/internal/penalties/events"},
 })
 
 # Penalty events consumed by User Service.

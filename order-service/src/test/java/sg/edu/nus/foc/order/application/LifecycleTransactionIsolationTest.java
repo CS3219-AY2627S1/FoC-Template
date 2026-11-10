@@ -112,7 +112,7 @@ class LifecycleTransactionIsolationTest {
                 orders, checkpoints, mock(CommandReceiptRepository.class), mock(UserServicePort.class),
                 mock(CreditServicePort.class), mock(OrderEventOutboxRepository.class),
                 mock(ApplicationEventPublisher.class),
-                new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class)), mock(OrderAuditLogger.class), org.mockito.Mockito.mock(sg.edu.nus.foc.order.application.PenaltyOutcomeRecorder.class));
+                new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class), TestPenaltySequences.store()), mock(OrderAuditLogger.class), org.mockito.Mockito.mock(sg.edu.nus.foc.order.application.PenaltyOutcomeRecorder.class));
         ProxyFactory proxy = new ProxyFactory(target);
         proxy.addAdvice(new TransactionInterceptor(manager, new AnnotationTransactionAttributeSource()));
         OrderTransitionService transitions = (OrderTransitionService) proxy.getProxy();
@@ -150,7 +150,7 @@ class LifecycleTransactionIsolationTest {
         OrderExpiryProcessingService target = new OrderExpiryProcessingService(
                 orders, mock(OrderCheckpointRepository.class), mock(OrderEventOutboxRepository.class),
                 mock(ApplicationEventPublisher.class),
-                new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class)), mock(OrderAuditLogger.class));
+                new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class), TestPenaltySequences.store()), mock(OrderAuditLogger.class));
         ProxyFactory proxy = new ProxyFactory(target);
         proxy.addAdvice(new TransactionInterceptor(manager, new AnnotationTransactionAttributeSource()));
         return (OrderExpiryProcessingService) proxy.getProxy();

@@ -34,7 +34,7 @@ class OrderExpiryProcessingServiceTest {
     private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
     private final OrderExpiryProcessingService expiry = new OrderExpiryProcessingService(
             orders, checkpoints, outbox, events,
-            new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class)), mock(OrderAuditLogger.class));
+            new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class), TestPenaltySequences.store()), mock(OrderAuditLogger.class));
 
     @Test
     void exactDeadlineExpiresOnceAfterRecheckingTheLockedOrder() {

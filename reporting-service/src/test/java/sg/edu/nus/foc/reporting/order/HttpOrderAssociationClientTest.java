@@ -21,23 +21,25 @@ class HttpOrderAssociationClientTest {
     @Test void courierHoldSendsCourierScopeWithTheOriginalBearerToken() {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://orders");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        server.expect(requestTo("http://orders/api/orders/mine/active/order/report-holds/errand"))
+        server.expect(requestTo("http://orders/api/orders/internal/report-holds/order/errand"))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer courier"))
+                .andExpect(header("X-Reporting-Service-Authorization", "Bearer reporting-token"))
+                .andExpect(header("X-Serverless-Authorization", "Bearer reporting-token"))
                 .andExpect(content().json("{\"requireAssignedCourier\":true,\"reporterRole\":\"COURIER\",\"submissionId\":\"" + SUBMISSION + "\"}"))
                 .andRespond(withSuccess("{\"id\":\"order\",\"requesterId\":\"owner\",\"courierId\":\"courier\",\"status\":\"ACCEPTED\",\"reportId\":\"errand\",\"isCompletionHold\":true}", MediaType.APPLICATION_JSON));
-        assertEquals("owner", new HttpOrderAssociationClient(builder.build())
+        assertEquals("owner", new HttpOrderAssociationClient(builder.build(), () -> "Bearer reporting-token")
                 .placeReportHold("order", "errand", SUBMISSION, true, "Bearer courier", "COURIER").requesterId());
         server.verify();
     }
     @Test void placesTheAtomicActiveOrderHoldAndForwardsAuthorization() {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://orders");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        server.expect(once(), requestTo("http://orders/api/orders/mine/active/order%20one/report-holds/report%2Fone"))
+        server.expect(once(), requestTo("http://orders/api/orders/internal/report-holds/order%20one/report%2Fone"))
                 .andExpect(method(org.springframework.http.HttpMethod.PUT))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer abc"))
                 .andExpect(content().json("{\"requireAssignedCourier\":true,\"submissionId\":\"" + SUBMISSION + "\"}"))
                 .andRespond(withSuccess("{\"id\":\"order one\",\"requesterId\":\"owner\",\"courierId\":\"courier\",\"status\":\"DELIVERED\",\"reportId\":\"report/one\",\"isCompletionHold\":true}", MediaType.APPLICATION_JSON));
-        AssociatedOrder order = new HttpOrderAssociationClient(builder.build())
+        AssociatedOrder order = new HttpOrderAssociationClient(builder.build(), () -> "Bearer reporting-token")
                 .placeReportHold("order one", "report/one", SUBMISSION, true, "Bearer abc", "REQUESTER");
         assertEquals("owner", order.requesterId());
         assertEquals("courier", order.courierId());
@@ -52,7 +54,7 @@ class HttpOrderAssociationClientTest {
             var server = MockRestServiceServer.bindTo(builder).build();
             server.expect(anything()).andRespond(withStatus(org.springframework.http.HttpStatus.CONFLICT)
                     .contentType(MediaType.APPLICATION_JSON).body("{\"message\":\"" + message + "\"}"));
-            var failure = assertThrows(ConflictException.class, () -> new HttpOrderAssociationClient(builder.build()).placeReportHold("id", "r", true, "Bearer x"));
+            var failure = assertThrows(ConflictException.class, () -> new HttpOrderAssociationClient(builder.build(), () -> "Bearer reporting-token").placeReportHold("id", "r", true, "Bearer x"));
             assertEquals("This order has an active report. Please resolve it before proceeding.", failure.getMessage());
             server.verify();
         }
@@ -65,7 +67,7 @@ class HttpOrderAssociationClientTest {
                 .andExpect(method(org.springframework.http.HttpMethod.PUT))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer admin"))
                 .andRespond(withNoContent());
-        new HttpOrderAssociationClient(builder.build()).releaseReportHold("order", "report", "Bearer admin");
+        new HttpOrderAssociationClient(builder.build(), () -> "Bearer reporting-token").releaseReportHold("order", "report", "Bearer admin");
         server.verify();
     }
 
@@ -73,19 +75,19 @@ class HttpOrderAssociationClientTest {
         RestClient.Builder missingBuilder = RestClient.builder().baseUrl("http://orders");
         MockRestServiceServer missing = MockRestServiceServer.bindTo(missingBuilder).build();
         missing.expect(anything()).andRespond(withResourceNotFound());
-        assertThrows(NotFoundException.class, () -> new HttpOrderAssociationClient(missingBuilder.build())
+        assertThrows(NotFoundException.class, () -> new HttpOrderAssociationClient(missingBuilder.build(), () -> "Bearer reporting-token")
                 .placeReportHold("id", "report", false, "Bearer x"));
 
         RestClient.Builder conflictBuilder = RestClient.builder().baseUrl("http://orders");
         MockRestServiceServer conflict = MockRestServiceServer.bindTo(conflictBuilder).build();
         conflict.expect(anything()).andRespond(withStatus(org.springframework.http.HttpStatus.CONFLICT));
-        assertThrows(ConflictException.class, () -> new HttpOrderAssociationClient(conflictBuilder.build())
+        assertThrows(ConflictException.class, () -> new HttpOrderAssociationClient(conflictBuilder.build(), () -> "Bearer reporting-token")
                 .placeReportHold("id", "report", true, "Bearer x"));
 
         RestClient.Builder downBuilder = RestClient.builder().baseUrl("http://orders");
         MockRestServiceServer down = MockRestServiceServer.bindTo(downBuilder).build();
         down.expect(anything()).andRespond(withServerError());
-        assertThrows(DependencyUnavailableException.class, () -> new HttpOrderAssociationClient(downBuilder.build())
+        assertThrows(DependencyUnavailableException.class, () -> new HttpOrderAssociationClient(downBuilder.build(), () -> "Bearer reporting-token")
                 .placeReportHold("id", "report", false, "Bearer x"));
     }
 
@@ -100,7 +102,7 @@ class HttpOrderAssociationClientTest {
             var builder = RestClient.builder().baseUrl("http://orders");
             var server = MockRestServiceServer.bindTo(builder).build();
             server.expect(anything()).andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
-            assertThrows(DependencyUnavailableException.class, () -> new HttpOrderAssociationClient(builder.build())
+            assertThrows(DependencyUnavailableException.class, () -> new HttpOrderAssociationClient(builder.build(), () -> "Bearer reporting-token")
                     .placeReportHold("order", "report", false, "Bearer x"));
             server.verify();
         }
@@ -122,7 +124,7 @@ class HttpOrderAssociationClientTest {
         var builder = RestClient.builder().baseUrl("http://orders");
         var server = MockRestServiceServer.bindTo(builder).build();
         server.expect(anything()).andRespond(withStatus(status));
-        assertThrows(expected, () -> new HttpOrderAssociationClient(builder.build())
+        assertThrows(expected, () -> new HttpOrderAssociationClient(builder.build(), () -> "Bearer reporting-token")
                 .placeReportHold("order", "report", false, "Bearer x"));
         server.verify();
     }
@@ -132,7 +134,7 @@ class HttpOrderAssociationClientTest {
         var builder = RestClient.builder().baseUrl("http://orders");
         var server = MockRestServiceServer.bindTo(builder).build();
         server.expect(anything()).andRespond(withStatus(status));
-        assertThrows(expected, () -> new HttpOrderAssociationClient(builder.build())
+        assertThrows(expected, () -> new HttpOrderAssociationClient(builder.build(), () -> "Bearer reporting-token")
                 .releaseReportHold("order", "report", "Bearer x"));
         server.verify();
     }

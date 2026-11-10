@@ -135,7 +135,7 @@ function AdminUserDirectory() {
         <Table className="min-w-[1300px]"><TableHeader><TableRow>{["Name", "Email", "User ID", "Roles", "Account status", "Courier status", "Available credits", "Reserved credits", "Total credits", ""].map((title, index) =>
           <TableHead key={index}>{title || <span className="sr-only">Profile</span>}</TableHead>)}</TableRow></TableHeader>
           <TableBody>{data.items.map((user) => <TableRow key={user.userId}>
-            <TableCell><button type="button" className="block max-w-40 truncate text-left font-normal hover:underline" title={user.username} onClick={() => setSelectedId(user.userId)}>{user.username}</button></TableCell>
+            <TableCell><button type="button" className="inline-flex max-w-40 text-left font-normal no-underline decoration-2 underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-2 focus-visible:outline-ring" title={user.username} onClick={() => setSelectedId(user.userId)}><span className="min-w-0 truncate">{user.username}</span></button></TableCell>
             <TableCell><span className="block max-w-52 truncate" title={user.email}>{user.email}</span></TableCell>
             <TableCell><CopyId id={user.userId} compact /></TableCell>
             <TableCell><span className="block max-w-40 truncate" title={user.roles.join(", ")}>{user.roles.join(", ")}</span></TableCell>

@@ -1,5 +1,9 @@
 # Reporting Service handoff — Order integration
 
+## Effective CHANGE-189 - Internal hold authentication (2026-11-11)
+
+Hold placement now calls Order directly at `PUT /api/orders/internal/report-holds/{orderId}/{reportId}`. The former public placement URL is removed; authenticated GET /api/orders/mine/active is unchanged. HttpOrderAssociationClient forwards the participant Firebase Authorization token and adds the Reporting runtime Google ID token in X-Reporting-Service-Authorization and X-Serverless-Authorization. Order validates BOTH identities before the existing scoped hold transaction. ReportHoldCredentials obtains cached/refreshable tokens from ADC; no key file or new account/topic. Both local Compose variants use an explicit emulator-only development credential with environment/project guards. New settings, exact contract, class/sequence diagrams, scoped runtime Run Invoker grant, local rebuild and coordinated rollout: [internal hold handoff](../order-service/docs/internal-report-hold-auth.md). Report submission/resolution/saga APIs are unchanged. Pause linked submissions while deploying the pair; do not leave the old public placement alias enabled. Tests/verification are in CHANGE-189; cloud execution is not implied.
+
 Updated 2026-10-30 for Yao Xiang on `feat/reporting-service`. AI assistance: OpenAI Codex; human review pending. This replaces the former blocker-only handoff. Verification evidence is recorded in `docs/order-resolution-saga.md`.
 
 ## Reporting eligibility and frontend
@@ -13,10 +17,10 @@ For ORDER/COURIER, the requester form reads `GET /api/orders/mine/active?page=1&
 Reporting generates a report ID, then forwards the requester's Firebase token to:
 
 ```http
-PUT /api/orders/mine/active/{orderId}/report-holds/{reportId}
+PUT /api/orders/internal/report-holds/{orderId}/{reportId}
 Content-Type: application/json
 
-{"requireAssignedCourier":true}
+{"requireAssignedCourier":true,"reporterRole":"REQUESTER","submissionId":"11111111-1111-4111-8111-111111111111"}
 ```
 
 Order locks the eligible requester-owned row and places that report's hold atomically. Its six-field response is `id, requesterId, courierId, status, reportId, isCompletionHold`. A retry reuses the hold and returns the **current** snapshot, which may have progressed. Missing/unowned/OPEN/terminal orders return indistinguishable 404s; binding, released-hold, missing-courier or lock conflicts return 409. Report validates the IDs, assigned courier, status and hold before saving.

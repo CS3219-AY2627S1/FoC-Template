@@ -3591,3 +3591,28 @@ expiry. Implementation is complete in the working tree.
 - **Prompt:** "yes fix the tests in the current branch"
 - **Key response:** Repaired the five stale V20-era assertions by supplying the required submission ID, expecting Flyway V20, and counting V20's added Order foreign key. The first complete run then exposed the 80% JaCoCo branch gate, so positive and negative `ReportCreationSettings` safety-gate scenarios were added without changing production behavior. The focused controller/PostgreSQL suite passes 24 tests. Final Order/common `verify` passes 714 Order and 13 common tests with zero failures, errors, or skips; OpenAPI, packaging, and coverage gates pass at 80.25% branch and 93.78% line coverage. The delayed Surefire shutdown/connection diagnostics are non-fatal.
 - **Author verification:** Automated verification is complete; human review complete.
+
+
+## CHANGE-185 - sequenced courier penalty integration
+
+Tool: OpenAI Codex (GPT-6), 2026-11-10. Mode: implementation/tests/documentation. User approved unified topic, per-courier numbering and User Service changes. Scope: Order/User, required topic wiring, contracts/tests. No cloud/data/commit/push action. Full verify passes: 727 Order and 284 User tests, no failures/errors/skips, coverage checks pass; AsyncAPI and 21 mocked CI wiring tests pass. Initial RED contract failed as intended; migration-version assertion and retry-fairness edge corrected with regression coverage. No live cloud/broker test or deployment; human review/cutover pending.
+
+
+## CHANGE-186 - Courier unresponsiveness and ascending admin choices
+
+Tool: OpenAI Codex (GPT-6), 2026-11-10. Mode: implementation/tests/design proposal. User explicitly requests replacing active bad-attitude2 with unresponsive3 and ascending Apply penalty/Cancel choices. Common/Order/User contract compatibility and Admin dialogs updated. Existing saved enum/outbox facts preserved; no migration/data/cloud/commit/push action. RED: three common policy assertions and both UI ordering checks failed before source changes. Final: common14, affected Order37, User287, frontend360 tests pass; coverage/verify, lint/typecheck and AsyncAPI pass. Initial User run had all tests green but branch coverage79.9%; added meaningful legacy concurrent-duplicate ACK/failure cases without lowering gates. Browser/deployment verification and human review pending. User then requested a report link/copy design: inspected current controls and proposed explicit navigation links plus separate copy icons; no report implementation authorized or performed.
+
+
+## CHANGE-187 - Approved Admin identifiers and Report review
+
+Tool: OpenAI Codex (GPT-6), 2026-11-10. Mode: implementation/tests/read-only review. User approves visible navigation links/separate copy icons and asks to recheck prior Report bugs. Shared Admin UI and Orders/Users/Suppliers/Reports updated; typography/theme/API unchanged. RED3 then29focused/363full frontend tests across58files, lint and typecheck pass. One unconstrained frontend run lost its IPC channel; two-worker rerun passes. Read-only Reporting review ran23 isolated Firestore/coordinator/resolution checks including two temporary probes; reservation reuse after actual resolution fixed, stale rejection leaves uncertain hold outside recovery reproduced, trusted Reporting proof absent by code inspection only. Temporary probe source/class removed after ownership/hash verification; evidence retained under ignored Order target. No Report backend fix, live data/GCP/restart/commit/push. Human/browser/deployed review pending.
+
+
+## CHANGE-188 - Context-specific Admin underlines
+
+Tool: OpenAI Codex (GPT-6), 2026-11-10. Mode: frontend implementation/tests. User requests hover-only table underlining, stronger permanent detail underlining, plain supplier card titles and icon-only copying. Shared AdminRecordLink, Orders/Users/Suppliers and existing tests updated; arrows removed. Three assertions failed before implementation, then74focused cases pass; full lint, Next route type generation/TypeScript and diff checks pass. No new business rule/API/dependency/env/backend/data/cloud/restart/commit/push. Full suite, production build and browser/mobile visual check were not repeated for this low-impact amendment. Existing CHANGE-185/186/187 work and backend review findings preserved. Human visual review pending.
+
+
+## CHANGE-189 - Reporting-authenticated internal hold endpoint
+
+Tool: OpenAI Codex (GPT-6), 2026-11-11. Mode: implementation/tests/documentation. User explicitly requests the discussed internal endpoint and associated Report client/auth/config changes. Added internal Order controller, signed Google identity verifier/claim validation, guarded local settings and Report ADC credential provider; retained participant Firebase role/ownership checks, existing SQL/sagas and response. Removed public placement; GET and frontend unchanged. Updated Compose/deploy, existing-runtime scoped Invoker grant and tests/handoffs. RED2 client path assertions; corrected initial import/mock wiring; full Order734/common14/Report111 verify/coverage pass with no skips;21 mocked provisioning tests, Compose/shell/OpenAPI and harmless local gateway404 probe pass. Existing non-fatal delayed Surefire shutdown diagnostic remains; no test/coverage gate weakened. Tokens signed locally or ADC mocked in tests; no live Google metadata/JWK/IAM proof or app restart/data/cloud/commit/push. Human/deployed review and coordinated rollout pending. Stale-upload rejection race remains outside scope.

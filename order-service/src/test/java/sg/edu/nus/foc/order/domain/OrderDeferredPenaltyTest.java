@@ -18,7 +18,7 @@ class OrderDeferredPenaltyTest {
     }
     @Test void retiredPenaltyCannotBeNewlyApplied() {
         Order order=assigned();
-        assertThrows(OrderProblem.class,()->order.applyPenalty("courier",0,PenaltySystemPolicy.COURIER_UNRESPONSIVE,"admin","Retired",NOW));
+        assertThrows(OrderProblem.class,()->order.applyPenalty("courier",0,PenaltySystemPolicy.COURIER_BAD_ATTITUDE,"admin","Retired",NOW));
         assertNull(order.getAppliedPenalty());
     }
     @Test void storedPenaltyOnlyIncreasesAndDoesNotChangeStatusOrHold() {

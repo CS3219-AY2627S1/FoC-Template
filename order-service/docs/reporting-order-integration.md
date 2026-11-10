@@ -14,7 +14,7 @@ Authority: supplied HANDOFF.md (Reporting branch feat/reporting-service, prepare
 | Operation | Contract |
 | --- | --- |
 | GET /api/orders/mine/active?page=1&size=100 | Validated caller's requester UID only. SQL owner + OPEN/ACCEPTED/IN_PROGRESS/PICKED_UP/DELIVERED filter before pagination/count. Stable createdAt descending / ID descending. One-based page; size1..100 |
-| PUT /api/orders/mine/active/{orderId}/report-holds/{reportId} | Body {"requireAssignedCourier":true/false}; requester comes only from the authenticated principal. Scoped pessimistic NOWAIT SQL lock, pending-command guard, conditional courier check and report hold write in one transaction |
+| PUT /api/orders/internal/report-holds/{orderId}/{reportId} | Body {"requireAssignedCourier":true/false}; requester comes only from the authenticated principal. Scoped pessimistic NOWAIT SQL lock, pending-command guard, conditional courier check and report hold write in one transaction |
 
 List returns the standard Order page and display fields. Hold returns id, requesterId, nullable courierId, status, reportId and isCompletionHold. Missing/unowned/inactive Orders have the same404 response; required courier or conflicting report binding409; authentication401, role403, validation400 and role dependency503. Report IDs are unique and bound to Order/requester. Released IDs cannot reactivate holds (409). No GET-then-PUT validation race is introduced. Existing post-commit outbox behavior is unchanged.
 
@@ -86,3 +86,6 @@ Yao Xiang approved the real Report backend, frontend and Order-owned saga integr
 Report now implements the exact callback-free admin resolve contract, atomic Firestore preimage/revision journal, compensation-before-original fencing, conditional restoration and stable result outbox. Admin Reports uses actual APIs in all frontend modes, required/private replies, an early-resolution warning, stable retry keys and pending-status polling; the obsolete sample/Coming soon frontend gate is superseded. The old Report release-first route rejects409. Report's deadline/filter job selects due IDs in Firestore and handles each transaction independently. Existing progress/funding/penalty rules and Order V18 remain unchanged. Cloud activation is explicit/default-off.
 
 Source and operations: [Report handoff](../../reporting-service/HANDOFF.md), [saga contract](../../reporting-service/docs/order-resolution-saga.md), [change record](../changes/CHANGE-166-reporting-integration-and-reportable-orders.md). Earlier missing-provider statements describe prior evidence. Final verification results are recorded in CHANGE-166; no User/Credit/Supplier code, GCP resource or deployed flag is modified by this task. Report creation after an uncertain hold is a separate remaining reconciliation requirement.
+
+
+Effective CHANGE-189 (2026-11-11): placement is Reporting-authenticated and internal; the old public PUT is removed, while GET stays participant-scoped. Original Firebase identity, role/ownership and SQL hold semantics remain. See [internal authentication contract](internal-report-hold-auth.md) for the separate service proof, local/cloud settings and rollout.

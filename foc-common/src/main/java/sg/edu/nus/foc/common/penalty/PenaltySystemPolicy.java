@@ -1,6 +1,7 @@
 package sg.edu.nus.foc.common.penalty;
 
 import java.util.EnumSet;
+import java.util.Comparator;
 import java.util.List;
 
 import lombok.Getter;
@@ -21,10 +22,10 @@ public enum PenaltySystemPolicy {
     // D1 additionally requires permanent suspension; this enum does not enforce it.
     DELIBERATE_ITEM_RETENTION_OR_THEFT(10),
 
-    COURIER_BAD_ATTITUDE(2),
-
     // Read compatibility only: existing persisted penalties and pending events must remain readable.
     @Deprecated
+    COURIER_BAD_ATTITUDE(2),
+
     COURIER_UNRESPONSIVE(3);
 
     // Positive magnitude; successful delivery deducts, all other cases add.
@@ -41,14 +42,14 @@ public enum PenaltySystemPolicy {
                 ACCEPTED_TASK_CANCELLATION,
                 OVERDUE_DELIVERY,
                 SUCCESSFUL_DELIVERY,
-                COURIER_UNRESPONSIVE));
+                COURIER_BAD_ATTITUDE));
 
-        return List.copyOf(cases);
+        return cases.stream().sorted(Comparator.comparingInt(PenaltySystemPolicy::getPenaltyAmount)).toList();
     }
 
     public static List<PenaltySystemPolicy> getFullPenaltyPolicy() {
         EnumSet<PenaltySystemPolicy> active = EnumSet.allOf(PenaltySystemPolicy.class);
-        active.remove(COURIER_UNRESPONSIVE);
+        active.remove(COURIER_BAD_ATTITUDE);
         return List.copyOf(active);
     }
 }

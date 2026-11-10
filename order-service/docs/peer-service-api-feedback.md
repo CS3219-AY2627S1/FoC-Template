@@ -24,11 +24,16 @@ The existing admin DELETE /api/suppliers/{supplierId} soft-deactivates, but does
 - **200:** {"supplierId":"supplier-id","hasActiveOrders":true}. Refuse deactivation with409 when true. Unknown/auth/network/5xx failure must not be treated as false. Owner still checks supplier existence and admin authority.
 - Order SQL checks pickup/delivery involvement in OPEN, ACCEPTED, IN_PROGRESS, PICKED_UP and DELIVERED, including holds. The read alone does not reserve deletion permission: agree a deactivation/admission policy for the check/delete race. No Supplier backend changes have been made here.
 
-## Report Service - remaining rollout and creation recovery
+## Report Service - remaining safety and rollout checks
 
 Resolution HTTP/compensation/result APIs and the real Admin Reports frontend are implemented; no missing admin resolution endpoint is requested. See [Report handoff](../../reporting-service/HANDOFF.md).
 
 - Provision request/result topics, authenticated subscriptions/IAM and Report composite indexes; enable both services only after cloud verification. Local actual HTTP/Firestore/PostgreSQL/PubSub verification is separate from production IAM.
-- Report creation still needs durable submission identity/recovery if hold placement succeeds but Report persistence fails. This is separate from the completed resolution saga; do not silently release/fabricate reports.
-- Reportable Orders exclude OPEN: ACCEPTED, IN_PROGRESS, PICKED_UP and DELIVERED only, with assigned courier. Current-snapshot hold retries are accepted; no snapshot migration.
+- Submission recovery is implemented, but a stale retry's upload failure can call `rejectPreHold` while another retry is `HOLD_PENDING`. Keep upload rejection conditional on its owned pre-hold phase/revision; distinguish it from a definitive Order rejection. Do not clear/fence another attempt's in-flight lease. Regression must cover a subsequent crash and recovery after Order may have committed. Current isolated Firestore probe confirms REJECTED, no compensation outbox and no expired-hold recovery candidate (CHANGE-187).
+- Deploy and smoke-test the CHANGE-189 Order/Reporting pair: placement now uses `/api/orders/internal/report-holds/{orderId}/{reportId}`, verified Reporting runtime identity plus the delegated Firebase participant token, and no public mutation alias. Match audience/account settings, wire the existing runtime's Order Run Invoker grant, and pause linked submissions during cutover. Contract/code are implemented; deployed Google credentials/IAM remain an operator verification step. See internal-report-hold-auth.md.
 - Retention and operator handling for unresolved journals/FAILED results need rollout agreement.
+
+
+## CHANGE-185 supersession: penalty ordering implemented jointly
+
+User explicitly authorizes Order/User changes for unified sequenced scoring. The prior arrival-order policy follow-up is superseded by ADR-069 (source commit order), durable inbox and per-courier cursor. Runtime/cloud readiness remains subject to verification and coordinated cutover. Theft/permanent suspension and legacy-account compatibility are unrelated, unchanged follow-ups. Contract/provisioning: penalty-event-cutover.md.

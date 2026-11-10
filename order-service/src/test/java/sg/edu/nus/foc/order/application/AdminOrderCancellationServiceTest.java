@@ -53,7 +53,7 @@ class AdminOrderCancellationServiceTest {
     @BeforeEach
     void setUp() {
         service = new AdminOrderCancellationService(orders, checkpoints, receipts, outbox, signals,
-                new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class)), mock(OrderAuditLogger.class), org.mockito.Mockito.mock(sg.edu.nus.foc.order.application.PenaltyOutcomeRecorder.class));
+                new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class), TestPenaltySequences.store()), mock(OrderAuditLogger.class), org.mockito.Mockito.mock(sg.edu.nus.foc.order.application.PenaltyOutcomeRecorder.class));
         Instant created = Instant.parse("2026-10-16T00:00:00Z");
         order = Order.open("requester", "item", "pickup", "delivery", 5, 30, created, created.plusSeconds(3600));
         when(orders.getForLifecycleUpdate(order.getId())).thenReturn(Optional.of(order));
@@ -126,9 +126,21 @@ class AdminOrderCancellationServiceTest {
     @Test
     void retiredCaseIsRejectedBeforeAnyFundingIntent() {
         assertThrows(OrderProblem.class, () -> service.cancel(order.getId(), "requester", null,
-                List.of(PenaltySystemPolicy.COURIER_UNRESPONSIVE), "admin"));
+                List.of(PenaltySystemPolicy.COURIER_BAD_ATTITUDE), "admin"));
         verify(outbox, never()).enqueue(any());
         assertEquals(OrderStatus.OPEN, order.getStatus());
+    }
+
+    @Test
+    void cancellationCanSelectTheThreePointUnresponsiveCase() {
+        order.accept("courier", 0, order.getCreatedAt().plusSeconds(1));
+        service.cancel(order.getId(), "requester", "courier", List.of(PenaltySystemPolicy.COURIER_UNRESPONSIVE), "admin");
+        ArgumentCaptor<OrderTaskEvent> captured = ArgumentCaptor.forClass(OrderTaskEvent.class);
+        verify(outbox, org.mockito.Mockito.times(2)).enqueue(captured.capture());
+        PenaltyScoreAdditionEvent addition = (PenaltyScoreAdditionEvent) captured.getAllValues().stream()
+                .filter(PenaltyScoreAdditionEvent.class::isInstance).findFirst().orElseThrow();
+        assertEquals(PenaltySystemPolicy.COURIER_UNRESPONSIVE, addition.getAppliedReason());
+        assertEquals(3, addition.getPenaltyAmount());
     }
 
     @Test

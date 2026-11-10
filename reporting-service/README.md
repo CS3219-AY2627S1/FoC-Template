@@ -50,3 +50,8 @@ Run `./mvnw verify`. Start the full local stack with `docker compose up --build`
 
 
 Verified 2026-10-29:54 Report tests and both coverage gates; actual Order/Report HTTP and two-way Pub/Sub rollback, duplication, lost-response and delayed-original handling pass. See the saga document for evidence and rollout limits.
+
+
+## CHANGE-189 / ADR-071 - Internal Reporting hold placement (2026-11-11)
+
+Approved Yao Xiang on hfix/penalty-event-ordering. Implemented PUT /api/orders/internal/report-holds/{orderId}/{reportId}; removed public placement alias, retained eligible-Orders GET. Reporting supplies a runtime service ID token separately from the delegated Firebase participant token; Order verifies both identities before unchanged scoped SQL hold logic. New client credential cache/verifier/settings and deployment/local auth wiring reuse existing identities and gateway protection; no new schema/topic/key/frontend or saga change. Full verify passes734 Order,14 common,111 Report tests with coverage/no skips;21 mocked wiring checks, both Compose variants, shell syntax, generated OpenAPI and local gateway404 check pass. No cloud/local-application restart or data change. Coordinate both deployments with linked submissions paused and wire scoped Run Invoker; deployed Google/IAM smoke pending. Separate stale-upload recovery race remains pending. [Contract/classes/sequence/rollout](../order-service/docs/internal-report-hold-auth.md).

@@ -1,3 +1,7 @@
+# Current task confirmation ? 2026-11-10
+
+Developer: Yao Xiang (existing session identity). Branch: hfix/penalty-event-ordering. Scope: approved CHANGE-185, Order/User sequenced unified penalty events and required topic wiring. Historical profiles below are retained.
+
 # Current Developer Profile
 
 ## Effective confirmation - 2026-11-09

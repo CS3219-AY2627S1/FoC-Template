@@ -23,6 +23,8 @@ import org.springframework.beans.factory.annotation.Value;
 @Component
 @Slf4j
 public class GoogleCloudPubSubPublisherFactory implements PubSubPublisherFactory {
+    @Value("${ORDER_PUBSUB_PUBLISH_ENDPOINT:asia-southeast1-pubsub.googleapis.com:443}")
+    private String publishEndpoint = "asia-southeast1-pubsub.googleapis.com:443";
     private final Function<ProjectTopicName, Publisher> publisherCreator;
     private final ManagedChannel emulatorChannel;
 
@@ -48,6 +50,7 @@ public class GoogleCloudPubSubPublisherFactory implements PubSubPublisherFactory
             publisherCreator = topic -> {
                 try {
                     return Publisher.newBuilder(topic)
+                            .setEnableMessageOrdering(true)
                             .setChannelProvider(FixedTransportChannelProvider.create(
                                     GrpcTransportChannel.create(emulatorChannel)))
                             .setCredentialsProvider(NoCredentialsProvider.create()).build();
@@ -60,7 +63,7 @@ public class GoogleCloudPubSubPublisherFactory implements PubSubPublisherFactory
                 throw new IllegalArgumentException("Cloud Pub/Sub must not receive emulator settings.");
             }
             emulatorChannel = null;
-            publisherCreator = GoogleCloudPubSubPublisherFactory::createPublisher;
+            publisherCreator = topic -> createPublisher(topic, publishEndpoint);
         }
     }
 
@@ -94,8 +97,12 @@ public class GoogleCloudPubSubPublisherFactory implements PubSubPublisherFactory
     }
 
     private static Publisher createPublisher(ProjectTopicName topicName) {
+        return createPublisher(topicName, "asia-southeast1-pubsub.googleapis.com:443");
+    }
+
+    private static Publisher createPublisher(ProjectTopicName topicName, String endpoint) {
         try {
-            return Publisher.newBuilder(topicName).build();
+            return Publisher.newBuilder(topicName).setEnableMessageOrdering(true).setEndpoint(endpoint).build();
         } catch (IOException exception) {
             throw new EventPublicationException("Could not create a Google Pub/Sub publisher.", exception);
         }

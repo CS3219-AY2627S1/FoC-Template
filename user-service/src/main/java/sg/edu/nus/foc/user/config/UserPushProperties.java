@@ -16,7 +16,8 @@ public record UserPushProperties(
         String audience,
         String serviceAccount,
         String penaltyAdditionSubscription,
-        String penaltyDeductionSubscription) {
+        String penaltyDeductionSubscription,
+        String penaltyEventSubscription) {
 
     public UserPushProperties {
         projectId = defaultValue(projectId, "demo-foc-local");
@@ -24,7 +25,10 @@ public record UserPushProperties(
         serviceAccount = defaultValue(serviceAccount, "foc-user-push-local@demo-foc-local.iam.gserviceaccount.com");
         penaltyAdditionSubscription = defaultValue(penaltyAdditionSubscription, "user-courier-penalty-addition-local-v1");
         penaltyDeductionSubscription = defaultValue(penaltyDeductionSubscription, "user-courier-penalty-deduction-local-v1");
+        penaltyEventSubscription = defaultValue(penaltyEventSubscription, "user-courier-penalty-event-local-v1");
     }
+
+    public String penaltyEventSubscriptionPath() { return subscriptionPath(penaltyEventSubscription); }
 
     public String penaltyAdditionSubscriptionPath() {
         return subscriptionPath(penaltyAdditionSubscription);

@@ -47,20 +47,25 @@ class DeferredPenaltyJpaIntegrationTest {
         o.accept("courier",0,delivered.minusSeconds(7100));o.start("courier",0,delivered.minusSeconds(late?3600:60));o.markPickedUp("courier",0);o.markDelivered("courier",0,delivered);return orders.saveAndFlush(o);
     }
     private Order apply(Order o,String cmd,PenaltySystemPolicy policy){return applications.apply(cmd,o.getId(),"courier",o.getVersion(),policy,"Investigation: "+cmd,"admin");}
-    @Test void badAttitudePersistsAndWinsOverOverdueOnlyAtCompletion() {
-        Order order = apply(delivered(true, false), "bad-attitude", PenaltySystemPolicy.COURIER_BAD_ATTITUDE);
-        assertEquals(PenaltySystemPolicy.COURIER_BAD_ATTITUDE,
+    @Test void unresponsivenessPersistsAndWinsOverOverdueOnlyAtCompletion() {
+        Order order = apply(delivered(true, false), "unresponsive", PenaltySystemPolicy.COURIER_UNRESPONSIVE);
+        assertEquals(PenaltySystemPolicy.COURIER_UNRESPONSIVE,
                 orders.findById(order.getId()).orElseThrow().getAppliedPenalty());
         assertEquals(0, outbox.count());
         transitions.complete("complete-attitude", order.getId(), "owner", order.getVersion(), null);
-        assertEquals(2, outcomes.findByOrderIdOrderByCreatedAtAsc(order.getId()).getFirst().getSignedAmount());
+        assertEquals(3, outcomes.findByOrderIdOrderByCreatedAtAsc(order.getId()).getFirst().getSignedAmount());
         assertEquals(1, outbox.findAll().stream().filter(event -> "PenaltyScoreAdditionEvent".equals(event.getEventType())).count());
     }
     @Test void badAttitudeRemainsReadableWhenTheCourierAttemptIsArchived() {
         Instant now = Instant.now();
         Order order = Order.open("owner", "books", "p", "d", 5, 30, now, now.plusSeconds(3600));
         order.accept("courier", 0, now);
-        order = apply(orders.saveAndFlush(order), "attitude-archive", PenaltySystemPolicy.COURIER_BAD_ATTITUDE);
+        // Simulate a previously persisted policy; new application now rejects this retired case.
+        org.springframework.test.util.ReflectionTestUtils.setField(order, "appliedPenalty", PenaltySystemPolicy.COURIER_BAD_ATTITUDE);
+        org.springframework.test.util.ReflectionTestUtils.setField(order, "appliedPenaltyAt", now);
+        org.springframework.test.util.ReflectionTestUtils.setField(order, "appliedPenaltyBy", "admin");
+        org.springframework.test.util.ReflectionTestUtils.setField(order, "appliedPenaltyReason", "Historical decision");
+        order = orders.saveAndFlush(order);
         String orderId = order.getId();
         // This test isolates archival persistence after an externally confirmed Credit step.
         transitions.abortConfirmed("abort-attitude", orderId, "courier", order.getVersion(), null);

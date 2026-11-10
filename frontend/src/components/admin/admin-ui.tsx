@@ -1,8 +1,10 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { CheckIcon, CopyIcon } from "lucide-react"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -32,25 +34,36 @@ export function AdminComingSoon({ title }: { title: string }) {
   </Card>
 }
 
-export function CopyId({ id, name, compact = false }: {
-  id: string | null | undefined; name?: string | null; compact?: boolean
+export function AdminRecordLink({ children, className, underlineOnHover = false, ...props }: React.ComponentProps<typeof Link> & { underlineOnHover?: boolean }) {
+  return <Link {...props} className={cn("inline-flex min-w-0 max-w-full font-normal decoration-2 underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring",
+    underlineOnHover ? "no-underline hover:underline focus-visible:underline" : "underline", className)}>
+    <span className="min-w-0 truncate">{children}</span>
+  </Link>
+}
+
+export function CopyId({ id, name, compact = false, href, linkLabel }: {
+  id: string | null | undefined; name?: string | null; compact?: boolean; href?: string; linkLabel?: string
 }) {
-  const [copied, setCopied] = useState(false)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const copied = copiedId === id
   if (!id) return <span className="text-muted-foreground">Unassigned</span>
   async function copy() {
     try {
       await navigator.clipboard.writeText(id!)
-      setCopied(true)
+      setCopiedId(id!)
       toast.success("ID copied to clipboard.")
     } catch {
       toast.error("Could not copy the ID. Select it manually: " + id)
     }
   }
-  return <button type="button" className={"inline-flex max-w-full items-center gap-1.5 rounded text-left text-sm font-normal underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring" + (compact ? " w-44 whitespace-nowrap" : "")}
-    onClick={() => void copy()} title={"Copy ID: " + id} aria-label={"Copy " + (name || id) + " ID"}>
-    <span className={compact ? "min-w-0 flex-1 truncate" : "break-all"}>{name || id}</span>
-    {copied ? <CheckIcon className="size-3 shrink-0" /> : <CopyIcon className="size-3 shrink-0 text-muted-foreground" />}
-  </button>
+  return <span className={"inline-flex max-w-full items-center gap-1.5 text-sm font-normal" + (compact ? " w-44 whitespace-nowrap" : "")}>
+    {href ? <AdminRecordLink href={href} aria-label={linkLabel} title={name || id} className={compact ? "min-w-0 flex-1" : ""}>{name || id}</AdminRecordLink>
+      : <span title={id} className={compact ? "min-w-0 flex-1 truncate" : "min-w-0 [overflow-wrap:anywhere]"}>{name || id}</span>}
+    <Button type="button" variant="ghost" size="icon-xs" className="shrink-0" data-copied={copied}
+      onClick={(event) => { event.stopPropagation(); void copy() }} title={"Copy ID: " + id} aria-label={"Copy " + (name || id) + " ID"}>
+      {copied ? <CheckIcon className="size-3" aria-hidden="true" /> : <CopyIcon className="size-3 text-muted-foreground" aria-hidden="true" />}
+    </Button>
+  </span>
 }
 
 export function AdminFilterForm({ children, onSubmit, hasToggle = false }: {

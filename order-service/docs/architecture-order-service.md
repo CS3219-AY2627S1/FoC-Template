@@ -524,3 +524,13 @@ Source and operations: [Report handoff](../../reporting-service/HANDOFF.md), [sa
 ## CHANGE-179 - Courier suspension role context (2026-11-04)
 
 Role/acceptance sequence: verified Firebase JWT -> User role-context -> immutable CallerRoleContext -> existing ROLE_* authorities plus typed courier suspension authority -> verifyCourier identity/role -> acceptance-only requireCourierAcceptance. No suspension gate on START/PICKUP/DELIVER/ABORT or courier history; domain assignment/version/lifecycle and funding holds still decide validity. Every HTTP request refreshes User context, then reuses it within the request. See ADR-067 and CHANGE-179 sequence diagram/recovery cases. Existing account deactivation and all financial/outbox architecture remain.
+
+
+## CHANGE-185 / ADR-069 - sequenced penalty stream (2026-11-10)
+
+Yao Xiang approves one courier-penalty-event topic per environment and per-courier transactional source numbering, durable User inbox/cursor/recovery, and coordinated legacy drain. Order/User plus necessary topic wiring are in scope; no frontend, scoring-policy or cloud-resource mutation. See [CHANGE-185](../changes/CHANGE-185-sequenced-penalty-events.md). Implemented and locally verified: 727 Order and 284 User tests pass with no failures/errors/skips; both verify/coverage gates pass. AsyncAPI, 21 CI wiring tests, three local-emulator tests, Bash syntax and Compose configuration pass. Human review, cloud provisioning, broker smoke test and coordinated legacy drain remain pending. Detailed evidence is in CHANGE-185.
+
+
+## CHANGE-189 / ADR-071 - Internal Reporting hold placement (2026-11-11)
+
+Approved Yao Xiang on hfix/penalty-event-ordering. Implemented PUT /api/orders/internal/report-holds/{orderId}/{reportId}; removed public placement alias, retained eligible-Orders GET. Reporting supplies a runtime service ID token separately from the delegated Firebase participant token; Order verifies both identities before unchanged scoped SQL hold logic. New client credential cache/verifier/settings and deployment/local auth wiring reuse existing identities and gateway protection; no new schema/topic/key/frontend or saga change. Full verify passes734 Order,14 common,111 Report tests with coverage/no skips;21 mocked wiring checks, both Compose variants, shell syntax, generated OpenAPI and local gateway404 check pass. No cloud/local-application restart or data change. Coordinate both deployments with linked submissions paused and wire scoped Run Invoker; deployed Google/IAM smoke pending. Separate stale-upload recovery race remains pending. [Contract/classes/sequence/rollout](internal-report-hold-auth.md).

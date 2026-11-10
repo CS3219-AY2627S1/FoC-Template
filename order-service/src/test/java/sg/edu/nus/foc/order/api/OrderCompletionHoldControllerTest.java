@@ -31,14 +31,18 @@ import sg.edu.nus.foc.order.domain.OrderProblem;
 import sg.edu.nus.foc.order.security.Role;
 import sg.edu.nus.foc.order.security.RoleProvider;
 
-@WebMvcTest(controllers = OrderCompletionHoldController.class, properties = "order.reports.creation.enabled=true")
+@WebMvcTest(controllers = {OrderCompletionHoldController.class, InternalReportHoldController.class}, properties = {"order.reports.creation.enabled=true", "ORDER_REPORT_HOLD_AUTH_MODE=local", "REPORT_HOLD_LOCAL_CREDENTIAL=test-report-hold-development-credential", "FOC_ENVIRONMENT=local", "order.security.auth.project-id=demo-foc", "order.security.auth.emulator-host=firebase:9099"})
 @ActiveProfiles("prod")
-@Import({SecurityConfiguration.class, ProductionMethodSecurityConfiguration.class, OrderMapperImpl.class})
+@Import({SecurityConfiguration.class, ProductionMethodSecurityConfiguration.class, OrderMapperImpl.class, sg.edu.nus.foc.order.config.ReportHoldSettings.class, sg.edu.nus.foc.order.security.ReportHoldCallerVerifier.class})
 class OrderCompletionHoldControllerTest {
 
 
-    private static final String PATH = "/api/orders/mine/active/order-1/report-holds/report-1";
+    private static final String PATH = "/api/orders/internal/report-holds/order-1/report-1";
     private static final String SUBMISSION = "11111111-1111-4111-8111-111111111111";
+
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder hold() {
+        return put(PATH).header("X-Reporting-Service-Authorization", "Local test-report-hold-development-credential");
+    }
 
     @Autowired
     private MockMvc mvc;
@@ -54,6 +58,14 @@ class OrderCompletionHoldControllerTest {
     @MockitoBean
     private JwtDecoder decoder;
 
+    @Test void rejectsUserOnlyOrWrongServiceProofAndRemovesThePublicPlacementRoute() throws Exception {
+        String body="{\"requireAssignedCourier\":true,\"submissionId\":\""+SUBMISSION+"\"}";
+        mvc.perform(put(PATH).with(user("owner").roles("REQUESTER")).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isUnauthorized());
+        mvc.perform(put(PATH).with(user("owner").roles("REQUESTER")).header("X-Reporting-Service-Authorization","Local wrong").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isUnauthorized());
+        mvc.perform(put("/api/orders/mine/active/order-1/report-holds/report-1").with(user("owner").roles("REQUESTER")).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isNotFound());
+        org.mockito.Mockito.verifyNoInteractions(holds);
+    }
+
     @Test void courierModeUsesVerifiedIdentityAndCannotUseRequesterMode() throws Exception {
         when(queries.assignedActiveTo("courier", 1, 20)).thenReturn(
                 new sg.edu.nus.foc.order.domain.repository.OrderPage(java.util.List.of(), 0, 20, 0, 0));
@@ -63,10 +75,10 @@ class OrderCompletionHoldControllerTest {
         verify(queries).assignedActiveTo("courier", 1, 20);
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/orders/mine/active")
                 .with(user("courier").roles("COURIER"))).andExpect(status().isForbidden());
-        mvc.perform(put(PATH).with(user("courier").roles("REQUESTER")).contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(hold().with(user("courier").roles("REQUESTER")).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"requireAssignedCourier\":true,\"reporterRole\":\"COURIER\",\"submissionId\":\""+SUBMISSION+"\"}"))
                 .andExpect(status().isForbidden());
-        mvc.perform(put(PATH).with(user("courier").roles("COURIER")).contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(hold().with(user("courier").roles("COURIER")).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"requireAssignedCourier\":true,\"reporterRole\":\"ADMIN\",\"submissionId\":\""+SUBMISSION+"\"}"))
                 .andExpect(status().isBadRequest());
     }
@@ -85,7 +97,7 @@ class OrderCompletionHoldControllerTest {
         Order order = Order.open("owner", "books", "p", "d", 5, 30, Instant.now(), Instant.now().plusSeconds(3600));
         order.accept("courier", 0, Instant.now());
         when(holds.placeActive("order-1","report-1",SUBMISSION,"courier",true,null,"PARTICIPANT")).thenReturn(order);
-        mvc.perform(put(PATH).with(user("courier").roles("COURIER")).contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(hold().with(user("courier").roles("COURIER")).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"requireAssignedCourier\":true,\"reporterRole\":\"PARTICIPANT\",\"submissionId\":\""+SUBMISSION+"\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.requesterId").value("owner"));
     }
@@ -95,7 +107,7 @@ class OrderCompletionHoldControllerTest {
         order.accept("courier", 0, Instant.now());
         order.placeCourierReportHold("courier");
         when(holds.placeActive("order-1","report-1",SUBMISSION,"courier",true,null,"COURIER")).thenReturn(order);
-        mvc.perform(put(PATH).with(user("courier").roles("COURIER")).contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(hold().with(user("courier").roles("COURIER")).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"requireAssignedCourier\":true,\"reporterRole\":\"COURIER\",\"submissionId\":\""+SUBMISSION+"\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.requesterId").value("owner"))
                 .andExpect(jsonPath("$.courierId").value("courier"));
@@ -103,11 +115,11 @@ class OrderCompletionHoldControllerTest {
 
     @Test
     void requiresAuthenticationAndRequesterRole() throws Exception {
-        mvc.perform(put(PATH).contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(hold().contentType(MediaType.APPLICATION_JSON)
                         .content("{\"requireAssignedCourier\":false,\"submissionId\":\"" + SUBMISSION + "\"}"))
                 .andExpect(status().isUnauthorized());
         for (String role : new String[] {"COURIER", "ADMIN"}) {
-            mvc.perform(put(PATH).with(user("owner").roles(role)).contentType(MediaType.APPLICATION_JSON)
+            mvc.perform(hold().with(user("owner").roles(role)).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"requireAssignedCourier\":false,\"submissionId\":\"" + SUBMISSION + "\"}"))
                     .andExpect(status().isForbidden());
         }
@@ -123,7 +135,7 @@ class OrderCompletionHoldControllerTest {
         order.placeCompletionHold("owner");
         when(holds.placeActive("order-1","report-1",SUBMISSION,"owner",false,"Bearer token","REQUESTER")).thenReturn(order);
 
-        mvc.perform(put(PATH).header("Authorization", "Bearer token").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(hold().header("Authorization", "Bearer token").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"requireAssignedCourier\":false,\"submissionId\":\""+SUBMISSION+"\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(order.getId()))
@@ -137,12 +149,12 @@ class OrderCompletionHoldControllerTest {
 
     @Test
     void rejectsInvalidPayloadAndHidesOwnerMismatch() throws Exception {
-        mvc.perform(put(PATH).with(user("owner").roles("REQUESTER"))
+        mvc.perform(hold().with(user("owner").roles("REQUESTER"))
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isBadRequest());
         when(holds.placeActive("order-1","report-1",SUBMISSION,"other",false,null,"REQUESTER"))
                 .thenThrow(OrderProblem.notFound("Active order not found."));
-        mvc.perform(put(PATH).with(user("other").roles("REQUESTER"))
+        mvc.perform(hold().with(user("other").roles("REQUESTER"))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"requireAssignedCourier\":false,\"submissionId\":\""+SUBMISSION+"\"}"))
                 .andExpect(status().isNotFound());
     }
@@ -151,7 +163,7 @@ class OrderCompletionHoldControllerTest {
     void reportsBindingConflictAndHasNoReleaseOperation() throws Exception {
         when(holds.placeActive("order-1","report-1",SUBMISSION,"owner",false,null,"REQUESTER"))
                 .thenThrow(OrderProblem.conflict("The report hold conflicts with an existing placement."));
-        mvc.perform(put(PATH).with(user("owner").roles("REQUESTER"))
+        mvc.perform(hold().with(user("owner").roles("REQUESTER"))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"requireAssignedCourier\":false,\"submissionId\":\""+SUBMISSION+"\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("CONFLICT"));

@@ -25,6 +25,29 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe("Admin Order row actions", () => {
+  it("sorts cancellation penalty choices by ascending points and submits the unresponsive case", async () => {
+    const policies = [{ policy: "DELIBERATE_ITEM_RETENTION_OR_THEFT", penaltyAmount: 10 },
+      { policy: "WRONG_LOCATION_DELIVERY", penaltyAmount: 4 }, { policy: "COURIER_UNRESPONSIVE", penaltyAmount: 3 },
+      { policy: "ITEM_MISHANDLING_OR_DAMAGE", penaltyAmount: 4 }]
+    api.penaltyPolicies.mockResolvedValue(policies)
+    render(<AdminOrders />)
+    fireEvent.click(await screen.findByRole("radio", { name: "Select order selected-order-1" }))
+    fireEvent.click(screen.getByRole("button", { name: "Cancel order" }))
+    const dialog = await screen.findByRole("dialog", { name: "Cancel this order?" })
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Apply penalty" }))
+    const unresponsive = await within(dialog).findByRole("radio", { name: /Courier unresponsive/ })
+    const choices = within(dialog).getAllByRole("radio").filter(input => input.getAttribute("name") === "cancellation-policy")
+    expect(choices.map(input => input.closest("label")?.textContent)).toEqual([
+      "Courier unresponsive3 points", "Wrong location delivery4 points", "Item mishandling or damage4 points", "Deliberate item retention or theft10 points"])
+    expect(policies.map(item => item.penaltyAmount)).toEqual([10, 4, 3, 4])
+    fireEvent.click(unresponsive)
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "Admin reason" }))
+    fireEvent.pointerDown(await screen.findByRole("option", { name: "Report investigation resolved" }), { pointerType: "mouse" })
+    fireEvent.click(await screen.findByRole("option", { name: "Report investigation resolved" }))
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm cancellation" }))
+    await waitFor(() => expect(api.resolveOrder).toHaveBeenCalledWith(order.id, "cancel",
+      expect.objectContaining({ appliedPenalties: ["COURIER_UNRESPONSIVE"] })))
+  })
   it("opens Apply penalty and has no adjustment or admin completion",async()=>{
     render(<AdminOrders />)
     fireEvent.click(await screen.findByRole("radio",{name:"Select order selected-order-1"}))
