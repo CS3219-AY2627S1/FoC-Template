@@ -1,0 +1,17 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-11-08
+# Scope: Implemented the recurring monitoring collector timer configuration.
+# Author review: I validated correctness and added boundary checks where needed.
+
+[Unit]
+Description=Collect FoC health once per minute
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=foc-monitoring.service
+
+[Install]
+WantedBy=timers.target
+

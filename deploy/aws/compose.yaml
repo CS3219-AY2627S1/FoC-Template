@@ -1,0 +1,254 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-11-02, 2026-11-03
+# Scope: Implemented cloud application, worker and supporting-container configuration.
+# Author review: I validated correctness and added boundary checks where needed.
+
+name: foc-cloud
+
+x-app: &app
+  restart: unless-stopped
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  networks: [backend]
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: local
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-user-env: &user-env
+  ENVIRONMENT: production
+  DATABASE_URL: ${USER_DATABASE_URL:?Generate the EC2 cloud environment first}
+  JWT_PRIVATE_KEY_PATH: /run/foc-user-keys/jwt_private_key.pem
+  JWT_PUBLIC_KEY_PATH: /run/foc-user-keys/jwt_public_key.pem
+  JWT_ISSUER: foc-user-service
+  JWT_AUDIENCE: foc-services
+  OTP_HMAC_SECRET: ${OTP_HMAC_SECRET:?Generate cloud secrets first}
+  SUPPLIER_SERVICE_SHARED_SECRET: ${SUPPLIER_SERVICE_SHARED_SECRET:?Generate cloud secrets first}
+  CHAT_SERVICE_SHARED_SECRET: ${CHAT_SERVICE_SHARED_SECRET:?Generate cloud secrets first}
+  SMTP_HOST: mailpit
+  SMTP_PORT: "1025"
+  SMTP_FROM: no-reply@foc.local
+  # Existing cloud environments remain on Mailpit until SES is deliberately enabled.
+  OTP_EMAIL_PROVIDER: ${OTP_EMAIL_PROVIDER:-smtp}
+  SES_REGION: ${SES_REGION:-ap-southeast-1}
+  SES_FROM_ADDRESS: ${SES_FROM_ADDRESS:-}
+
+x-order-env: &order-env
+  ENVIRONMENT: production
+  DATABASE_URL: ${ORDER_DATABASE_URL:?Generate the EC2 cloud environment first}
+  USER_SERVICE_BASE_URL: http://user-service:8000
+  SUPPLIER_SERVICE_BASE_URL: http://supplier-service:8001
+  CREDIT_SERVICE_BASE_URL: http://credit-service:8003
+  CREDIT_SERVICE_SECRET: ${ORDER_CREDIT_SHARED_SECRET:?Generate cloud secrets first}
+
+x-credit-env: &credit-env
+  ENVIRONMENT: production
+  DATABASE_URL: ${CREDIT_DATABASE_URL:?Generate the EC2 cloud environment first}
+  USER_SERVICE_BASE_URL: http://user-service:8000
+  ORDER_SERVICE_SECRET: ${ORDER_CREDIT_SHARED_SECRET:?Generate cloud secrets first}
+  INITIAL_CREDIT_ALLOCATION: "20"
+
+x-chat-env: &chat-env
+  DATABASE_URL: ${CHAT_DATABASE_URL:?Generate the EC2 cloud environment first}
+  USER_SERVICE_BASE_URL: http://user-service:8000
+  CHAT_SERVICE_SHARED_SECRET: ${CHAT_SERVICE_SHARED_SECRET:?Generate cloud secrets first}
+  JWT_ISSUER: foc-user-service
+  JWT_AUDIENCE: foc-services
+  ALLOWED_ORIGINS: '["${FOC_PUBLIC_ORIGIN:?Set the browser origin}"]'
+  RABBITMQ_URL: amqp://${RABBITMQ_USER:?}:${RABBITMQ_PASSWORD:?}@rabbitmq:5672/
+
+services:
+  web-client:
+    <<: *app
+    build: ../../web-client
+    ports: ["127.0.0.1:3000:80"]
+    volumes:
+      - ./nginx:/etc/nginx/foc:ro
+    depends_on:
+      user-service: {condition: service_healthy}
+      supplier-service: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1/healthz]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+
+  user-service:
+    <<: *app
+    build: ../../user-service
+    # Match the private key owner's non-root host UID; keep host key mode 0600.
+    user: ${FOC_USER_UID:?}:${FOC_USER_GID:?}
+    environment: *user-env
+    volumes: ["./secrets/user:/run/foc-user-keys:ro"]
+    depends_on:
+      mailpit: {condition: service_started}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=6)"]
+      interval: 15s
+      timeout: 7s
+      retries: 6
+      start_period: 20s
+
+  outbox-publisher:
+    <<: *app
+    build: ../../user-service
+    command: [outbox-publisher]
+    user: ${FOC_USER_UID:?}:${FOC_USER_GID:?}
+    environment:
+      <<: *user-env
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:?}:${RABBITMQ_PASSWORD:?}@rabbitmq:5672/
+    volumes: ["./secrets/user:/run/foc-user-keys:ro"]
+    depends_on:
+      user-service: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+
+  supplier-service:
+    <<: *app
+    build: ../../supplier-service
+    environment:
+      SUPPLIER_DATABASE_URL: ${SUPPLIER_DATABASE_URL:?Generate the EC2 cloud environment first}
+      USER_SERVICE_BASE_URL: http://user-service:8000
+      SUPPLIER_SERVICE_SHARED_SECRET: ${SUPPLIER_SERVICE_SHARED_SECRET:?}
+      USER_SERVICE_JWT_ISSUER: foc-user-service
+      USER_SERVICE_JWT_AUDIENCE: foc-services
+    depends_on:
+      user-service: {condition: service_healthy}
+
+  order-service:
+    <<: *app
+    build: ../../order-service
+    environment:
+      <<: *order-env
+      # Only Admin Service may hold errands in, or release them from, DISPUTED.
+      ADMIN_SERVICE_SECRET: ${ORDER_ADMIN_SHARED_SECRET:?Generate cloud secrets first}
+
+  order-recovery:
+    <<: *app
+    build: ../../order-service
+    command: [order-recovery]
+    environment: *order-env
+    healthcheck: {disable: true}
+    depends_on:
+      order-service: {condition: service_healthy}
+
+  order-expiry:
+    <<: *app
+    build: ../../order-service
+    command: [order-expiry]
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: ${ORDER_DATABASE_URL:?}
+    healthcheck: {disable: true}
+    depends_on:
+      order-service: {condition: service_healthy}
+
+  order-outbox:
+    <<: *app
+    build: ../../order-service
+    command: [order-outbox]
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: ${ORDER_DATABASE_URL:?}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:?}:${RABBITMQ_PASSWORD:?}@rabbitmq:5672/
+    healthcheck: {disable: true}
+    depends_on:
+      order-service: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+
+  credit-service:
+    <<: *app
+    build: ../../credit-service
+    environment: *credit-env
+
+  credit-consumer:
+    <<: *app
+    build: ../../credit-service
+    command: [credit-consumer]
+    environment:
+      <<: *credit-env
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:?}:${RABBITMQ_PASSWORD:?}@rabbitmq:5672/
+    healthcheck: {disable: true}
+    depends_on:
+      credit-service: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+
+  chat-service:
+    <<: *app
+    profiles: [chat]
+    build: ../../chat-service
+    environment: *chat-env
+    depends_on:
+      user-service: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/health/ready', timeout=6)"]
+      interval: 15s
+      timeout: 7s
+      retries: 6
+      start_period: 20s
+
+  chat-outbox:
+    <<: *app
+    profiles: [chat]
+    build: ../../chat-service
+    command: [chat-outbox]
+    environment: *chat-env
+    depends_on:
+      chat-service: {condition: service_healthy}
+
+  admin-service:
+    <<: *app
+    profiles: [admin]
+    build: ../../admin-service
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: ${ADMIN_DATABASE_URL:?Generate the EC2 cloud environment first}
+      USER_SERVICE_BASE_URL: http://user-service:8000
+      ORDER_SERVICE_BASE_URL: http://order-service:8002
+      ORDER_SERVICE_SECRET: ${ORDER_ADMIN_SHARED_SECRET:?Generate cloud secrets first}
+
+  voice-assist-service:
+    <<: *app
+    profiles: [voice-assist]
+    build: ../../voice-assist-service
+    environment:
+      ENVIRONMENT: production
+      USER_SERVICE_BASE_URL: http://user-service:8000
+      SUPPLIER_SERVICE_BASE_URL: http://supplier-service:8001
+      VOICE_ASSIST_PROVIDER: openai
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+
+  mailpit:
+    <<: *app
+    image: axllent/mailpit:v1.27.3
+    # Demo SMTP sink. Access the inbox only through a private SSM tunnel.
+    ports: ["127.0.0.1:8025:8025"]
+    volumes: ["mailpit-data:/data"]
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: "100"
+
+  rabbitmq:
+    <<: *app
+    image: rabbitmq:4.1-management
+    hostname: foc-cloud-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?}
+      RABBITMQ_NODENAME: rabbit@foc-cloud-rabbitmq
+    volumes: ["rabbitmq-data:/var/lib/rabbitmq"]
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+networks:
+  backend:
+
+volumes:
+  rabbitmq-data:
+  mailpit-data:
+

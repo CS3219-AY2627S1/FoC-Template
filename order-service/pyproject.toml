@@ -1,0 +1,52 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6-astra), date: 2026-10-09, 2026-10-11
+# Scope: Added Order packaging, dependencies, worker entry points and test/lint settings.
+# Author review: I validated correctness and added boundary checks where needed.
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "foc-order-service"
+version = "0.1.0"
+description = "FoC Order Service"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "aio-pika>=9.5,<10.0",
+  "asyncpg>=0.30,<1.0",
+  "fastapi>=0.115,<1.0",
+  "httpx>=0.28,<1.0",
+  "pydantic-settings>=2.7,<3.0",
+  "sqlalchemy[asyncio]>=2.0.36,<3.0",
+  "uvicorn[standard]>=0.32,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9.0",
+  "pytest-asyncio>=0.25,<1.0",
+  "ruff>=0.9,<1.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = ["integration: checks against explicitly configured isolated Order databases"]
+
+[project.scripts]
+order-recovery = "app.orders.worker:main"
+order-expiry = "app.orders.lifecycle_worker:expiry_main"
+order-outbox = "app.orders.lifecycle_worker:publisher_main"
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

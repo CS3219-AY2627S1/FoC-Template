@@ -1,0 +1,101 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-11-03
+# Scope: Added optional SES configuration to the User container environment.
+# Author review: I validated correctness and added boundary checks where needed.
+
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-5.6-terra), date: 2026-09-20, 2026-09-21
+# Tool: GitHub Copilot, date: 2026-09-20
+# Scope: Generated the local User Service launcher and updated supporting containers, key
+# mounts, and client startup.
+# Author review: I validated correctness and added boundary checks where needed.
+
+services:
+  web-client:
+    build:
+      context: ../web-client
+    ports:
+      - "3000:80"
+    depends_on:
+      user-service:
+        condition: service_healthy
+
+  user-service:
+    build:
+      context: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-}
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      OTP_EMAIL_PROVIDER: smtp
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-foc_user_service}:${RABBITMQ_PASSWORD:-foc-local-rabbitmq}@rabbitmq:5672/
+    volumes:
+      - ./secrets/development:/app/secrets/development:ro
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - default
+      - user-service-internal
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health/ready")
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  outbox-publisher:
+    build:
+      context: .
+    command: ["outbox-publisher"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-foc_user_service}:${RABBITMQ_PASSWORD:-foc-local-rabbitmq}@rabbitmq:5672/
+    volumes:
+      - ./secrets/development:/app/secrets/development:ro
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - default
+      - user-service-internal
+
+  mailpit:
+    image: axllent/mailpit:v1.27.3
+    ports:
+      - "8025:8025"
+
+  rabbitmq:
+    image: rabbitmq:4.1-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-foc_user_service}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-foc-local-rabbitmq}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+networks:
+  user-service-internal:
+    name: ${USER_SERVICE_INTERNAL_NETWORK:-foc-user-service-internal}
+    internal: true

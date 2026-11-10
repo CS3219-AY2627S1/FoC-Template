@@ -1,0 +1,18 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-13
+# Scope: Generated the Credit Service Docker build-context exclusions.
+# Author review: I validated correctness and supplied additional boundary checks.
+
+.env
+.env.*
+!.env.example
+!.env.docker.example
+.venv
+node_modules
+supabase/.temp
+supabase/.branches
+tests
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache

@@ -1,0 +1,65 @@
+/* AI Assistance Disclosure:
+   Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-28, 2026-11-08
+   Scope: Implemented Admin Dashboard page styles; added errand outcome choice and confirmation
+   styles.
+   Author review: I validated correctness and supplied additional boundary checks. */
+
+/* Admin Dashboard page content only; shell, topbar and navigation stay in workspace.css. */
+.admin-period, .admin-inline-form { align-items: end; display: flex; flex-wrap: wrap; gap: .75rem; margin-bottom: 1rem; }
+.admin-period .order-label, .admin-inline-form .order-label { margin: 0; min-width: min(100%, 180px); }
+.admin-grid { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+.admin-grid > .order-panel { margin: 0; }
+.admin-panel-heading { align-items: baseline; display: flex; flex-wrap: wrap; gap: .25rem .75rem; justify-content: space-between; }
+.admin-updated { color: var(--muted); font-size: .75rem; }
+.admin-panel-error, .admin-form-error { background: var(--danger-surface); border-radius: var(--radius-control); color: #843a28; margin: .5rem 0 1rem; padding: .75rem; }
+.admin-panel-error p { margin: 0 0 .6rem; }
+.admin-subheading { color: var(--ink); font-size: .85rem; margin: 1rem 0 .5rem; }
+.admin-tiles { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin: 0; }
+.admin-tiles > div { background: var(--canvas); border-radius: var(--radius-control); padding: .8rem; }
+.admin-tiles dt { color: var(--muted); font-size: .75rem; }
+.admin-tiles dd { color: var(--ink); font-size: 1.35rem; font-weight: 800; margin: .2rem 0 0; }
+.admin-state-counts { display: grid; gap: .3rem .9rem; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); margin: 0; }
+.admin-state-counts > div { display: flex; font-size: .8rem; justify-content: space-between; }
+.admin-state-counts dt { color: var(--muted); }
+.admin-state-counts dd { font-weight: 750; margin: 0; }
+.admin-table-wrap { max-width: 100%; overflow-x: auto; }
+.admin-table { border-collapse: collapse; font-size: .82rem; width: 100%; }
+.admin-table th, .admin-table td { border-bottom: 1px solid var(--border); padding: .55rem .4rem; text-align: left; vertical-align: middle; }
+.admin-table th[scope="col"] { color: var(--muted); font-size: .72rem; text-transform: uppercase; }
+.admin-table th[scope="row"] { font-weight: 650; }
+.admin-bar-cell { align-items: center; display: flex; gap: .5rem; }
+.admin-bar { background: var(--primary); border-radius: 4px; display: inline-block; height: .6rem; max-width: 75%; min-width: 2px; }
+.admin-filters { display: grid; gap: 0 1rem; grid-template-columns: minmax(0, 1fr); }
+.admin-filters .order-actions { margin: 0; }
+.admin-tabs { flex-wrap: wrap; }
+.admin-list { list-style: none; margin: 0; padding: 0; }
+.admin-list > li + li { border-top: 1px solid var(--border); }
+.admin-list-item { color: var(--ink); display: grid; gap: .35rem; min-height: 44px; padding: .8rem 0; }
+.admin-row-title { align-items: start; display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between; }
+.admin-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.admin-row-meta { color: var(--muted); display: flex; flex-wrap: wrap; font-size: .75rem; gap: .25rem .9rem; }
+.admin-badges { align-items: center; display: inline-flex; flex-wrap: wrap; gap: .4rem; }
+.admin-flag { background: var(--danger-surface); border-radius: 999px; color: var(--danger); font-size: .7rem; font-weight: 800; padding: .35rem .65rem; white-space: nowrap; }
+.dispute-badge-open { background: #fff4e6; color: #925008; }
+.dispute-badge-under_review { background: #f1effc; color: #56408f; }
+.dispute-badge-accepted, .dispute-badge-resolved { background: var(--success-surface); color: var(--success); }
+.dispute-badge-rejected, .dispute-badge-withdrawn { background: #f1f3f6; color: #526477; }
+.admin-columns { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+.admin-evidence { margin: 0; padding-left: 1.1rem; }
+.admin-choices { border: 0; display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin: 0 0 1rem; padding: 0; }
+.admin-choices legend { font-size: .85rem; font-weight: 700; margin-bottom: .5rem; }
+.admin-choices label { align-items: center; display: inline-flex; font-size: .88rem; gap: .4rem; min-height: 44px; }
+.admin-choices-stacked { flex-direction: column; flex-wrap: nowrap; }
+.admin-choices-stacked label { align-items: flex-start; }
+.admin-choices-stacked input { margin-top: .2rem; }
+.admin-choices small { color: var(--muted); display: block; font-size: .8rem; }
+.admin-confirm { background: #fff4e6; border-radius: var(--radius-control); color: #5c3606; margin: .5rem 0 1rem; padding: .9rem; }
+.admin-confirm p { margin: 0 0 .5rem; }
+.admin-confirm .order-actions { margin: .75rem 0 0; }
+@media (min-width: 700px) {
+  .admin-grid, .admin-columns, .admin-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-wide { grid-column: 1 / -1; }
+}
+@media (min-width: 1100px) {
+  .admin-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

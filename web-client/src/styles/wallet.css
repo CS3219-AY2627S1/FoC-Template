@@ -1,0 +1,51 @@
+/* AI Assistance Disclosure:
+   Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-13
+   Scope: Implemented wallet page styles matching the Figma design.
+   Author review: I validated correctness and supplied additional boundary checks. */
+
+.wallet-shell { --wallet-title: #14283d; --wallet-label: #8a98a9; --wallet-card-shadow: 0 4px 7px rgb(20 41 61 / 6%); }
+.wallet-balances { display: grid; gap: 1.25rem; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 2.6rem; }
+.wallet-stat { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--wallet-card-shadow); display: grid; gap: .62rem; align-content: start; min-height: 133px; padding: 1.5rem; }
+.wallet-stat p { color: var(--wallet-label); font-size: .69rem; font-weight: 700; letter-spacing: .05em; margin: 0; text-transform: uppercase; }
+.wallet-stat strong { color: var(--wallet-title); font-size: 1.75rem; font-weight: 700; line-height: 1.2; }
+.wallet-stat > span { color: var(--muted); font-size: .81rem; }
+
+.wallet-activity h2 { color: var(--wallet-title); font-size: 1rem; font-weight: 700; margin: 0 0 1.25rem; }
+.wallet-activity ul { display: grid; gap: .75rem; list-style: none; margin: 0 0 1rem; padding: 0; }
+.wallet-activity-row { align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-panel); box-shadow: var(--wallet-card-shadow); color: inherit; display: flex; gap: 1rem; justify-content: space-between; padding: 1.25rem; }
+a.wallet-activity-row:hover { border-color: #c9d6e6; }
+a.wallet-activity-row:focus-visible { outline: 3px solid rgb(11 79 135 / 35%); outline-offset: 2px; }
+.wallet-activity-detail { display: grid; gap: .38rem; min-width: 0; }
+.wallet-activity-detail strong { color: var(--wallet-title); font-size: .875rem; font-weight: 700; overflow-wrap: anywhere; }
+.wallet-activity-detail time { color: var(--wallet-label); font-size: .75rem; }
+.wallet-activity-amount { align-items: center; display: flex; flex: 0 0 auto; gap: .875rem; }
+.wallet-activity-amount > strong { font-size: 1.125rem; font-weight: 700; }
+.wallet-pill { border-radius: 999px; font-size: .75rem; font-weight: 700; padding: .44rem .875rem; white-space: nowrap; }
+.wallet-tone-reserved { color: #a95000; }
+.wallet-pill.wallet-tone-reserved { background: #fff3e7; }
+.wallet-tone-earned { color: #1e7a46; }
+.wallet-pill.wallet-tone-earned { background: #e9f7ee; }
+.wallet-tone-released { color: var(--primary); }
+.wallet-pill.wallet-tone-released { background: #eaf1f9; }
+.wallet-tone-paid { color: #526477; }
+.wallet-pill.wallet-tone-paid { background: #f1f3f6; }
+.wallet-empty { color: var(--muted); font-size: .88rem; }
+.wallet-footnote { color: var(--muted); font-size: .81rem; line-height: 1.5; margin: 2rem 0 0; }
+
+@media (max-width: 640px) {
+  .wallet-balances { gap: .85rem; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 1.25rem; }
+  .wallet-stat { border-radius: var(--radius-panel); gap: .3rem; min-height: 0; padding: .95rem; }
+  .wallet-stat:not(.wallet-stat-compact) { grid-column: 1 / -1; }
+  .wallet-stat p { font-size: .625rem; }
+  .wallet-stat > span { font-size: .75rem; }
+  .wallet-stat-compact strong { font-size: 1.375rem; }
+  .wallet-stat-compact .wallet-unit { display: none; }
+  .wallet-stat-compact > span { font-size: .69rem; }
+  .wallet-activity h2 { font-size: .875rem; margin-bottom: .9rem; }
+  .wallet-activity-row { padding: .8rem .95rem; }
+  .wallet-activity-detail strong { font-size: .81rem; }
+  .wallet-activity-detail time { font-size: .69rem; }
+  .wallet-activity-amount .wallet-pill { display: none; }
+  .wallet-activity-amount > strong { font-size: 1rem; }
+  .wallet-footnote { font-size: .69rem; margin-top: 1.25rem; }
+}

@@ -1,0 +1,88 @@
+/*
+ * AI Assistance Disclosure (hwangjihun):
+ * Tool: ChatGPT (Codex, model: gpt-6-astra), date: 2026-10-07
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-02
+ * Scope: Implemented Supplier navigation integration and responsive layout fixes.
+ * Author review: I validated correctness, and added boundary checks.
+ */
+
+/*
+ * AI Assistance Disclosure:
+ * Tool: ChatGPT (Codex, model: gpt-6-astra), date: 2026-10-09
+ * Scope: Adjusted shared workspace styles used by the Order screens.
+ * Author review: I validated correctness and added boundary checks where needed.
+ */
+
+.workspace-shell { background: var(--canvas); color: var(--ink); min-height: 100vh; }
+.workspace-app { min-width: 0; }
+.workspace-main { margin: 0 auto; max-width: 1180px; padding: 1.4rem 1rem 7rem; }
+.app-sidebar { display: none; }
+.app-mobile-navigation { align-items: stretch; background: #fff; border-top: 1px solid var(--border); bottom: 0; display: flex; inset-inline: 0; min-height: 65px; padding-bottom: env(safe-area-inset-bottom); position: fixed; z-index: 8; }
+.app-mobile-navigation a { align-items: center; border-top: 3px solid transparent; color: var(--muted); display: flex; flex: 1; flex-direction: column; font-size: .7rem; font-weight: 750; gap: .2rem; justify-content: center; min-width: 0; padding: .5rem .25rem; text-align: center; text-decoration: none; }
+.app-mobile-navigation a span { max-width: 100%; overflow-wrap: anywhere; }
+/* Six labels such as "Suppliers" otherwise split mid-word on 320px phones. */
+@media (max-width: 359px) { .app-mobile-navigation a { font-size: .6rem; letter-spacing: -.02em; padding-inline: 0; } }
+.app-mobile-navigation a.active { border-top-color: #f4ad43; color: #0b3d6e; }
+.app-mobile-navigation a:hover { color: #0b3d6e; }
+.app-mobile-navigation a:focus-visible { outline: 2px solid #0b4f87; outline-offset: -4px; }
+.mobile-shell .mobile-content { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
+
+/* The zero column minimum prevents wider navigation text from expanding the clipped workspace. */
+.workspace-viewport { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+.workspace-viewport .workspace-app { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.workspace-viewport .workspace-topbar { flex-shrink: 0; }
+.workspace-viewport .workspace-main { display: flex; flex: 1; flex-direction: column; min-height: 0; padding-bottom: 1rem; width: 100%; }
+.workspace-viewport .app-mobile-navigation { position: relative; }
+
+@media (min-width: 1024px) {
+  .workspace-shell { display: grid; grid-template-columns: 244px minmax(0, 1fr); }
+  .workspace-main { padding: 2.2rem clamp(1.5rem, 3vw, 3.5rem) 4rem; }
+  .app-sidebar { background: var(--sidebar-background); color: #fff; display: flex; flex-direction: column; min-height: 100vh; padding: 1.55rem 1rem; }
+  .app-sidebar-brand { color: #fff; display: block; margin: 0 .25rem 2.6rem; text-decoration: none; }
+  .app-sidebar-brand:hover { color: #fff; }
+  .app-sidebar-brand:focus-visible, .app-navigation-link:focus-visible { outline: 2px solid #f4ad43; outline-offset: 2px; }
+  .app-sidebar-navigation { margin-bottom: 2rem; }
+  .app-navigation-group + .app-navigation-group { margin-top: 1.75rem; }
+  .app-navigation-heading { color: #abc2dc; font-size: .65rem; font-weight: 800; letter-spacing: .055em; margin: 0 .6rem .65rem; text-transform: uppercase; }
+  .app-navigation-link { align-items: center; border-left: 3px solid transparent; border-radius: 8px; color: #d8e5f2; display: flex; font-size: .86rem; font-weight: 750; gap: .65rem; line-height: 1.4; margin-bottom: .25rem; min-height: 44px; padding: .65rem .8rem; text-decoration: none; }
+  .app-navigation-link svg { flex-shrink: 0; }
+  .app-navigation-link:hover, .app-navigation-link.active { background: rgb(255 255 255 / 13%); color: #fff; }
+  .app-navigation-link.active { border-left-color: #f4ad43; }
+  .app-sidebar-footnote { color: #bcd4e7; font-size: .75rem; line-height: 1.5; margin: auto .45rem .25rem; }
+  .app-mobile-navigation { display: none; }
+  .workspace-viewport { grid-template-rows: minmax(0, 1fr); }
+  .workspace-viewport .workspace-main { padding-bottom: 1.5rem; }
+  .workspace-viewport .app-sidebar { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; }
+  .workspace-viewport .app-sidebar > * { flex-shrink: 0; }
+}
+
+.workspace-topbar { align-items: center; background: var(--surface); border-bottom: 1px solid #e7ebf2; display: flex; gap: 1rem; justify-content: space-between; min-height: 68px; padding: .7rem 1.2rem; }
+.workspace-header-actions { align-items: center; display: flex; flex: 0 0 auto; gap: 1rem; }
+.workspace-mode-switch { background: #f0f4f8; border: 1px solid #dce5ee; border-radius: 12px; display: flex; gap: .25rem; padding: .25rem; }
+.workspace-mode-switch .workspace-mode-button { align-items: center; background: transparent; border: 0; border-radius: 8px; color: #526780; cursor: pointer; display: flex; font-size: .78rem; font-weight: 700; gap: .4rem; justify-content: center; min-height: 36px; padding: .4rem .7rem; white-space: nowrap; }
+.workspace-mode-button:hover { background: #e3ebf3; color: #0b3d6e; }
+.workspace-mode-button[aria-pressed="true"] { background: #0b3d6e; box-shadow: 0 1px 3px rgb(8 42 74 / 15%); color: #fff; }
+.workspace-mode-button:focus-visible { outline: 2px solid #0b4f87; outline-offset: 3px; }
+.workspace-mode-button svg { flex-shrink: 0; }
+.workspace-profile-link { align-items: center; background: #dce8f8; border-radius: 50%; color: #294b75; display: inline-flex; flex-shrink: 0; font-size: .86rem; font-weight: 800; height: 36px; justify-content: center; text-decoration: none; width: 36px; }
+.workspace-profile-link:hover { color: #294b75; }
+.workspace-greeting { color: #243952; display: none; }
+.workspace-greeting strong { font-size: .83rem; font-weight: 700; }
+.workspace-greeting > span { color: #718196; font-size: .72rem; }
+
+@media (min-width: 1024px) {
+  .workspace-topbar { min-height: 73px; padding: .8rem clamp(1.5rem, 3vw, 3.5rem); }
+  .workspace-mobile-brand { display: none; }
+  .workspace-greeting { display: grid; gap: .2rem; }
+}
+
+@media (max-width: 540px) {
+  .workspace-topbar { flex-wrap: wrap; gap: .7rem; }
+  .workspace-header-actions { display: contents; }
+  .workspace-mode-switch { flex-basis: 100%; order: 1; }
+  .workspace-mode-switch .workspace-mode-button { flex: 1; min-height: 40px; }
+}
+
+@media (max-height: 600px) {
+  .workspace-viewport .workspace-main { padding-block: .5rem; }
+}

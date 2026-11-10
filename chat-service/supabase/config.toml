@@ -1,0 +1,47 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-10-10
+# Scope: Prepared the isolated local Chat database configuration.
+# Author review: I validated correctness and added boundary checks where needed.
+
+project_id = "foc-chat-service"
+
+[api]
+enabled = false
+port = 17421
+schemas = ["public"]
+
+[db]
+port = 17422
+shadow_port = 17420
+major_version = 17
+
+[db.migrations]
+enabled = true
+
+[db.seed]
+enabled = false
+
+[studio]
+enabled = false
+port = 17423
+
+[local_smtp]
+enabled = false
+port = 17424
+
+[storage]
+enabled = false
+
+[auth]
+enabled = false
+site_url = "http://127.0.0.1:3000"
+
+[realtime]
+enabled = false
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false
+port = 17427

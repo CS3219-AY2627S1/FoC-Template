@@ -1,0 +1,47 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-10-11, 2026-10-13, 2026-10-21
+# Scope: Implemented local Chat API and publisher startup and corrected the host port mapping.
+# Author review: I validated correctness and added boundary checks where needed.
+
+# Standalone service-local launcher. Use the root chat profile for unified startup.
+name: foc-chat-dev
+services:
+  chat-service:
+    profiles: [chat]
+    build: .
+    env_file: ${CHAT_ENV_FILE:-.env}
+    environment:
+      DATABASE_URL: ${DATABASE_URL_DOCKER:?Provide Chat Service's restricted runtime URL}
+      USER_SERVICE_BASE_URL: http://user-service:8000
+      RABBITMQ_URL: ${RABBITMQ_URL_DOCKER:?Provide Chat Service's broker URL}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "127.0.0.1:8004:8003"
+    networks: [edge, user-internal, support]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/health/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+  chat-outbox:
+    profiles: [chat]
+    build: .
+    command: [chat-outbox]
+    env_file: ${CHAT_ENV_FILE:-.env}
+    environment:
+      DATABASE_URL: ${DATABASE_URL_DOCKER:?Provide Chat Service's restricted runtime URL}
+      RABBITMQ_URL: ${RABBITMQ_URL_DOCKER:?Provide Chat Service's broker URL}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks: [support]
+networks:
+  edge:
+    external: true
+    name: foc-dev_edge
+  user-internal:
+    external: true
+    name: foc-dev_user-internal
+  support:
+    external: true
+    name: foc-dev_support

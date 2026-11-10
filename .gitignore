@@ -1,7 +1,20 @@
+# AI Assistance Disclosure (hwangjihun):
+# Tool: ChatGPT (Codex, model: gpt-6-sol), date: 2026-09-23
+# Scope: Added Supplier development and test artifact ignore rules.
+# Author review: I validated correctness, and added boundary checks.
+
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-11-02
+# Scope: Added ignore rules for local Order notes and cloud-generated configuration.
+# Author review: I validated correctness and added boundary checks where needed.
+
 # Build output
 dist/
 build/
 out/
+
+# Node modules
+node_modules/
 
 # Environment / secrets
 .env
@@ -10,6 +23,39 @@ out/
 *.pem
 *.key
 
+# Python runtime and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Per-service local configuration and generated development keys
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+**/secrets/
+
+# Generated CloudFront deployment request (public metadata, local caller reference)
+deploy/aws/*.local.json
+
+# Supabase CLI runtime state; configuration, migrations, and seeds stay tracked
+**/supabase/.branches/
+**/supabase/.temp/
+
+# Local Supplier Service Postman workspace and requests
+supplier-service/.postman/
+supplier-service/postman/
+
 # OS
 .DS_Store
 Thumbs.db
+
+# Local working notes
+/.local-notes/

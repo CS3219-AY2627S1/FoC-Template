@@ -1,0 +1,57 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6-astra), date: 2026-10-09
+# Scope: Added the Order local Supabase project configuration.
+# Author review: I validated correctness and added boundary checks where needed.
+
+# Separate local PostgreSQL project. Only PostgreSQL and Studio are needed in F0.
+project_id = "order-service"
+
+[api]
+enabled = false
+port = 16421
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+auto_expose_new_tables = false
+
+[db]
+port = 16422
+shadow_port = 16420
+major_version = 17
+health_timeout = "2m"
+
+[db.pooler]
+enabled = false
+port = 16429
+
+[db.migrations]
+enabled = true
+schema_paths = []
+
+[db.seed]
+enabled = false
+sql_paths = []
+
+[studio]
+enabled = true
+port = 16423
+api_url = "http://127.0.0.1"
+
+[auth]
+enabled = false
+
+[local_smtp]
+enabled = false
+port = 16424
+
+[storage]
+enabled = false
+
+[realtime]
+enabled = false
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false
+port = 16427

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "2.2",
+  "description": "Apply reviewed compatible migrations and deploy digest-pinned FoC images, or restore previous application images. No automatic schema rollback or secret changes.",
+  "parameters": {
+    "Operation": {
+      "type": "String",
+      "allowedValues": ["deploy", "rollback"],
+      "interpolationType": "ENV_VAR"
+    },
+    "Manifest": {
+      "type": "String",
+      "default": "e30=",
+      "allowedPattern": "^[A-Za-z0-9+/=]+$",
+      "minChars": 4,
+      "maxChars": 60000,
+      "interpolationType": "ENV_VAR"
+    }
+  },
+  "mainSteps": [
+    {
+      "action": "aws:runShellScript",
+      "name": "applyApplicationRelease",
+      "inputs": {
+        "timeoutSeconds": "1800",
+        "runCommand": [
+          "set -eu",
+          "cd /opt/foc",
+          "exec sudo -u ssm-user python3 /opt/foc/deploy/aws/scripts/deploy_release.py \"$SSM_Operation\" --manifest-base64 \"$SSM_Manifest\""
+        ]
+      }
+    }
+  ]
+}

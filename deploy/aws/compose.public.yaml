@@ -1,0 +1,14 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-11-02
+# Scope: Implemented the additional CloudFront origin-listener binding.
+# Author review: I validated correctness and added boundary checks where needed.
+
+# Optional CloudFront origin listener. Keep TCP 8080 restricted to the CloudFront
+# origin-facing prefix list in the EC2 security group before using this overlay.
+# The original loopback website and mailbox bindings remain private.
+services:
+  web-client:
+    ports:
+      - "0.0.0.0:8080:8080"
+    volumes:
+      - ./nginx-public:/etc/nginx/foc-public:ro

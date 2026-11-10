@@ -1,0 +1,35 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-11-08
+# Scope: Implemented the monitoring collector oneshot service configuration.
+# Author review: I validated correctness and added boundary checks where needed.
+
+[Unit]
+Description=Publish FoC host and container health to CloudWatch
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/foc
+ExecStart=/usr/bin/python3 /opt/foc/deploy/aws/scripts/monitor_runtime.py
+TimeoutStartSec=55
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=AWS_CONFIG_FILE=/dev/null
+Environment=AWS_SHARED_CREDENTIALS_FILE=/dev/null
+Environment=AWS_PAGER=
+Environment=AWS_CLI_AUTO_PROMPT=off
+Environment=DOCKER_CONFIG=/run/foc-monitoring
+RuntimeDirectory=foc-monitoring
+RuntimeDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/foc/deploy/aws/.monitoring-state
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+LockPersonality=true
+

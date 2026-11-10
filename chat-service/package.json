@@ -1,0 +1,7 @@
+{
+  "name": "foc-chat-service",
+  "private": true,
+  "devDependencies": {
+    "supabase": "2.120.0"
+  }
+}

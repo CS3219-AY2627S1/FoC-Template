@@ -1,0 +1,339 @@
+# AI Assistance Disclosure (hwangjihun):
+# Tool: ChatGPT (Codex, model: gpt-6-sol), date: 2026-09-23
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-10-21
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-30
+# Scope: Implemented Supplier container/health settings and the optional Voice Assist configuration.
+# Author review: I validated correctness, and added boundary checks.
+
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6-astra), date: 2026-10-09, 2026-10-11
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-11-03
+# Scope: Added Order API/workers and optional cloud email settings to shared Compose
+# configuration.
+# Author review: I validated correctness and added boundary checks where needed.
+
+name: foc-dev
+
+services:
+  web-client:
+    build: ./web-client
+    ports:
+      - "3000:80"
+    depends_on:
+      user-service:
+        condition: service_healthy
+      supplier-service:
+        condition: service_healthy
+    networks:
+      - edge
+
+  user-service:
+    build: ./user-service
+    env_file: ./user-service/.env
+    environment:
+      DATABASE_URL: ${DATABASE_URL_DOCKER:?Pass --env-file user-service/.env}
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      OTP_EMAIL_PROVIDER: smtp
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-foc_user_service}:${RABBITMQ_PASSWORD:?Pass --env-file user-service/.env}@rabbitmq:5672/
+    volumes:
+      - ./user-service/secrets/development:/app/secrets/development:ro
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - edge
+      - user-internal
+      - support
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health/ready")
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  supplier-service:
+    build: ./supplier-service
+    restart: unless-stopped
+    env_file: ./supplier-service/.env
+    environment:
+      SUPPLIER_DATABASE_URL: ${SUPPLIER_DATABASE_URL_DOCKER:-postgresql://postgres:postgres@host.docker.internal:55322/postgres}
+      USER_SERVICE_BASE_URL: http://user-service:8000
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "8001:8001"
+    depends_on:
+      user-service:
+        condition: service_healthy
+    networks:
+      - edge
+      - user-internal
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8001/health/ready", timeout=6)
+      interval: 10s
+      timeout: 7s
+      retries: 6
+      start_period: 10s
+
+  # Optional until every teammate has configured Order's own local database.
+  # Enable with --profile order. No database migrations run on API startup.
+  order-service:
+    profiles: [order]
+    build: ./order-service
+    env_file: ./order-service/.env.docker
+    environment:
+      USER_SERVICE_BASE_URL: http://user-service:8000
+      SUPPLIER_SERVICE_BASE_URL: http://supplier-service:8001
+      CREDIT_SERVICE_BASE_URL: http://credit-service:8003
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "127.0.0.1:8002:8002"
+    networks:
+      - edge
+
+  order-recovery:
+    profiles: [order]
+    build: ./order-service
+    command: [order-recovery]
+    env_file: ./order-service/.env.docker
+    environment:
+      USER_SERVICE_BASE_URL: http://user-service:8000
+      SUPPLIER_SERVICE_BASE_URL: http://supplier-service:8001
+      CREDIT_SERVICE_BASE_URL: http://credit-service:8003
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      order-service:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    networks:
+      - edge
+
+  order-expiry:
+    profiles: [order]
+    build: ./order-service
+    command: [order-expiry]
+    env_file: ./order-service/.env.docker
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      order-service:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    networks:
+      - edge
+
+  order-outbox:
+    profiles: [order]
+    build: ./order-service
+    command: [order-outbox]
+    env_file: ./order-service/.env.docker
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-foc_user_service}:${RABBITMQ_PASSWORD:?Pass --env-file user-service/.env}@rabbitmq:5672/
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      order-service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    networks:
+      - support
+
+  # Optional Chat API and its independently restartable publisher.
+  # Resolve Docker URLs inside each container from Chat's own env file: the
+  # root --env-file belongs to User Service and has different database values.
+  chat-service:
+    profiles: [chat]
+    build: ./chat-service
+    env_file:
+      - path: ./chat-service/.env
+        required: false
+    environment:
+      USER_SERVICE_BASE_URL: http://user-service:8000
+      ALLOWED_ORIGINS: ${CHAT_ALLOWED_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000","http://localhost:5173","http://127.0.0.1:5173"]}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        export DATABASE_URL="$${DATABASE_URL_DOCKER:?Set DATABASE_URL_DOCKER in chat-service/.env}"
+        export RABBITMQ_URL="$${RABBITMQ_URL_DOCKER:?Set RABBITMQ_URL_DOCKER in chat-service/.env}"
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8003 --no-access-log --ws-max-size 65536
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "127.0.0.1:8004:8003"
+    depends_on:
+      user-service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - edge
+      - user-internal
+      - support
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/health/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  chat-outbox:
+    profiles: [chat]
+    build: ./chat-service
+    env_file:
+      - path: ./chat-service/.env
+        required: false
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        export DATABASE_URL="$${DATABASE_URL_DOCKER:?Set DATABASE_URL_DOCKER in chat-service/.env}"
+        export RABBITMQ_URL="$${RABBITMQ_URL_DOCKER:?Set RABBITMQ_URL_DOCKER in chat-service/.env}"
+        exec chat-outbox
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      chat-service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - support
+
+  # Optional until every teammate has configured Credit's own local database.
+  # Enable with --profile credit. No database migrations run on API startup.
+  credit-service:
+    profiles: [credit]
+    build: ./credit-service
+    env_file: ./credit-service/.env.docker
+    environment:
+      USER_SERVICE_BASE_URL: http://user-service:8000
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "127.0.0.1:8003:8003"
+    # M4NFR5.1: Docker restarts a crashed API; confirmed balances live only in PostgreSQL.
+    restart: unless-stopped
+    networks:
+      - edge
+
+  credit-consumer:
+    profiles: [credit]
+    build: ./credit-service
+    command: [credit-consumer]
+    env_file: ./credit-service/.env.docker
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-foc_user_service}:${RABBITMQ_PASSWORD:?Pass --env-file user-service/.env}@rabbitmq:5672/
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      credit-service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    networks:
+      - support
+
+  # Optional Admin Dashboard (N2) service. Enable with --profile admin.
+  # Owns disputes and the dashboard audit log in its own database; no migrations run on startup.
+  admin-service:
+    profiles: [admin]
+    build: ./admin-service
+    env_file: ./admin-service/.env.docker
+    environment:
+      USER_SERVICE_BASE_URL: http://user-service:8000
+      ORDER_SERVICE_BASE_URL: http://order-service:8002
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "127.0.0.1:8005:8005"
+    restart: unless-stopped
+    networks:
+      - edge
+
+  # Optional voice-assisted errand drafting (N3). Enable with --profile voice-assist.
+  # Stateless: no database. Without an OpenAI key it reports voice drafting as unavailable
+  # and the ordinary errand form keeps working.
+  voice-assist-service:
+    profiles: [voice-assist]
+    build: ./voice-assist-service
+    env_file:
+      - path: ./voice-assist-service/.env.docker
+        required: false
+    environment:
+      USER_SERVICE_BASE_URL: http://user-service:8000
+      SUPPLIER_SERVICE_BASE_URL: http://supplier-service:8001
+    ports:
+      - "127.0.0.1:8006:8006"
+    restart: unless-stopped
+    networks:
+      - edge
+
+  outbox-publisher:
+    build: ./user-service
+    command: ["outbox-publisher"]
+    env_file: ./user-service/.env
+    environment:
+      DATABASE_URL: ${DATABASE_URL_DOCKER:?Pass --env-file user-service/.env}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-foc_user_service}:${RABBITMQ_PASSWORD:?Pass --env-file user-service/.env}@rabbitmq:5672/
+    volumes:
+      - ./user-service/secrets/development:/app/secrets/development:ro
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - support
+
+  mailpit:
+    image: axllent/mailpit:v1.27.3
+    ports:
+      - "8025:8025"
+    networks:
+      - support
+
+  rabbitmq:
+    image: rabbitmq:4.1-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-foc_user_service}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Pass --env-file user-service/.env}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - support
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+networks:
+  edge:
+  user-internal:
+    internal: true
+  support:

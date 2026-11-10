@@ -1,0 +1,742 @@
+# AI Assistance Disclosure (hwangjihun):
+# Tool: ChatGPT (Codex, model: gpt-6-sol), date: 2026-09-23
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-10-21
+# Scope: Added Supplier lint, API/database regression and built-image smoke checks to shared CI.
+# Author review: I validated correctness, and added boundary checks.
+
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6-astra), date: 2026-10-09
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-11-02, 2026-11-06
+# Scope: Added Order checks and cloud release-image validation to the shared CI workflow.
+# Author review: I validated correctness and added boundary checks where needed.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      services: ${{ steps.components.outputs.services }}
+      chat_changed: ${{ steps.components.outputs.chat_changed }}
+      chat_available: ${{ steps.components.outputs.chat_available }}
+      user_chat_changed: ${{ steps.components.outputs.user_chat_changed }}
+      cloud_changed: ${{ steps.components.outputs.cloud_changed }}
+    steps:
+      - name: Check out repository
+        # actions/checkout@v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Identify affected components
+        id: filter
+        # dorny/paths-filter@v3.0.4
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad
+        with:
+          filters: |
+            cloud-foundation:
+              - 'deploy/aws/**'
+              - '*-service/supabase/migrations/**'
+              - 'web-client/nginx/default.conf'
+              - '.github/workflows/cloud-foundation.yml'
+              - '.github/workflows/cloud-release.yml'
+              - '.github/workflows/ci.yml'
+            user-chat:
+              - 'user-service/**'
+              - 'chat-service/**'
+              - 'web-client/**'
+              - 'compose.yaml'
+              - '.github/ci/user-chat/**'
+              - '.github/workflows/ci.yml'
+            web-client:
+              - 'web-client/**'
+              - '.github/workflows/ci.yml'
+            user-service:
+              - 'user-service/**'
+              - '.github/workflows/ci.yml'
+            supplier-service:
+              - 'supplier-service/**'
+              - '.github/workflows/ci.yml'
+            order-service:
+              - 'order-service/**'
+              - '.github/workflows/ci.yml'
+            chat-service:
+              - 'chat-service/**'
+              - '.github/workflows/ci.yml'
+            credit-service:
+              - 'credit-service/**'
+              - '.github/workflows/ci.yml'
+            admin-service:
+              - 'admin-service/**'
+              - '.github/workflows/ci.yml'
+            voice-assist-service:
+              - 'voice-assist-service/**'
+              - '.github/workflows/ci.yml'
+
+      - name: Select component checks
+        id: components
+        env:
+          CHANGED_COMPONENTS: ${{ steps.filter.outputs.changes }}
+          CHAT_CHANGED: ${{ steps.filter.outputs.chat-service }}
+          USER_CHAT_CHANGED: ${{ steps.filter.outputs.user-chat }}
+          CLOUD_CHANGED: ${{ steps.filter.outputs.cloud-foundation }}
+          FULL_VALIDATION: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: |
+          services=$(jq -c 'map(select(. != "chat-service" and . != "user-chat" and . != "cloud-foundation"))' <<< "$CHANGED_COMPONENTS")
+          # Every main commit is a release candidate: validate every deployed application.
+          # Pull requests retain the existing affected-component checks.
+          if [ "$FULL_VALIDATION" = "true" ]; then
+            services='["web-client","user-service","supplier-service","order-service","credit-service","admin-service","voice-assist-service"]'
+            CHAT_CHANGED=true
+            USER_CHAT_CHANGED=true
+            CLOUD_CHANGED=true
+          fi
+          echo "services=$services" >> "$GITHUB_OUTPUT"
+          echo "chat_changed=$CHAT_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "user_chat_changed=$USER_CHAT_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "cloud_changed=$CLOUD_CHANGED" >> "$GITHUB_OUTPUT"
+          # Enable Chat validation when its package manifest is present.
+          if [ -f chat-service/pyproject.toml ]; then
+            echo "chat_available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "chat_available=false" >> "$GITHUB_OUTPUT"
+            if [ "$CHAT_CHANGED" = "true" ]; then
+              echo "Chat validation requires chat-service/pyproject.toml." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+
+  validate:
+    name: Validate ${{ matrix.service }}
+    needs: changes
+    if: ${{ needs.changes.outputs.services != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+    steps:
+      - name: Check out repository
+        # actions/checkout@v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set up Node.js
+        if: matrix.service == 'web-client'
+        # actions/setup-node@v4.4.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-client/package-lock.json
+
+      - name: Install web client dependencies
+        if: matrix.service == 'web-client'
+        working-directory: web-client
+        run: npm ci
+
+      - name: Lint web client
+        if: matrix.service == 'web-client'
+        working-directory: web-client
+        run: npm run lint
+
+      - name: Run web client unit and component tests
+        if: matrix.service == 'web-client'
+        working-directory: web-client
+        run: npm test
+
+      - name: Install Chromium for browser tests
+        if: matrix.service == 'web-client'
+        working-directory: web-client
+        run: npx playwright install --with-deps chromium
+
+      - name: Run web client browser tests
+        if: matrix.service == 'web-client'
+        working-directory: web-client
+        run: npm run test:e2e
+
+      - name: Set up Python
+        if: matrix.service == 'user-service'
+        # actions/setup-python@v5.6.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: user-service/pyproject.toml
+
+      - name: Install user service dependencies
+        if: matrix.service == 'user-service'
+        working-directory: user-service
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[dev]"
+
+      - name: Lint user service
+        if: matrix.service == 'user-service'
+        working-directory: user-service
+        run: ruff check .
+
+      - name: Run user service unit and ASGI tests
+        if: matrix.service == 'user-service'
+        working-directory: user-service
+        run: pytest -m "not integration"
+
+      - name: Set up Python for supplier service
+        if: matrix.service == 'supplier-service'
+        # actions/setup-python@v5.6.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: supplier-service/pyproject.toml
+
+      - name: Install supplier service dependencies
+        if: matrix.service == 'supplier-service'
+        working-directory: supplier-service
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[test,dev]"
+
+      - name: Lint supplier service
+        if: matrix.service == 'supplier-service'
+        working-directory: supplier-service
+        run: ruff check app tests scripts
+
+      - name: Start isolated supplier test database
+        if: matrix.service == 'supplier-service'
+        run: |
+          # Public test-only credentials for this disposable runner-local database.
+          docker run --detach --name foc-supplier-test-postgres \
+            --publish 127.0.0.1:55322:5432 \
+            --env POSTGRES_USER=supplier_test \
+            --env POSTGRES_PASSWORD=local-supplier-test-only \
+            --env POSTGRES_DB=supplier_test \
+            --health-cmd 'pg_isready -h 127.0.0.1 -U supplier_test -d supplier_test' \
+            --health-interval 2s --health-timeout 3s --health-retries 30 \
+            postgres:17
+          for _ in {1..60}; do
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' foc-supplier-test-postgres)" = healthy ]; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Supplier test database did not become healthy" >&2
+          exit 1
+
+      - name: Apply supplier migrations and seed data
+        if: matrix.service == 'supplier-service'
+        working-directory: supplier-service
+        run: |
+          for migration in supabase/migrations/*.sql; do
+            docker exec -i foc-supplier-test-postgres \
+              psql --no-psqlrc --set ON_ERROR_STOP=1 \
+              --username supplier_test --dbname supplier_test < "$migration"
+          done
+          docker exec -i foc-supplier-test-postgres \
+            psql --no-psqlrc --set ON_ERROR_STOP=1 \
+            --username supplier_test --dbname supplier_test < supabase/seed.sql
+
+      - name: Run supplier service API and database tests
+        if: matrix.service == 'supplier-service'
+        working-directory: supplier-service
+        env:
+          SUPPLIER_TEST_DATABASE_URL: postgresql://supplier_test:local-supplier-test-only@127.0.0.1:55322/supplier_test
+          SUPPLIER_TEST_REPORT: ${{ runner.temp }}/supplier-tests.xml
+        run: |
+          python -m pytest -q --junitxml="$SUPPLIER_TEST_REPORT"
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          suites = ET.parse(os.environ["SUPPLIER_TEST_REPORT"]).getroot().iter("testsuite")
+          skipped = sum(int(suite.get("skipped", "0")) for suite in suites)
+          if skipped:
+              raise SystemExit(f"Full Supplier CI suite unexpectedly skipped {skipped} tests")
+          PY
+
+      - name: Set up Python for order service
+        if: matrix.service == 'order-service'
+        # actions/setup-python@v5.6.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: order-service/pyproject.toml
+
+      - name: Install order service dependencies
+        if: matrix.service == 'order-service'
+        working-directory: order-service
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[dev]"
+
+      - name: Lint order service
+        if: matrix.service == 'order-service'
+        working-directory: order-service
+        run: ruff check app tests
+
+      - name: Run order service unit and ASGI tests
+        if: matrix.service == 'order-service'
+        working-directory: order-service
+        run: python -m pytest -m "not integration" -q
+
+      - name: Set up Python for credit service
+        if: matrix.service == 'credit-service'
+        # actions/setup-python@v5.6.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: credit-service/pyproject.toml
+
+      - name: Install credit service dependencies
+        if: matrix.service == 'credit-service'
+        working-directory: credit-service
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[dev]"
+
+      - name: Lint credit service
+        if: matrix.service == 'credit-service'
+        working-directory: credit-service
+        run: ruff check app tests
+
+      - name: Run credit service unit and ASGI tests
+        if: matrix.service == 'credit-service'
+        working-directory: credit-service
+        run: python -m pytest -m "not integration" -q
+
+      - name: Set up Python for admin service
+        if: matrix.service == 'admin-service'
+        # actions/setup-python@v5.6.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: admin-service/pyproject.toml
+
+      - name: Install admin service dependencies
+        if: matrix.service == 'admin-service'
+        working-directory: admin-service
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[dev]"
+
+      - name: Lint admin service
+        if: matrix.service == 'admin-service'
+        working-directory: admin-service
+        run: ruff check app tests
+
+      - name: Run admin service unit and ASGI tests
+        if: matrix.service == 'admin-service'
+        working-directory: admin-service
+        run: python -m pytest -m "not integration" -q
+
+      - name: Set up Python for voice assist
+        if: matrix.service == 'voice-assist-service'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: voice-assist-service/pyproject.toml
+
+      - name: Validate voice assist without live provider calls
+        if: matrix.service == 'voice-assist-service'
+        working-directory: voice-assist-service
+        run: |
+          python -m pip install ".[dev]"
+          ruff check app tests scripts
+          python -m pytest -q
+
+      - name: Set up Docker Buildx
+        # docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Build ${{ matrix.service }} container image
+        # docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: ./${{ matrix.service }}
+          file: ./${{ matrix.service }}/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: foc-${{ matrix.service }}:ci
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Export the exact main CI image for release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          COMPONENT: ${{ matrix.service }}
+        run: docker save "foc-$COMPONENT:ci" | gzip > "$RUNNER_TEMP/$COMPONENT.tar.gz"
+
+      - name: Retain main CI image for the deployment workflow
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-image-${{ matrix.service }}
+          overwrite: true
+          path: ${{ runner.temp }}/${{ matrix.service }}.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Smoke test the built supplier container
+        if: matrix.service == 'supplier-service'
+        env:
+          SUPPLIER_DATABASE_URL: postgresql://supplier_test:local-supplier-test-only@127.0.0.1:55322/supplier_test
+        run: |
+          # Linux host networking reaches the existing loopback-only test database.
+          docker run --detach --name foc-supplier-ci-api --network host \
+            --env SUPPLIER_DATABASE_URL foc-supplier-service:ci
+          docker exec -i foc-supplier-ci-api python - <<'PY'
+          import json
+          import time
+          from urllib.error import URLError
+          from urllib.request import urlopen
+
+          deadline = time.monotonic() + 30
+          last_error = "No readiness response"
+          while time.monotonic() < deadline:
+              try:
+                  with urlopen("http://127.0.0.1:8001/health/ready", timeout=6) as response:
+                      if response.status != 200 or json.load(response) != {"status": "ready"}:
+                          raise SystemExit("Unexpected supplier readiness response")
+                  break
+              except (URLError, TimeoutError) as exc:
+                  last_error = str(exc)
+                  time.sleep(1)
+          else:
+              raise SystemExit(f"Supplier container did not become ready: {last_error}")
+
+          with urlopen("http://127.0.0.1:8001/health/live", timeout=6) as response:
+              if response.status != 200 or json.load(response) != {"status": "live"}:
+                  raise SystemExit("Unexpected supplier liveness response")
+          print("Built Supplier container is live and ready against the test database")
+          PY
+
+      - name: Show supplier container diagnostics on failure
+        if: ${{ failure() && matrix.service == 'supplier-service' }}
+        run: |
+          for container in foc-supplier-ci-api foc-supplier-test-postgres; do
+            if docker container inspect "$container" > /dev/null 2>&1; then
+              docker logs "$container"
+            fi
+          done
+
+      - name: Remove disposable supplier CI containers
+        if: ${{ always() && matrix.service == 'supplier-service' }}
+        run: |
+          for container in foc-supplier-ci-api foc-supplier-test-postgres; do
+            if docker container inspect "$container" > /dev/null 2>&1; then
+              docker rm --force --volumes "$container"
+            fi
+          done
+
+  validate-chat:
+    name: Validate chat-service
+    needs: changes
+    if: ${{ needs.changes.outputs.chat_changed == 'true' && needs.changes.outputs.chat_available == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: chat-service
+    env:
+      # Deliberately public credentials for disposable runner-local resources only.
+      CHAT_TEST_DATABASE_URL: postgresql+asyncpg://chat_test:local-chat-test-only@127.0.0.1:17422/postgres
+      CHAT_TEST_RABBITMQ_URL: amqp://guest:guest@127.0.0.1:17425/
+      CHAT_TEST_BROKER_RESTART: '1'
+      CHAT_TEST_DATABASE_RESTART: '1'
+    steps:
+      - name: Check out repository
+        # actions/checkout@v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set up Python for chat service
+        # actions/setup-python@v5.6.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+
+      - name: Set up Node.js for the local Supabase CLI
+        # actions/setup-node@v4.4.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+
+      - name: Install locked chat service dependencies
+        run: |
+          npm ci
+          python -m pip install uv==0.11.7
+          uv sync --locked --extra dev
+
+      - name: Lint and check chat service formatting
+        run: |
+          uv run ruff check app tests scripts
+          uv run ruff format --check app tests scripts
+
+      - name: Run chat service unit tests without infrastructure
+        run: uv run pytest -m "not integration and not broker" -q --tb=short
+
+      - name: Rebuild the isolated Chat database from migrations
+        run: |
+          npx supabase db start
+          npx supabase db reset --local
+          uv run python -m scripts.provision_test_role
+
+      - name: Start the dedicated Chat test broker
+        run: |
+          docker run --detach --name foc-chat-test-rabbitmq \
+            --publish 127.0.0.1:17425:5672 \
+            --health-cmd 'rabbitmq-diagnostics -q ping' \
+            --health-interval 5s --health-timeout 5s --health-retries 24 \
+            rabbitmq:4.1-management
+          for _ in {1..60}; do
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' foc-chat-test-rabbitmq)" = healthy ]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Chat test broker did not become healthy" >&2
+          exit 1
+
+      - name: Run all Chat tests with PostgreSQL and RabbitMQ
+        env:
+          CHAT_TEST_REPORT: ${{ runner.temp }}/chat-tests.xml
+        run: |
+          # Sequential tests own these resources, including guarded restart cases.
+          # User Service identity is a test-only HTTP contract fake in this suite.
+          uv run pytest -q --tb=short --junitxml="$CHAT_TEST_REPORT"
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          suites = ET.parse(os.environ["CHAT_TEST_REPORT"]).getroot().iter("testsuite")
+          skipped = sum(int(suite.get("skipped", "0")) for suite in suites)
+          if skipped:
+              raise SystemExit(f"Full Chat CI suite unexpectedly skipped {skipped} tests")
+          PY
+
+      - name: Set up Docker Buildx for chat service
+        # docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Build and load the chat service image
+        # docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: ./chat-service
+          file: ./chat-service/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: foc-chat-service:ci
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=chat-service
+          cache-to: type=gha,mode=max,scope=chat-service
+
+      - name: Export the exact main Chat image for release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker save foc-chat-service:ci | gzip > "$RUNNER_TEMP/chat-service.tar.gz"
+
+      - name: Retain main Chat image for the deployment workflow
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-image-chat-service
+          overwrite: true
+          path: ${{ runner.temp }}/chat-service.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Smoke test the non-root Chat API and independent publisher
+        env:
+          DATABASE_URL: ${{ env.CHAT_TEST_DATABASE_URL }}
+          RABBITMQ_URL: ${{ env.CHAT_TEST_RABBITMQ_URL }}
+        run: |
+          # Host networking reaches loopback-only fixtures on the Linux runner.
+          docker run --detach --name foc-chat-ci-api --network host \
+            --env DATABASE_URL --env RABBITMQ_URL foc-chat-service:ci
+          docker run --detach --name foc-chat-ci-publisher --network host \
+            --env DATABASE_URL --env RABBITMQ_URL foc-chat-service:ci chat-outbox
+
+          wait_ready() {
+            for _ in {1..30}; do
+              if curl --fail --silent --max-time 3 http://127.0.0.1:8003/health/ready \
+                | jq --exit-status '.status == "ready" and .delivery == "ready"' > /dev/null; then
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
+          wait_ready
+          test "$(docker exec foc-chat-ci-api id -u)" != 0
+          test "$(docker exec foc-chat-ci-publisher id -u)" != 0
+
+          count_code=$(cat <<'PY'
+          import asyncio, os
+          from app.db import Database
+          from sqlalchemy import text
+          async def main():
+              db = Database(os.environ["DATABASE_URL"])
+              async with db.transaction() as session:
+                  print((await session.execute(text("SELECT count(*) FROM chat_service.messages"))).scalar_one())
+              await db.close()
+          asyncio.run(main())
+          PY
+          )
+          before=$(docker exec foc-chat-ci-api python -c "$count_code")
+          docker restart foc-chat-ci-api
+          wait_ready
+          test "$(docker inspect --format '{{.State.Running}}' foc-chat-ci-publisher)" = true
+          test "$(docker exec foc-chat-ci-api python -c "$count_code")" = "$before"
+
+      - name: Show Chat diagnostics on failure
+        if: ${{ failure() }}
+        run: |
+          docker ps -a --format '{{.Names}} | {{.Status}}'
+          for container in foc-chat-ci-api foc-chat-ci-publisher foc-chat-test-rabbitmq supabase_db_foc-chat-service; do
+            if docker container inspect "$container" > /dev/null 2>&1; then
+              docker logs --tail 100 "$container"
+            fi
+          done
+
+      - name: Remove disposable Chat CI resources
+        if: ${{ always() }}
+        run: |
+          for container in foc-chat-ci-api foc-chat-ci-publisher foc-chat-test-rabbitmq; do
+            if docker container inspect "$container" > /dev/null 2>&1; then
+              docker rm --force "$container"
+            fi
+          done
+          npx supabase stop --no-backup
+
+  validate-user-chat:
+    name: Integrate User + Chat
+    needs: changes
+    if: ${{ needs.changes.outputs.user_chat_changed == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      USER_CHAT_CI_ARTIFACT_DIR: ${{ github.workspace }}/web-client/test-results/user-chat-ci
+    steps:
+      - name: Check out repository
+        # actions/checkout@v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set up Node.js
+        # actions/setup-node@v4.4.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-client/package-lock.json
+
+      - name: Configure disposable integration state
+        run: echo "USER_CHAT_CI_STATE_DIR=$RUNNER_TEMP/foc-user-chat-ci" >> "$GITHUB_ENV"
+
+      - name: Set up Python for acceptance result validation
+        # actions/setup-python@v5.6.0
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+
+      - name: Install browser test dependencies
+        working-directory: web-client
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run real User and Chat browser acceptance
+        run: bash .github/ci/user-chat/run.sh
+
+      - name: Collect integration diagnostics
+        if: ${{ always() }}
+        run: |
+          if [ -f "$USER_CHAT_CI_STATE_DIR/owner" ]; then
+            bash .github/ci/user-chat/run.sh logs
+          fi
+
+      - name: Upload acceptance results and diagnostics
+        if: ${{ always() }}
+        # actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: user-chat-integration
+          path: web-client/test-results/user-chat-ci/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Remove disposable integration resources
+        if: ${{ always() }}
+        run: bash .github/ci/user-chat/run.sh down
+
+  validate-cloud:
+    name: Validate cloud foundation
+    needs: changes
+    if: ${{ needs.changes.outputs.cloud_changed == 'true' }}
+    uses: ./.github/workflows/cloud-foundation.yml
+
+  ci-passed:
+    name: CI passed
+    needs: [changes, validate, validate-chat, validate-user-chat, validate-cloud]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce CI result
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+          COMPONENTS_REQUIRED: ${{ needs.changes.outputs.services != '[]' }}
+          CHAT_RESULT: ${{ needs.validate-chat.result }}
+          CHAT_REQUIRED: ${{ needs.changes.outputs.chat_changed == 'true' && needs.changes.outputs.chat_available == 'true' }}
+          USER_CHAT_RESULT: ${{ needs.validate-user-chat.result }}
+          USER_CHAT_REQUIRED: ${{ needs.changes.outputs.user_chat_changed == 'true' }}
+          CLOUD_RESULT: ${{ needs.validate-cloud.result }}
+          CLOUD_REQUIRED: ${{ needs.changes.outputs.cloud_changed == 'true' }}
+        run: |
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "Change detection did not complete successfully: $CHANGES_RESULT"
+            exit 1
+          fi
+
+          if [ "$VALIDATE_RESULT" = "failure" ] || [ "$VALIDATE_RESULT" = "cancelled" ]; then
+            echo "Component validation did not complete successfully: $VALIDATE_RESULT"
+            exit 1
+          fi
+
+          if [ "$COMPONENTS_REQUIRED" = "true" ] && [ "$VALIDATE_RESULT" != "success" ]; then
+            echo "Required component checks did not complete: $VALIDATE_RESULT"
+            exit 1
+          fi
+
+          if [ "$CHAT_REQUIRED" = "true" ] && [ "$CHAT_RESULT" != "success" ]; then
+            echo "Chat validation did not complete successfully: $CHAT_RESULT"
+            exit 1
+          fi
+
+          if [ "$USER_CHAT_REQUIRED" = "true" ] && [ "$USER_CHAT_RESULT" != "success" ]; then
+            echo "User + Chat integration did not complete successfully: $USER_CHAT_RESULT"
+            exit 1
+          fi
+
+          if [ "$CLOUD_REQUIRED" = "true" ] && [ "$CLOUD_RESULT" != "success" ]; then
+            echo "Cloud foundation validation did not complete successfully: $CLOUD_RESULT"
+            exit 1
+          fi

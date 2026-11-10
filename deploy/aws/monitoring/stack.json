@@ -1,0 +1,549 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "FoC single-EC2 monitoring only: metrics, bounded health logs, alarms and email notifications. No application or database resources.",
+  "Parameters": {
+    "InstanceId": {
+      "Type": "AWS::EC2::Instance::Id",
+      "Description": "Existing FoC instance in this region"
+    },
+    "InstanceRoleName": {
+      "Type": "String",
+      "Default": "foc-ec2-role",
+      "AllowedPattern": "[A-Za-z0-9+=,.@_-]+",
+      "Description": "Existing instance role; only a scoped inline publishing policy is added"
+    },
+    "AlertEmail": {
+      "Type": "String",
+      "Default": "",
+      "AllowedPattern": "^$|^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+      "Description": "Optional team inbox; SNS sends a subscription confirmation"
+    },
+    "EnableNotifications": {
+      "Type": "String",
+      "Default": "false",
+      "AllowedValues": [
+        "false",
+        "true"
+      ],
+      "Description": "Enable only after collector data and email confirmation are verified"
+    }
+  },
+  "Conditions": {
+    "HasEmail": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Ref": "AlertEmail"
+            },
+            ""
+          ]
+        }
+      ]
+    },
+    "NotificationsEnabled": {
+      "Fn::Equals": [
+        {
+          "Ref": "EnableNotifications"
+        },
+        "true"
+      ]
+    }
+  },
+  "Resources": {
+    "Alerts": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "TopicName": "foc-monitoring-alerts",
+        "DisplayName": "FoC monitoring"
+      }
+    },
+    "AlertSubscription": {
+      "Type": "AWS::SNS::Subscription",
+      "Condition": "HasEmail",
+      "Properties": {
+        "TopicArn": {
+          "Ref": "Alerts"
+        },
+        "Protocol": "email",
+        "Endpoint": {
+          "Ref": "AlertEmail"
+        }
+      }
+    },
+    "AlertsPolicy": {
+      "Type": "AWS::SNS::TopicPolicy",
+      "Properties": {
+        "Topics": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "CloudWatchAlarmsOnly",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "cloudwatch.amazonaws.com"
+              },
+              "Action": "sns:Publish",
+              "Resource": {
+                "Ref": "Alerts"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId"
+                  }
+                },
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:foc-monitoring-*"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "HealthLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/foc/monitoring/health",
+        "RetentionInDays": 7
+      }
+    },
+    "PublishPolicy": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyName": "FoCMonitoringPublish",
+        "Roles": [
+          {
+            "Ref": "InstanceRoleName"
+          }
+        ],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": "cloudwatch:PutMetricData",
+              "Resource": "*",
+              "Condition": {
+                "StringEquals": {
+                  "cloudwatch:namespace": "FoC/Runtime"
+                }
+              }
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/foc/monitoring/health:log-stream:${InstanceId}"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "CpuAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "foc-monitoring-cpu",
+        "AlarmDescription": "CPUUtilization on the FoC EC2 host. See deploy/aws/MONITORING.md.",
+        "ActionsEnabled": {
+          "Fn::If": [
+            "NotificationsEnabled",
+            true,
+            false
+          ]
+        },
+        "AlarmActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "Namespace": "AWS/EC2",
+        "MetricName": "CPUUtilization",
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "InstanceId"
+            }
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 300,
+        "EvaluationPeriods": 3,
+        "DatapointsToAlarm": 2,
+        "Threshold": 80,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "InstanceAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "foc-monitoring-instance-status",
+        "AlarmDescription": "StatusCheckFailed on the FoC EC2 host. See deploy/aws/MONITORING.md.",
+        "ActionsEnabled": {
+          "Fn::If": [
+            "NotificationsEnabled",
+            true,
+            false
+          ]
+        },
+        "AlarmActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "Namespace": "AWS/EC2",
+        "MetricName": "StatusCheckFailed",
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "InstanceId"
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 60,
+        "EvaluationPeriods": 2,
+        "DatapointsToAlarm": 2,
+        "Threshold": 1,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "MemoryAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "foc-monitoring-memory",
+        "AlarmDescription": "MemoryUsedPercent on the FoC EC2 host. See deploy/aws/MONITORING.md.",
+        "ActionsEnabled": {
+          "Fn::If": [
+            "NotificationsEnabled",
+            true,
+            false
+          ]
+        },
+        "AlarmActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "Namespace": "FoC/Runtime",
+        "MetricName": "MemoryUsedPercent",
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "InstanceId"
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 60,
+        "EvaluationPeriods": 3,
+        "DatapointsToAlarm": 3,
+        "Threshold": 85,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "DiskAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "foc-monitoring-disk",
+        "AlarmDescription": "RootDiskUsedPercent on the FoC EC2 host. See deploy/aws/MONITORING.md.",
+        "ActionsEnabled": {
+          "Fn::If": [
+            "NotificationsEnabled",
+            true,
+            false
+          ]
+        },
+        "AlarmActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "Namespace": "FoC/Runtime",
+        "MetricName": "RootDiskUsedPercent",
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "InstanceId"
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 60,
+        "EvaluationPeriods": 3,
+        "DatapointsToAlarm": 3,
+        "Threshold": 80,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "ApplicationAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "foc-monitoring-application",
+        "AlarmDescription": "ApplicationUnhealthyCount on the FoC EC2 host. See deploy/aws/MONITORING.md.",
+        "ActionsEnabled": {
+          "Fn::If": [
+            "NotificationsEnabled",
+            true,
+            false
+          ]
+        },
+        "AlarmActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "Namespace": "FoC/Runtime",
+        "MetricName": "ApplicationUnhealthyCount",
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "InstanceId"
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 60,
+        "EvaluationPeriods": 3,
+        "DatapointsToAlarm": 3,
+        "Threshold": 1,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "SupportAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "foc-monitoring-supporting",
+        "AlarmDescription": "SupportingUnhealthyCount on the FoC EC2 host. See deploy/aws/MONITORING.md.",
+        "ActionsEnabled": {
+          "Fn::If": [
+            "NotificationsEnabled",
+            true,
+            false
+          ]
+        },
+        "AlarmActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "Namespace": "FoC/Runtime",
+        "MetricName": "SupportingUnhealthyCount",
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "InstanceId"
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 60,
+        "EvaluationPeriods": 3,
+        "DatapointsToAlarm": 3,
+        "Threshold": 1,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "PublicAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "foc-monitoring-public-routes",
+        "AlarmDescription": "PublicRouteUnhealthyCount on the FoC EC2 host. See deploy/aws/MONITORING.md.",
+        "ActionsEnabled": {
+          "Fn::If": [
+            "NotificationsEnabled",
+            true,
+            false
+          ]
+        },
+        "AlarmActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "Namespace": "FoC/Runtime",
+        "MetricName": "PublicRouteUnhealthyCount",
+        "Dimensions": [
+          {
+            "Name": "InstanceId",
+            "Value": {
+              "Ref": "InstanceId"
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 60,
+        "EvaluationPeriods": 3,
+        "DatapointsToAlarm": 3,
+        "Threshold": 1,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "TreatMissingData": "notBreaching"
+      }
+    },
+    "CollectorAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "foc-monitoring-collector",
+        "AlarmDescription": "Collector heartbeat missing while EC2 status metrics are present; stopped instances are excluded.",
+        "ActionsEnabled": {
+          "Fn::If": [
+            "NotificationsEnabled",
+            true,
+            false
+          ]
+        },
+        "AlarmActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "OKActions": [
+          {
+            "Ref": "Alerts"
+          }
+        ],
+        "ComparisonOperator": "LessThanThreshold",
+        "Threshold": 1,
+        "EvaluationPeriods": 5,
+        "DatapointsToAlarm": 3,
+        "TreatMissingData": "notBreaching",
+        "Metrics": [
+          {
+            "Id": "s",
+            "ReturnData": false,
+            "MetricStat": {
+              "Metric": {
+                "Namespace": "AWS/EC2",
+                "MetricName": "StatusCheckFailed",
+                "Dimensions": [
+                  {
+                    "Name": "InstanceId",
+                    "Value": {
+                      "Ref": "InstanceId"
+                    }
+                  }
+                ]
+              },
+              "Period": 60,
+              "Stat": "Maximum"
+            }
+          },
+          {
+            "Id": "h",
+            "ReturnData": false,
+            "MetricStat": {
+              "Metric": {
+                "Namespace": "FoC/Runtime",
+                "MetricName": "CollectorHeartbeat",
+                "Dimensions": [
+                  {
+                    "Name": "InstanceId",
+                    "Value": {
+                      "Ref": "InstanceId"
+                    }
+                  }
+                ]
+              },
+              "Period": 60,
+              "Stat": "Maximum"
+            }
+          },
+          {
+            "Id": "e",
+            "Expression": "IF(FILL(s, -1) >= 0, FILL(h, 0), 1)",
+            "Label": "Collector available or EC2 stopped",
+            "ReturnData": true
+          }
+        ]
+      }
+    },
+    "Dashboard": {
+      "Type": "AWS::CloudWatch::Dashboard",
+      "Properties": {
+        "DashboardName": "foc-monitoring",
+        "DashboardBody": {
+          "Fn::Sub": "{\"widgets\": [{\"type\": \"text\", \"x\": 0, \"y\": 0, \"width\": 24, \"height\": 2, \"properties\": {\"markdown\": \"# FoC runtime monitoring\\nOne-minute host/container/public-route observations. Worker process health is not proof of message processing. See MONITORING.md.\"}}, {\"type\": \"metric\", \"x\": 0, \"y\": 2, \"width\": 12, \"height\": 6, \"properties\": {\"title\": \"Host utilization (%)\", \"region\": \"${AWS::Region}\", \"view\": \"timeSeries\", \"period\": 60, \"metrics\": [[\"AWS/EC2\", \"CPUUtilization\", \"InstanceId\", \"${InstanceId}\", {\"stat\": \"Average\", \"period\": 300}], [\"FoC/Runtime\", \"MemoryUsedPercent\", \"InstanceId\", \"${InstanceId}\", {\"stat\": \"Maximum\"}], [\"FoC/Runtime\", \"RootDiskUsedPercent\", \"InstanceId\", \"${InstanceId}\", {\"stat\": \"Maximum\"}]]}}, {\"type\": \"metric\", \"x\": 12, \"y\": 2, \"width\": 12, \"height\": 6, \"properties\": {\"title\": \"Unhealthy workloads and public routes\", \"region\": \"${AWS::Region}\", \"view\": \"timeSeries\", \"period\": 60, \"metrics\": [[\"FoC/Runtime\", \"ApplicationUnhealthyCount\", \"InstanceId\", \"${InstanceId}\", {\"stat\": \"Maximum\"}], [\"FoC/Runtime\", \"SupportingUnhealthyCount\", \"InstanceId\", \"${InstanceId}\", {\"stat\": \"Maximum\"}], [\"FoC/Runtime\", \"PublicRouteUnhealthyCount\", \"InstanceId\", \"${InstanceId}\", {\"stat\": \"Maximum\"}]]}}, {\"type\": \"metric\", \"x\": 0, \"y\": 8, \"width\": 12, \"height\": 6, \"properties\": {\"title\": \"Collector heartbeat and EC2 status failures\", \"region\": \"${AWS::Region}\", \"view\": \"timeSeries\", \"period\": 60, \"metrics\": [[\"FoC/Runtime\", \"CollectorHeartbeat\", \"InstanceId\", \"${InstanceId}\", {\"stat\": \"Maximum\"}], [\"AWS/EC2\", \"StatusCheckFailed\", \"InstanceId\", \"${InstanceId}\", {\"stat\": \"Maximum\"}]]}}, {\"type\": \"alarm\", \"x\": 12, \"y\": 8, \"width\": 12, \"height\": 6, \"properties\": {\"title\": \"FoC alarms\", \"alarms\": [\"arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:foc-monitoring-cpu\", \"arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:foc-monitoring-instance-status\", \"arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:foc-monitoring-memory\", \"arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:foc-monitoring-disk\", \"arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:foc-monitoring-application\", \"arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:foc-monitoring-supporting\", \"arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:foc-monitoring-public-routes\", \"arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:foc-monitoring-collector\"]}}]}"
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "DashboardName": {
+      "Value": {
+        "Ref": "Dashboard"
+      }
+    },
+    "TopicArn": {
+      "Value": {
+        "Ref": "Alerts"
+      }
+    },
+    "LogGroupName": {
+      "Value": {
+        "Ref": "HealthLogGroup"
+      }
+    },
+    "AlarmNames": {
+      "Value": "foc-monitoring-cpu,foc-monitoring-instance-status,foc-monitoring-memory,foc-monitoring-disk,foc-monitoring-application,foc-monitoring-supporting,foc-monitoring-public-routes,foc-monitoring-collector"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+/*
+ * AI Assistance Disclosure (hwangjihun):
+ * Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-10-07
+ * Scope: Applied supplied color tokens used by the Supplier shell.
+ * Author review: I validated correctness, and added boundary checks.
+ */
+
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --canvas: #f7f8fc;
+  --surface: #ffffff;
+  --sidebar-background: linear-gradient(164.5deg, #0b3d6e 0%, #082a4a 100%);
+  --primary: #0b4f87;
+  --primary-deep: #073d6a;
+  --ink: #33506e;
+  --muted: #718196;
+  --border: #e6ebf2;
+  --danger: #a95000;
+  --danger-surface: #fff3f1;
+  --success: #126343;
+  --success-surface: #eaf7ef;
+  --shadow: 0 12px 26px rgb(26 56 89 / 8%);
+  --radius-panel: 14px;
+  --radius-control: 10px;
+}

@@ -1,0 +1,14 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-10-10
+# Scope: Generated exclusions for the Chat Service container build context.
+# Author review: I validated correctness and added boundary checks where needed.
+
+.env*
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
+secrets
+tests
+supabase
+node_modules

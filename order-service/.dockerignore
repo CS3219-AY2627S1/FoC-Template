@@ -1,0 +1,23 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6-astra), date: 2026-10-09, 2026-10-11
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-10-16, 2026-10-18, 2026-11-02
+# Scope: Added Order image exclusions and removed retired demo exclusions.
+# Author review: I validated correctness and added boundary checks where needed.
+
+.env
+.env.*
+!.env.example
+secrets/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+supabase/
+tests/
+docs/
+AGENTS.md
+PLAN.md
+.git/

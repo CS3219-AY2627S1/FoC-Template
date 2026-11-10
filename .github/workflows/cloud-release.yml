@@ -1,0 +1,223 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-11-06
+# Scope: Implemented release publishing, source checks and SSM deployment workflow steps.
+# Author review: I validated correctness and added boundary checks where needed.
+
+name: Cloud release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Retry the current main deployment, or restore previous application images
+        required: true
+        type: choice
+        default: deploy
+        options: [deploy, rollback]
+
+permissions:
+  contents: read
+
+# Never cancel an active host rollout/rollback. A newer pending release replaces older pending work.
+concurrency:
+  group: foc-cloud-release
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-southeast-1
+  FOC_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  FOC_OPERATION: ${{ inputs.operation || 'deploy' }}
+  FOC_AWS_ACCOUNT_ID: ${{ vars.FOC_AWS_ACCOUNT_ID }}
+  FOC_EC2_INSTANCE_ID: ${{ vars.FOC_EC2_INSTANCE_ID }}
+  FOC_CLOUDFRONT_ID: ${{ vars.FOC_CLOUDFRONT_ID }}
+  FOC_PUBLIC_ORIGIN: ${{ vars.FOC_PUBLIC_ORIGIN }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  setup-status:
+    name: Report initial setup requirement
+    if: vars.FOC_CD_ENABLED != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Cloud delivery is not armed. Complete deploy/aws/DELIVERY.md, then set FOC_CD_ENABLED=true. No AWS request was made.' >> "$GITHUB_STEP_SUMMARY"
+
+  preflight:
+    name: Verify release source and running cloud host
+    if: >-
+      vars.FOC_CD_ENABLED == 'true' &&
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    outputs:
+      deployable: ${{ steps.check.outputs.deployable }}
+      ci_run_id: ${{ steps.check.outputs.ci_run_id }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.FOC_SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - name: Assume scoped deployment role through GitHub OIDC
+        # aws-actions/configure-aws-credentials@v6.3.0
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          aws-region: ap-southeast-1
+          role-to-assume: ${{ vars.FOC_DEPLOY_ROLE_ARN }}
+          allowed-account-ids: ${{ vars.FOC_AWS_ACCOUNT_ID }}
+          role-session-name: foc-preflight-${{ github.run_id }}
+          action-timeout-s: 60
+      - name: Check exact successful main CI, EC2, SSM and CloudFront origin
+        id: check
+        run: python deploy/aws/scripts/release_workflow.py preflight
+      - name: Explain stopped-host deferral
+        if: steps.check.outputs.deployable == 'false'
+        run: echo 'Deployment deferred because EC2 is stopped. Start EC2 deliberately, update its CloudFront origin if necessary, then use Run workflow → deploy.' >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish ${{ matrix.artifact }}
+    needs: preflight
+    if: needs.preflight.outputs.deployable == 'true' && (inputs.operation || 'deploy') == 'deploy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        artifact: [web-client, user-service, supplier-service, order-service, credit-service, chat-service, admin-service, voice-assist-service]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.FOC_SOURCE_SHA }}
+          persist-credentials: false
+      - name: Download the exact image from the successful main CI run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.preflight.outputs.ci_run_id }}
+          name: release-image-${{ matrix.artifact }}
+          path: built-image
+      - name: Load and verify the source revision
+        env:
+          ARTIFACT: ${{ matrix.artifact }}
+        run: |
+          gzip -dc "built-image/$ARTIFACT.tar.gz" | docker load
+          revision=$(docker image inspect "foc-$ARTIFACT:ci" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+          test "$revision" = "$FOC_SOURCE_SHA"
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          aws-region: ap-southeast-1
+          role-to-assume: ${{ vars.FOC_BUILD_ROLE_ARN }}
+          allowed-account-ids: ${{ vars.FOC_AWS_ACCOUNT_ID }}
+          role-session-name: foc-build-${{ github.run_id }}
+          action-timeout-s: 60
+      - name: Authenticate to private ECR
+        run: |
+          export DOCKER_CONFIG="$RUNNER_TEMP/foc-docker"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          mkdir -p "$DOCKER_CONFIG"
+          aws ecr get-login-password --region "$AWS_REGION" |
+            docker login --username AWS --password-stdin "$FOC_AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+      - name: Publish the exact CI-built image without rebuilding
+        id: image
+        env:
+          ARTIFACT: ${{ matrix.artifact }}
+        run: |
+          tag="$FOC_SOURCE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          image="$FOC_AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/foc/$ARTIFACT:$tag"
+          docker tag "foc-$ARTIFACT:ci" "$image"
+          docker push "$image"
+          digest=$(aws ecr describe-images --repository-name "foc/$ARTIFACT" --image-ids "imageTag=$tag" --query 'imageDetails[0].imageDigest' --output text)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Record immutable image digest
+        env:
+          ARTIFACT: ${{ matrix.artifact }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          mkdir -p digests
+          jq -n --arg artifact "$ARTIFACT" --arg digest "$DIGEST" '{artifact:$artifact,digest:$digest}' > "digests/$ARTIFACT.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-digest-${{ matrix.artifact }}
+          path: digests/*.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove ephemeral ECR login
+        if: always()
+        run: |
+          if [ "${DOCKER_CONFIG:-}" = "$RUNNER_TEMP/foc-docker" ]; then
+            rm -f "$DOCKER_CONFIG/config.json"
+          fi
+
+  deploy:
+    name: Deploy immutable images or restore previous release
+    needs: [preflight, publish]
+    if: >-
+      always() && needs.preflight.outputs.deployable == 'true' &&
+      (needs.publish.result == 'success' || inputs.operation == 'rollback')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.FOC_SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - name: Download only digest metadata from this workflow run
+        if: env.FOC_OPERATION == 'deploy'
+        # actions/download-artifact@v4.3.0
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: release-digest-*
+          merge-multiple: true
+          path: digests
+      - name: Assemble source, configuration, schema and digest manifest
+        if: env.FOC_OPERATION == 'deploy'
+        run: python deploy/aws/scripts/release_workflow.py manifest --digests digests --manifest release.json
+      - name: Retain the non-secret release manifest
+        if: env.FOC_OPERATION == 'deploy'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cloud-release-manifest
+          path: release.json
+          if-no-files-found: error
+          retention-days: 90
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          aws-region: ap-southeast-1
+          role-to-assume: ${{ vars.FOC_DEPLOY_ROLE_ARN }}
+          allowed-account-ids: ${{ vars.FOC_AWS_ACCOUNT_ID }}
+          role-session-name: foc-deploy-${{ github.run_id }}
+          action-timeout-s: 60
+      - name: Execute only the fixed deployment document and verify public HTTPS
+        run: python deploy/aws/scripts/release_workflow.py "$FOC_OPERATION" --manifest release.json
+      - name: Record deployment outcome
+        if: always()
+        env:
+          RESULT: ${{ job.status }}
+        run: |
+          echo "Source: $FOC_SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Operation: $FOC_OPERATION; outcome: $RESULT" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Host history: deploy/aws/.release-state/history.jsonl. A green health check is not full business-flow or load-test evidence.' >> "$GITHUB_STEP_SUMMARY"

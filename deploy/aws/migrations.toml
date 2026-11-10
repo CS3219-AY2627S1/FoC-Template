@@ -1,0 +1,14 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-11-10
+# Scope: Added exact SQL approval for the additive campus supplier migration.
+# Author review: I validated correctness and added boundary checks where needed.
+
+# List only migrations reviewed as compatible with the running application and
+# rollback images. Unlisted migrations need an operator. Use sql_checksum() from
+# scripts/release_migrations.py; changes to leading comments do not change SQL.
+# This is a release approval list, not a second database migration history.
+version = 1
+
+[automatic.supplier]
+# Inserts missing suppliers/categories; conflicts preserve existing managed rows.
+"20261110000000_expand_nus_campus_suppliers.sql" = "e71004a2a2a5d7f8efd73fc6b461560f02e8b171ea615157d53a250a7c5020cb"

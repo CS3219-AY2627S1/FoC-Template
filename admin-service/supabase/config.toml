@@ -1,0 +1,57 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-28
+# Scope: Prepared the separate local Supabase project for Admin Service.
+# Author review: I validated correctness and supplied additional boundary checks.
+
+# Separate local PostgreSQL project. Only PostgreSQL and Studio are needed in F0.
+project_id = "admin-service"
+
+[api]
+enabled = false
+port = 17521
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+auto_expose_new_tables = false
+
+[db]
+port = 17522
+shadow_port = 17520
+major_version = 17
+health_timeout = "2m"
+
+[db.pooler]
+enabled = false
+port = 17529
+
+[db.migrations]
+enabled = true
+schema_paths = []
+
+[db.seed]
+enabled = false
+sql_paths = []
+
+[studio]
+enabled = true
+port = 17523
+api_url = "http://127.0.0.1"
+
+[auth]
+enabled = false
+
+[local_smtp]
+enabled = false
+port = 17524
+
+[storage]
+enabled = false
+
+[realtime]
+enabled = false
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false
+port = 17527

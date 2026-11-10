@@ -1,0 +1,134 @@
+# Disposable integration stack. run.sh creates its environment and RSA keys.
+# Only the web proxy and test-recipient Mailpit HTTP endpoint reach the host.
+services:
+  user-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: user_ci
+      POSTGRES_PASSWORD: ${CI_USER_DB_ADMIN_PASSWORD:?Run run.sh up first}
+    volumes:
+      - user-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres -d user_ci]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  chat-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: chat_ci
+      POSTGRES_PASSWORD: ${CI_CHAT_DB_ADMIN_PASSWORD:?Run run.sh up first}
+    volumes:
+      - chat-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres -d chat_ci]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  rabbitmq:
+    image: rabbitmq:4.1-management
+    environment:
+      RABBITMQ_DEFAULT_USER: user_chat_ci
+      RABBITMQ_DEFAULT_PASS: ${CI_RABBITMQ_PASSWORD:?Run run.sh up first}
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  mailpit:
+    image: axllent/mailpit:v1.27.3
+    ports:
+      - "127.0.0.1:${USER_CHAT_MAIL_PORT:?Run run.sh up first}:8025"
+
+  user-service:
+    image: ${CI_PROJECT_NAME:?Run run.sh up first}-user
+    build: ../../../user-service
+    environment: &user-environment
+      ENVIRONMENT: test
+      DATABASE_URL: postgresql+asyncpg://user_ci_runtime:${CI_USER_DB_PASSWORD:?Run run.sh up first}@user-db:5432/user_ci
+      JWT_PRIVATE_KEY_PATH: /run/user-chat-keys/private.pem
+      JWT_PUBLIC_KEY_PATH: /run/user-chat-keys/public.pem
+      JWT_ISSUER: foc-user-service
+      JWT_AUDIENCE: foc-services
+      OTP_HMAC_SECRET: ${CI_OTP_HMAC_SECRET:?Run run.sh up first}
+      CHAT_SERVICE_SHARED_SECRET: ${CI_CHAT_SHARED_SECRET:?Run run.sh up first}
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      RABBITMQ_URL: amqp://user_chat_ci:${CI_RABBITMQ_PASSWORD:?Run run.sh up first}@rabbitmq:5672/
+    volumes:
+      - ${CI_RUNTIME_DIR:?Run run.sh up first}/keys:/run/user-chat-keys:ro
+    depends_on:
+      user-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  user-outbox:
+    image: ${CI_PROJECT_NAME:?Run run.sh up first}-user
+    command: [outbox-publisher]
+    environment: *user-environment
+    depends_on:
+      user-service:
+        condition: service_healthy
+
+  chat-service:
+    image: ${CI_PROJECT_NAME:?Run run.sh up first}-chat
+    build: ../../../chat-service
+    environment: &chat-environment
+      DATABASE_URL: postgresql+asyncpg://chat_ci_runtime:${CI_CHAT_DB_PASSWORD:?Run run.sh up first}@chat-db:5432/chat_ci
+      RABBITMQ_URL: amqp://user_chat_ci:${CI_RABBITMQ_PASSWORD:?Run run.sh up first}@rabbitmq:5672/
+      USER_SERVICE_BASE_URL: http://user-service:8000
+      CHAT_SERVICE_SHARED_SECRET: ${CI_CHAT_SHARED_SECRET:?Run run.sh up first}
+      JWT_ISSUER: foc-user-service
+      JWT_AUDIENCE: foc-services
+      ALLOWED_ORIGINS: '["http://127.0.0.1:${USER_CHAT_WEB_PORT:?Run run.sh up first}"]'
+    depends_on:
+      chat-db:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import json, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8003/health/ready', timeout=3)); assert data == {'status': 'ready', 'delivery': 'ready'}"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  chat-outbox:
+    image: ${CI_PROJECT_NAME:?Run run.sh up first}-chat
+    command: [chat-outbox]
+    environment: *chat-environment
+    depends_on:
+      chat-service:
+        condition: service_healthy
+
+  web-client:
+    image: ${CI_PROJECT_NAME:?Run run.sh up first}-web
+    build: ../../../web-client
+    ports:
+      - "127.0.0.1:${USER_CHAT_WEB_PORT:?Run run.sh up first}:80"
+    depends_on:
+      user-service:
+        condition: service_healthy
+      chat-service:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1/sign-in]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  user-data:
+  chat-data:

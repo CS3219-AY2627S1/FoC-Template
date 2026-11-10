@@ -1,0 +1,119 @@
+/*
+ * AI Assistance Disclosure (hwangjihun):
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-30, 2026-10-31
+ * Scope: Implemented voice-draft styling and field-spacing fixes.
+ * Author review: I validated correctness, and added boundary checks.
+ */
+
+/*
+ * AI Assistance Disclosure:
+ * Tool: ChatGPT (Codex, model: gpt-6-astra), date: 2026-10-09, 2026-10-10
+ * Scope: Implemented Order page, form, list and action styling.
+ * Author review: I validated correctness and added boundary checks where needed.
+ */
+
+.order-shell a { text-decoration: none; }
+.order-heading { align-items: start; display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; margin: .1rem 0 1.5rem; }
+.order-heading h1 { color: var(--ink); font-size: clamp(1.55rem, 2.5vw, 2rem); letter-spacing: -.035em; line-height: 1.15; margin: 0; }
+.order-heading p { color: var(--muted); font-size: .9rem; line-height: 1.5; margin: .45rem 0 0; }
+.order-back { display: inline-block; font-size: .85rem; margin-bottom: 1rem; }
+.order-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-panel); margin-bottom: 1rem; padding: 1.15rem; overflow-wrap: anywhere; }
+.order-panel h2 { font-size: 1.05rem; margin: 0 0 .8rem; }
+.order-panel p { font-size: .88rem; line-height: 1.6; }
+.order-muted { color: var(--muted); font-size: .8rem; line-height: 1.5; }
+.order-button { align-items: center; background: var(--primary); border: 1px solid var(--primary); border-radius: 8px; color: white; display: inline-flex; font-size: .85rem; font-weight: 750; justify-content: center; min-height: 42px; padding: .65rem 1rem; }
+.order-button:hover:not(:disabled) { background: var(--primary-deep); color: white; }
+.order-secondary { background: var(--surface); border-color: var(--border); color: var(--ink); }
+.order-secondary:hover:not(:disabled) { background: var(--canvas); color: var(--ink); }
+.order-text-button { background: none; border: 0; color: var(--primary); font-size: .85rem; font-weight: 700; min-height: 40px; padding: .4rem; text-decoration: underline; }
+.order-actions { align-items: center; display: flex; flex-wrap: wrap; gap: .7rem; margin: 1rem 0; }
+.order-tabs { background: #eff3f8; border-radius: 12px; display: inline-flex; gap: .3rem; margin-bottom: 1rem; padding: .3rem; }
+.order-tabs button { background: transparent; border: 0; border-radius: 8px; color: var(--ink); font-size: .84rem; font-weight: 750; min-height: 40px; padding: .5rem 1rem; }
+.order-tabs button[aria-pressed="true"] { background: var(--primary); color: white; }
+.order-list-toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between; margin-bottom: .7rem; }
+.order-card-grid { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+.order-card { display: flex; flex-direction: column; margin: 0; }
+.order-card-heading { align-items: start; display: flex; flex-wrap: wrap; gap: .65rem; justify-content: space-between; }
+.order-card h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; }
+.order-card p { color: var(--muted); margin: .5rem 0; }
+.order-card-meta { align-items: start; display: flex; flex-wrap: wrap; gap: .5rem; font-size: .75rem; margin-bottom: .8rem; }
+.order-card-meta strong { background: #fff4e6; border-radius: 999px; color: #925008; padding: .3rem .6rem; }
+.order-card-meta span { padding: .3rem 0; }
+.order-card-link { align-items: center; border-top: 1px solid var(--border); display: flex; font-size: .85rem; justify-content: space-between; margin-top: auto; min-height: 44px; padding-top: .6rem; }
+.order-badge { background: #edf3fa; border-radius: 999px; color: var(--primary); display: inline-block; font-size: .7rem; font-weight: 800; padding: .35rem .65rem; white-space: nowrap; }
+.order-badge-accepted, .order-badge-completed { background: var(--success-surface); color: var(--success); }
+.order-badge-delivered, .order-badge-picked_up { background: #f1effc; color: #56408f; }
+.order-badge-failed, .order-badge-cancelled, .order-badge-expired { background: #f1f3f6; color: #526477; }
+.order-badge-disputed { background: #fff4e6; color: #925008; }
+.order-pagination, .order-pagination > div { align-items: center; display: flex; flex-wrap: wrap; gap: .6rem; }
+.order-pagination { font-size: .8rem; justify-content: space-between; margin: 1rem 0; }
+.order-empty { padding: 2rem; text-align: center; }
+.order-detail-grid { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+.order-detail-heading { align-items: start; display: grid; gap: .5rem .75rem; grid-template-columns: minmax(0, 1fr) auto; margin-bottom: .8rem; }
+.order-detail-heading .order-description { margin: .5rem 0 0; min-width: 0; }
+.order-chat-button { align-items: center; background: var(--canvas); border: 1px solid var(--border); border-radius: var(--radius-control); color: var(--primary); display: inline-flex; height: 44px; justify-content: center; padding: 0; width: 44px; }
+.order-chat-button:hover:not(:disabled) { background: #e5eef8; border-color: #b9c8d8; }
+.order-detail-heading .order-chat-error { color: #843a28; font-size: .8rem; grid-column: 1 / -1; margin: 0; }
+.order-description { white-space: pre-wrap; }
+.order-facts { margin: 1rem 0; }
+.order-facts > div { display: grid; gap: .25rem; margin: .9rem 0; }
+.order-facts dt { color: var(--muted); font-size: .8rem; }
+.order-facts dd { font-size: .87rem; font-weight: 650; line-height: 1.5; margin: 0; white-space: pre-wrap; }
+.order-facts small { color: var(--muted); display: block; font-weight: 400; }
+.order-id { overflow-wrap: anywhere; }
+.order-history { list-style: none; margin: 1rem 0 0 .3rem; padding: 0; }
+.order-history li { border-left: 2px solid var(--border); display: grid; gap: .4rem; justify-items: start; padding: 0 0 1.3rem 1rem; }
+.order-history li:last-child { padding-bottom: .2rem; }
+.order-history time, .order-history small { color: var(--muted); font-size: .75rem; }
+.order-create-grid { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+.order-form-fields { border: 0; margin: 0; min-width: 0; padding: 0; }
+.order-form-fields .form-field { margin-bottom: 1rem; }
+.order-label { display: grid; font-size: .85rem; font-weight: 700; gap: .45rem; margin-bottom: .85rem; }
+.order-label input, .order-label select, .order-label textarea { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-control); color: var(--ink); font: inherit; font-weight: 400; min-height: 43px; min-width: 0; padding: .7rem; width: 100%; }
+.order-label textarea { resize: vertical; }
+.order-label select { text-overflow: ellipsis; }
+.order-label :disabled { background: var(--canvas); }
+.order-reservation { background: #eff3f8; margin-top: 1rem; }
+.order-reservation p { color: var(--muted); font-size: .8rem; }
+.order-submit { width: 100%; }
+.order-error { background: var(--danger-surface); border-color: #edd7d2; color: #843a28; }
+.order-pending { border-color: #d2dfef; }
+.order-confirmation { margin: 1.5rem auto; max-width: 620px; }
+.order-confirmation h2 { margin-top: 1rem; }
+.order-filter summary { cursor: pointer; font-size: .85rem; font-weight: 700; }
+.order-filter .order-supplier-picker { margin-top: 1rem; }
+.order-supplier-picker { margin-bottom: 1rem; min-width: 0; position: relative; }
+.order-supplier-picker > .order-label { margin-bottom: .45rem; }
+.order-combobox-control { position: relative; }
+.order-combobox-control input { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-control); color: var(--ink); font: inherit; font-size: .85rem; min-height: 43px; padding: .7rem 2.2rem .7rem .7rem; width: 100%; }
+.order-combobox-control input:disabled { background: var(--canvas); }
+.order-combobox-arrow { color: var(--muted); pointer-events: none; position: absolute; right: .8rem; top: .65rem; }
+.order-combobox-popup { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-control); box-shadow: 0 8px 24px #18375b18; left: 0; margin-top: .3rem; overflow: hidden; position: absolute; right: 0; z-index: 7; }
+.order-combobox-popup ul { list-style: none; margin: 0; max-height: 240px; overflow-y: auto; overscroll-behavior: contain; padding: .3rem; }
+.order-combobox-popup li { border-radius: 6px; cursor: pointer; display: grid; font-size: .85rem; gap: .15rem; min-height: 44px; overflow-wrap: anywhere; padding: .6rem .7rem; }
+.order-combobox-popup li:hover, .order-combobox-popup .order-combobox-active { background: #edf3fa; }
+.order-combobox-popup li[aria-selected="true"] { background: #e5eef8; color: var(--primary); font-weight: 700; }
+.order-combobox-popup small, .order-combobox-popup p { color: var(--muted); font-size: .78rem; }
+.order-combobox-popup p { margin: .6rem .9rem; }
+.order-combobox-more { width: 100%; }
+@media (min-width: 700px) {
+  .order-card-grid, .order-create-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .order-create-grid { gap: 2rem; }
+  .order-detail-grid { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
+  .order-facts > div { grid-template-columns: minmax(80px, .6fr) minmax(0, 1.4fr); gap: .8rem; }
+}
+.order-voice { border-color: #d2dfef; }
+.order-voice .order-actions { margin-bottom: 0; }
+.order-voice-notice { background: #eff3f8; border-radius: var(--radius-control); color: var(--ink); padding: .65rem .8rem; }
+.order-voice-status p { color: var(--ink); font-weight: 650; margin: .4rem 0; }
+.order-voice-dot { background: var(--danger); border-radius: 50%; display: inline-block; height: .6rem; margin-right: .45rem; width: .6rem; }
+.order-voice-problem { background: var(--danger-surface); border-radius: var(--radius-control); color: #843a28; padding: .65rem .8rem; }
+.order-voice-transcript summary { cursor: pointer; font-size: .85rem; font-weight: 700; min-height: 40px; padding: .5rem 0; }
+.order-voice-transcript p { color: var(--muted); margin: 0; white-space: pre-wrap; }
+/* Notes under the supplier picker and the instructions box keep the gap before the next field. */
+.order-form-fields > .field-hint, .order-form-fields > .field-error { margin-bottom: 1rem; }
+.order-supplier-picker + .field-hint, .order-supplier-picker + .field-error { margin-top: -.6rem; }
+.order-voice-candidates { display: flex; flex-wrap: wrap; gap: .5rem; margin: -.4rem 0 1rem; }
+.order-voice-candidates .order-button { font-weight: 650; max-width: 100%; text-align: left; }
+@media (prefers-reduced-motion: no-preference) { .order-voice-dot { animation: order-voice-pulse 1.2s ease-in-out infinite; } }
+@keyframes order-voice-pulse { 50% { opacity: .35; } }

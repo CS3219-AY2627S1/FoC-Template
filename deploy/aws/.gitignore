@@ -1,0 +1,14 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-11-02, 2026-11-06, 2026-11-08
+# Scope: Added exclusions for generated cloud credentials and release/monitoring state.
+# Author review: I validated correctness and added boundary checks where needed.
+
+/.env
+/secrets/
+/bootstrap.env
+/backups/
+/.provision-*/
+/.release-state/
+/.ecr-*/
+/.monitoring-state/
+

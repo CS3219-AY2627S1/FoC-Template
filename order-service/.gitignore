@@ -1,0 +1,14 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Codex, model: gpt-6-astra), date: 2026-10-09
+# Tool: ChatGPT (Codex, model: gpt-6.1-sol), date: 2026-10-12, 2026-10-18, 2026-11-02
+# Scope: Added exclusions for Order environments, generated state and local notes.
+# Author review: I validated correctness and added boundary checks where needed.
+
+# Local planning/handoff notes, not service delivery documentation.
+/PLAN.md
+/docs/WORKING_CONTEXT.md
+/docs/WORKING_INSTRUCTIONS.md
+/docs/LOCAL_SETUP_CHEATSHEET.md
+/docs/D3_CHECKLIST.md
+
+# Existing tracked README.md and AGENTS.md remain tracked intentionally.

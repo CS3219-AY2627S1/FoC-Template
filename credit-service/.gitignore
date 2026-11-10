@@ -1,0 +1,16 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-13
+# Scope: Generated ignore rules for local secrets, caches and Supabase state.
+# Author review: I validated correctness and supplied additional boundary checks.
+
+.env
+.env.docker
+.venv/
+node_modules/
+supabase/.temp/
+supabase/.branches/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
