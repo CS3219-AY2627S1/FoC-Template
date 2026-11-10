@@ -1,3 +1,6 @@
+# Dependencies
+node_modules/
+
 # Build output
 dist/
 build/
@@ -7,9 +10,17 @@ out/
 .env
 .env.local
 .env.*.local
+# hand-made backups of .env (hold real local secrets)
+.env.bak*
 *.pem
 *.key
 
 # OS
 .DS_Store
 Thumbs.db
+
+# IDE
+.idea/
+
+# Agent tooling scratch (playwright MCP snapshots/screenshots)
+.playwright-mcp/

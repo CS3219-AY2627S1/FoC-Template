@@ -1,0 +1,76 @@
+# AI-assisted (CS3219 AI Usage Policy disclosure):
+# Tool: Claude Code (Fable 5), 2026-10-26, issue #250.
+# Scope: service configuration scaffolded following the supplier-service
+# / order-service pattern — application name, datasource bound to the
+# service-owned rating-db, the shared JWT secret, CORS origin, and the
+# actuator health endpoint. Flyway owns the schema (credit-service
+# precedent), so ddl-auto is none.
+# Reviewed by: [pending]
+# 2026-10-30, Claude Code (Fable 5), issue #251: the spring.rabbitmq
+# block (manual ack, correlated confirms + returns like credit-service,
+# so the retry copy's confirm is awaited and #252's publisher needs no
+# mode switch) and the rating.rabbitmq retry knobs. Author review:
+# [pending]
+# 2026-10-30, Claude Code (Fable 5), issue #252: the rating.outbox
+# publisher knobs, order/credit-service's values unchanged. Author
+# review: [pending]
+
+spring:
+  application:
+    name: rating-service
+  datasource:
+    url: jdbc:postgresql://${RATING_DB_HOST:localhost}:${RATING_DB_PORT:5432}/${RATING_DB_NAME:rating}
+    username: ${RATING_DB_USER:rating}
+    password: ${RATING_DB_PASSWORD:}
+  jpa:
+    hibernate:
+      # Flyway (db/migration) owns the schema; Hibernate never changes it
+      ddl-auto: none
+    open-in-view: false
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:foc}
+    password: ${RABBITMQ_PASSWORD:}
+    listener:
+      simple:
+        # the listener acks only after the processor's commit
+        acknowledge-mode: manual
+    # the retry republish awaits a correlated confirm and a return
+    # (RetryingListener); mandatory makes an unroutable copy come back
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+
+rating:
+  web-allowed-origin: ${WEB_ALLOWED_ORIGIN:http://localhost:5173}
+  jwt:
+    # Shared platform secret (HS256). Empty default so the yaml stays
+    # parseable; JwtVerifier turns a missing/short value into a clear
+    # startup failure.
+    secret: ${JWT_SECRET:}
+  rabbitmq:
+    retry:
+      # how long a failed event parks before returning to the work queue
+      ttl-ms: ${RATING_RETRY_TTL_MS:10000}
+      # deliveries per event before it dead-letters
+      max-attempts: ${RATING_RETRY_MAX_ATTEMPTS:3}
+      # how long the retry republish waits for the broker's confirm
+      confirm-timeout-ms: ${RATING_RETRY_CONFIRM_TIMEOUT_MS:5000}
+  outbox:
+    publisher:
+      # a fixed delay between polls, counted from the end of one poll
+      poll-interval-ms: 1000
+      # events per poll, so a backlog drains over several polls
+      batch-size: 100
+      # how long one publish waits for the broker's confirm
+      confirm-timeout-ms: 5000
+      # when an unroutable (returned) event becomes due again
+      unroutable-retry-delay-ms: 30000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

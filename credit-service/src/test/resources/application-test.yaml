@@ -1,0 +1,63 @@
+# AI-assisted (CS3219 AI Usage Policy disclosure):
+# Tool: Claude Code (Opus 5.5), 2026-10-09.
+# Scope: the "test" profile's overrides (PostgresTestContainer activates
+# it); the main application.yaml loads first. The datasource comes from
+# the Testcontainers @ServiceConnection.
+# 2026-10-11, PR #175 review (Leong Wei Zhi): the sign-up amount and
+# the earned-credit lifetime pinned.
+# 2026-10-12, issue #170: the outbox publisher off.
+# 2026-10-16, PR #190 re-review (Leong Wei Zhi): the broker host made
+# unresolvable, the reviewer's suggestion.
+# 2026-10-16, issue #173: the expiry and redistribution scheduler off.
+# Same day, PR #193 review: its comment reworded for the startup routine.
+# 2026-10-19, PR #224 review (Leong Wei Zhi): the outbox retention
+# purge off.
+# Author review: Ryan Ang, pending pull request review.
+
+credit:
+  # the tests assert on both, whatever CREDIT_SIGN_UP_CREDITS and
+  # CREDIT_EARNED_CREDIT_LIFETIME_MONTHS are in the shell running them
+  sign-up-credits: 5
+  earned-credit-lifetime-months: 3
+  jwt:
+    # the main yaml's default is empty, which fails startup
+    secret: test-jwt-secret-that-is-at-least-32-bytes-long
+
+  rabbitmq:
+    # no broker in the tests: nothing is declared at startup
+    provision-on-startup: false
+  outbox:
+    publisher:
+      # no broker in the tests: the publisher does not poll. The tests
+      # that need it turn it on against a Testcontainers broker
+      enabled: false
+    retention:
+      # the purge does not fire on the clock, so it cannot delete the
+      # old sent rows a repository test has stored; the tests call the
+      # query, or build the scheduler, themselves
+      enabled: false
+  scheduler:
+    # a test context neither runs the routine at startup nor fires on
+    # the clock; the tests call the expiry and redistribution
+    # services with their own instants and periods
+    enabled: false
+
+spring:
+  rabbitmq:
+    # The test context cache restarts a paused context by starting every
+    # Lifecycle bean, auto-startup: false included, so the listener must
+    # not be able to reach a developer's own broker: an authentication
+    # failure against one is fatal, a host that does not resolve is not.
+    # The broker-backed tests get theirs from @ServiceConnection.
+    host: broker.invalid
+    listener:
+      simple:
+        # no broker in the tests: a listener must not try to connect
+        auto-startup: false
+
+management:
+  health:
+    rabbit:
+      # no broker in the tests (the publisher is off, see above); the
+      # deployed service keeps this check, so health reports a lost broker
+      enabled: false

@@ -1,0 +1,261 @@
+<!--
+  AI-assisted (CS3219 AI Usage Policy disclosure):
+  Tool: Claude Code (Fable 5), 2026-09-10; revised 2026-09-19,
+  2026-09-20 (Opus 5), 2026-09-22 (Sonnet 5).
+  Scope: team-decided tech stack, architecture, conventions, and course
+  constraints transcribed into this guide (2026-09-10). 2026-09-19: the
+  foc-contracts shared-library exception recorded under Architecture
+  and Conventions per team decision D15 (docs/notification-service.md).
+  2026-09-20: "MCP Servers" section documenting the agent tooling
+  declared in the root .mcp.json, including the per-service database
+  port table used to target the right DB (developer tooling only - no
+  product or architecture decision; host ports are claimed by each
+  service owner in that service's own PR).
+  2026-09-22: supplier-db row in the port table filled in (host port
+  5434) while scaffolding the supplier-service Spring Boot skeleton and
+  wiring supplier-db into compose.yaml.
+  2026-09-21, issue #108: web row added to the port table recording the
+  frontend's claimed host port (WEB_PORT, default 5173).
+  2026-09-23, issue #85: user-db row in the port table filled in (host
+  port 5435, chosen by Leong Wei Zhi via options Q&A) while wiring
+  user-db into compose.yaml.
+  2026-09-29, issue #88 (Fable 5): mailpit row added to the port table
+  (SMTP 1025 / UI 8025) while wiring the local mail catcher for OTP
+  emails into compose.yaml.
+  2026-10-11, issue #151 (Fable 5): redis and gateway rows added to the
+  port table while wiring the logout denylist and the API gateway
+  cutover (team decisions by Leong Wei Zhi via options Q&A, recorded in
+  docs/gateway.md).
+  2026-10-26, issue #250 (Fable 5): rating-service row added to the
+  folder table and rating-db to the port table (host port 5438, next
+  free) while scaffolding the N1 rating service (walking skeleton,
+  decisions recorded on #44/#250).
+  2026-10-31, N6 chat (Opus 5.5): chat-service row added to the folder
+  table and chat-db to the port table (host port 5439, Ko-Khan via
+  options Q&A; docs/chat-service.md). Author review: Ko-Khan, pending
+  pull request review.
+  2026-11-02, issue #258 (Fable 5): the rating-service folder row's
+  "walking skeleton for now" retired (the N1 issues are merged; design
+  record docs/rating-service.md) and the gateway port-table row's
+  service list corrected — it had not kept up with order-service and
+  rating-service joining the cutover. Transcription only.
+  Author review: Leong Wei Zhi, pending pull request review.
+  2026-11-05, Claude Code (Opus 5.5), issue #48: infra/ recorded as the
+  second non-service folder and the cloud deployment noted under Tech
+  Stack (team decisions, Leong Wei Zhi via options Q&A,
+  docs/deployment.md). Transcription only. Author review: Leong Wei Zhi,
+  pending pull request review.
+  All decisions documented here were made by the team.
+  Reviewed by: Leong Wei Zhi (via pull request).
+  2026-11-09, Claude Code (Fable 5.1), issue #48: the deployment line
+  names the EKS cluster and RDS instead of the k3s host. Transcription
+  only. Author review: Leong Wei Zhi, pending pull request review.
+-->
+
+# Favours on Campus (FoC) — Agent Guide
+
+Favours on Campus (FoC) is a peer-to-peer campus errand platform
+(CS3219 Team 23): students post
+item-delivery requests, other students fulfil them, settled via a closed
+credit economy (credits cannot be bought or cashed out).
+
+## Tech Stack
+
+- **Frontend:** TypeScript + React, in `web/`
+- **Backend:** Java + Spring Boot, with Spring Data JPA for database access
+- **Build tool:** each service chooses its own (Maven or Gradle) — check
+  the service folder for `pom.xml` vs `build.gradle` and use that
+  service's wrapper (`./mvnw` / `./gradlew`); there is no shared root
+  build
+- **Deployment:** Docker per service (`Dockerfile` in each service folder),
+  orchestrated via root `compose.yaml`; the cloud deployment (N5, issue
+  #48) runs the same images on an EKS cluster in AWS with one RDS
+  PostgreSQL instance, provisioned by `infra/` — design in
+  `docs/deployment.md`, runbook in `infra/README.md`
+
+## Architecture
+
+Microservices, **one service per top-level folder**. Each backend service is
+an independent Spring Boot application:
+
+| Folder | Responsibility |
+| --- | --- |
+| `web/` | TypeScript + React frontend (responsive: desktop and mobile widths) |
+| `user-service/` | Accounts, auth (tokens, OTP), roles (requester/courier/admin), profiles |
+| `supplier-service/` | Vendor/landmark CRUD (admin), browsing, search and filtering |
+| `order-service/` | Request creation, listing, acceptance, courier updates, completion, expiry |
+| `credit-service/` | Credit balances, reservation, atomic transfer, transaction history |
+| `notification-service/` | Order event updates, delivery retries, idempotent event processing |
+| `rating-service/` | Ratings for completed orders (nice-to-have N1, issue #44) — walking skeleton for now |
+| `chat-service/` | Requester–courier chat for accepted orders, admins read-only (nice-to-have N6, `docs/chat-service.md`) |
+| `rating-service/` | Ratings for completed orders (nice-to-have N1, issue #44): immutable per-direction ratings, profile rating summaries/history, user reports — design record `docs/rating-service.md` |
+
+Any nice-to-have feature that warrants its own service gets an additional
+top-level folder following the same skeleton. A service folder may contain
+its own `AGENTS.md` with service-specific instructions — read it before
+working in that service.
+
+One top-level folder is **not** a service: `foc-contracts/` is a shared
+Maven library holding cross-service contract constants (e.g. broker
+exchange names) and the typed event contracts (event records +
+registry) — see the exception under Conventions. A second one,
+`infra/`, holds the cloud deployment (Terraform + Kubernetes manifests,
+issue #48) — no service code.
+
+## Conventions
+
+- Keep changes scoped to the relevant service folder; cross-service
+  communication happens via APIs/events, never by importing another
+  service's code. Sole exception (team decision D15, 2026-09-19,
+  `docs/notification-service.md`): backend services may depend on the
+  shared `foc-contracts/` library, which holds only cross-service
+  contract constants and the event contract records/registry — no
+  framework code, no service logic. Install it locally before building
+  a service that uses it: `cd foc-contracts && ./mvnw install`.
+- Requirements are tracked as GitHub issues labelled by `service:`,
+  `priority:`, and `sprint:` — reference the issue when implementing one.
+
+## Workflow
+
+- `main` is protected: no direct pushes, no force pushes. All changes go
+  through a pull request with 1 approval.
+- Branch naming: `feat/...`, `fix/...`, `docs/...`.
+- Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`, ...).
+
+## MCP Servers (agent tooling)
+
+Project-scoped MCP servers are declared in the root `.mcp.json`, so every
+teammate gets the same set. Claude Code asks for approval the first time
+it sees a new server in that file (`/mcp` shows status and lets you
+authenticate). All of them are optional conveniences — nothing in the
+build, tests, or compose stack depends on them.
+
+| Server | Use it for | Setup |
+| --- | --- | --- |
+| `figma` | Reading the team's wireframes (see `web/AGENTS.md`) | OAuth via `/mcp`; free-tier rate limit applies |
+| `context7` | Version-correct docs for Spring Boot, Spring AMQP, Spring Data JPA, React, etc. | None |
+| `postgres` | Inspecting a service-owned database (schema generated by JPA, stored rows) without installing `psql` | Needs a running DB + a connection profile, see below |
+| `playwright` | Driving the `web/` frontend in a browser — checking the M1 desktop and mobile layouts, and later end-to-end flows | First run downloads a browser (`npx playwright install chromium`) |
+
+**`postgres` setup.** The entry in `.mcp.json` names no database and
+carries no credentials — we run database-per-service, so there is no
+single "the" DB. Each person registers a connection profile once per
+service DB they work on; the password goes into the OS keyring, never
+into `.env` or any committed file:
+
+```sh
+# one profile per service DB, named after the service
+npx -y @microsoft/postgres-mcp connection add foc-notification \
+  "postgresql://notification@localhost:5433/notification"
+npx -y @microsoft/postgres-mcp connection set-password foc-notification
+npx -y @microsoft/postgres-mcp connection list
+```
+
+Agents then call `postgres_mcp_connect` with the profile, get a
+`connectionId`, and pass that to `postgres_mcp_query` (read-only) or
+`postgres_mcp_modify` (writes). Because each connection is explicit,
+working across two service DBs in one session is just two profiles and
+two connection ids.
+
+On a headless machine with no keyring, set
+`POSTGRES_MCP_CONNECTION_STRING` instead — but it puts the password in
+an environment variable, so prefer a profile on your own laptop.
+
+The server is Microsoft's, MIT-licensed, and currently **Preview**
+(`0.1.0-rc.x`); expect its tool surface to change between releases.
+Keep agent profiles read-only unless you actually need writes — create
+the profile with a read-only PostgreSQL role, since the profile flag
+alone is only a gate inside the server.
+
+| Service DB | Host port | Status |
+| --- | --- | --- |
+| `notification-db` | `${NOTIFICATION_DB_HOST_PORT:-5433}` (loopback only) | available |
+| `user-db` | `${USER_DB_HOST_PORT:-5435}` (loopback only) | available |
+| `supplier-db` | `${SUPPLIER_DB_HOST_PORT:-5434}` (loopback only) | available |
+| `order-db` | `${ORDER_DB_HOST_PORT:-5437}` (loopback only) | available |
+| `credit-db` | `${CREDIT_DB_HOST_PORT:-5436}` (loopback only) | available |
+| `rating-db` | `${RATING_DB_HOST_PORT:-5438}` (loopback only) | available |
+| `chat-db` | `${CHAT_DB_HOST_PORT:-5439}` (loopback only) | available |
+| `web` | — | no database (frontend itself published on `${WEB_PORT:-5173}`) |
+| `mailpit` | — | mail catcher, not a DB: SMTP `${MAILPIT_SMTP_PORT:-1025}`, web inbox `${MAILPIT_UI_PORT:-8025}` (both loopback only) |
+| `redis` | `${REDIS_HOST_PORT:-6379}` (loopback only) | logout token denylist (issue #151), not a DB profile — inspect with `redis-cli` |
+| `gateway` | — | not a DB: the API gateway itself is published on `${GATEWAY_PORT:-8090}`; since the cutover (issue #151, `docs/gateway.md`) it is the only way to every backend service — user, supplier, order, credit, notification and rating (`/api/<service>/**` — their containers have no host ports) |
+
+When a service gains its own database, its owner adds the container to
+`compose.yaml` in that service's own PR (the same convention the compose
+header already records), publishes it on a host port no other row has
+claimed, adds the `*_DB_HOST_PORT` variable to `.env.example`, and fills
+in the row above. Take the port from this table when adding a profile.
+
+**Versions are pinned.** Each stdio server in `.mcp.json` names an exact
+version rather than a floating tag, so everyone runs the build these
+instructions were verified against and a demo cannot break because an
+upstream release landed that morning. Bump them deliberately, in a PR
+that says what was re-checked — not by switching back to `@latest`.
+
+Prefer the ordinary tools when they suffice: `gh` for issues and PRs,
+`docker compose` and the service wrappers (`./mvnw`) via the shell. The
+MCP servers are for things those cannot do.
+
+## Course Constraints (from the CS3219 project document)
+
+Mandatory scope (Mx labels):
+
+- **M1** Responsive UI (desktop + mobile) with complete requester and
+  courier workflows.
+- **M2–M5** User, Supplier, Order, and Credit services are mandatory
+  microservices (our Notification service is an approved addition).
+- **M6** At least one *meaningful* asynchronous/event-driven workflow that
+  serves a genuine product requirement — not a message broker for its own
+  sake.
+- **M7** Everything containerized (Docker); local deployment is the
+  must-have, cloud is encouraged.
+- Seed the Supplier service from the initial data in `data/` and extend it
+  for a rich listing. Use meaningful users/suppliers for demo data.
+
+Out of scope — do not build: payment to vendors, supplier menus/product
+catalogs/inventory/checkout, live courier location tracking. Suppliers and
+campus locations may be predefined. Document any additional assumptions.
+
+Key deadlines: D2 progress check Week 7 (User/Supplier + supplier-listing
+page demo), D3 Week 10 (Order/Credit, async workflow, containerization,
+N2H plan), D4 final commit **Nov 11, 2026, 10:00** + Week 13 demo. Every
+team member must contribute at least one nice-to-have feature's worth of
+effort.
+
+## AI Usage Policy (binding for all agents in this repo)
+
+CS3219 imposes an AI usage policy (project document, Appendix 2). Agents
+working in this repo MUST follow it:
+
+**Allowed** (only after the team has finalized the relevant requirements
+and architecture): writing implementation code and unit tests, boilerplate
+and scaffolding, debugging assistance, refactoring, documentation, and
+explanations.
+
+**Prohibited — never do these, even if asked casually:**
+
+- Requirements work: eliciting, prioritizing, or consolidating the backlog;
+  sprint planning.
+- Architecture & design: proposing or changing system architecture,
+  component boundaries, design patterns, data schemas, or interfaces;
+  making performance/security trade-offs.
+- Drafting decision rationales, trade-off analyses, or justifications.
+
+These decisions belong to the team; agents implement what the team has
+decided. If a task requires such a decision, stop and ask the team member
+to make it.
+
+**Disclosure duties for every AI-assisted change:**
+
+1. Add a file-header attribution comment to each AI-influenced file
+   (tool + model, date, scope of assistance, author review note).
+2. Mark pasted AI code blocks: `// AI-generated (edited by <name>)`.
+3. Append an entry to `ai/usage-log.md` (timestamp, author, tool, prompt,
+   scope of the change).
+4. The README's final section is the consolidated AI Use Summary — keep it
+   current.
+
+Missing or misleading disclosure can cost the team grades or be treated as
+an academic integrity violation; AI use in prohibited phases can zero the
+project.

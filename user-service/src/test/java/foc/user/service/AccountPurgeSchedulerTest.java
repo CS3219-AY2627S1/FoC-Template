@@ -1,0 +1,398 @@
+/*
+AI Assistance Disclosure:
+Tool: Claude Code (Fable 5), date: 2026-09-27
+Scope: integration test for issue #93's day-31 purge, following
+       notification-service's RetentionPurgeSchedulerTest: the purge method
+       is called directly rather than waiting on the cron trigger. Rows are
+       seeded with backdated deleted_at values (the column is updatable, so
+       no JPQL backdating is needed).
+Reviewed by: Leong Wei Zhi (via pull request).
+2026-09-29 (Claude Code, Opus 5.5), PR #141 review: username checks use
+       existsByUsernameIgnoreCase (usernames now ignore case, team decision).
+2026-09-29 (Claude Code, Fable 5), issue #88: the otps seeding went with
+       the otps table; a case for the expired pending sign-up sweep the
+       same purge run now performs is added instead.
+2026-09-30 (Claude Code, Fable 5), issue #92: cases for the gate-code and
+       pending-email-change sweeps, including the FK-ordering proof — a
+       purged user's (necessarily expired) rows go first, so the users
+       delete never trips their user_id FKs.
+2026-10-01 (Claude Code, Opus 5), PR #157 Copilot review: that proof no
+       longer assumes the rows are expired — a case seeds LIVE ones on a
+       day-31 account, since the TTL and the retention window are
+       configured separately — and a case pins the expiry sweeps'
+       inclusive boundary.
+2026-10-11 (Claude Code, Fable 5), issue #94: the reset-code seeding
+       follows PasswordResetOtp (V7 remakes the account_tokens scaffold
+       for the reset flow), and a case covers the expired-reset-code
+       hygiene sweep the same run now performs.
+2026-10-26 (Claude Code, Sonnet 5.5), issue #225 (N8.5, D12): the supplier
+       bookmark cleanup client is mocked; cases pin that the purge asks
+       supplier-service for exactly the condemned accounts, makes no call
+       when none are condemned, and — when the call fails — keeps every
+       condemned account (and its child rows) while still running the
+       expired-code hygiene sweep.
+2026-10-26 (Claude Code, Sonnet 5.5), PR #259 review (Sinnez1): a case where
+       the cleanup throws an unexpected RuntimeException (not a
+       BookmarkCleanupException) — the accounts stay and the sweeps still run.
+2026-10-28 (Claude Code, Opus 5.5), issue #267: cases that the purge writes
+       one user.purged per purged account (and none for the accounts kept),
+       and none when the bookmark cleanup fails.
+       Author review: Ryan Ang, pending pull request review.
+2026-11-04, Claude Code (Fable 5.1), notification D34 (author decision
+via options Q&A): the parties argument/assertions removed — events carry
+no recipient list; RequestExpired gains a nullable courierId. Author
+review: Leong Wei Zhi, pending pull request review.
+*/
+
+package foc.user.service;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.annotation.Transactional;
+
+import foc.user.PostgresTestContainer;
+import foc.user.entity.AccountUpdateOtp;
+import foc.user.entity.PasswordResetOtp;
+import foc.user.entity.PendingEmailChange;
+import foc.user.entity.PendingSignup;
+import foc.user.entity.Role;
+import foc.user.entity.User;
+import foc.user.exception.BookmarkCleanupException;
+import foc.user.entity.OutboxEvent;
+import foc.user.repository.AccountUpdateOtpRepository;
+import foc.user.repository.OutboxEventRepository;
+import foc.user.repository.PasswordResetOtpRepository;
+import foc.user.repository.PendingEmailChangeRepository;
+import foc.user.repository.PendingSignupRepository;
+import foc.user.repository.UserRepository;
+
+/**
+ * The retention window is 30 days (pinned for every test class in
+ * {@code PostgresTestContainer}, matching the main yaml's default). {@code @Transactional}
+ * lets the purge's bulk deletes and the assertions share one
+ * transaction; the seeding flushes explicitly since bulk JPQL deletes
+ * bypass the persistence context.
+ */
+@SpringBootTest
+@Transactional
+class AccountPurgeSchedulerTest extends PostgresTestContainer {
+
+    @Autowired
+    private AccountPurgeScheduler scheduler;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @MockitoBean
+    private SupplierBookmarkCleanupClient bookmarkCleanup;
+
+    @Autowired
+    private PasswordResetOtpRepository resetOtpRepository;
+
+    @Autowired
+    private PendingSignupRepository pendingSignupRepository;
+
+    @Autowired
+    private AccountUpdateOtpRepository accountUpdateOtpRepository;
+
+    @Autowired
+    private PendingEmailChangeRepository pendingEmailChangeRepository;
+
+    @Autowired
+    private OutboxEventRepository outboxEventRepository;
+
+    @BeforeEach
+    void cleanDatabase() {
+        resetOtpRepository.deleteAll();
+        pendingSignupRepository.deleteAll();
+        accountUpdateOtpRepository.deleteAll();
+        pendingEmailChangeRepository.deleteAll();
+        userRepository.deleteAll();
+        outboxEventRepository.deleteAll();
+    }
+
+    // the surviving-row assertions leave reset rows behind, and other
+    // classes' setup deletes users without knowing this FK'd table
+    // (PR #179 approval follow-up, @Sinnez1)
+    @AfterEach
+    void clearResetRows() {
+        resetOtpRepository.deleteAll();
+    }
+
+    @Test
+    @DisplayName("Should purge accounts deleted beyond the 30-day window, with their tokens")
+    void purgesOnlyAccountsBeyondTheRetentionWindow() {
+        User active = saveUser("e1111111@u.nus.edu", "active_user", null);
+        User inWindow = saveUser("e2222222@u.nus.edu", "recently_deleted",
+            Instant.now().minus(29, ChronoUnit.DAYS));
+        User expired = saveUser("e3333333@u.nus.edu", "expired_deleted",
+            Instant.now().minus(31, ChronoUnit.DAYS));
+        for (User user : new User[] {active, inWindow, expired}) {
+            resetOtpRepository.save(new PasswordResetOtp(user, "code_hash_" + user.getUsername(),
+                Instant.now(), Instant.now().plus(1, ChronoUnit.DAYS)));
+        }
+        userRepository.flush();
+
+        scheduler.purgeExpiredDeletedAccounts();
+
+        assertThat(userRepository.findAll()).extracting(User::getId)
+            .containsExactlyInAnyOrder(active.getId(), inWindow.getId());
+        assertThat(resetOtpRepository.findAll()).extracting(otp -> otp.getUser().getId())
+            .containsExactlyInAnyOrder(active.getId(), inWindow.getId());
+    }
+
+    @Test
+    @DisplayName("Should release a purged account's email and username for reuse")
+    void purgeReleasesIdentifiers() {
+        saveUser("e3333333@u.nus.edu", "expired_deleted",
+            Instant.now().minus(31, ChronoUnit.DAYS));
+        userRepository.flush();
+
+        scheduler.purgeExpiredDeletedAccounts();
+
+        // the reuse block is the row itself (unique indexes span all rows);
+        // purging it is what frees the identifiers
+        assertThat(userRepository.existsByEmail("e3333333@u.nus.edu")).isFalse();
+        assertThat(userRepository.existsByUsernameIgnoreCase("expired_deleted")).isFalse();
+        userRepository.save(
+            new User("e3333333@u.nus.edu", "expired_deleted", "hashed_password", Role.USER));
+        userRepository.flush();
+    }
+
+    @Test
+    @DisplayName("Should sweep expired pending sign-ups and keep live ones")
+    void sweepsExpiredPendingSignups() {
+        pendingSignupRepository.save(new PendingSignup("e4444444@u.nus.edu", "expired_pending",
+            "password_hash", "code_hash", Instant.now().minusSeconds(660), Instant.now().minusSeconds(60), false));
+        PendingSignup live = pendingSignupRepository.save(
+            new PendingSignup("e5555555@u.nus.edu", "live_pending",
+                "password_hash", "code_hash", Instant.now(), Instant.now().plusSeconds(600), false));
+        pendingSignupRepository.flush();
+
+        scheduler.purgeExpiredDeletedAccounts();
+
+        assertThat(pendingSignupRepository.findAll()).extracting(PendingSignup::getId)
+            .containsExactly(live.getId());
+    }
+
+    @Test
+    @DisplayName("Should sweep expired gate codes and pending email changes, keeping live ones")
+    void sweepsExpiredAccountUpdateRows() {
+        User alex = saveUser("e1111111@u.nus.edu", "active_user", null);
+        accountUpdateOtpRepository.save(new AccountUpdateOtp(alex.getId(), "code_hash",
+            Instant.now().minusSeconds(660), Instant.now().minusSeconds(60)));
+        pendingEmailChangeRepository.save(new PendingEmailChange(alex.getId(),
+            "e2222222@u.nus.edu", "code_hash",
+            Instant.now().minusSeconds(660), Instant.now().minusSeconds(60)));
+        User bob = saveUser("e3333333@u.nus.edu", "other_user", null);
+        AccountUpdateOtp liveGate = accountUpdateOtpRepository.save(new AccountUpdateOtp(
+            bob.getId(), "code_hash", Instant.now(), Instant.now().plusSeconds(600)));
+        PendingEmailChange liveChange = pendingEmailChangeRepository.save(new PendingEmailChange(
+            bob.getId(), "e4444444@u.nus.edu", "code_hash",
+            Instant.now(), Instant.now().plusSeconds(600)));
+        userRepository.flush();
+
+        scheduler.purgeExpiredDeletedAccounts();
+
+        assertThat(accountUpdateOtpRepository.findAll()).extracting(AccountUpdateOtp::getId)
+            .containsExactly(liveGate.getId());
+        assertThat(pendingEmailChangeRepository.findAll()).extracting(PendingEmailChange::getId)
+            .containsExactly(liveChange.getId());
+    }
+
+    @Test
+    @DisplayName("A purged account's expired #92 rows never trip its FKs")
+    void purgedAccountsRowsGoFirst() {
+        User expired = saveUser("e3333333@u.nus.edu", "expired_deleted",
+            Instant.now().minus(31, ChronoUnit.DAYS));
+        // whatever such an account left behind expired within its TTL,
+        // weeks before day 31 — seeded here as the purge will find it
+        accountUpdateOtpRepository.save(new AccountUpdateOtp(expired.getId(), "code_hash",
+            Instant.now().minus(31, ChronoUnit.DAYS), Instant.now().minus(31, ChronoUnit.DAYS).plusSeconds(600)));
+        pendingEmailChangeRepository.save(new PendingEmailChange(expired.getId(),
+            "e4444444@u.nus.edu", "code_hash",
+            Instant.now().minus(31, ChronoUnit.DAYS), Instant.now().minus(31, ChronoUnit.DAYS).plusSeconds(600)));
+        userRepository.flush();
+
+        scheduler.purgeExpiredDeletedAccounts();
+
+        assertThat(userRepository.findAll()).isEmpty();
+        assertThat(accountUpdateOtpRepository.findAll()).isEmpty();
+        assertThat(pendingEmailChangeRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("A purged account's LIVE #92 rows go too: the FK can't depend on the TTL")
+    void purgedAccountsLiveRowsGoFirst() {
+        // OTP_TTL and USER_RETENTION_DAYS are configured independently, so
+        // a TTL past the recovery window would leave a live gate or pending
+        // row on a day-31 account and fail the whole purge transaction. The
+        // cleanup therefore selects by purged account, not by expiry
+        // (PR #157 Copilot review)
+        User expired = saveUser("e3333333@u.nus.edu", "expired_deleted",
+            Instant.now().minus(31, ChronoUnit.DAYS));
+        accountUpdateOtpRepository.save(new AccountUpdateOtp(expired.getId(), "code_hash",
+            Instant.now(), Instant.now().plus(60, ChronoUnit.DAYS)));
+        pendingEmailChangeRepository.save(new PendingEmailChange(expired.getId(),
+            "e4444444@u.nus.edu", "code_hash",
+            Instant.now(), Instant.now().plus(60, ChronoUnit.DAYS)));
+        userRepository.flush();
+
+        scheduler.purgeExpiredDeletedAccounts();
+
+        assertThat(userRepository.findAll()).isEmpty();
+        assertThat(accountUpdateOtpRepository.findAll()).isEmpty();
+        assertThat(pendingEmailChangeRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("The #92 expiry sweeps include the exact boundary the flows call expired")
+    void expirySweepsIncludeTheExactBoundary() {
+        // the flows reject expires_at == now (!isAfter(now)), so the sweep
+        // must remove that row too — a strictly-before cutoff left it
+        // behind (PR #157 Copilot review). The scheduler reads its own
+        // Instant.now(), so the boundary is pinned on the queries directly
+        User alex = saveUser("e1111111@u.nus.edu", "active_user", null);
+        Instant boundary = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+        accountUpdateOtpRepository.save(new AccountUpdateOtp(alex.getId(), "code_hash",
+            boundary.minusSeconds(600), boundary));
+        pendingEmailChangeRepository.save(new PendingEmailChange(alex.getId(),
+            "e2222222@u.nus.edu", "code_hash", boundary.minusSeconds(600), boundary));
+        userRepository.flush();
+
+        assertThat(accountUpdateOtpRepository.deleteByExpiresAtNotAfter(boundary)).isEqualTo(1);
+        assertThat(pendingEmailChangeRepository.deleteByExpiresAtNotAfter(boundary)).isEqualTo(1);
+        assertThat(accountUpdateOtpRepository.findAll()).isEmpty();
+        assertThat(pendingEmailChangeRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should sweep expired reset codes and keep live ones")
+    void sweepsExpiredResetTokens() {
+        User alex = saveUser("e1111111@u.nus.edu", "active_user", null);
+        resetOtpRepository.save(new PasswordResetOtp(alex, "expired_code_hash",
+            Instant.now().minusSeconds(2460), Instant.now().minusSeconds(60)));
+        User bob = saveUser("e3333333@u.nus.edu", "other_user", null);
+        PasswordResetOtp live = resetOtpRepository.save(new PasswordResetOtp(bob, "live_code_hash",
+            Instant.now(), Instant.now().plusSeconds(600)));
+        userRepository.flush();
+
+        scheduler.purgeExpiredDeletedAccounts();
+
+        assertThat(resetOtpRepository.findAll()).extracting(PasswordResetOtp::getId)
+            .containsExactly(live.getId());
+    }
+
+    @Test
+    @DisplayName("Should ask supplier-service to drop the bookmarks of exactly the purged accounts")
+    void purgeAsksSupplierServiceForTheCondemnedAccounts() {
+        saveUser("e1111111@u.nus.edu", "active_user", null);
+        saveUser("e2222222@u.nus.edu", "recently_deleted", Instant.now().minus(29, ChronoUnit.DAYS));
+        User expired = saveUser("e3333333@u.nus.edu", "expired_deleted",
+            Instant.now().minus(31, ChronoUnit.DAYS));
+        userRepository.flush();
+
+        scheduler.purgeExpiredDeletedAccounts();
+
+        verify(bookmarkCleanup).purgeBookmarks(java.util.List.of(expired.getId()));
+        assertThat(userRepository.findAll()).extracting(User::getUsername)
+            .containsExactlyInAnyOrder("active_user", "recently_deleted");
+    }
+
+    @Test
+    @DisplayName("Should not call supplier-service when no account is due for purge")
+    void purgeMakesNoCallWhenNothingIsCondemned() {
+        saveUser("e1111111@u.nus.edu", "active_user", null);
+        userRepository.flush();
+
+        scheduler.purgeExpiredDeletedAccounts();
+
+        verify(bookmarkCleanup, never()).purgeBookmarks(any());
+    }
+
+    @Test
+    @DisplayName("Should keep the condemned accounts and their rows when the bookmark cleanup fails")
+    void failedBookmarkCleanupKeepsTheAccountsForTheNextRun() {
+        User expired = saveUser("e3333333@u.nus.edu", "expired_deleted",
+            Instant.now().minus(31, ChronoUnit.DAYS));
+        resetOtpRepository.save(new PasswordResetOtp(expired, "code_hash",
+            Instant.now(), Instant.now().plus(1, ChronoUnit.DAYS)));
+        // unrelated hygiene: an already-expired pending sign-up
+        pendingSignupRepository.save(new PendingSignup("e4444444@u.nus.edu", "stale_signup",
+            "password_hash", "code_hash", Instant.now().minusSeconds(660), Instant.now().minusSeconds(60), false));
+        userRepository.flush();
+        doThrow(new BookmarkCleanupException("supplier-service is down", new RuntimeException()))
+            .when(bookmarkCleanup).purgeBookmarks(any());
+
+        scheduler.purgeExpiredDeletedAccounts();
+
+        assertThat(userRepository.findAll()).extracting(User::getId).containsExactly(expired.getId());
+        assertThat(resetOtpRepository.findAll()).hasSize(1);
+        assertThat(pendingSignupRepository.findAll()).isEmpty();
+        // kept, so nothing to tell credit-service yet
+        assertThat(outboxEventRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should keep the accounts and still sweep expired rows when the cleanup throws an unexpected exception")
+    void unexpectedCleanupFailureStillRunsTheHygieneSweeps() {
+        User expired = saveUser("e3333333@u.nus.edu", "expired_deleted",
+            Instant.now().minus(31, ChronoUnit.DAYS));
+        pendingSignupRepository.save(new PendingSignup("e4444444@u.nus.edu", "stale_signup",
+            "password_hash", "code_hash", Instant.now().minusSeconds(660), Instant.now().minusSeconds(60), false));
+        userRepository.flush();
+        doThrow(new IllegalStateException("cannot issue the service token"))
+            .when(bookmarkCleanup).purgeBookmarks(any());
+
+        scheduler.purgeExpiredDeletedAccounts();
+
+        assertThat(userRepository.findAll()).extracting(User::getId).containsExactly(expired.getId());
+        assertThat(pendingSignupRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Should write one user.purged per purged account, and none for the accounts kept")
+    void purgeWritesUserPurgedForEachPurgedAccount() {
+        saveUser("e1111111@u.nus.edu", "active_user", null);
+        saveUser("e2222222@u.nus.edu", "recently_deleted", Instant.now().minus(29, ChronoUnit.DAYS));
+        User first = saveUser("e3333333@u.nus.edu", "expired_deleted",
+            Instant.now().minus(31, ChronoUnit.DAYS));
+        User second = saveUser("e4444444@u.nus.edu", "long_deleted",
+            Instant.now().minus(40, ChronoUnit.DAYS));
+        userRepository.flush();
+
+        scheduler.purgeExpiredDeletedAccounts();
+
+        assertThat(outboxEventRepository.findAll())
+            .extracting(OutboxEvent::getEventType).containsOnly("user.purged");
+        assertThat(outboxEventRepository.findAll())
+            .extracting(OutboxEvent::getPayload)
+            .anySatisfy(payload -> assertThat(payload).contains("\"userId\":\"" + first.getId() + "\""))
+            .anySatisfy(payload -> assertThat(payload).contains("\"userId\":\"" + second.getId() + "\""))
+            .hasSize(2)
+            .allSatisfy(payload -> assertThat(payload)
+                .contains("\"eventType\":\"user.purged\"")
+                .contains("\"producer\":\"user-service\""));
+    }
+
+    private User saveUser(String email, String username, Instant deletedAt) {
+        User user = new User(email, username, "hashed_password", Role.USER);
+        if (deletedAt != null) {
+            user.softDelete(deletedAt);
+        }
+        return userRepository.save(user);
+    }
+}

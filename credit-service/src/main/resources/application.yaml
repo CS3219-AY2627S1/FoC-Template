@@ -1,0 +1,124 @@
+# AI-assisted (CS3219 AI Usage Policy disclosure):
+# Tool: Claude Code (Opus 5.5), 2026-10-09.
+# Scope: service configuration scaffolded following the user-service and
+# notification-service patterns: datasource bound to the service-owned
+# credit-db, Flyway owning the schema (V1 from docs/credit-service.md),
+# RabbitMQ connection settings (no listener yet), the shared JWT secret,
+# CORS origin, and the actuator health endpoint.
+# 2026-10-10: RabbitMQ acknowledgement, confirm and retry settings, and
+# a fractional number refused where an integer is expected, for the
+# request event handler and topology (the values are the author's).
+# 2026-10-11, issue #169: the sign-up amount and the earned-credit
+# lifetime, read by the credit operations (the values are the team's).
+# 2026-10-12, issue #170: the outbox publisher's poll interval, batch
+# cap and confirm wait (the values are the team's).
+# 2026-10-13, PR #188 review (Leong Wei Zhi): the delay before a returned
+# reply is due again (the team's value), and a second scheduler thread.
+# 2026-10-16, PR #190 review (Leong Wei Zhi): the retry copy's confirm
+# timeout, also the pause before a requeue (the team's value); the
+# max-attempts comment updated now that the listener reads it. Re-review:
+# the confirm timeout takes CREDIT_RETRY_CONFIRM_TIMEOUT_MS.
+# 2026-10-19, issue #218: the outbox retention window and purge cron
+# (the values are the team's).
+# Author review: Ryan Ang, pending pull request review.
+
+spring:
+  application:
+    name: credit-service
+  datasource:
+    url: jdbc:postgresql://${CREDIT_DB_HOST:localhost}:${CREDIT_DB_PORT:5432}/${CREDIT_DB_NAME:credit}
+    username: ${CREDIT_DB_USER:credit}
+    password: ${CREDIT_DB_PASSWORD:}
+  jpa:
+    hibernate:
+      # Flyway (db/migration) owns the schema; Hibernate never changes it
+      ddl-auto: none
+    open-in-view: false
+  task:
+    scheduling:
+      pool:
+        # The default is one thread for every @Scheduled job. The outbox
+        # poll can block on a confirm (up to confirm-timeout-ms, longer
+        # while a connection attempt times out), and must not hold up
+        # the expiry and redistribution runs (D12).
+        size: 2
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:foc}
+    password: ${RABBITMQ_PASSWORD:}
+    listener:
+      simple:
+        # The listener acks or nacks itself, after the handler's
+        # transaction commits (docs/credit-service.md D11).
+        acknowledge-mode: manual
+    # Correlated confirms with returns: a publish is confirmed by the
+    # broker AND reported back if no queue took it, so a reply is marked
+    # sent only when it was confirmed and not returned (D10).
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+  jackson:
+    deserialization:
+      # A fractional number where an integer is expected is refused, not
+      # truncated: a reward of 1.7 fails conversion and dead-letters
+      # instead of reserving 1 (Credit F1.2.1).
+      accept-float-as-int: false
+
+credit:
+  # Credits granted once, when a user's account is created (Credit F1.1,
+  # D6). Changing it only affects accounts created afterwards.
+  sign-up-credits: ${CREDIT_SIGN_UP_CREDITS:5}
+  # Months after which earned credits expire into the common pool (D4,
+  # Credit F6.1). Fixed on each lot when it is earned.
+  earned-credit-lifetime-months: ${CREDIT_EARNED_CREDIT_LIFETIME_MONTHS:3}
+  rabbitmq:
+    retry:
+      # Delay before a failed event is tried again (D11). Baked into the
+      # retry queue's x-message-ttl when it is declared: changing it
+      # against a broker that already holds the queue fails
+      # PRECONDITION_FAILED until the queue is deleted.
+      ttl-ms: ${CREDIT_RETRY_TTL_MS:2000}
+      # Total attempts before an event dead-letters (D11), counted by the
+      # request event listener.
+      max-attempts: ${CREDIT_RETRY_MAX_ATTEMPTS:5}
+      # Longest wait for the broker to confirm a failed event's retry
+      # copy. A nacked or unconfirmed copy requeues the original after a
+      # pause of the same length (PR #190, team decision).
+      confirm-timeout-ms: ${CREDIT_RETRY_CONFIRM_TIMEOUT_MS:5000}
+  outbox:
+    publisher:
+      # Delay between the end of one outbox poll and the start of the
+      # next (D10). A delay, not a rate, so polls never overlap.
+      poll-interval-ms: 1000
+      # Most replies published in one poll, so a backlog after an outage
+      # drains over several polls.
+      batch-size: 100
+      # Longest wait for the broker to confirm one reply; after it the
+      # poll stops, and the next poll tries the reply again.
+      confirm-timeout-ms: 5000
+      # How long a reply the broker returned as unroutable waits before
+      # it is due again. Until then the poll does not read it, so
+      # replies no queue takes cannot fill every batch.
+      unroutable-retry-delay-ms: 30000
+    retention:
+      # Days a reply is kept after it was sent (D13). At least 1; a
+      # smaller value fails startup. Unsent replies are never purged.
+      days: ${CREDIT_OUTBOX_RETENTION_DAYS:30}
+      # When the purge runs, in Asia/Singapore time. Default: daily at
+      # 03:00, away from the 00:00 expiry routine.
+      purge-cron: "${CREDIT_OUTBOX_PURGE_CRON:0 0 3 * * *}"
+  # Origin the browser calls this service from (no API gateway)
+  web-allowed-origin: ${WEB_ALLOWED_ORIGIN:http://localhost:5173}
+  jwt:
+    # Shared platform secret (HS256). Empty default so the yaml stays
+    # parseable; JwtVerifier turns a missing/short value into a clear
+    # startup failure.
+    secret: ${JWT_SECRET:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

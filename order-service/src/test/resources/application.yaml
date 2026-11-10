@@ -1,0 +1,99 @@
+# AI-assisted (CS3219 AI Usage Policy disclosure):
+# Tool: Claude Code (Opus 5.5), 2026-10-10.
+# Scope: test configuration scaffolded following the supplier-service
+# pattern (in-memory H2 so `./mvnw test` needs no running PostgreSQL).
+# 2026-10-15: the broker parts of the saga switched off (topology
+# declaration, outbox publisher, listener, rabbit health) and the
+# pending-timeout sweep off, following credit-service's test config, so
+# the context still loads without a running RabbitMQ; the tests drive
+# the publisher and the sweep themselves.
+# 2026-10-18: a test JWT secret, since the main yaml's default is empty,
+# and the SPA origin (this file replaces the main yaml in tests).
+# Same day: the expiry and auto-complete sweeps off, like the pending one.
+# Reviewed by: Ko-Khan (via pull request).
+# 2026-10-22, Claude Code (Opus 5.5), issue #238: H2 replaced by
+# Testcontainers Postgres (PostgresTestContainer), built by Flyway and
+# validated, as in production. Author review: Ryan Ang, pending pull
+# request review.
+# 2026-10-26, Claude Code (Opus 5.5), issue #239: the dispute escalation
+# grace, repeated from the main yaml. Author review: Ryan Ang, pending
+# pull request review.
+# 2026-10-31, Claude Code (Opus 5.5), N6 chat: order.chat.*, with the
+# dispatcher off (ChatCallDispatcherTests drives it). Author review:
+# Ko-Khan, pending pull request review.
+# 2026-11-04, Claude Code (Opus 5.5), Order F8.1: order.supplier.base-url;
+# no supplier-service in the tests, FakeSupplierLocations stands in.
+# Author review: Ko-Khan, pending pull request review.
+
+spring:
+  # The datasource comes from PostgresTestContainer's @ServiceConnection.
+  jpa:
+    hibernate:
+      # Flyway builds the schema, as in production
+      ddl-auto: validate
+  rabbitmq:
+    listener:
+      simple:
+        # no broker in the tests: a listener must not try to connect
+        auto-startup: false
+
+# This file replaces the main application.yaml on the test classpath
+# (same name), so every order.* setting the beans read is repeated here
+# with the main file's defaults.
+order:
+  web-allowed-origin: http://localhost:5173
+  jwt:
+    # the main yaml's default is empty, which fails startup
+    secret: test-jwt-secret-that-is-at-least-32-bytes-long
+  rabbitmq:
+    # no broker in the tests: nothing is declared at startup
+    provision-on-startup: false
+    retry:
+      ttl-ms: 2000
+      max-attempts: 5
+  supplier:
+    # never called: FakeSupplierLocations replaces the HTTP adapter
+    base-url: http://supplier.invalid
+  chat:
+    base-url: http://chat.invalid
+    internal-token: test-internal-token
+    dispatcher:
+      # no chat-service in the tests: ChatCallDispatcherTests calls dispatch()
+      enabled: false
+      poll-interval-ms: 1000
+      batch-size: 100
+    retry:
+      delay-ms: 15000
+      max-attempts: 20
+  outbox:
+    publisher:
+      # no broker in the tests: the publisher does not poll
+      enabled: false
+      poll-interval-ms: 1000
+      batch-size: 100
+      confirm-timeout-ms: 5000
+      unroutable-retry-delay-ms: 30000
+  expiry:
+    sweep:
+      # the tests call DeadlineExpirySweeper.expireOverdue() themselves
+      enabled: false
+      interval-ms: 300000
+    dispute-escalation-grace-ms: 3600000
+  auto-complete:
+    after-ms: 3600000
+    sweep:
+      # the tests call AutoCompleteSweeper.completeOverdue() themselves
+      enabled: false
+      interval-ms: 300000
+  pending:
+    timeout-ms: 30000
+    sweep:
+      # the tests call PendingTimeoutSweeper.cancelOverdue() themselves
+      enabled: false
+      interval-ms: 15000
+
+management:
+  health:
+    rabbit:
+      # no broker in the tests; the deployed service keeps this check
+      enabled: false

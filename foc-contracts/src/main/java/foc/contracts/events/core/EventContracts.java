@@ -1,0 +1,75 @@
+/*
+ * AI-assisted (CS3219 AI Usage Policy disclosure):
+ * Tool: Claude Code (Fable 5), 2026-09-19.
+ * Scope: cross-service event contract constants for issue #62 per
+ * team decisions D13 and D15 (docs/notification-service.md). Named
+ * "events" rather than "messaging" to avoid colliding with a possible
+ * future user-to-user chat feature (N6) — author's naming decision.
+ * 2026-09-20: order→request rename and events.core/.request package
+ * split applied (author decision D22, docs/notification-service.md).
+ * Reviewed by: Leong Wei Zhi (via pull request).
+ * 2026-10-08, Claude Code (Opus 5.5): credit-events exchange name added
+ * (team design, docs/credit-service.md D7-D8); author review: Ryan Ang,
+ * pending pull request review.
+ * 2026-10-28, Claude Code (Opus 5), issue #249: rating-events exchange
+ * name added for the N1 rating system (scope decisions on #44); author
+ * review: Leong Wei Zhi, pending pull request review.
+ * 2026-10-28, Claude Code (Opus 5.5), issue #267: user-events exchange
+ * name added (team decision, USR-1); author review: Ryan Ang, pending
+ * pull request review.
+ */
+package foc.contracts.events.core;
+
+/**
+ * Broker event contract names shared by every service on the message
+ * broker (decision D15). Only cross-service names belong here:
+ * exchanges are the rendezvous points between producers and consumers,
+ * so publisher and consumer must agree on them at compile time. Queue
+ * names do NOT belong here — a queue is private to its consuming
+ * service (D13).
+ *
+ * <p>"Events" means broker-carried domain facts ("events are facts,
+ * not commands" — see the design doc); not to be confused with any
+ * future user-to-user chat messaging feature (N6).
+ */
+public final class EventContracts {
+
+	/**
+	 * Durable <strong>topic</strong> exchange for the request domain
+	 * (D16; supersedes the D14 fanout): the Order Service publishes
+	 * request events here (state transitions per Order F0.2, courier
+	 * arrival per Order F4.1.1-F4.1.2) and the Notification Service
+	 * consumes them (D13). Routing keys are the canonical event
+	 * identity strings in {@link EventTypeRegistry} (D18); future
+	 * domains get their own exchanges.
+	 */
+	public static final String REQUEST_EVENTS_EXCHANGE = "request-events";
+
+	/**
+	 * Durable <strong>topic</strong> exchange for the credit domain
+	 * (D16: one per producing domain): the Credit Service publishes its
+	 * reservation replies here and the Order Service consumes them
+	 * (docs/credit-service.md D7-D8).
+	 */
+	public static final String CREDIT_EVENTS_EXCHANGE = "credit-events";
+
+	/**
+	 * Durable <strong>topic</strong> exchange for the rating domain
+	 * (D16: one per producing domain): the Rating Service publishes its
+	 * submitted ratings here and the Notification Service consumes them,
+	 * so the rated party is told without a synchronous call (D32, N1.1).
+	 */
+	public static final String RATING_EVENTS_EXCHANGE = "rating-events";
+
+	/**
+	 * Durable <strong>topic</strong> exchange for the user domain (USR-1,
+	 * issue #267): the User Service publishes account lifecycle facts
+	 * here ({@code user.created}, {@code user.purged}) and the Credit
+	 * Service consumes them.
+	 */
+	public static final String USER_EVENTS_EXCHANGE = "user-events";
+
+	private EventContracts() {
+	}
+
+}

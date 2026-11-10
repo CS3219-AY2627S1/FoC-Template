@@ -1,0 +1,1851 @@
+// AI-assisted (CS3219 AI Usage Policy disclosure):
+// Tool: Claude Code (Fable 5), 2026-10-17, issue #66.
+// Scope: tests for the Notification Center page against the real route
+// table and a URL-dispatching fetch stub (house style — no MSW): list
+// rendering per the wireframe (titles from eventMessage, unread dot vs
+// grayed read rows, relative times), the empty state, click-to-mark-read
+// with the badge re-fetch, mark-all-read, the All/Unread filter, the
+// "Load more" pager, a pushed STOMP frame prepending live, the
+// problem+json error banner, and the logged-out redirect. Interaction
+// shapes are the author's options-Q&A decisions (see
+// features/notifications/NotificationCenter.tsx).
+// 2026-10-18: request.dropped template cases (with and without the
+// enriched courierName); pending pull request review.
+// Reviewed by: Leong Wei Zhi (via pull request).
+// 2026-10-18, Claude Code (Fable 5), notification sound (follow-up to
+// issue #66, no issue yet): header sound-toggle cases — default on,
+// click flips aria-pressed and the stored key and silences/restores the
+// (mocked) chime, a pre-seeded 'false' renders off.
+// 2026-10-19, Claude Code (Fable 5), issue #221: fixtures carry
+// courierId instead of the retired enriched courierName (D32 supersedes
+// D30/D31) — the stub answers GET /users/{id} from a per-test name map,
+// name-bearing titles are awaited (hydration adds a round-trip), and
+// the degrade case is an id the map doesn't know (settled 404 →
+// actor-less copy). clearUsernameCache() runs per test: the resolver's
+// module-scoped cache would otherwise bleed names across tests.
+// 2026-10-19, Claude Code (Fable 5), PR #222 review (@Sinnez1): the
+// degrade case now waits for the usr-ghost lookup to settle before
+// asserting — the same copy renders pre-settle, so the old assertion
+// could not fail on the behaviour it checked.
+// 2026-10-27, Claude Code (Fable 5), issue #232: rows that reference a
+// request navigate to /deliveries/{id} — new cases for the three click
+// paths (unread+request: PATCH then navigate; read+request: navigate,
+// no PATCH; unread without a request: pre-#232 mark-read-in-place);
+// labels swap to "select to open the request" on request rows, and the
+// mark-read-in-place regression tests switch to request-less fixtures
+// so their clicks stay on the page under test.
+// 2026-10-27, same tool, PR #263 review round 2 (@claude): a case that
+// a request id carrying `/`, `?` or `#` lands as one encoded path
+// segment (regression cover for the round-1 encode fix).
+// 2026-10-29, Claude Code (Opus 5.5), issue #241: the request.disputed and
+// request.dispute-resolved templates, and their copy without the
+// category or amounts.
+// Author review: Ryan Ang, pending pull request review.
+// 2026-10-30, Claude Code (Fable 5), issue #255: the rating.submitted
+// template — the rater's name hydrates via actorIdOf (raterId) with the
+// usual degrade on a failed lookup. Author review: Leong Wei Zhi,
+// pending pull request review.
+// 2026-10-30, Claude Code (Fable 5), issue #266 (the #263 review's two
+// timing nits): a click during an in-flight mark-all still PATCHes the
+// pushed row (the `marking` gate is gone); a Back that outruns the
+// click's PATCH renders the row read (the provider's pendingReadIds
+// overlay); a failed PATCH resurfaces the row unread on the next
+// fetch. The stub gains a PATCH gate and a PATCH failure switch.
+// 2026-10-31, Claude Code (Fable 5), PR #277 review (@Sinnez1): four
+// cases — opening the Center re-syncs a badge the server shrank with
+// no push (the D33 prune); the Unread pager measures against the rows
+// a pending read has left (not the fetched snapshot); an all-pending
+// page shows the pager alone, not a false "all caught up"; and a late
+// row PATCH no longer re-decrements a total mark-all's refill already
+// refreshed.
+// 2026-11-09, Claude Code (Opus 5.5), notification sound preview (no
+// issue): the header toggle case now expects switching the sound on to
+// preview the chime once. PR #314 review (@Sinnez1): the click unlocks
+// the context; a double-click inside one batch previews once; the
+// preview's `enabled` check follows a later switch-off. Re-review: a
+// push chime's `enabled` check follows a switch-off too. Author review:
+// Leong Wei Zhi, pending pull request review.
+
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { RouterProvider, createMemoryRouter } from 'react-router'
+import type { StompConfig, messageCallbackType } from '@stomp/stompjs'
+
+import type {
+  NotificationDto,
+  PageResponse,
+} from '@/features/notifications/types'
+import { clearUsernameCache } from '@/features/user/usernames'
+import { routes } from '../routes'
+
+vi.mock('@/lib/api/config', () => ({
+  serviceBaseUrls: {
+    user: 'http://user.test',
+    supplier: '',
+    // a real base: the navigation cases land on ActiveDelivery, whose
+    // GET /requests/{id} must reach the fetch stub (an empty base makes
+    // apiFetch reject before fetching) — issue #232
+    order: 'http://order.test',
+    credit: '',
+    notification: 'http://gateway.test/api/notification',
+  },
+}))
+
+// the provider always builds its STOMP client; a recording stand-in
+// keeps it inert and lets the prepend test drive a push
+const stomp = vi.hoisted(() => {
+  const instances: Array<{
+    config: StompConfig
+    activate: ReturnType<typeof vi.fn>
+    deactivate: ReturnType<typeof vi.fn>
+    subscribe: ReturnType<typeof vi.fn>
+  }> = []
+  return { instances }
+})
+
+// the provider chimes on live pushes; here only the toggle's gating is
+// under test, so the module is a spy
+const chime = vi.hoisted(() => ({ playChime: vi.fn(), unlockChime: vi.fn() }))
+vi.mock('@/features/notifications/chime', () => chime)
+
+vi.mock('@stomp/stompjs', () => {
+  class Client {
+    config: StompConfig
+    activate = vi.fn()
+    deactivate = vi.fn().mockResolvedValue(undefined)
+    subscribe = vi.fn()
+
+    constructor(config: StompConfig) {
+      this.config = config
+      stomp.instances.push(this)
+    }
+  }
+  return {
+    Client,
+    ReconnectionTimeMode: { LINEAR: 0, EXPONENTIAL: 1 },
+  }
+})
+
+const fetchMock = vi.fn()
+
+const minutesAgo = (minutes: number) =>
+  new Date(Date.now() - minutes * 60_000).toISOString()
+
+function notification(
+  id: number,
+  eventType: string,
+  payload: Record<string, unknown>,
+  read: boolean,
+  occurredAt = minutesAgo(10),
+): NotificationDto {
+  return { id, eventType, payload, occurredAt, read, createdAt: occurredAt }
+}
+
+// per-test server state the dispatching fetch stub answers from
+// id → username the public-profile route answers; unknown ids 404 and
+// the row keeps its actor-less copy (D32 read-time hydration)
+let usernamesOnServer: Record<string, string> = {}
+let pages: Array<PageResponse<NotificationDto>> = []
+let unreadPages: Array<PageResponse<NotificationDto>> = []
+let unreadCountOnServer = 0
+let listFailure: { status: number; detail: string } | null = null
+// fail just the list requests this answers true for, so a test can fail
+// one page (or one filter) and then let the retry through
+let failList: ((page: number, unread: boolean) => boolean) | null = null
+let countFailure = false
+// When set, unread queries page over this list and the write endpoints
+// mutate it — so "mark read, then Load more" sees the set shrink the
+// way the real server's does. Canned `unreadPages` still serves the
+// tests that never write.
+let serverUnread: NotificationDto[] | null = null
+// one-shot holds, for racing a response against a push: the stub takes
+// its snapshot when the request arrives and answers when the test says
+let listGate: Deferred | null = null
+let countGate: Deferred | null = null
+let readAllGate: Deferred | null = null
+let patchGate: Deferred | null = null
+// fail the per-row PATCH, for the optimistic-read failure case (#266)
+let patchFailure = false
+
+interface Deferred {
+  promise: Promise<void>
+  release: () => void
+}
+
+function deferred(): Deferred {
+  let release: () => void = () => {}
+  const promise = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  return { promise, release }
+}
+
+// take a one-shot gate, so only the next request waits on it
+async function passGate(gate: Deferred | null) {
+  if (gate) await gate.promise
+}
+
+function pageOf(
+  content: NotificationDto[],
+  page: number,
+  totalPages: number,
+  totalElements: number,
+): PageResponse<NotificationDto> {
+  return { content, page, size: 10, totalElements, totalPages }
+}
+
+function jsonResponse(status: number, body: unknown) {
+  return {
+    ok: status < 400,
+    status,
+    headers: new Headers(),
+    json: async () => body,
+  }
+}
+
+beforeEach(() => {
+  localStorage.clear()
+  chime.playChime.mockClear()
+  chime.unlockChime.mockClear()
+  stomp.instances.length = 0
+  // the resolver's cache is module-scoped; a leftover entry would let a
+  // test pass on a name some earlier test resolved
+  clearUsernameCache()
+  usernamesOnServer = { 'usr-cou-2002': 'courier_maya' }
+  pages = [pageOf([], 0, 0, 0)]
+  unreadPages = [pageOf([], 0, 0, 0)]
+  unreadCountOnServer = 0
+  listFailure = null
+  failList = null
+  countFailure = false
+  serverUnread = null
+  listGate = null
+  countGate = null
+  readAllGate = null
+  patchGate = null
+  patchFailure = false
+  fetchMock.mockReset()
+  fetchMock.mockImplementation(async (rawUrl: string, init?: RequestInit) => {
+    const url = String(rawUrl)
+    if (url.includes('/users/me')) {
+      return jsonResponse(200, {
+        id: 1,
+        email: 'e1234567@u.nus.edu',
+        username: 'student_alex',
+        role: 'USER',
+        createdAt: '2026-09-01T00:00:00Z',
+      })
+    }
+    // the hydration route (D32): after the /users/me branch on purpose,
+    // so `me` can never fall through to an id lookup
+    const profile = /^http:\/\/user\.test\/users\/([^/?]+)$/.exec(url)
+    if (profile) {
+      const username = usernamesOnServer[decodeURIComponent(profile[1])]
+      if (username === undefined) {
+        return jsonResponse(404, { status: 404, detail: 'User not found' })
+      }
+      return jsonResponse(200, { username })
+    }
+    if (url.includes('/notifications/me/unread-count')) {
+      // the count the server would have reported when the request
+      // arrived — a held answer is therefore a stale snapshot, which is
+      // exactly the race the lost-update guard has to survive
+      const snapshot = unreadCountOnServer
+      const gate = countGate
+      countGate = null
+      await passGate(gate)
+      if (countFailure) {
+        return jsonResponse(500, { status: 500, detail: 'count is down' })
+      }
+      return jsonResponse(200, { count: snapshot })
+    }
+    if (url.includes('/notifications/me/read-all')) {
+      const gate = readAllGate
+      readAllGate = null
+      await passGate(gate)
+      if (serverUnread) serverUnread = []
+      return { ok: true, status: 204, headers: new Headers() }
+    }
+    const patched = /\/notifications\/me\/(\d+)$/.exec(url)
+    if (patched) {
+      const gate = patchGate
+      patchGate = null
+      await passGate(gate)
+      if (patchFailure) {
+        return jsonResponse(500, { status: 500, detail: 'mark-read is down' })
+      }
+      if (serverUnread) {
+        const id = Number(patched[1])
+        serverUnread = serverUnread.filter((n) => n.id !== id)
+      }
+      return { ok: true, status: 204, headers: new Headers() }
+    }
+    if (url.includes('/notifications/me')) {
+      const params = new URL(url).searchParams
+      const page = Number(params.get('page') ?? '0')
+      const unread = params.get('unread') === 'true'
+      const gate = listGate
+      listGate = null
+      await passGate(gate)
+      if (listFailure) {
+        return jsonResponse(listFailure.status, {
+          status: listFailure.status,
+          detail: listFailure.detail,
+        })
+      }
+      if (failList?.(page, unread)) {
+        return jsonResponse(500, {
+          status: 500,
+          detail: `page ${page} is unavailable`,
+        })
+      }
+      if (unread && serverUnread) {
+        const start = page * 10
+        return jsonResponse(
+          200,
+          pageOf(
+            serverUnread.slice(start, start + 10),
+            page,
+            Math.ceil(serverUnread.length / 10),
+            serverUnread.length,
+          ),
+        )
+      }
+      const source = unread ? unreadPages : pages
+      return jsonResponse(200, source[page] ?? pageOf([], page, 0, 0))
+    }
+    if (init?.method === undefined) {
+      // an unmatched GET is a test-setup bug; fail loudly
+      return jsonResponse(404, null)
+    }
+    return jsonResponse(404, null)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
+const session = { accessToken: 'jwt', tokenType: 'Bearer', expiresIn: 3600 }
+
+async function renderCenter(loggedIn = true) {
+  if (loggedIn) {
+    localStorage.setItem('user', JSON.stringify(session))
+  }
+  render(
+    <RouterProvider
+      router={createMemoryRouter(routes, {
+        initialEntries: ['/notifications'],
+      })}
+    />,
+  )
+  // settle the initial fetches (list, unread count, /users/me)
+  await act(async () => {})
+}
+
+// requests the list endpoint saw, as parsed query params
+function listRequests() {
+  return fetchMock.mock.calls
+    .map(([url]) => String(url))
+    .filter((url) => /\/notifications\/me(\?|$)/.test(url))
+    .map((url) => new URL(url).searchParams)
+}
+
+// the provider's STOMP client, connected, with its message callback
+function connectPush() {
+  act(() => stomp.instances[0].config.onConnect?.(undefined as never))
+  return stomp.instances[0].subscribe.mock.calls[0][1] as messageCallbackType
+}
+
+const pushFrame = (dto: NotificationDto) =>
+  ({ body: JSON.stringify(dto) }) as Parameters<messageCallbackType>[0]
+
+// "Request #1048 accepted by courier_maya" once usr-cou-2002 hydrates
+// (the beforeEach name map knows it)
+const acceptedBy = (id: number) =>
+  notification(
+    id,
+    'request.accepted',
+    { requestId: '1048', courierId: 'usr-cou-2002' },
+    false,
+  )
+
+const listRows = () => within(screen.getByRole('list')).getAllByRole('button')
+
+describe('notification center page', () => {
+  test("renders the caller's rows: titles, unread dots, request rows clickable read or not", async () => {
+    pages = [
+      pageOf(
+        [
+          notification(
+            3,
+            'request.accepted',
+            { requestId: '1048', courierId: 'usr-cou-2002' },
+            false,
+          ),
+          notification(
+            2,
+            'request.courier-arrived',
+            { requestId: '1042' },
+            false,
+            minutesAgo(25),
+          ),
+          notification(
+            1,
+            'request.completed',
+            { requestId: '1039' },
+            true,
+            minutesAgo(3 * 60),
+          ),
+        ],
+        0,
+        1,
+        3,
+      ),
+    ]
+    unreadCountOnServer = 2
+    await renderCenter()
+
+    // display-name copy hydrates from courierId at read time (D32) —
+    // awaited, since the lookup is a round-trip behind the first paint
+    const unreadRow = await screen.findByRole('button', {
+      name: 'Request #1048 accepted by courier_maya — unread, select to open the request',
+    })
+    expect(unreadRow).toBeEnabled()
+    expect(unreadRow).toHaveTextContent('10 min ago')
+    screen.getByRole('button', {
+      name: 'Courier has arrived at drop-off for Request #1042 — unread, select to open the request',
+    })
+    // a read row that references a request stays clickable (issue #232:
+    // it navigates — no mark-unread control exists on purpose)
+    const readRow = screen.getByRole('button', {
+      name: 'Request #1039 marked as completed — select to open the request',
+    })
+    expect(readRow).toBeEnabled()
+    expect(readRow).toHaveTextContent('3h ago')
+  })
+
+  test('a dispute names its category, and a resolution how the reward was divided', async () => {
+    pages = [
+      pageOf(
+        [
+          notification(
+            4,
+            'request.disputed',
+            { requestId: '1061', category: 'DAMAGED' },
+            false,
+          ),
+          notification(
+            3,
+            'request.dispute-resolved',
+            { requestId: '1062', courierAmount: 1, requesterAmount: 2 },
+            false,
+          ),
+          // a category this build doesn't know, and amounts missing
+          notification(
+            2,
+            'request.disputed',
+            { requestId: '1063', category: 'LATE' },
+            false,
+          ),
+          notification(
+            1,
+            'request.dispute-resolved',
+            { requestId: '1064' },
+            false,
+          ),
+        ],
+        0,
+        1,
+        4,
+      ),
+    ]
+    unreadCountOnServer = 4
+    await renderCenter()
+
+    await screen.findByRole('button', {
+      name: 'Problem reported with Request #1061: Damaged item — unread, select to open the request',
+    })
+    screen.getByRole('button', {
+      name: 'Dispute on Request #1062 resolved: 1 Credit to the courier, 2 Credits refunded — unread, select to open the request',
+    })
+    screen.getByRole('button', {
+      name: 'Problem reported with Request #1063 — unread, select to open the request',
+    })
+    screen.getByRole('button', {
+      name: 'Dispute on Request #1064 resolved — unread, select to open the request',
+    })
+  })
+
+  test('a dropped request names the courier, and degrades without a name', async () => {
+    pages = [
+      pageOf(
+        [
+          notification(
+            2,
+            'request.dropped',
+            { requestId: '1051', courierId: 'usr-cou-2002' },
+            false,
+          ),
+          // a lookup can fail (D32: deleted user, 404): the copy
+          // degrades, never breaks — usr-ghost is not in the name map
+          notification(
+            1,
+            'request.dropped',
+            { requestId: '1052', courierId: 'usr-ghost' },
+            false,
+          ),
+        ],
+        0,
+        1,
+        2,
+      ),
+    ]
+    unreadCountOnServer = 2
+    await renderCenter()
+
+    await screen.findByRole('button', {
+      name: 'Request #1051 dropped by courier_maya — unread, select to open the request',
+    })
+    // wait for the usr-ghost lookup itself to settle: the actor-less
+    // copy also renders before the 404 lands, so asserting it without
+    // this could never fail (PR #222 review)
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/users/usr-ghost'),
+        expect.anything(),
+      ),
+    )
+    await act(async () => {})
+    screen.getByRole('button', {
+      name: 'Request #1052 was dropped by its courier — unread, select to open the request',
+    })
+  })
+
+  test('a received review names the rater, and degrades without a name', async () => {
+    usernamesOnServer = { 'usr-req-1001': 'student_bob' }
+    pages = [
+      pageOf(
+        [
+          notification(
+            2,
+            'rating.submitted',
+            {
+              requestId: '1070',
+              ratingId: 'rat-1',
+              raterId: 'usr-req-1001',
+              rateeId: 'usr-cou-2002',
+              stars: 5,
+            },
+            false,
+          ),
+          // a rater lookup can fail (D32): the copy degrades, never breaks
+          notification(
+            1,
+            'rating.submitted',
+            {
+              requestId: '1071',
+              ratingId: 'rat-2',
+              raterId: 'usr-ghost',
+              rateeId: 'usr-cou-2002',
+              stars: 2,
+            },
+            false,
+          ),
+        ],
+        0,
+        1,
+        2,
+      ),
+    ]
+    unreadCountOnServer = 2
+    await renderCenter()
+
+    // the rater's name hydrates from raterId at read time (actorIdOf,
+    // D32) — awaited, the lookup is a round-trip behind the first paint
+    await screen.findByRole('button', {
+      name: 'student_bob left you a new review — unread, select to open the request',
+    })
+    // wait for the usr-ghost lookup itself to settle: the actor-less
+    // copy also renders before the 404 lands (PR #222 review)
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/users/usr-ghost'),
+        expect.anything(),
+      ),
+    )
+    await act(async () => {})
+    screen.getByRole('button', {
+      name: 'You received a new review — unread, select to open the request',
+    })
+  })
+
+  test("shows the wireframe's empty state when there is nothing", async () => {
+    await renderCenter()
+
+    screen.getByText('No new notifications')
+    screen.getByText("You're all caught up for today.")
+  })
+
+  test('clicking an unread request row PATCHes it read and opens the request', async () => {
+    const user = userEvent.setup()
+    pages = [
+      pageOf(
+        [notification(7, 'request.cancelled', { requestId: '1045' }, false)],
+        0,
+        1,
+        1,
+      ),
+    ]
+    unreadCountOnServer = 1
+    await renderCenter()
+    await screen.findByRole('link', { name: 'Notifications (1 unread)' })
+
+    // the write succeeds, after which the server would report 0 unread
+    unreadCountOnServer = 0
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Request #1045 cancelled — unread, select to open the request',
+      }),
+    )
+
+    const patch = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/notifications/me/7'),
+    )
+    expect(patch?.[1]).toMatchObject({ method: 'PATCH' })
+    expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ read: true })
+    // navigated to /deliveries/1045: the real route table mounts
+    // ActiveDelivery, which asks the (unstubbed → 404) order endpoint
+    // and renders its error view — proof the click left the Center
+    await screen.findByRole('link', { name: '← Back to requests' })
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).endsWith('/requests/1045'),
+      ),
+    ).toBe(true)
+    // badge re-synced from the server (not locally decremented — options
+    // Q&A decision); the bell outlives the route switch
+    await screen.findByRole('link', { name: 'Notifications' })
+  })
+
+  test('clicking a read request row opens the request without a PATCH', async () => {
+    const user = userEvent.setup()
+    pages = [
+      pageOf(
+        [notification(7, 'request.cancelled', { requestId: '1045' }, true)],
+        0,
+        1,
+        1,
+      ),
+    ]
+    await renderCenter()
+
+    const row = screen.getByRole('button', {
+      name: 'Request #1045 cancelled — select to open the request',
+    })
+    expect(row).toBeEnabled()
+    await user.click(row)
+
+    await screen.findByRole('link', { name: '← Back to requests' })
+    expect(
+      fetchMock.mock.calls.some(
+        ([, init]) => (init as RequestInit)?.method === 'PATCH',
+      ),
+    ).toBe(false)
+  })
+
+  test('a request id with path characters is encoded in the navigated path', async () => {
+    const user = userEvent.setup()
+    // ids are arbitrary payload strings (the contract fixtures use
+    // req-… forms): raw interpolation would let a `/`, `?` or `#`
+    // route somewhere unintended (PR #263 review)
+    pages = [
+      pageOf(
+        [notification(7, 'request.created', { requestId: 'req/9?x#y' }, true)],
+        0,
+        1,
+        1,
+      ),
+    ]
+    localStorage.setItem('user', JSON.stringify(session))
+    const router = createMemoryRouter(routes, {
+      initialEntries: ['/notifications'],
+    })
+    render(<RouterProvider router={router} />)
+    await act(async () => {})
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Request req/9?x#y created — select to open the request',
+      }),
+    )
+
+    // the whole id stays one path segment — not a deeper route, and no
+    // part of it read as a query or fragment
+    expect(router.state.location.pathname).toBe('/deliveries/req%2F9%3Fx%23y')
+    expect(router.state.location.search).toBe('')
+    expect(router.state.location.hash).toBe('')
+    // a non-numeric id renders the delivery page's error view
+    await screen.findByRole('link', { name: '← Back to requests' })
+  })
+
+  test("a credit-change row reads as the viewer's side and opens /credits", async () => {
+    const user = userEvent.setup()
+    // the session user (id 1, /users/me above) was the courier
+    pages = [
+      pageOf(
+        [
+          notification(
+            7,
+            'credit.transferred',
+            { requestId: '1045', requesterId: '9', courierId: '1', amount: 3 },
+            false,
+          ),
+        ],
+        0,
+        1,
+        1,
+      ),
+    ]
+    unreadCountOnServer = 1
+    localStorage.setItem('user', JSON.stringify(session))
+    const router = createMemoryRouter(routes, {
+      initialEntries: ['/notifications'],
+    })
+    render(<RouterProvider router={router} />)
+    await act(async () => {})
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: '+3 Credits earned for Request #1045 — unread, select to open your credits',
+      }),
+    )
+
+    expect(router.state.location.pathname).toBe('/credits')
+  })
+
+  test('clicking an unread row without a request marks it read in place', async () => {
+    const user = userEvent.setup()
+    // an uncataloged type with no requestId: nothing to navigate to, so
+    // the pre-#232 behavior holds — mark read, gray in place, stay here
+    pages = [pageOf([notification(7, 'sys.maintenance', {}, false)], 0, 1, 1)]
+    unreadCountOnServer = 1
+    await renderCenter()
+    await screen.findByRole('link', { name: 'Notifications (1 unread)' })
+
+    unreadCountOnServer = 0
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Update: sys.maintenance — unread, select to mark read',
+      }),
+    )
+
+    const patch = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/notifications/me/7'),
+    )
+    expect(patch?.[1]).toMatchObject({ method: 'PATCH' })
+    // still on the Center, row grayed in place and now inert
+    expect(
+      screen.getByRole('button', { name: 'Update: sys.maintenance' }),
+    ).toBeDisabled()
+    await screen.findByRole('link', { name: 'Notifications' })
+  })
+
+  test('"Mark all as read" hits the bulk endpoint, marks every row read and zeroes the badge', async () => {
+    const user = userEvent.setup()
+    pages = [
+      pageOf(
+        [
+          notification(2, 'request.expired', { requestId: '1050' }, false),
+          notification(1, 'request.created', { requestId: '1049' }, false),
+        ],
+        0,
+        1,
+        2,
+      ),
+    ]
+    unreadCountOnServer = 2
+    await renderCenter()
+    await screen.findByRole('link', { name: 'Notifications (2 unread)' })
+
+    unreadCountOnServer = 0
+    await user.click(screen.getByRole('button', { name: 'Mark all as read' }))
+
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, init]) =>
+          String(url).endsWith('/notifications/me/read-all') &&
+          (init as RequestInit)?.method === 'POST',
+      ),
+    ).toBe(true)
+    // read request rows stay clickable (they navigate, issue #232) —
+    // their labels dropping "unread" is what shows the flip
+    screen.getByRole('button', {
+      name: 'Request #1050 expired — select to open the request',
+    })
+    screen.getByRole('button', {
+      name: 'Request #1049 created — select to open the request',
+    })
+    await screen.findByRole('link', { name: 'Notifications' })
+  })
+
+  test('the "Mark all as read" control is disabled at zero unread', async () => {
+    await renderCenter()
+
+    expect(
+      screen.getByRole('button', { name: 'Mark all as read' }),
+    ).toBeDisabled()
+  })
+
+  test('the Unread filter re-queries with unread=true', async () => {
+    const user = userEvent.setup()
+    pages = [
+      pageOf(
+        [
+          notification(2, 'request.created', { requestId: '2' }, false),
+          notification(1, 'request.created', { requestId: '1' }, true),
+        ],
+        0,
+        1,
+        2,
+      ),
+    ]
+    unreadPages = [
+      pageOf(
+        [notification(2, 'request.created', { requestId: '2' }, false)],
+        0,
+        1,
+        1,
+      ),
+    ]
+    await renderCenter()
+
+    await user.click(screen.getByRole('button', { name: 'Unread' }))
+
+    await waitFor(() =>
+      expect(listRequests().some((p) => p.get('unread') === 'true')).toBe(true),
+    )
+    const list = screen.getByRole('list')
+    expect(within(list).getAllByRole('button')).toHaveLength(1)
+    within(list).getByRole('button', {
+      name: 'Request #2 created — unread, select to open the request',
+    })
+  })
+
+  test('"Load more" appends the next page under the first', async () => {
+    const user = userEvent.setup()
+    pages = [
+      pageOf(
+        [
+          notification(12, 'request.created', { requestId: '12' }, false),
+          ...Array.from({ length: 9 }, (_, i) =>
+            notification(
+              20 + i,
+              'request.created',
+              { requestId: `2${i}` },
+              true,
+            ),
+          ),
+        ],
+        0,
+        2,
+        11,
+      ),
+      pageOf(
+        [notification(11, 'request.created', { requestId: '11' }, true)],
+        1,
+        2,
+        11,
+      ),
+    ]
+    await renderCenter()
+    screen.getByRole('button', {
+      name: 'Request #12 created — unread, select to open the request',
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+
+    expect(listRequests().some((p) => p.get('page') === '1')).toBe(true)
+    // both pages visible, oldest appended last, pager gone (no page 2)
+    screen.getByRole('button', {
+      name: 'Request #11 created — select to open the request',
+    })
+    screen.getByRole('button', {
+      name: 'Request #12 created — unread, select to open the request',
+    })
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
+  })
+
+  test('a notification pushed while the page is open prepends live', async () => {
+    pages = [
+      pageOf(
+        [notification(1, 'request.created', { requestId: '1' }, true)],
+        0,
+        1,
+        1,
+      ),
+    ]
+    await renderCenter()
+    expect(stomp.instances).toHaveLength(1)
+
+    // drive the provider's STOMP client: connect, then a pushed frame
+    act(() => stomp.instances[0].config.onConnect?.(undefined as never))
+    const onMessage = stomp.instances[0].subscribe.mock
+      .calls[0][1] as messageCallbackType
+    await act(async () => {
+      onMessage({
+        body: JSON.stringify(
+          notification(
+            99,
+            'request.accepted',
+            { requestId: '1048', courierId: 'usr-cou-2002' },
+            false,
+          ),
+        ),
+      } as Parameters<messageCallbackType>[0])
+    })
+
+    // the pushed frame carries IDs only; its name hydrates through the
+    // same seam as the fetched rows (D32) — await the resolved copy
+    await waitFor(() => {
+      const rows = within(screen.getByRole('list')).getAllByRole('button')
+      expect(rows[0]).toHaveAccessibleName(
+        'Request #1048 accepted by courier_maya — unread, select to open the request',
+      )
+      expect(rows).toHaveLength(2)
+    })
+  })
+
+  test('a failed list load shows the problem+json detail in the error banner', async () => {
+    listFailure = { status: 500, detail: 'notifications are on fire' }
+    await renderCenter()
+
+    screen.getByText('notifications are on fire')
+  })
+
+  test('logged out, /notifications bounces to the login page', async () => {
+    await renderCenter(false)
+
+    screen.getByRole('heading', { name: 'Log In' })
+    expect(screen.queryByText('No new notifications')).toBeNull()
+  })
+
+  // ---- PR #199 review: one case per finding ----
+
+  test('a failed "Load more" retries its own page instead of skipping it', async () => {
+    const user = userEvent.setup()
+    pages = [
+      pageOf(
+        Array.from({ length: 10 }, (_, i) =>
+          notification(30 + i, 'request.created', { requestId: `3${i}` }, true),
+        ),
+        0,
+        2,
+        11,
+      ),
+      pageOf(
+        [notification(11, 'request.created', { requestId: '11' }, true)],
+        1,
+        2,
+        11,
+      ),
+    ]
+    failList = (page) => page === 1
+    await renderCenter()
+
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+
+    // the page failed, so the pager stays and still points at that page
+    await screen.findByText('page 1 is unavailable')
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeEnabled()
+
+    failList = null
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+
+    const requested = listRequests().map((p) => p.get('page'))
+    // asked for page 1 twice and never skipped ahead to page 2
+    expect(requested.filter((p) => p === '1')).toHaveLength(2)
+    expect(requested).not.toContain('2')
+    screen.getByRole('button', {
+      name: 'Request #11 created — select to open the request',
+    })
+  })
+
+  test("switching filters drops the other filter's page count", async () => {
+    const user = userEvent.setup()
+    pages = [
+      pageOf(
+        [notification(2, 'request.created', { requestId: '2' }, false)],
+        0,
+        3,
+        3,
+      ),
+    ]
+    // every unread request fails, so nothing replaces the page count
+    failList = (_page, unread) => unread
+    await renderCenter()
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: 'Unread' }))
+
+    await screen.findByText('page 0 is unavailable')
+    // "All" had 3 pages; offering page 1 here would skip the Unread
+    // view's own first page for good
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
+  })
+
+  test('a frame pushed while the first page loads survives its answer', async () => {
+    pages = [
+      pageOf(
+        [notification(1, 'request.created', { requestId: '1' }, true)],
+        0,
+        1,
+        1,
+      ),
+    ]
+    // hold page 0: its snapshot predates the push that follows
+    listGate = deferred()
+    const held = listGate
+    localStorage.setItem('user', JSON.stringify(session))
+    render(
+      <RouterProvider
+        router={createMemoryRouter(routes, {
+          initialEntries: ['/notifications'],
+        })}
+      />,
+    )
+    await act(async () => {})
+
+    const onMessage = connectPush()
+    await act(async () => onMessage(pushFrame(acceptedBy(99))))
+
+    await act(async () => {
+      held.release()
+    })
+
+    expect(listRows()).toHaveLength(2)
+    // newest on top, and not replaced away by the stale page; the name
+    // arrives when the courierId hydrates
+    await waitFor(() =>
+      expect(listRows()[0]).toHaveAccessibleName(
+        'Request #1048 accepted by courier_maya — unread, select to open the request',
+      ),
+    )
+  })
+
+  test('under the Unread filter, a row marked read leaves the list', async () => {
+    const user = userEvent.setup()
+    // request-less rows: clicking marks read in place (a request row
+    // would navigate away and unmount the list under test, issue #232)
+    unreadPages = [
+      pageOf(
+        [
+          notification(2, 'sys.note-2', {}, false),
+          notification(1, 'sys.note-1', {}, false),
+        ],
+        0,
+        1,
+        2,
+      ),
+    ]
+    unreadCountOnServer = 2
+    await renderCenter()
+    await user.click(screen.getByRole('button', { name: 'Unread' }))
+    await waitFor(() => expect(listRows()).toHaveLength(2))
+
+    unreadCountOnServer = 1
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Update: sys.note-2 — unread, select to mark read',
+      }),
+    )
+
+    // an Unread view must not keep showing a row it just marked read
+    expect(listRows()).toHaveLength(1)
+    expect(
+      screen.queryByRole('button', { name: 'Update: sys.note-2' }),
+    ).toBeNull()
+    screen.getByRole('button', {
+      name: 'Update: sys.note-1 — unread, select to mark read',
+    })
+  })
+
+  test('"Mark all as read" empties the Unread view', async () => {
+    const user = userEvent.setup()
+    serverUnread = [
+      notification(2, 'request.created', { requestId: '2' }, false),
+      notification(1, 'request.expired', { requestId: '1' }, false),
+    ]
+    unreadCountOnServer = 2
+    await renderCenter()
+    await user.click(screen.getByRole('button', { name: 'Unread' }))
+    await waitFor(() => expect(listRows()).toHaveLength(2))
+
+    unreadCountOnServer = 0
+    await user.click(screen.getByRole('button', { name: 'Mark all as read' }))
+
+    await screen.findByText('No new notifications')
+    expect(screen.queryByRole('list')).toBeNull()
+  })
+
+  test('"Mark all as read" leaves no pager under the Unread empty state', async () => {
+    const user = userEvent.setup()
+    // 13 unread over 2 pages, so the page count outlives the rows if
+    // nothing clears it (found by driving the real app)
+    serverUnread = Array.from({ length: 13 }, (_, i) =>
+      notification(100 + i, 'request.created', { requestId: `${i}` }, false),
+    )
+    unreadCountOnServer = 13
+    await renderCenter()
+    await user.click(screen.getByRole('button', { name: 'Unread' }))
+    await waitFor(() => expect(listRows()).toHaveLength(10))
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeEnabled()
+
+    unreadCountOnServer = 0
+    await user.click(screen.getByRole('button', { name: 'Mark all as read' }))
+
+    await screen.findByText('No new notifications')
+    // an empty list with a "Load more" under it offers more of nothing
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
+  })
+
+  test('"Load more" in the Unread view skips no row as the set shrinks', async () => {
+    const user = userEvent.setup()
+    // 13 unread; page 0 is the first 10. Marking 3 read shortens the
+    // server's set to 10, so a page-1 request (offset 10) would return
+    // nothing and rows 11-13 would never be reachable (PR #199 review).
+    // Request-less rows: clicking must mark read in place, not navigate
+    // off the page under test (issue #232).
+    serverUnread = Array.from({ length: 13 }, (_, i) =>
+      notification(200 + i, `sys.note-${i}`, {}, false),
+    )
+    unreadCountOnServer = 13
+    await renderCenter()
+    await user.click(screen.getByRole('button', { name: 'Unread' }))
+    await waitFor(() => expect(listRows()).toHaveLength(10))
+
+    for (const i of [0, 1, 2]) {
+      await user.click(
+        screen.getByRole('button', {
+          name: `Update: sys.note-${i} — unread, select to mark read`,
+        }),
+      )
+    }
+    expect(listRows()).toHaveLength(7)
+
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+
+    // every unread row the server still has is now on screen, none lost
+    await waitFor(() => expect(listRows()).toHaveLength(10))
+    for (const i of [10, 11, 12]) {
+      screen.getByRole('button', {
+        name: `Update: sys.note-${i} — unread, select to mark read`,
+      })
+    }
+    // and nothing is left to ask for
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
+  })
+
+  test('a pushed row does not retire the pager while older rows wait', async () => {
+    const user = userEvent.setup()
+    // 15 on the server, page 0 holds 10. Five pushes bring the rows
+    // held to 15 as well — against a total those rows postdate, that
+    // reads as "everything is loaded" and the five oldest become
+    // unreachable until a reload (PR #199 review).
+    pages = [
+      pageOf(
+        Array.from({ length: 10 }, (_, i) =>
+          notification(300 + i, 'request.created', { requestId: `${i}` }, true),
+        ),
+        0,
+        2,
+        15,
+      ),
+      pageOf(
+        Array.from({ length: 5 }, (_, i) =>
+          notification(
+            310 + i,
+            'request.created',
+            { requestId: `${10 + i}` },
+            true,
+          ),
+        ),
+        1,
+        2,
+        15,
+      ),
+    ]
+    await renderCenter()
+    const onMessage = connectPush()
+    await act(async () => {
+      for (let i = 0; i < 5; i += 1) onMessage(pushFrame(acceptedBy(900 + i)))
+    })
+    expect(listRows()).toHaveLength(15)
+
+    // the pager is still there, and still has the older page behind it
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+
+    await waitFor(() => expect(listRows()).toHaveLength(20))
+    screen.getByRole('button', {
+      name: 'Request #14 created — select to open the request',
+    })
+  })
+
+  test('a row read in the Unread view does not conjure a pager', async () => {
+    const user = userEvent.setup()
+    // exactly one page of unread rows: reading one takes it out of the
+    // server's set too, so there is still nothing left to ask for
+    // (request-less rows so the click stays on this page, issue #232)
+    serverUnread = Array.from({ length: 10 }, (_, i) =>
+      notification(400 + i, `sys.note-${i}`, {}, false),
+    )
+    unreadCountOnServer = 10
+    await renderCenter()
+    await user.click(screen.getByRole('button', { name: 'Unread' }))
+    await waitFor(() => expect(listRows()).toHaveLength(10))
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Update: sys.note-0 — unread, select to mark read',
+      }),
+    )
+
+    await waitFor(() => expect(listRows()).toHaveLength(9))
+    // 9 rows held against a total of 9, not the 10 the last answer saw
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
+  })
+
+  test('"Mark all as read" leaves a frame pushed after the bulk update unread', async () => {
+    pages = [
+      pageOf(
+        [notification(1, 'request.created', { requestId: '1' }, false)],
+        0,
+        1,
+        1,
+      ),
+    ]
+    unreadCountOnServer = 1
+    await renderCenter()
+    const onMessage = connectPush()
+
+    // hold the POST open: the server has already marked everything read
+    readAllGate = deferred()
+    const held = readAllGate
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark all as read' }))
+    })
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).endsWith('/notifications/me/read-all'),
+      ),
+    ).toBe(true)
+
+    // this row is stored after that update, so it is still unread there
+    await act(async () => onMessage(pushFrame(acceptedBy(99))))
+    await act(async () => {
+      held.release()
+    })
+
+    // the covered row flipped read (its label dropped "unread")
+    screen.getByRole('button', {
+      name: 'Request #1 created — select to open the request',
+    })
+    // marking the late frame read here would leave the badge counting a
+    // row the list shows as already read
+    expect(
+      screen.getByRole('button', {
+        name: 'Request #1048 accepted by courier_maya — unread, select to open the request',
+      }),
+    ).toBeEnabled()
+  })
+
+  // ---- issue #266: the #263 review's two timing nits ----
+
+  test('a click during an in-flight "Mark all as read" still PATCHes the pushed row', async () => {
+    pages = [
+      pageOf(
+        [notification(1, 'request.created', { requestId: '1' }, false)],
+        0,
+        1,
+        1,
+      ),
+    ]
+    unreadCountOnServer = 1
+    await renderCenter()
+    const onMessage = connectPush()
+
+    // hold the bulk POST open; the server has already run its update
+    readAllGate = deferred()
+    const held = readAllGate
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark all as read' }))
+    })
+    // stored after that update, so the bulk call does not cover it
+    await act(async () => onMessage(pushFrame(acceptedBy(99))))
+
+    // clicking it mid-flight is the only chance to mark it: the old
+    // `marking` gate skipped this PATCH and the row stayed unread
+    // forever once the user navigated away (issue #266)
+    const row = await screen.findByRole('button', {
+      name: 'Request #1048 accepted by courier_maya — unread, select to open the request',
+    })
+    await act(async () => {
+      fireEvent.click(row)
+    })
+
+    const patch = fetchMock.mock.calls.find(([url]) =>
+      String(url).endsWith('/notifications/me/99'),
+    )
+    expect(patch?.[1]).toMatchObject({ method: 'PATCH' })
+    // and the click still navigated to the request
+    await screen.findByRole('link', { name: '← Back to requests' })
+    await act(async () => {
+      held.release()
+    })
+  })
+
+  test('a Back that outruns the click PATCH still renders the row read', async () => {
+    pages = [
+      pageOf(
+        [notification(7, 'request.cancelled', { requestId: '1045' }, false)],
+        0,
+        1,
+        1,
+      ),
+    ]
+    unreadCountOnServer = 1
+    localStorage.setItem('user', JSON.stringify(session))
+    const router = createMemoryRouter(routes, {
+      initialEntries: ['/notifications'],
+    })
+    render(<RouterProvider router={router} />)
+    await act(async () => {})
+
+    // hold the PATCH open: the server still has the row unread when the
+    // remounted list fetches it
+    patchGate = deferred()
+    const held = patchGate
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: 'Request #1045 cancelled — unread, select to open the request',
+        }),
+      )
+    })
+    await screen.findByRole('link', { name: '← Back to requests' })
+
+    await act(async () => {
+      void router.navigate(-1)
+    })
+
+    // the fetched snapshot says unread, but the pending overlay wins —
+    // no unread flash while the PATCH is still in flight (issue #266)
+    await screen.findByRole('button', {
+      name: 'Request #1045 cancelled — select to open the request',
+    })
+    expect(
+      screen.queryByRole('button', {
+        name: 'Request #1045 cancelled — unread, select to open the request',
+      }),
+    ).toBeNull()
+    await act(async () => {
+      held.release()
+    })
+  })
+
+  test('a failed click PATCH resurfaces the row unread on the next fetch', async () => {
+    // the silent-swallow half of the nit: the miss must not be
+    // permanent — once the PATCH fails, the truth wins the next fetch
+    patchFailure = true
+    pages = [
+      pageOf(
+        [notification(7, 'request.cancelled', { requestId: '1045' }, false)],
+        0,
+        1,
+        1,
+      ),
+    ]
+    unreadCountOnServer = 1
+    localStorage.setItem('user', JSON.stringify(session))
+    const router = createMemoryRouter(routes, {
+      initialEntries: ['/notifications'],
+    })
+    render(<RouterProvider router={router} />)
+    await act(async () => {})
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: 'Request #1045 cancelled — unread, select to open the request',
+        }),
+      )
+    })
+    await screen.findByRole('link', { name: '← Back to requests' })
+
+    await act(async () => {
+      void router.navigate(-1)
+    })
+
+    // the failed id has left the overlay; the server's word stands
+    await screen.findByRole('button', {
+      name: 'Request #1045 cancelled — unread, select to open the request',
+    })
+  })
+
+  // ---- PR #277 review (@Sinnez1) ----
+
+  test('opening the Center re-syncs a badge the server has quietly shrunk', async () => {
+    // the dropped-courier prune (D33) deletes rows without a push, so
+    // no existing trigger (login, reconnect, push, write) tells the
+    // bell — opening the Center must ask again, or it reads 2 over an
+    // empty list with Mark-all enabled
+    unreadCountOnServer = 2
+    localStorage.setItem('user', JSON.stringify(session))
+    const router = createMemoryRouter(routes, {
+      initialEntries: ['/deliveries/1'],
+    })
+    render(<RouterProvider router={router} />)
+    await act(async () => {})
+    await screen.findByRole('link', { name: 'Notifications (2 unread)' })
+
+    // the prune empties the server's set; nothing announces it
+    unreadCountOnServer = 0
+    await act(async () => {
+      void router.navigate('/notifications')
+    })
+
+    await screen.findByRole('link', { name: 'Notifications' })
+    expect(screen.queryByRole('link', { name: /unread/ })).toBeNull()
+    screen.getByText('No new notifications')
+    expect(
+      screen.getByRole('button', { name: 'Mark all as read' }),
+    ).toBeDisabled()
+  })
+
+  test('the Unread pager measures against the rows a pending read has left', async () => {
+    // 11 unread; the newest is a request row whose click navigates with
+    // the PATCH still in flight. The render-only overlay hid it but the
+    // pager still counted it, so "Load more" asked for page 1 of what
+    // had become a 10-row set and the row that moved up never loaded
+    // (PR #277 review).
+    serverUnread = [
+      notification(500, 'request.cancelled', { requestId: '1045' }, false),
+      ...Array.from({ length: 10 }, (_, i) =>
+        notification(490 - i, `sys.note-${i + 1}`, {}, false),
+      ),
+    ]
+    pages = [
+      pageOf(serverUnread.slice(0, 10), 0, 2, 11),
+      pageOf(serverUnread.slice(10), 1, 2, 11),
+    ]
+    unreadCountOnServer = 11
+    localStorage.setItem('user', JSON.stringify(session))
+    const router = createMemoryRouter(routes, {
+      initialEntries: ['/notifications'],
+    })
+    render(<RouterProvider router={router} />)
+    await act(async () => {})
+
+    // click the request row with its PATCH held open, and come back
+    patchGate = deferred()
+    const held = patchGate
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: 'Request #1045 cancelled — unread, select to open the request',
+        }),
+      )
+    })
+    await screen.findByRole('link', { name: '← Back to requests' })
+    await act(async () => {
+      void router.navigate(-1)
+    })
+
+    // switch to Unread while the PATCH is in flight: the snapshot still
+    // carries the pending row, which leaves through the bookkeeping —
+    // 9 rows held against a total of 10, not 10 against 11
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Unread' }))
+    })
+    await waitFor(() => expect(listRows()).toHaveLength(9))
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeEnabled()
+
+    // the PATCH commits: the server's unread set is now the 10 notes
+    await act(async () => {
+      held.release()
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    })
+
+    // the next page starts where the rows held end — sys.note-10 loads
+    await waitFor(() => expect(listRows()).toHaveLength(10))
+    screen.getByRole('button', {
+      name: 'Update: sys.note-10 — unread, select to mark read',
+    })
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
+  })
+
+  test('every held row read-pending leaves the pager, not a false "all caught up"', async () => {
+    // all ten rows of the Unread page are click-navigated away while
+    // their PATCHes are in flight; one more waits on the server. The
+    // old render-only overlay emptied the screen but kept the stale
+    // counts, rendering "all caught up" with "Load more" under it —
+    // the state the PR #199 fix removed (PR #277 review).
+    serverUnread = Array.from({ length: 11 }, (_, i) =>
+      notification(
+        600 - i,
+        'request.cancelled',
+        { requestId: `${700 + i}` },
+        false,
+      ),
+    )
+    pages = [
+      pageOf(serverUnread.slice(0, 10), 0, 2, 11),
+      pageOf(serverUnread.slice(10), 1, 2, 11),
+    ]
+    unreadCountOnServer = 11
+    localStorage.setItem('user', JSON.stringify(session))
+    const router = createMemoryRouter(routes, {
+      initialEntries: ['/notifications'],
+    })
+    render(<RouterProvider router={router} />)
+    await act(async () => {})
+
+    const helds: Deferred[] = []
+    for (let i = 0; i < 10; i += 1) {
+      patchGate = deferred()
+      helds.push(patchGate)
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole('button', {
+            name: `Request #${700 + i} cancelled — unread, select to open the request`,
+          }),
+        )
+      })
+      await screen.findByRole('link', { name: '← Back to requests' })
+      await act(async () => {
+        void router.navigate(-1)
+      })
+    }
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Unread' }))
+    })
+    await act(async () => {})
+
+    // every held row is pending: a blank list with the pager standing
+    // alone — not an "all caught up" that contradicts it
+    expect(screen.queryByText('No new notifications')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeEnabled()
+
+    // the PATCHes commit; the pager still reaches the one row left
+    await act(async () => {
+      for (const h of helds) h.release()
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    })
+    await waitFor(() =>
+      screen.getByRole('button', {
+        name: 'Request #710 cancelled — unread, select to open the request',
+      }),
+    )
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
+  })
+
+  test('a late row PATCH does not re-decrement a total mark-all already refreshed', async () => {
+    const user = userEvent.setup()
+    // the reviewer's interleaving (PR #277): mark-all in flight, a
+    // covered row clicked, the bulk's refill lands a fresh total that
+    // already excludes the row — then the row's own PATCH answers. The
+    // old unconditional decrement took it off again, so the pager
+    // vanished with a row still unloaded.
+    serverUnread = Array.from({ length: 10 }, (_, i) =>
+      notification(800 - i, `sys.note-${i}`, {}, false),
+    )
+    unreadCountOnServer = 10
+    await renderCenter()
+    await user.click(screen.getByRole('button', { name: 'Unread' }))
+    await waitFor(() => expect(listRows()).toHaveLength(10))
+
+    // hold the bulk POST, then a covered row's PATCH, in that order
+    readAllGate = deferred()
+    const bulkHeld = readAllGate
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Mark all as read' }))
+    })
+    patchGate = deferred()
+    const patchHeld = patchGate
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: 'Update: sys.note-0 — unread, select to mark read',
+        }),
+      )
+    })
+
+    // the bulk finishes; its refill is held while 11 new unread rows
+    // land on the server, and answers with them
+    listGate = deferred()
+    const refillHeld = listGate
+    unreadCountOnServer = 11
+    await act(async () => {
+      bulkHeld.release()
+    })
+    serverUnread = Array.from({ length: 11 }, (_, i) =>
+      notification(900 - i, `sys.fresh-${i}`, {}, false),
+    )
+    await act(async () => {
+      refillHeld.release()
+    })
+    await waitFor(() => expect(listRows()).toHaveLength(10))
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeEnabled()
+
+    // the late PATCH answers for a row the refill no longer holds: the
+    // total must not come down again
+    await act(async () => {
+      patchHeld.release()
+    })
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeEnabled()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    })
+    await waitFor(() =>
+      screen.getByRole('button', {
+        name: 'Update: sys.fresh-10 — unread, select to mark read',
+      }),
+    )
+  })
+
+  test('a failed load shows no "all caught up" empty state', async () => {
+    listFailure = { status: 500, detail: 'notifications are on fire' }
+    await renderCenter()
+
+    screen.getByText('notifications are on fire')
+    expect(screen.queryByText('No new notifications')).toBeNull()
+    expect(screen.queryByText("You're all caught up for today.")).toBeNull()
+  })
+
+  test('"Mark all as read" survives a failed badge count', async () => {
+    // the list loads; only the best-effort count endpoint is down
+    countFailure = true
+    pages = [
+      pageOf(
+        [notification(1, 'request.created', { requestId: '1' }, false)],
+        0,
+        1,
+        1,
+      ),
+    ]
+    await renderCenter()
+
+    screen.getByRole('button', {
+      name: 'Request #1 created — unread, select to open the request',
+    })
+    // an unread row on screen is proof there is something to mark
+    expect(
+      screen.getByRole('button', { name: 'Mark all as read' }),
+    ).toBeEnabled()
+  })
+
+  test('two frames delivered in one render both prepend', async () => {
+    pages = [
+      pageOf(
+        [notification(1, 'request.created', { requestId: '1' }, true)],
+        0,
+        1,
+        1,
+      ),
+    ]
+    await renderCenter()
+    const onMessage = connectPush()
+
+    // one WebSocket message carrying two frames: both callbacks run in
+    // the same task, so React commits them together
+    await act(async () => {
+      onMessage(
+        pushFrame(
+          notification(98, 'request.expired', { requestId: '98' }, false),
+        ),
+      )
+      onMessage(
+        pushFrame(
+          notification(99, 'request.created', { requestId: '99' }, false),
+        ),
+      )
+    })
+
+    const rows = listRows()
+    expect(rows).toHaveLength(3)
+    // newest first, and neither frame lost to the other
+    expect(rows[0]).toHaveAccessibleName(
+      'Request #99 created — unread, select to open the request',
+    )
+    expect(rows[1]).toHaveAccessibleName(
+      'Request #98 expired — unread, select to open the request',
+    )
+  })
+
+  test('a stale count answer cannot erase a pushed increment', async () => {
+    unreadCountOnServer = 0
+    await renderCenter()
+
+    // the connect-time sync snapshots 0 and is held open
+    countGate = deferred()
+    const held = countGate
+    const onMessage = connectPush()
+
+    // the server stores and pushes a notification after that snapshot
+    unreadCountOnServer = 1
+    await act(async () => {
+      onMessage(pushFrame(acceptedBy(99)))
+    })
+    await screen.findByRole('link', { name: 'Notifications (1 unread)' })
+
+    // the stale answer lands last and must not be believed
+    await act(async () => {
+      held.release()
+    })
+
+    screen.getByRole('link', { name: 'Notifications (1 unread)' })
+  })
+
+  test('the header sound toggle flips the chime, the stored key, and its pressed state', async () => {
+    const user = userEvent.setup()
+    await renderCenter()
+    const onMessage = connectPush()
+    await act(async () => {})
+
+    const toggle = screen.getByRole('button', { name: 'Notification sound' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(localStorage.getItem('notificationSoundEnabled')).toBe('false')
+    await act(async () => {
+      onMessage(pushFrame(acceptedBy(99)))
+    })
+    expect(chime.playChime).not.toHaveBeenCalled()
+
+    // switching it on previews the chime, from inside the click
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(localStorage.getItem('notificationSoundEnabled')).toBe('true')
+    expect(chime.playChime).toHaveBeenCalledTimes(1)
+    // the click unlocks the context it previews on
+    expect(chime.unlockChime).toHaveBeenCalled()
+
+    await act(async () => {
+      onMessage(pushFrame(acceptedBy(100)))
+    })
+    expect(chime.playChime).toHaveBeenCalledTimes(2)
+  })
+
+  test('a double-click before a re-render previews once', async () => {
+    localStorage.setItem('notificationSoundEnabled', 'false')
+    await renderCenter()
+    const toggle = screen.getByRole('button', { name: 'Notification sound' })
+
+    // both clicks land in one batch, so both read the stale "off" and
+    // ask for on (PR #314 review)
+    act(() => {
+      toggle.click()
+      toggle.click()
+    })
+
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(chime.playChime).toHaveBeenCalledTimes(1)
+    // no pointerdown came first (a keyboard or scripted click): the
+    // setter's own unlock is the one inside the gesture
+    expect(chime.unlockChime).toHaveBeenCalledTimes(1)
+  })
+
+  test('the preview asks for the latest setting, so a quick switch-off drops it', async () => {
+    const user = userEvent.setup()
+    localStorage.setItem('notificationSoundEnabled', 'false')
+    await renderCenter()
+    const toggle = screen.getByRole('button', { name: 'Notification sound' })
+
+    await user.click(toggle)
+    const [{ enabled }] = chime.playChime.mock.calls[0] as [
+      { enabled: () => boolean },
+    ]
+    expect(enabled()).toBe(true)
+
+    await user.click(toggle)
+    expect(enabled()).toBe(false)
+    // and switching off never previews
+    expect(chime.playChime).toHaveBeenCalledTimes(1)
+  })
+
+  test('a push chime asks for the latest setting, so a switch-off while it waits drops it', async () => {
+    const user = userEvent.setup()
+    await renderCenter()
+    const onMessage = connectPush()
+    await act(async () => {})
+
+    await act(async () => {
+      onMessage(pushFrame(acceptedBy(99)))
+    })
+    expect(chime.playChime).toHaveBeenCalledTimes(1)
+    const [{ enabled }] = chime.playChime.mock.calls[0] as [
+      { enabled: () => boolean },
+    ]
+    expect(enabled()).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: 'Notification sound' }))
+    expect(enabled()).toBe(false)
+  })
+
+  test('a stored "false" renders the sound toggle off', async () => {
+    localStorage.setItem('notificationSoundEnabled', 'false')
+    await renderCenter()
+
+    expect(
+      screen.getByRole('button', { name: 'Notification sound' }),
+    ).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  test('relative times tick while the page sits open', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      pages = [
+        pageOf(
+          [
+            notification(
+              1,
+              'request.created',
+              { requestId: '1' },
+              false,
+              new Date().toISOString(),
+            ),
+          ],
+          0,
+          1,
+          1,
+        ),
+      ]
+      await renderCenter()
+      expect(listRows()[0]).toHaveTextContent('just now')
+
+      await act(async () => {
+        vi.advanceTimersByTime(2 * 60_000)
+      })
+
+      expect(listRows()[0]).toHaveTextContent('2 min ago')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

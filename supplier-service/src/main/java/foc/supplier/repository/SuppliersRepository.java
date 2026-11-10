@@ -1,0 +1,110 @@
+/*
+ * AI-assisted (CS3219 AI Usage Policy disclosure):
+ * Tool: Claude Code (Sonnet 5), 2026-09-26; revised 2026-09-27.
+ * Scope: added a paginated search/filter query for issue #133 (list
+ * endpoint: search by name, filter by category, paging + sorting).
+ * Joins supplier_categories (not the redundant flat `category` column)
+ * so filtering matches a supplier's actual, possibly multiple,
+ * categories.
+ * 2026-09-27: added searchOrderedByDistance — team decision to support
+ * "sort by distance from the user's current location" (nearest first).
+ * Native query (not JPQL) because ordering by a Haversine
+ * great-circle-distance expression needs trig functions JPQL doesn't
+ * expose; table/column names (suppliers, supplier_categories,
+ * lower-case columns) taken from the actual generated schema, not the
+ * @Table(name=...) casing, since Spring's physical naming strategy
+ * lower-cases/snake-cases it regardless. Category filter uses EXISTS
+ * instead of the JOIN the other query uses, to avoid duplicate rows
+ * for multi-category suppliers without needing SELECT DISTINCT (which
+ * doesn't compose with ORDER BY on a computed, non-selected column in
+ * Postgres). LEAST/GREATEST clamp the acos() argument to [-1, 1] —
+ * floating-point rounding can push it fractionally outside that range
+ * for a supplier at ~0 distance, which would otherwise make acos()
+ * return NULL.
+ * 2026-09-28 (PR #134 review, LeongWZ): added `ESCAPE '\'` to every
+ * LIKE clause below (including the count query, which shares the
+ * predicate) — `search` now arrives pre-escaped from SupplierService,
+ * so `%`/`_` typed by a user are matched literally instead of being
+ * interpreted as LIKE wildcards.
+ * 2026-09-29 (author request): `search` now also matches `building`/
+ * `locationDescription`, not just `name` — e.g. searching "yusof"
+ * finds every supplier at Yusof Ishak House, the same simple substring
+ * match already used for name (no abbreviation/synonym expansion, kept
+ * deliberately simple per the author).
+ * 2026-10-26, Claude Code (Sonnet 5.5), issue #225 (N8, D13): added
+ * listBookmarksFirst, the default (unfiltered, name-ordered) list: the
+ * caller's bookmarked suppliers first, most recently bookmarked first,
+ * then the rest by name. The pageable must be unsorted — the ordering is
+ * in the query, and Spring Data would append a Sort after it.
+ * Reviewed by: Alastair Tan Choon Wei
+ */
+package foc.supplier.repository;
+
+import foc.supplier.model.Suppliers;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface SuppliersRepository extends JpaRepository<Suppliers, Long> {
+    // Basic CRUD operations (save, findAll, findById, delete) are automatically included!
+
+    @Query("""
+            SELECT DISTINCT s FROM Suppliers s
+            LEFT JOIN SupplierCategories sc ON sc.supplier = s
+            WHERE (:search IS NULL
+                OR LOWER(s.name) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')) ESCAPE '\\'
+                OR LOWER(s.building) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')) ESCAPE '\\'
+                OR LOWER(s.locationDescription) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')) ESCAPE '\\')
+            AND (:category IS NULL OR LOWER(sc.category) = LOWER(CAST(:category AS string)))
+            """)
+    Page<Suppliers> search(@Param("search") String search, @Param("category") String category,
+            Pageable pageable);
+
+    @Query(value = """
+            SELECT s FROM Suppliers s
+            LEFT JOIN SupplierBookmarks b ON b.supplier = s AND b.userId = :userId
+            ORDER BY CASE WHEN b.bookmarkedAt IS NULL THEN 1 ELSE 0 END,
+                b.bookmarkedAt DESC, s.name ASC, s.id ASC
+            """,
+            countQuery = "SELECT COUNT(s) FROM Suppliers s")
+    Page<Suppliers> listBookmarksFirst(@Param("userId") Long userId, Pageable pageable);
+
+    @Query(value = """
+            SELECT s.* FROM suppliers s
+            WHERE (:search IS NULL
+                OR LOWER(s.name) LIKE LOWER(CONCAT('%', CAST(:search AS TEXT), '%')) ESCAPE '\\'
+                OR LOWER(s.building) LIKE LOWER(CONCAT('%', CAST(:search AS TEXT), '%')) ESCAPE '\\'
+                OR LOWER(s.location_description) LIKE LOWER(CONCAT('%', CAST(:search AS TEXT), '%')) ESCAPE '\\')
+            AND (:category IS NULL OR EXISTS (
+                SELECT 1 FROM supplier_categories sc
+                WHERE sc.id = s.id AND LOWER(sc.category) = LOWER(CAST(:category AS TEXT))
+            ))
+            ORDER BY (
+                6371000 * acos(
+                    LEAST(1.0, GREATEST(-1.0,
+                        cos(radians(CAST(:lat AS DOUBLE PRECISION))) * cos(radians(s.latitude))
+                            * cos(radians(s.longitude) - radians(CAST(:lng AS DOUBLE PRECISION)))
+                            + sin(radians(CAST(:lat AS DOUBLE PRECISION))) * sin(radians(s.latitude))
+                    ))
+                )
+            ) ASC, s.id ASC
+            """,
+            countQuery = """
+            SELECT count(*) FROM suppliers s
+            WHERE (:search IS NULL
+                OR LOWER(s.name) LIKE LOWER(CONCAT('%', CAST(:search AS TEXT), '%')) ESCAPE '\\'
+                OR LOWER(s.building) LIKE LOWER(CONCAT('%', CAST(:search AS TEXT), '%')) ESCAPE '\\'
+                OR LOWER(s.location_description) LIKE LOWER(CONCAT('%', CAST(:search AS TEXT), '%')) ESCAPE '\\')
+            AND (:category IS NULL OR EXISTS (
+                SELECT 1 FROM supplier_categories sc
+                WHERE sc.id = s.id AND LOWER(sc.category) = LOWER(CAST(:category AS TEXT))
+            ))
+            """,
+            nativeQuery = true)
+    Page<Suppliers> searchOrderedByDistance(@Param("search") String search, @Param("category") String category,
+            @Param("lat") Double lat, @Param("lng") Double lng, Pageable pageable);
+}

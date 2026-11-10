@@ -1,0 +1,59 @@
+# AI-assisted (CS3219 AI Usage Policy disclosure):
+# Tool: Claude Code (Opus 5.5), 2026-11-05, issue #48 (N5 cloud deployment).
+# Scope: the kustomization deploy.sh applies (kubectl apply -k).
+# Team decisions (Leong Wei Zhi, 2026-11-05, options Q&A, recorded in
+# docs/deployment.md); values mirror compose.yaml's defaults.
+# Author review: Leong Wei Zhi, pending pull request review.
+# 2026-11-08, Claude Code (Fable 5.1), issue #48 (DP7): secrets.yaml
+# (External Secrets Operator) removed; secrets.sh writes the two Secrets.
+# Author review: Leong Wei Zhi, pending pull request review.
+# 2026-11-09, Claude Code (Fable 5.1), issue #48 (EKS re-platform): the seven
+# Postgres StatefulSets are gone (one RDS instance, DP4); the gp3
+# StorageClass joins the data layer. data/db-init.yaml is applied by
+# deploy.sh on its own, before this kustomization, so the roles exist when
+# the services start. Author review: Leong Wei Zhi, pending pull request
+# review.
+# 2026-11-10, Claude Code (Opus 5.5), issue #48 (DP21): pdb.yaml added.
+# Author review: Leong Wei Zhi, pending pull request review.
+# 2026-11-10, Claude Code (Opus 5.5), issue #48 (team decision DP22, Leong
+# Wei Zhi, options Q&A): the Services in services.yaml, the Deployments
+# through pools/spot and pools/stable.
+# Author review: Leong Wei Zhi, pending pull request review.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# namespaces are set per manifest; secrets.sh applies namespace.yaml on
+# its own first, so the Secrets it writes have somewhere to go. Traefik
+# is not here: deploy.sh installs its Helm chart (infra/helm)
+resources:
+  - namespace.yaml
+  - config.yaml
+  - data/storageclass.yaml
+  - data/rabbitmq.yaml
+  - data/redis.yaml
+  - services.yaml
+  # every Deployment twice: <svc>-spot and <svc>-stable (DP22)
+  - pools/spot
+  - pools/stable
+  - ingress.yaml
+  - hpa.yaml
+  - pdb.yaml
+# __IMAGE_TAG__ is replaced by deploy.sh with the commit SHA
+images:
+  - name: ghcr.io/ay2627s1-cs3219-p23/foc-user-service
+    newTag: __IMAGE_TAG__
+  - name: ghcr.io/ay2627s1-cs3219-p23/foc-supplier-service
+    newTag: __IMAGE_TAG__
+  - name: ghcr.io/ay2627s1-cs3219-p23/foc-order-service
+    newTag: __IMAGE_TAG__
+  - name: ghcr.io/ay2627s1-cs3219-p23/foc-credit-service
+    newTag: __IMAGE_TAG__
+  - name: ghcr.io/ay2627s1-cs3219-p23/foc-notification-service
+    newTag: __IMAGE_TAG__
+  - name: ghcr.io/ay2627s1-cs3219-p23/foc-rating-service
+    newTag: __IMAGE_TAG__
+  - name: ghcr.io/ay2627s1-cs3219-p23/foc-chat-service
+    newTag: __IMAGE_TAG__
+  - name: ghcr.io/ay2627s1-cs3219-p23/foc-gateway
+    newTag: __IMAGE_TAG__
+  - name: ghcr.io/ay2627s1-cs3219-p23/foc-web
+    newTag: __IMAGE_TAG__

@@ -1,0 +1,96 @@
+/*
+ * AI-assisted (CS3219 AI Usage Policy disclosure):
+ * Tool: Claude Code (Fable 5), 2026-09-19.
+ * Scope: typed event contract base interface replacing the generic
+ * EventEnvelope, per the author's Method-B decisions (flat events, no
+ * envelope; derived canonical eventType; entity/sequence fields
+ * dropped) recorded in docs/notification-service.md D16-D19.
+ * 2026-09-20: order→request rename and events.core/.request package
+ * split applied (author decision D22, docs/notification-service.md).
+ * 2026-10-18, PR #212 review (Leong Wei Zhi), reviewer's suggestion:
+ * parties()'s comment states which events may name no one; Claude Code
+ * (Opus 5.5).
+ * 2026-10-28, Claude Code (Opus 5), issue #249: that comment names the
+ * rating domain too (scope decisions on #44).
+ * Reviewed by: Leong Wei Zhi (via pull request).
+ * 2026-10-28, Claude Code (Opus 5.5), issue #267: parties()'s comment
+ * names user events too (team decision, USR-1); author review: Ryan
+ * Ang, pending pull request review.
+ * 2026-11-04, Claude Code (Fable 5.1), D34 (author decision via options
+ * Q&A, docs/notification-service.md): parties() removed — events carry
+ * business facts only and the Notification Service derives recipients
+ * per event type. Author review: Leong Wei Zhi, pending pull request
+ * review.
+ */
+package foc.contracts.events.core;
+
+import java.time.Instant;
+import java.util.Set;
+
+/**
+ * Base contract every broker event implements: one flat record per
+ * event type (see {@link EventTypeRegistry} for the catalog), carrying
+ * these metadata accessors plus its own business fields at the top
+ * level of the JSON body (D17). Events are past-tense facts that
+ * already happened, never commands.
+ *
+ * <p>The canonical event identity is the registry string (e.g.
+ * {@code "request.accepted"}). It travels twice by design: as the body's
+ * {@code eventType} field (the contract's self-describing identity,
+ * which consumers dispatch on — D11's body-only rule) and as the
+ * RabbitMQ routing key (transport metadata). Both come from the same
+ * {@link EventTypeRegistry} entry, so they cannot drift (D18).
+ *
+ * <p>{@code eventType} is deliberately <em>not</em> a record component:
+ * it is derived from the class here and injected into the JSON by the
+ * message converter, so an instance can never carry a mismatched type
+ * string and the records need no validation boilerplate.
+ *
+ * <p>Contracts evolve additively only — add fields (marked
+ * {@link Nullable} until every producer stamps them), never rename or
+ * repurpose; consumers ignore unknown fields. A breaking change ships
+ * as a <em>new event type</em> with its own identity string, record
+ * and registry entry (see "Event conventions" in this library's
+ * README) — decided 2026-09-20, removing the earlier schemaVersion
+ * mechanism as unneeded complexity. One exception on record: D34
+ * (2026-11-04) removed the {@code parties} field from every event in a
+ * single coordinated release.
+ *
+ * <p>Events name the people involved through their business fields
+ * ({@code requesterId}, {@code courierId}, {@code rateeId}); who is
+ * notified is the Notification Service's rule per event type (D34), not
+ * part of the contract.
+ */
+public interface DomainEvent {
+
+	/**
+	 * Wire metadata field names common to every event; consumers use
+	 * this to split metadata from business fields. {@code "eventType"}
+	 * is derived ({@link #eventType()}) and injected by the message
+	 * converter — never a record component.
+	 */
+	Set<String> METADATA_FIELDS = Set.of("eventId", "eventType",
+			"occurredAt", "producer", "correlationId");
+
+	/** Unique per event; duplicate detection (D4, F2.1). */
+	String eventId();
+
+	/** When the fact happened; ISO-8601 UTC on the wire. */
+	Instant occurredAt();
+
+	/** Publishing service, e.g. {@code "order-service"}. */
+	String producer();
+
+	/** Correlates the event with the request/flow that caused it. */
+	String correlationId();
+
+	/**
+	 * Canonical event identity — the registry's routing-key string
+	 * (e.g. {@code "request.accepted"}). Derived from the class, so an
+	 * instance can never carry a mismatched type (D18).
+	 */
+	default String eventType() {
+		return EventTypeRegistry.routingKeyFor(getClass());
+	}
+
+}

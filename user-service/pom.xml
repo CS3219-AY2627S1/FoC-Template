@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AI-assisted (CS3219 AI Usage Policy disclosure):
+  Tool: Claude Code (Fable 5), 2026-09-20.
+  Scope: scaffolded for issue #84 following the notification-service
+  pattern. Minimal boot-only dependency set (actuator + webmvc and
+  their test starters), chosen by Leong Wei Zhi via options Q&A;
+  data-jpa/postgres arrive with issue #86, security with issue #91.
+  Build tool (Maven) and Java 21 follow the notification-service
+  precedent.
+  2026-09-22/23 (Ryan Ang): validation, data-jpa, security, postgres and
+  Testcontainers deps added for issue #97. Claude Code (Opus 5.5),
+  2026-09-23: removed the duplicate spring-boot-starter-web and explicit
+  jackson-databind, dropped the testcontainers-bom import so Boot manages
+  the Testcontainers version, and moved to the Testcontainers 2.x artifact
+  names used by notification-service (PR #126 review).
+  2026-09-23, Claude Code (Fable 5), issue #86: spring-boot-starter-data-jpa-test
+  added for the @DataJpaTest entity round-trip tests (the artifact
+  notification-service used for the same purpose).
+  2026-09-23, Claude Code (Opus 5.5), issue #95: spring-boot-starter-security-test
+  added so the profile controller tests can supply a mock caller.
+  2026-09-29, Claude Code (Opus 5.5), issues #87/#89/#90: jjwt (api, impl,
+  gson) for minting login tokens, same version and modules as
+  notification-service's verifier so minted tokens pass it (jjwt-gson
+  for the same Jackson 3 reason recorded in that pom).
+  2026-09-29, Claude Code (Fable 5), issue #88: spring-boot-starter-mail
+  for OTP email sending over SMTP (provider decision: Gmail SMTP, with a
+  Mailpit container as the local default — chosen by Leong Wei Zhi via
+  options Q&A).
+  2026-09-29, Claude Code (Opus 5.5), issue #147: spring-boot-starter-flyway
+  and flyway-database-postgresql (team decision: Flyway manages the schema).
+  2026-10-11, Claude Code (Fable 5), issue #151: spring-boot-starter-data-redis
+  for writing the logout denylist keys (team decision: Redis-only denylist,
+  enforced at the API gateway — chosen by Leong Wei Zhi via options Q&A).
+  Reviewed by: Leong Wei Zhi (via pull request).
+  2026-10-28, Claude Code (Opus 5.5), issue #267: foc-contracts and
+  spring-boot-starter-amqp for publishing user.created / user.purged
+  (team decisions USR-1, USR-2). Author review: Ryan Ang, pending pull
+  request review.
+  Same day, PR review: testcontainers-rabbitmq (test scope), as
+  credit-service has it, for the publisher's real-broker test.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-parent</artifactId>
+		<version>4.1.1</version>
+		<relativePath/> <!-- lookup parent from repository -->
+	</parent>
+	<groupId>foc</groupId>
+	<artifactId>user-service</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+	<name>user-service</name>
+	<description>FoC User Service</description>
+	<url/>
+	<licenses>
+		<license/>
+	</licenses>
+	<developers>
+		<developer/>
+	</developers>
+	<scm>
+		<connection/>
+		<developerConnection/>
+		<tag/>
+		<url/>
+	</scm>
+	<properties>
+		<java.version>21</java.version>
+		<!-- Not managed by the Boot BOM; pinned to notification-service's version. -->
+		<jjwt.version>0.13.0</jjwt.version>
+	</properties>
+	<dependencies>
+		<!-- shared event contracts (D15); install foc-contracts first -->
+		<dependency>
+			<groupId>foc</groupId>
+			<artifactId>foc-contracts</artifactId>
+			<version>0.0.1-SNAPSHOT</version>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-amqp</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-webmvc</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-validation</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-jpa</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-mail</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-redis</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-flyway</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-database-postgresql</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-api</artifactId>
+			<version>${jjwt.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-impl</artifactId>
+			<version>${jjwt.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-gson</artifactId>
+			<version>${jjwt.version}</version>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.postgresql</groupId>
+			<artifactId>postgresql</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-webmvc-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-jpa-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-postgresql</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!-- the outbox publisher against a real broker (issue #267) -->
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-rabbitmq</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-testcontainers</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+		</plugins>
+	</build>
+
+</project>

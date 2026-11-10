@@ -1,0 +1,104 @@
+# AI-assisted (CS3219 AI Usage Policy disclosure):
+# Tool: Claude Code (Opus 5.5), 2026-11-05, issue #48 (N5 cloud deployment).
+# Scope: the OpenResty API gateway; UPSTREAM_SUFFIX and a fully qualified
+# REDIS_HOST because the nginx resolver ignores search domains.
+# Team decisions (Leong Wei Zhi, 2026-11-05, options Q&A, recorded in
+# docs/deployment.md); values mirror compose.yaml's defaults.
+# Author review: Leong Wei Zhi, pending pull request review.
+# 2026-11-08, Claude Code (Fable 5.1), PR #302 review: the pod template
+# carries the foc-secrets version as an annotation (set by deploy.sh);
+# second round (Sinnez1): the foc-config hash too.
+# Author review: Leong Wei Zhi, pending pull request review.
+# 2026-11-10, Claude Code (Opus 5.5), issue #48 (team decision DP21,
+# Leong Wei Zhi, options Q&A): soft spread of the replicas across nodes.
+# Author review: Leong Wei Zhi, pending pull request review.
+# PR #323 review (Copilot), team decision DP21 (Leong Wei Zhi): rolling
+# update without surge (maxSurge 0, maxUnavailable 1); revised on the
+# Claude reviewer's round to maxSurge 1, maxUnavailable 0.
+# Author review: Leong Wei Zhi, pending pull request review.
+# 2026-11-10, Claude Code (Opus 5.5), issue #48 (team decision DP22,
+# Leong Wei Zhi, options Q&A): the Service moved to services.yaml; this
+# Deployment is the base that pools/spot (-spot, HPA 1 to 2) and
+# pools/stable (-stable, one replica on the on-demand node) render.
+# Author review: Leong Wei Zhi, pending pull request review.
+---
+# no replicas: pools/stable sets 1, and the HorizontalPodAutoscaler in
+# hpa.yaml owns the -spot count (DP22)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: foc
+spec:
+  selector:
+    matchLabels:
+      app: gateway
+  # a surge pod first, the old one stops once it is Ready: no outage per
+  # deploy (DP21, PR #323 review). The pod is small; it waits Pending only
+  # when every node is full, bounded by deploy.sh's deadline. No database,
+  # so the backends' connection budget does not apply
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: gateway
+      annotations:
+        # set by deploy.sh to the foc-secrets resourceVersion: changed
+        # values roll the pods together with a new image tag
+        foc/secrets-version: "__SECRETS_VERSION__"
+        # the rendered foc-config, hashed by deploy.sh: a config change
+        # rolls the pods too
+        foc/config-hash: "__CONFIG_HASH__"
+    spec:
+      # replicas prefer different nodes, but still schedule when only one
+      # node has room (DP21); pod-template-hash keeps a rollout's old
+      # pods out of the count
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: gateway
+          matchLabelKeys:
+            - pod-template-hash
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: gateway
+          image: ghcr.io/ay2627s1-cs3219-p23/foc-gateway
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: foc-config
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: foc-secrets
+                  key: JWT_SECRET
+            - name: UPSTREAM_SUFFIX
+              value: ".foc.svc.cluster.local"
+            - name: REDIS_HOST
+              value: "redis.foc.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 20

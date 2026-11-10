@@ -1,0 +1,37 @@
+# AI-assisted (CS3219 AI Usage Policy disclosure):
+# Tool: Claude Code (Sonnet 5), 2026-09-22; revised 2026-09-26.
+# Scope: service configuration scaffolded following the
+# notification-service pattern — application name, datasource bound to
+# the service-owned supplier-db, JPA schema-from-entities, and the
+# actuator health endpoint. 2026-09-26 (issue #133): web-allowed-origin
+# for CorsConfig, so the browser can call GET /suppliers directly.
+# Reviewed by: Ko-Khan (via pull request).
+# 2026-09-29, issue #106: JWT secret binding for the JWT verification +
+# role gate filter chain (same shared JWT_SECRET as user-service and
+# notification-service).
+
+spring:
+  application:
+    name: supplier-service
+  datasource:
+    url: jdbc:postgresql://${SUPPLIER_DB_HOST:localhost}:${SUPPLIER_DB_PORT:5432}/${SUPPLIER_DB_NAME:supplier}
+    username: ${SUPPLIER_DB_USER:supplier}
+    password: ${SUPPLIER_DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+supplier:
+  web-allowed-origin: ${WEB_ALLOWED_ORIGIN:http://localhost:5173}
+  jwt:
+    # Shared platform secret (HS256). Empty default so the yaml stays
+    # parseable; JwtVerifier turns a missing/short value into a clear
+    # startup failure.
+    secret: ${JWT_SECRET:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

@@ -1,0 +1,381 @@
+/*
+ * AI-assisted (CS3219 AI Usage Policy disclosure):
+ * Tool: Claude Code (Opus 5.5), 2026-10-13.
+ * Scope: empty controller skeleton — one unmapped stub method per
+ * OrderEvents constant for the author to fill out. The tool chose no
+ * routes, HTTP methods, parameters, request/response shapes or status
+ * codes; those are left to the author.
+ * Same day: body of create(), as specified by the author — builds a
+ * Requests from the method's parameters (the entity's caller-supplied
+ * columns) and stores it through RequestsService.create, which sets
+ * status CREATED. Still unmapped.
+ * Same day: remaining stubs, as specified by the author — each
+ * delegates to the RequestsService method of the same name, taking that
+ * method's parameters and returning its Requests result. Still unmapped.
+ * Same day: HTTP mappings for the author's endpoints.txt (POST /create,
+ * /accept, /collect, /drop, /cancel, /complete). JSON request bodies,
+ * creditAmount and deadline added to /create, {"message": ...}
+ * responses with 200 / 409 (illegal transition) / 404 (unknown id), and
+ * no event publishing were each chosen by the author via neutral-options
+ * Q&A (see ai/usage-log.md). expire() is left unmapped.
+ * 2026-10-16: POST /arrive for the author's ARRIVED state, in the same
+ * shape as /collect.
+ * 2026-10-18: the caller comes from the bearer token (SecurityConfig):
+ * /create makes them the requester and /accept the courier, so
+ * requesterId and courierId left the bodies (the author's decision);
+ * the other routes pass the caller to RequestsService's ownership
+ * checks.
+ * Same day: InvalidRequestException (missing or invalid /create fields)
+ * answered 400 with its message (the author's decision).
+ * Same day: the author's read endpoints - GET /requests (open errands),
+ * /requests/{id}, /requests/mine and /users/{id}/requests - through
+ * RequestsQueryService.
+ * Same day: the lists take the author's filters and sort (RequestFilter,
+ * bound from the query string); a value of the wrong type is a 400.
+ * 2026-10-20: a step that loses a race (another step committed on the
+ * same request after this one read it, caught by the @Version check) is
+ * answered 409 "This request's state has changed" instead of a 500 (the
+ * author's decision).
+ * Reviewed by: Ko-Khan (via pull request).
+ * 2026-10-23, Claude Code (Opus 5.5), issue #240: the admin endpoints of
+ * team decision DSP-5 (GET /requests/admin, POST /requests/admin/statuses,
+ * POST /retry-settlement), ADMIN / OWNER in SecurityConfig. Author review:
+ * Ryan Ang, pending pull request review.
+ * 2026-10-26, Claude Code (Opus 5.5), issue #239: POST /dispute (the
+ * requester) and POST /resolve (ADMIN / OWNER in SecurityConfig) of team
+ * decision DSP-5; every list and the detail carry the request's dispute,
+ * loaded once per page (team decision). Author review: Ryan Ang, pending
+ * pull request review.
+ * 2026-10-27, Claude Code (Opus 5.5), issue #242: GET /requests/admin
+ * takes userId (team decision). Author review: Ryan Ang, pending pull
+ * request review.
+ * 2026-10-29, Claude Code (Opus 5.5), issue #241: every list and the
+ * detail carry autoCompleteAt from RequestsService (team decision).
+ * Author review: Ryan Ang, pending pull request review.
+ * 2026-10-31, Claude Code (Fable 5), issue #280: GET
+ * /requests/completed-count (any authenticated caller), for the public
+ * profile's deliveries-completed tile. Author review: pending.
+ * 2026-11-04, Claude Code (Opus 5.5), Order F8.1: an accept whose
+ * proximity check could not be made answers 503; list items carry
+ * supplierId, so the web can mark far requests. Author review: Ko-Khan,
+ * pending pull request review.
+ */
+package foc.order.controller;
+
+import foc.order.InvalidRequestException;
+import foc.order.OrderStates;
+import foc.order.RequestFilter;
+import foc.order.RequestsQueryService;
+import foc.order.RequestsService;
+import foc.order.SupplierLookupException;
+import foc.order.dto.PageResponse;
+import foc.order.dto.RequestDetail;
+import foc.order.dto.RequestSummary;
+import foc.order.model.RequestDispute;
+import foc.order.model.Requests;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.domain.Page;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.validation.BindException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+
+@RestController
+public class RequestsController {
+
+    private static final Logger log = LoggerFactory.getLogger(RequestsController.class);
+
+    // JSON request bodies, one per endpoint shape.
+    // The requester and courier are never in a body: they are the caller.
+    public record CreateBody(Long supplierId, String supplierName,
+            String dropoffLocation, String item, Integer creditAmount, Instant deadline) {
+    }
+
+    public record RequestIdBody(Long requestId) {
+    }
+
+    // category: NOT_DELIVERED, WRONG_ITEM, DAMAGED or OTHER (DSP-7)
+    public record DisputeBody(Long requestId, String category, String note) {
+    }
+
+    public record ResolveBody(Long requestId, Integer courierAmount, Integer requesterAmount, String note) {
+    }
+
+    // Strings, so a non-numeric id gets the service's 400 message rather
+    // than a JSON parse error; JSON numbers bind here too.
+    public record IdsBody(List<String> ids) {
+    }
+
+    // Body of every response, success or error.
+    public record MessageResponse(String message) {
+    }
+
+    // GET /requests/completed-count (#280).
+    public record CompletedCountResponse(long count) {
+    }
+
+    private final RequestsService requestsService;
+    private final RequestsQueryService queries;
+
+    public RequestsController(RequestsService requestsService, RequestsQueryService queries) {
+        this.requestsService = requestsService;
+        this.queries = queries;
+    }
+
+    // --- reads (newest first, page/size as in the supplier listing)
+
+    // Open errands for couriers (F2.1): CREATED requests only.
+    @GetMapping("/requests")
+    public PageResponse<RequestSummary> openRequests(
+            @RequestParam(required = false) String state,
+            RequestFilter filter,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return summaries(queries.openRequests(state, filter, page, size));
+    }
+
+    // The caller's requests, as requester or as courier.
+    @GetMapping("/requests/mine")
+    public PageResponse<RequestSummary> mine(
+            Authentication caller,
+            @RequestParam(required = false) String role,
+            @RequestParam(required = false) String state,
+            RequestFilter filter,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return summaries(queries.mine(callerId(caller), role, state, filter, page, size));
+    }
+
+    // How many deliveries a user has completed as courier (#280): any
+    // authenticated caller, like the open list — it backs another user's
+    // public profile. Matched before /requests/{id}, being literal.
+    // required = false so a missing courierId gets the service's 400
+    // message rather than Spring's default body.
+    @GetMapping("/requests/completed-count")
+    public CompletedCountResponse completedCount(@RequestParam(required = false) Long courierId) {
+        return new CompletedCountResponse(queries.completedCountForCourier(courierId));
+    }
+
+    // One request in full: its requester, its courier, or ADMIN / OWNER.
+    @GetMapping("/requests/{id}")
+    public RequestDetail detail(@PathVariable Long id, Authentication caller) {
+        Requests request = queries.detail(id, callerId(caller), isAdmin(caller));
+        return RequestDetail.of(request, requestsService.autoCompleteAt(request), queries.disputeOf(request));
+    }
+
+    // Any user's requests, as requester or courier: ADMIN / OWNER only
+    // (enforced in SecurityConfig).
+    @GetMapping("/users/{userId}/requests")
+    public PageResponse<RequestSummary> userRequests(
+            @PathVariable Long userId,
+            @RequestParam(required = false) String state,
+            RequestFilter filter,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return summaries(queries.involving(userId, state, filter, page, size));
+    }
+
+    // Every user's requests by state and close reason (both may list
+    // several, comma-separated), optionally only those a user is the
+    // requester or courier of, and the shared filters: ADMIN / OWNER
+    // only (SecurityConfig). Matched before /requests/{id}, being literal.
+    // userId stays off RequestFilter, which the open list shares: there
+    // it would tell anyone whose requests those are.
+    @GetMapping("/requests/admin")
+    public PageResponse<RequestSummary> adminRequests(
+            @RequestParam(required = false) String state,
+            @RequestParam(required = false) String closeReason,
+            @RequestParam(required = false) Long userId,
+            RequestFilter filter,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return summaries(queries.admin(state, closeReason, userId, filter, page, size));
+    }
+
+    // The current state of up to 100 requests, {"42": "COMPLETED", "99":
+    // null}; an unknown id answers null (ADMIN / OWNER, for the stuck
+    // reservations check).
+    @PostMapping("/requests/admin/statuses")
+    public Map<Long, OrderStates> statuses(@RequestBody IdsBody body) {
+        return queries.statuses(body.ids());
+    }
+
+    // --- request steps
+
+    // OrderEvents.CREATE: adds one row built from the body, with the
+    // caller as its requester. The service sets status (PENDING) and
+    // createdAt; id and version are generated; the courier and later
+    // timestamps stay null.
+    @PostMapping("/create")
+    public MessageResponse create(@RequestBody CreateBody body, Authentication caller) {
+        Requests request = new Requests();
+        request.setRequesterId(callerId(caller));
+        request.setSupplierId(body.supplierId());
+        request.setSupplierName(body.supplierName());
+        request.setDropoffLocation(body.dropoffLocation());
+        request.setItem(body.item());
+        request.setCreditAmount(body.creditAmount());
+        request.setDeadline(body.deadline());
+        return message(requestsService.create(request), "created");
+    }
+
+    // OrderEvents.ACCEPT: the caller becomes the courier.
+    @PostMapping("/accept")
+    public MessageResponse accept(@RequestBody RequestIdBody body, Authentication caller) {
+        return message(requestsService.accept(body.requestId(), callerId(caller)), "accepted");
+    }
+
+    // OrderEvents.COLLECT: the assigned courier only
+    @PostMapping("/collect")
+    public MessageResponse collect(@RequestBody RequestIdBody body, Authentication caller) {
+        return message(requestsService.collect(body.requestId(), callerId(caller)), "collected");
+    }
+
+    // OrderEvents.ARRIVE: the assigned courier only
+    @PostMapping("/arrive")
+    public MessageResponse arrive(@RequestBody RequestIdBody body, Authentication caller) {
+        return message(requestsService.arrive(body.requestId(), callerId(caller)), "arrived");
+    }
+
+    // OrderEvents.CANCEL: the requester only
+    @PostMapping("/cancel")
+    public MessageResponse cancel(@RequestBody RequestIdBody body, Authentication caller) {
+        return message(requestsService.cancel(body.requestId(), callerId(caller)), "cancelled");
+    }
+
+    // OrderEvents.DROP: the assigned courier only
+    @PostMapping("/drop")
+    public MessageResponse drop(@RequestBody RequestIdBody body, Authentication caller) {
+        return message(requestsService.drop(body.requestId(), callerId(caller)), "dropped");
+    }
+
+    // OrderEvents.EXPIRE -> requestsService.expire(requestId). Not in
+    // endpoints.txt, so not reachable over HTTP.
+    public Requests expire(Long requestId) {
+        return requestsService.expire(requestId);
+    }
+
+    // OrderEvents.COMPLETE: the requester only
+    @PostMapping("/complete")
+    public MessageResponse complete(@RequestBody RequestIdBody body, Authentication caller) {
+        return message(requestsService.complete(body.requestId(), callerId(caller)), "completed");
+    }
+
+    // OrderEvents.DISPUTE: the requester only, on an ARRIVED request
+    // within the auto-complete window or a COLLECTED one past its deadline
+    @PostMapping("/dispute")
+    public MessageResponse dispute(@RequestBody DisputeBody body, Authentication caller) {
+        return message(requestsService.dispute(body.requestId(), callerId(caller), body.category(), body.note()),
+                "disputed");
+    }
+
+    // OrderEvents.RESOLVE: ADMIN / OWNER (SecurityConfig), not a party to
+    // the request; the shares add up to the reward
+    @PostMapping("/resolve")
+    public MessageResponse resolve(@RequestBody ResolveBody body, Authentication caller) {
+        return message(requestsService.resolve(body.requestId(), callerId(caller), body.courierAmount(),
+                body.requesterAmount(), body.note()), "resolved");
+    }
+
+    // A finished request's settlement event sent again (ADMIN / OWNER,
+    // DSP-10); 409 if the request is still active or has no such event.
+    @PostMapping("/retry-settlement")
+    public MessageResponse retrySettlement(@RequestBody RequestIdBody body) {
+        requestsService.retrySettlement(body.requestId());
+        return new MessageResponse("Request " + body.requestId() + " settlement queued for retry");
+    }
+
+    // A new request with missing fields or invalid values; the message
+    // lists every problem.
+    @ExceptionHandler(InvalidRequestException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public MessageResponse handleInvalidRequest(InvalidRequestException e) {
+        return new MessageResponse(e.getMessage());
+    }
+
+    // A list filter of the wrong type (e.g. minCredit=abc, or an instant
+    // without an offset), named in the message.
+    @ExceptionHandler(BindException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public MessageResponse handleBadFilter(BindException e) {
+        String field = e.getFieldError() == null ? "a query parameter" : e.getFieldError().getField();
+        return new MessageResponse("Invalid value for " + field);
+    }
+
+    // page, size or a path id of the wrong type
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public MessageResponse handleBadParameter(MethodArgumentTypeMismatchException e) {
+        return new MessageResponse("Invalid value for " + e.getName());
+    }
+
+    // The event is not allowed from the request's current state.
+    @ExceptionHandler(IllegalStateException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public MessageResponse handleIllegalTransition(IllegalStateException e) {
+        return new MessageResponse(e.getMessage());
+    }
+
+    // Accept's F8.1 check could not be made (supplier-service down, or a
+    // pickup without coordinates); it fails closed, so try again later.
+    @ExceptionHandler(SupplierLookupException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public MessageResponse handleSupplierLookup(SupplierLookupException e) {
+        log.warn("accept refused, proximity not checked: {}", e.getMessage());
+        return new MessageResponse("Could not check the distance to your other pickups. Try again shortly.");
+    }
+
+    // Another step changed the request between this one's read and its
+    // write, so the @Version check refused the write.
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public MessageResponse handleConcurrentChange(OptimisticLockingFailureException e) {
+        return new MessageResponse("This request's state has changed");
+    }
+
+    // No request has the given id, or the step is not the caller's (the
+    // same answer, so the request's existence is not revealed).
+    @ExceptionHandler(NoSuchElementException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public MessageResponse handleUnknownRequest(NoSuchElementException e) {
+        return new MessageResponse("Request not found");
+    }
+
+    // A page of requests as list items, each with its auto-complete time
+    // and its dispute; the disputes are loaded in one query for the page.
+    private PageResponse<RequestSummary> summaries(Page<Requests> page) {
+        Map<Long, RequestDispute> disputes = queries.disputesOf(page.getContent());
+        return PageResponse.of(page,
+                r -> RequestSummary.of(r, requestsService.autoCompleteAt(r), disputes.get(r.getId())));
+    }
+
+    private static boolean isAdmin(Authentication caller) {
+        return caller.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ROLE_OWNER"));
+    }
+
+    // The caller's user id: the verified token's subject.
+    private static Long callerId(Authentication caller) {
+        return Long.valueOf(caller.getName());
+    }
+
+    private static MessageResponse message(Requests request, String outcome) {
+        return new MessageResponse("Request " + request.getId() + " " + outcome);
+    }
+
+}

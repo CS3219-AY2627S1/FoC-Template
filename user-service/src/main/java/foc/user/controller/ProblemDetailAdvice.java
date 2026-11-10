@@ -1,0 +1,175 @@
+/*
+AI Assistance Disclosure:
+Tool: Claude Code (Opus 5.5), date: 2026-09-27
+Scope: problem+json handlers shared by ProfileController and AdminController
+       (PR #135 review): the UserNotFoundException handler, moved here from
+       both controllers, and the 409 for a save that loses an optimistic
+       locking race (409 problem+json per team decision).
+       2026-09-29 (issue #147): the invalid-body and unreadable-body
+       handlers moved here from AuthController, so every controller
+       (including OwnerSetupController, which had none) reports broken
+       rules one sentence per field (team decision; #138 contract).
+       2026-10-05 (issue #138): 415 for an unsupported Content-Type.
+Author review: Ryan to review via the PR.
+2026-09-30 (Claude Code, Fable 5), issue #92: the three OTP handlers moved
+here from AuthController — the account-update routes fail the same ways
+sign-up's OTP does, and one handler set keeps the statuses and details in
+lockstep. They now attach problem+json type URIs (ProblemTypes; owner
+decision via options Q&A: machine-readable types in scope, so the SPA can
+stop string-matching detail sentences), and a ResponseStatusException
+passthrough renders typed bodies (uniqueness refusals) for controllers
+without a local one.
+2026-10-09 (Claude Code, Opus 5.5), PR #162 review (Leong Wei Zhi): the 415 keeps
+Spring's Accept header, which names the types the endpoint takes.
+2026-10-10 (Claude Code, Opus 5.5), PR #162 re-review (Leong Wei Zhi): 405
+for an unsupported method, with Spring's Allow header.
+2026-10-05 (Claude Code, Fable 5), PR #157 Copilot review: the
+attempts-exceeded 429 now carries Retry-After — the exhausted row
+survives as spent, so there is a real wait (the resend cooldown) to
+quote before a replacement code may be requested.
+2026-11-09 (Claude Code, Opus 5.5), PR #309 review: the
+ResponseStatusException passthrough keeps the exception's headers, so the
+owner upgrade's wrong-token 403 carries its Retry-After.
+*/
+
+package foc.user.controller;
+
+import java.util.Comparator;
+import java.util.stream.Collectors;
+
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.server.ResponseStatusException;
+
+import foc.user.exception.OtpAttemptsExceededException;
+import foc.user.exception.OtpResendTooSoonException;
+import foc.user.exception.OtpVerificationException;
+import foc.user.exception.ResetCodeInvalidException;
+import foc.user.exception.UserNotFoundException;
+
+// the web client reads RFC 9457 problem+json error bodies
+@RestControllerAdvice
+class ProblemDetailAdvice {
+
+    @ExceptionHandler(UserNotFoundException.class)
+    ProblemDetail handleUserNotFound(UserNotFoundException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+    }
+
+    // another request saved the same user first (User's @Version check)
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    ProblemDetail handleConcurrentUpdate(OptimisticLockingFailureException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+            "The account was changed by another request; reload and try again");
+    }
+
+    // every broken rule, sorted by field so the message is stable (moved
+    // from AuthController: one validation format for every endpoint)
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    ProblemDetail handleInvalidBody(MethodArgumentNotValidException e) {
+        String reasons = e.getBindingResult().getFieldErrors().stream()
+            .sorted(Comparator.comparing(FieldError::getField))
+            .map(FieldError::getDefaultMessage)
+            .distinct()
+            // some messages end in a full stop and some don't
+            .map(message -> message.endsWith(".") ? message : message + ".")
+            .collect(Collectors.joining(" "));
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, reasons);
+    }
+
+    // no body, broken JSON, or a value of the wrong type (e.g. an unknown role)
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    ProblemDetail handleUnreadableBody(HttpMessageNotReadableException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Request body is missing or malformed");
+    }
+
+    // a body that isn't JSON (or has no Content-Type): Spring's own
+    // problem body for it, which names the type that was sent, and its
+    // Accept header, which names the types the endpoint takes
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    ResponseEntity<ProblemDetail> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException e) {
+        return ResponseEntity.status(e.getStatusCode()).headers(e.getHeaders()).body(e.getBody());
+    }
+
+    // a method the path doesn't take (e.g. GET /auth/login): Spring's own
+    // problem body, and its Allow header, which names the methods it does
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    ResponseEntity<ProblemDetail> handleMethodNotAllowed(HttpRequestMethodNotSupportedException e) {
+        return ResponseEntity.status(e.getStatusCode()).headers(e.getHeaders()).body(e.getBody());
+    }
+
+    // the OTP failures, moved from AuthController (issue #92): sign-up and
+    // the account-update routes fail the same ways, with the same bodies.
+    // The exception names the type (wrong code / expired / no code yet /
+    // no pending change), the status stays 400
+    @ExceptionHandler(OtpVerificationException.class)
+    ProblemDetail handleOtpVerification(OtpVerificationException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+        problem.setType(e.type());
+        return problem;
+    }
+
+    // 429 like the login lockout (issue #145 precedent). The exhausted
+    // row now survives as spent and its replacement waits out the resend
+    // cooldown (PR #157 reviews), so there IS a wait to quote: Retry-After
+    // carries it, 0 meaning a fresh code can be requested right away
+    @ExceptionHandler(OtpAttemptsExceededException.class)
+    ResponseEntity<ProblemDetail> handleOtpAttemptsExceeded(OtpAttemptsExceededException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, e.getMessage());
+        problem.setType(ProblemTypes.OTP_ATTEMPTS_EXCEEDED);
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+            .header(HttpHeaders.RETRY_AFTER, Long.toString(e.retryAfterSeconds()))
+            .body(problem);
+    }
+
+    // 429 with Retry-After, the lockout's shape: here waiting is exactly
+    // the remedy, and the wait is seconds, so the SPA can count it down
+    @ExceptionHandler(OtpResendTooSoonException.class)
+    ResponseEntity<ProblemDetail> handleOtpResendTooSoon(OtpResendTooSoonException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, e.getMessage());
+        problem.setType(ProblemTypes.OTP_RESEND_COOLDOWN);
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+            .header(HttpHeaders.RETRY_AFTER, Long.toString(e.retryAfterSeconds()))
+            .body(problem);
+    }
+
+    // a password-reset code that is wrong, expired, spent, or belongs
+    // to no account — one 400, one wording, one type (#94): any
+    // distinction (the OTP handlers' expired/429 answers included)
+    // would let an outsider probe which addresses hold accounts
+    @ExceptionHandler(ResetCodeInvalidException.class)
+    ProblemDetail handleResetCodeInvalid(ResetCodeInvalidException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+        problem.setType(ProblemTypes.RESET_CODE_INVALID);
+        return problem;
+    }
+
+    // refusals the services raise with a status and reason (blocked admin
+    // actions, invalid list parameters, a bad setup token, CallerId's 401,
+    // the typed uniqueness refusals); returning the exception's own body
+    // keeps the type it was built with, and any headers it carries (the
+    // owner upgrade's wrong-token Retry-After)
+    @ExceptionHandler(ResponseStatusException.class)
+    ResponseEntity<ProblemDetail> handleResponseStatus(ResponseStatusException e) {
+        return ResponseEntity.status(e.getStatusCode()).headers(e.getHeaders()).body(e.getBody());
+    }
+
+    // a query or path parameter of the wrong type: an unknown role or
+    // non-boolean includeDeleted, a non-numeric id. Body problems are
+    // handleUnreadableBody's
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ProblemDetail handleBadParameter(MethodArgumentTypeMismatchException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Invalid request parameter");
+    }
+}

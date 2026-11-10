@@ -1,0 +1,320 @@
+// AI-assisted (CS3219 AI Usage Policy disclosure):
+// Tool: Claude Code (Fable 5), 2026-10-17, issue #66.
+// Scope: one display template per cataloged request event
+// (docs/notification-service.md's event catalog), using the payload's
+// requesterName/courierName display fields with actor-less copy when
+// a name is absent. Originally written against backend D29 (names in
+// the events); D30 superseded it the same day — notification-service
+// now enriches the payload at ingest — with the payload shape and this
+// file unchanged: a name can still be missing (lookup failed, user
+// deleted, enrichment disabled), so the copy must degrade, never
+// break. Unknown event types render a safe fallback: new types can
+// appear without web changes (D18). Decisions the author's via options
+// Q&A.
+// 2026-10-18: request.dropped template (courier withdrew; same
+// degrade-without-name pattern as request.accepted); pending pull
+// request review.
+// Reviewed by: Leong Wei Zhi (via pull request).
+// 2026-10-19, Claude Code (Fable 5), issue #221: read-time hydration per
+// the author's D32 decision (options Q&A, supersedes D30/D31) — payloads
+// carry courierId only; the caller passes a resolved-name map and the
+// stored requesterName/courierName keys of pre-D32 rows are ignored.
+// The actor-less copy doubles as the loading/lookup-failed rendering.
+// 2026-10-27, Claude Code (Fable 5), issue #232: requestIdOf exported so
+// rows can navigate to the referenced request; requestLabel refactored
+// onto it (same copy).
+// 2026-10-29, Claude Code (Opus 5.5), issue #241: request.disputed and
+// request.dispute-resolved templates (cosmetic, DSP-9): the category, and
+// how the reward was divided. Both go to requester and courier alike, so
+// the copy names neither as "you".
+// Author review: Ryan Ang, pending pull request review.
+// 2026-10-30, Claude Code (Fable 5), issue #255: rating.submitted
+// template (ratee-only copy, #44), and courierIdOf generalized to
+// actorIdOf (raterId ?? courierId) so D32's read-time hydration names
+// the rater too. Author review: Leong Wei Zhi, pending pull request
+// review.
+// 2026-11-04, Claude Code (Fable 5.1), PR #287 review (@Sinnez1): actorIdOf
+// takes the event type and answers null for templates that never name
+// the actor, so rows that merely carry a courierId (completed,
+// courier-arrived, disputes, and since notification D34 expired) cost
+// no username lookup. Author review: Leong Wei Zhi, pending pull request
+// review.
+// 2026-11-08, Claude Code (Opus 5.5), Credit NFR1.1 (PR #313): copy for the
+// credit-change notification's three events (credit.transferred,
+// credit.released, credit.dispute-settled). One row goes to each party,
+// so its copy depends on who is reading it: notificationMessage takes
+// the viewer's id. The signed-amount-first wording is a team decision.
+// Author review: Ryan Ang, pending pull request review.
+
+import { credits, disputeCategoryLabels } from '@/features/order/status'
+import type { DisputeCategory } from '@/features/order/types'
+import type { NotificationDto } from './types'
+
+export interface NotificationMessage {
+  icon: string
+  title: string
+}
+
+// payload fields are untyped on the wire; read them defensively
+function text(payload: Record<string, unknown>, key: string): string | null {
+  const value = payload[key]
+  return typeof value === 'string' && value !== '' ? value : null
+}
+
+function count(payload: Record<string, unknown>, key: string): number | null {
+  const value = payload[key]
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+    ? value
+    : null
+}
+
+// a category this web build doesn't know (D18) shows no label
+function categoryLabel(payload: Record<string, unknown>): string | null {
+  const category = text(payload, 'category')
+  return category !== null && Object.hasOwn(disputeCategoryLabels, category)
+    ? disputeCategoryLabels[category as DisputeCategory]
+    : null
+}
+
+// Every cataloged request event carries requestId (a numeric string in
+// production — order-service stringifies the Long); null means the row
+// references no request and cannot navigate.
+export function requestIdOf(payload: Record<string, unknown>): string | null {
+  const value = payload.requestId
+  if (typeof value === 'string' && value !== '') return value
+  if (typeof value === 'number') return String(value)
+  return null
+}
+
+// "Request #1048" for numeric IDs, "Request req-…" otherwise — the
+// wireframe's copy uses the # form
+function requestLabel(payload: Record<string, unknown>): string {
+  const id = requestIdOf(payload)
+  if (id === null) return 'A request'
+  return /^\d+$/.test(id) ? `Request #${id}` : `Request ${id}`
+}
+
+// The acting party the row's template names: the rater on a rating
+// event, the courier on a request event (requesterId rides on every
+// request event but no copy uses it). No payload carries both. Null
+// when the template takes no actor, so a row that merely carries a
+// courierId (completed, courier-arrived, the disputes, expired since
+// notification D34) costs the Center no username lookup (PR #287 review).
+export function actorIdOf(
+  eventType: string,
+  payload: Record<string, unknown>,
+): string | null {
+  if (!ACTOR_NAMING_TYPES.has(eventType)) return null
+  return text(payload, 'raterId') ?? text(payload, 'courierId')
+}
+
+const templates: Record<
+  string,
+  (
+    payload: Record<string, unknown>,
+    actor: string | null,
+  ) => NotificationMessage
+> = {
+  'request.created': (p) => ({
+    icon: '📝',
+    title: `${requestLabel(p)} created`,
+  }),
+  'request.submitted': (p) => ({
+    icon: '📨',
+    title: `${requestLabel(p)} submitted`,
+  }),
+  'request.rejected': (p) => {
+    const reason = text(p, 'reason')
+    return {
+      icon: '🚫',
+      title: reason
+        ? `${requestLabel(p)} rejected: ${reason}`
+        : `${requestLabel(p)} rejected`,
+    }
+  },
+  'request.accepted': (p, courier) => ({
+    icon: '✅',
+    title: courier
+      ? `${requestLabel(p)} accepted by ${courier}`
+      : `${requestLabel(p)} accepted`,
+  }),
+  'request.collected': (p, courier) => ({
+    icon: '📦',
+    title: courier
+      ? `${requestLabel(p)} collected by ${courier}`
+      : `${requestLabel(p)} collected`,
+  }),
+  'request.courier-arrived': (p) => ({
+    icon: '📍',
+    title: `Courier has arrived at drop-off for ${requestLabel(p)}`,
+  }),
+  'request.completed': (p) => ({
+    icon: '✔️',
+    title: `${requestLabel(p)} marked as completed`,
+  }),
+  'request.dropped': (p, courier) => ({
+    icon: '↩️',
+    title: courier
+      ? `${requestLabel(p)} dropped by ${courier}`
+      : `${requestLabel(p)} was dropped by its courier`,
+  }),
+  'request.cancelled': (p) => ({
+    icon: '🚫',
+    title: `${requestLabel(p)} cancelled`,
+  }),
+  'request.expired': (p) => ({
+    icon: '⌛',
+    title: `${requestLabel(p)} expired`,
+  }),
+  'request.disputed': (p) => {
+    const category = categoryLabel(p)
+    return {
+      icon: '⚠️',
+      title: category
+        ? `Problem reported with ${requestLabel(p)}: ${category}`
+        : `Problem reported with ${requestLabel(p)}`,
+    }
+  },
+  'request.dispute-resolved': (p) => {
+    const toCourier = count(p, 'courierAmount')
+    const toRequester = count(p, 'requesterAmount')
+    return {
+      icon: '⚖️',
+      title:
+        toCourier !== null && toRequester !== null
+          ? `Dispute on ${requestLabel(p)} resolved: ${credits(toCourier)} to the courier, ${credits(toRequester)} refunded`
+          : `Dispute on ${requestLabel(p)} resolved`,
+    }
+  },
+  // stored for the ratee only (#44), so the copy may say "you"
+  'rating.submitted': (_p, rater) => ({
+    icon: '⭐',
+    title: rater
+      ? `${rater} left you a new review`
+      : 'You received a new review',
+  }),
+}
+
+// The credit-change events, one row per party whose balance moved. The
+// payload names both parties, so the copy is the viewer's side: the
+// requester paid or was refunded, the courier earned. A viewer the
+// payload does not name (no session yet) gets the side-less copy.
+const creditTemplates: Record<
+  string,
+  (
+    payload: Record<string, unknown>,
+    viewerId: string | null,
+  ) => NotificationMessage
+> = {
+  'credit.transferred': (p, viewer) => {
+    const amount = count(p, 'amount')
+    if (amount === null) {
+      return { icon: '🪙', title: `Credits transferred for ${requestFor(p)}` }
+    }
+    if (viewer !== null && viewer === text(p, 'courierId')) {
+      return {
+        icon: '🪙',
+        title: `+${credits(amount)} earned for ${requestFor(p)}`,
+      }
+    }
+    if (viewer !== null && viewer === text(p, 'requesterId')) {
+      return {
+        icon: '🪙',
+        title: `−${credits(amount)} paid for ${requestFor(p)}`,
+      }
+    }
+    return {
+      icon: '🪙',
+      title: `${credits(amount)} transferred for ${requestFor(p)}`,
+    }
+  },
+  'credit.released': (p) => {
+    const amount = count(p, 'amount')
+    return {
+      icon: '🪙',
+      title:
+        amount === null
+          ? `Credits refunded for ${requestFor(p)}`
+          : `+${credits(amount)} refunded for ${requestFor(p)}`,
+    }
+  },
+  'credit.dispute-settled': (p, viewer) => {
+    const share =
+      viewer !== null && viewer === text(p, 'courierId')
+        ? count(p, 'courierAmount')
+        : viewer !== null && viewer === text(p, 'requesterId')
+          ? count(p, 'requesterAmount')
+          : null
+    return {
+      icon: '🪙',
+      title:
+        share === null
+          ? `Credits settled for the dispute on ${requestFor(p)}`
+          : share === 0
+            ? `No credits from the dispute on ${requestFor(p)}`
+            : `+${credits(share)} from the dispute on ${requestFor(p)}`,
+    }
+  },
+}
+
+// "Request #12" mid-sentence: requestLabel's fallback is sentence-initial
+function requestFor(payload: Record<string, unknown>): string {
+  return requestIdOf(payload) === null ? 'a request' : requestLabel(payload)
+}
+
+// The credit-change rows: they open /credits rather than the request,
+// and a push of one means a balance has changed.
+export function isCreditEvent(eventType: string): boolean {
+  return Object.hasOwn(creditTemplates, eventType)
+}
+
+// names: actor id → username, resolved at read time by the caller
+// (D32). A missing entry — still loading, lookup failed, user deleted —
+// falls through to the actor-less copy, exactly like D30's absent key.
+// The templates whose copy names the actor: the ones declaring a second
+// parameter. Read off the table itself so a template that starts naming
+// its actor is hydrated without a second list to keep in step.
+const ACTOR_NAMING_TYPES: ReadonlySet<string> = new Set(
+  Object.entries(templates)
+    .filter(([, template]) => template.length >= 2)
+    .map(([type]) => type),
+)
+
+export function notificationMessage(
+  notification: NotificationDto,
+  names: ReadonlyMap<string, string> = new Map(),
+  // the signed-in user, as the payload's decimal-string ids: the credit
+  // rows read differently to each party
+  viewerId: string | null = null,
+): NotificationMessage {
+  if (isCreditEvent(notification.eventType)) {
+    return creditTemplates[notification.eventType](
+      notification.payload,
+      viewerId,
+    )
+  }
+  const template = templates[notification.eventType]
+  if (template) {
+    const actorId = actorIdOf(notification.eventType, notification.payload)
+    const actor = actorId === null ? null : (names.get(actorId) ?? null)
+    return template(notification.payload, actor)
+  }
+  // an unknown type still renders (D18: new types need no web release) —
+  // name the type rather than invent a claim about it
+  return { icon: '🔔', title: `Update: ${notification.eventType}` }
+}
+
+// "10 min ago" / "1h ago" / "2d ago" per the wireframe; dates are close
+// (the retention window is 30 days), so days is the coarsest unit
+export function relativeTime(iso: string, now: Date = new Date()): string {
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return ''
+  const seconds = Math.max(0, Math.floor((now.getTime() - then) / 1000))
+  if (seconds < 60) return 'just now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}

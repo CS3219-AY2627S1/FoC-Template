@@ -1,0 +1,228 @@
+# AI-assisted (CS3219 AI Usage Policy disclosure):
+# Tool: Claude Code (Fable 5), 2026-09-20.
+# Scope: scaffolded for issue #84. Application name and health endpoint
+# only (scope chosen by Leong Wei Zhi via options Q&A); datasource
+# config arrives with issue #86.
+# 2026-09-23 (Ryan Ang, Claude Sonnet 4.6): owner.setup.token property added for
+# the owner-bootstrap setup-token gate (issue #97).
+# 2026-09-23, Claude Code (Fable 5), issue #86: datasource bound to the
+# service-owned user-db and JPA schema-from-entities, following the
+# supplier/notification pattern. Tests are unaffected: Testcontainers
+# @ServiceConnection overrides the datasource there.
+# 2026-09-25 (Ryan Ang, Claude Code (Opus 5.5)): owner.setup.token comment
+# updated; setup no longer stops after the first owner.
+# 2026-09-27, Claude Code (Fable 5), issue #93: user.retention bindings for
+# the day-31 account purge scheduler, mirroring notification-service's
+# retention config shape.
+# 2026-09-29, Claude Code (Opus 5.5), issues #87/#89/#90: user.jwt (login
+# token signing, design doc §3) and user.web-allowed-origin (CORS, reusing
+# supplier-service's WEB_ALLOWED_ORIGIN variable).
+# 2026-10-26, Claude Code (Sonnet 5.5), issue #225 (N8.5, D12): user.supplier.
+# base-url, where the purge job reaches supplier-service.
+# 2026-09-29, Claude Code (Fable 5), issue #88: spring.mail + user.mail/
+# user.otp for OTP email sending. Defaults target the compose Mailpit
+# container; Gmail SMTP (the chosen provider) is switched on via the
+# MAIL_* values documented in .env.example. PR #150 Copilot review:
+# finite SMTP timeouts so a stalled endpoint can't pin request threads.
+# PR #150 author review: user.otp.resend-cooldown, the gap enforced
+# between two codes for one pending sign-up (chosen by Leong Wei Zhi via
+# options Q&A).
+# 2026-09-29, Claude Code (Opus 5.5), issue #147: Flyway owns the schema
+# (team decision): ddl-auto none, and databases that ddl-auto built are
+# baselined at V1. V3 (2026-09-30, merge of this branch) drops the otps
+# table issue #88 removed and creates pending_signups.
+# 2026-09-29, Claude Code (Opus 5.5): user.seed.demo, the switch for the
+# demo-account seeder (team decision: off unless USER_SEED_DEMO=true).
+# 2026-10-11, Claude Code (Fable 5), issue #151: spring.data.redis for the
+# logout denylist writes (team decision: Redis-only denylist, enforced at
+# the API gateway; logout is best-effort — chosen by Leong Wei Zhi via
+# options Q&A), and the Redis health indicator disabled like mail's.
+# 2026-10-11, Claude Code (Fable 5), issue #94: the password-reset codes
+# ride the user.otp.* knobs whole (ttl, max-attempts, resend-cooldown) —
+# no reset-specific configuration. An earlier same-day revision added a
+# user.password-reset.ttl for a link-shaped credential; the owner
+# revisited that to an OTP code via options Q&A and the knob went.
+# Reviewed by: Leong Wei Zhi (via pull request).
+# 2026-10-19, Claude Code (Fable 5), issue #221: user.internal.service-token
+# (added for issue #66's D31 lookups) removed with the
+# InternalServiceTokenFilter — D32 supersedes D30/D31; the web hydrates
+# names at read time with the caller's own JWT.
+# 2026-10-28, Claude Code (Opus 5.5), issue #267: spring.rabbitmq
+# (connection, correlated confirms with returns) and user.outbox.publisher,
+# copied from order-service with the same values (team decision USR-2).
+# Author review: Ryan Ang, pending pull request review.
+# Same day, PR review (team decisions): the rabbit health check off (the
+# service works without the broker), user.outbox.retention (credit's
+# values), and one scheduler thread per job, as order-service has.
+
+spring:
+  application:
+    name: user-service
+  datasource:
+    url: jdbc:postgresql://${USER_DB_HOST:localhost}:${USER_DB_PORT:5432}/${USER_DB_NAME:user}
+    username: ${USER_DB_USER:user}
+    password: ${USER_DB_PASSWORD:}
+  jpa:
+    hibernate:
+      # Flyway (db/migration) owns the schema; Hibernate never changes it
+      ddl-auto: none
+    open-in-view: false
+  task:
+    scheduling:
+      pool:
+        # One thread per @Scheduled job: the account purge, the outbox
+        # poll and the outbox retention purge. The poll can block on a
+        # confirm (up to confirm-timeout-ms) and must not hold up the
+        # others.
+        size: 3
+  mail:
+    # SMTP target for OTP emails (issue #88). The defaults reach the
+    # compose Mailpit container (web inbox: http://localhost:8025); for
+    # real delivery set the Gmail values from .env.example. Unlike
+    # JWT_SECRET, empty credentials are legitimate — Mailpit is
+    # unauthenticated — so nothing fails loudly here.
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      "mail.smtp.auth": ${MAIL_SMTP_AUTH:false}
+      "mail.smtp.starttls.enable": ${MAIL_SMTP_STARTTLS:false}
+      # Finite timeouts (ms): the send runs inside the signup request,
+      # so a stalled SMTP endpoint must fail (502) rather than hold the
+      # request thread and its DB connection open indefinitely.
+      "mail.smtp.connectiontimeout": "5000"
+      "mail.smtp.timeout": "10000"
+      "mail.smtp.writetimeout": "10000"
+  flyway:
+    # a database ddl-auto built before Flyway has tables but no history:
+    # record it as V1 (the baseline script's schema) and apply V2 onward
+    baseline-on-migrate: true
+    baseline-version: 1
+  data:
+    redis:
+      # Platform Redis holding the logout denylist (issue #151). This
+      # service only WRITES denylist keys at logout; the API gateway is
+      # what reads them on every request (team decision: gateway-only
+      # enforcement).
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      # Finite timeouts, like the SMTP ones above: the write runs inside
+      # the logout request and is best-effort (G9) — with Lettuce's
+      # defaults a Redis outage pinned the request thread until the
+      # gateway's 60 s proxy timeout answered 504 instead of 204.
+      connect-timeout: 2s
+      timeout: 2s
+  rabbitmq:
+    # the broker user.created / user.purged go to (issue #267)
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:foc}
+    password: ${RABBITMQ_PASSWORD:}
+    # Correlated confirms with returns: a publish is confirmed by the
+    # broker AND reported back if no queue took it, so an event is marked
+    # sent only when it was confirmed and not returned.
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  health:
+    mail:
+      # Don't let an SMTP outage mark the whole service down: everything
+      # but the email flows keeps working, and a failed send already
+      # surfaces as a 502 on sign-up (issue #88).
+      enabled: false
+    redis:
+      # Same rationale for Redis: logout's denylist write is best-effort
+      # (issue #151 — a failed write just leaves the token valid until its
+      # exp), so a Redis outage must not mark the service down.
+      enabled: false
+    rabbit:
+      # And for RabbitMQ (issue #267): login and sign-up work without the
+      # broker, and the outbox keeps the user events until it is back.
+      enabled: false
+
+user:
+  retention:
+    # Soft-deleted accounts keep their row — and so their unique email/
+    # username — for this many days (design doc §2: 30-day reuse block).
+    # The purge scheduler hard-deletes them, with their
+    # password_reset_otps rows, once deleted_at is older than this
+    # ("purge on day 31").
+    days: ${USER_RETENTION_DAYS:30}
+    # Cron schedule (Spring's 6-field format) controlling how often the
+    # purge sweep runs. Default: daily at 03:00 server time.
+    purge-cron: "${USER_PURGE_CRON:0 0 3 * * *}"
+  seed:
+    # true inserts the demo accounts (1 owner, 3 admins, 100 users) at
+    # startup, skipping any already present (DemoAccountsSeeder). Local
+    # testing and demos only: their passwords are public, in the README.
+    demo: ${USER_SEED_DEMO:false}
+  jwt:
+    # Shared HS256 secret (at least 32 bytes) that every service verifies
+    # tokens with. Empty default: startup fails with a clear message
+    # until JWT_SECRET is set.
+    secret: ${JWT_SECRET:}
+    # Login token lifetime (design doc §3: exp = 1 hour after issue).
+    access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:1h}
+  # Browser origin allowed by CORS (the web SPA).
+  web-allowed-origin: ${WEB_ALLOWED_ORIGIN:http://localhost:5173}
+  # supplier-service's own address on the compose network, NOT the
+  # gateway: the account-purge job (issue #225, D12) calls its internal
+  # /purge/bookmarks directly, with a SERVICE token.
+  supplier:
+    base-url: ${SUPPLIER_SERVICE_URL:http://supplier-service:8080}
+  outbox:
+    # user events (issue #267), the same values as order-service's
+    publisher:
+      # Delay between the end of one outbox poll and the start of the
+      # next. A delay, not a rate, so polls never overlap.
+      poll-interval-ms: 1000
+      # Most events published in one poll, so a backlog after an outage
+      # drains over several polls.
+      batch-size: 100
+      # Longest wait for the broker to confirm one event; after it the
+      # poll stops, and the next poll tries the event again.
+      confirm-timeout-ms: 5000
+      # How long an event the broker returned as unroutable (no queue
+      # bound yet, USR-9) waits before it is due again.
+      unroutable-retry-delay-ms: 30000
+    retention:
+      # Days an event is kept after it was sent (credit-service's value).
+      # At least 1; a smaller value fails startup. Unsent events are never
+      # purged.
+      days: ${USER_OUTBOX_RETENTION_DAYS:30}
+      # When the purge runs (server time, like the account purge).
+      purge-cron: "${USER_OUTBOX_PURGE_CRON:0 0 3 * * *}"
+  mail:
+    # From-address on OTP emails. With Gmail SMTP this must equal
+    # MAIL_USERNAME (Gmail rewrites anything else).
+    from: ${MAIL_FROM:no-reply@foc.local}
+  otp:
+    # Code lifetime for every emailed code — sign-up verification,
+    # account-update gates, email-change confirm and password reset
+    # (#94) — as a Spring duration (10m); a bare number is seconds
+    # (OTP_TTL=600 is 10 min).
+    ttl: ${OTP_TTL:10m}
+    # Wrong codes allowed before the pending sign-up is discarded and a
+    # fresh sign-up is required (mirrors the login lockout's 5). Counted
+    # per pending sign-up, resends included.
+    max-attempts: ${OTP_MAX_ATTEMPTS:5}
+    # Shortest gap between two codes for the same pending sign-up; a
+    # repeat inside it is a 429 with Retry-After. Caps both inbox flooding
+    # and how fast fresh codes can be cycled. 0 disables it.
+    resend-cooldown: ${OTP_RESEND_COOLDOWN:60s}
+
+owner:
+  setup:
+    # Shared secret required to call POST /auth/setup-owner. Must be set via
+    # the OWNER_SETUP_TOKEN env var before first deploy. Setup is disabled
+    # (503) while it is unset, so the endpoint can't be reached. Each call
+    # with the token creates another OWNER.
+    token: ${OWNER_SETUP_TOKEN:}

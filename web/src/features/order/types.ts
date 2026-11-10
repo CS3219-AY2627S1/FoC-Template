@@ -1,0 +1,174 @@
+// AI-assisted (CS3219 AI Usage Policy disclosure):
+// Tool: Claude Code (Sonnet 5.5), 2026-10-16.
+// Scope: Order domain types for the requester/courier pages, drawn from
+// the wireframes in web/docs/wireframes/ (create-request, my-requests,
+// open-requests, active-delivery, order-history, dispute-flow).
+// 2026-10-18, Claude Code (Opus 5.5), Aung Ko Khant: replaced the
+// placeholder contract with order-service's real one (its README,
+// "Endpoints" and "Reads"): the request states, RequestSummary (list
+// items) and RequestDetail (GET /requests/{id}), the /create body, and the
+// list parameters. Where the two differed the frontend was adapted to the
+// backend (author decision); dispute and re-release are gone, since the
+// backend has neither.
+// 2026-10-20: ListMineParams.state is a list (order-service takes several
+// states, comma-separated).
+// 2026-10-26, Claude Code (Sonnet 5.5), issue #227 (N8.4): SupplierOption
+// carries the caller's `bookmarked` flag.
+// Author review: [pending]
+// 2026-10-27, Claude Code (Opus 5.5), issue #242: the two dispute states,
+// CloseReason, closeReason / closedAt on a list item (closedAt is a team
+// decision) and the admin list's parameters.
+// Author review: Ryan Ang, pending pull request review.
+// 2026-10-29, Claude Code (Opus 5.5), issue #241: autoCompleteAt on a list
+// item, worked out by order-service (team decision); the dispute object
+// (DSP-5) and its categories (DSP-7); the /dispute and /resolve bodies.
+// Author review: Ryan Ang, pending pull request review.
+// 2026-11-04, Claude Code (Opus 5.5), Order F8.1: supplierId on a list
+// item, for Open Requests' too-far marking. Author review: Ko-Khan,
+// pending pull request review.
+
+// order-service's OrderStates, by name
+export type RequestStatus =
+  | 'PENDING' // waiting for credit-service to reserve the reward
+  | 'CREATED' // reward reserved: open for couriers
+  | 'ACCEPTED'
+  | 'COLLECTED' // courier has the item
+  | 'ARRIVED' // courier at the drop-off; waiting on the requester
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'EXPIRED'
+  | 'REJECTED' // the reward could not be reserved
+  | 'DISPUTED' // the requester (or the expiry sweep) raised a problem
+  | 'RESOLVED' // an admin divided the held reward
+
+// Why a request ended without completing (order-service's CloseReason)
+export type CloseReason =
+  | 'REQUESTER_CANCELLED'
+  | 'RESERVATION_TIMEOUT'
+  | 'INSUFFICIENT_CREDITS'
+  | 'INVALID_REWARD'
+  | 'DEADLINE_PASSED'
+  | 'DISPUTE_RESOLVED'
+
+// What a requester can report (DSP-7)
+export type DisputeCategory =
+  'NOT_DELIVERED' | 'WRONG_ITEM' | 'DAMAGED' | 'OTHER'
+
+// A request's dispute; the resolution fields are null until an admin
+// resolves it
+export interface Dispute {
+  category: DisputeCategory
+  disputeNote: string | null
+  raisedAt: string
+  autoEscalated: boolean // raised by the expiry sweep, not the requester
+  resolvedAt: string | null
+  resolvedBy: number | null
+  courierAmount: number | null
+  requesterAmount: number | null
+  resolutionNote: string | null
+}
+
+// One request in a list (GET /requests, /requests/mine)
+export interface RequestSummary {
+  id: number
+  status: RequestStatus
+  // order-service always sends it; older fixtures leave it out
+  supplierId?: number | null
+  supplierName: string
+  dropoffLocation: string
+  item: string
+  creditAmount: number
+  deadline: string // ISO-8601 instant
+  createdAt: string
+  // order-service always sends these two; the dev mock leaves them out.
+  // null while active, and closedAt also for requests closed before it
+  // was recorded
+  closeReason?: CloseReason | null
+  closedAt?: string | null
+  // when an ARRIVED request completes by itself, which also closes its
+  // dispute window; null in any other state
+  autoCompleteAt: string | null
+  // null unless the request was disputed; the dev mock leaves it out
+  // until it is
+  dispute?: Dispute | null
+}
+
+// One request in full (GET /requests/{id}): its requester, its courier, or
+// an admin may read it
+export interface RequestDetail extends RequestSummary {
+  requesterId: number
+  courierId: number | null
+  supplierId: number
+  acceptedAt: string | null
+  collectedAt: string | null
+  arrivedAt: string | null
+}
+
+// POST /create; the requester is the signed-in user
+export interface CreateRequestInput {
+  supplierId: number
+  supplierName: string
+  dropoffLocation: string
+  item: string
+  creditAmount: number
+  deadline: string // ISO-8601 instant
+}
+
+// POST /dispute (the requester); note at most 500 characters, required
+// for OTHER
+export interface DisputeInput {
+  category: DisputeCategory
+  note?: string
+}
+
+// POST /resolve (ADMIN / OWNER, not a party); the two shares add up to
+// the reward
+export interface ResolveInput {
+  courierAmount: number
+  requesterAmount: number
+  note?: string
+}
+
+// What every POST step answers, e.g. "Request 5 accepted"
+export interface MessageResponse {
+  message: string
+}
+
+export type RequestRole = 'requester' | 'courier'
+
+// createdAt: newest first (the default); deadline: nearest first
+export type RequestSort = 'createdAt' | 'deadline'
+
+export interface ListOpenParams {
+  page: number // 0-based
+  size: number
+  sort?: RequestSort
+}
+
+export interface ListMineParams extends ListOpenParams {
+  role: RequestRole
+  // any of these states, sent comma-separated; omitted: every state
+  state?: RequestStatus[]
+}
+
+export interface SupplierOption {
+  id: string // supplier-service ids are strings here; sent as a number
+  name: string
+  location: string
+  bookmarked?: boolean // the caller's bookmark; bookmarked options list first
+}
+
+// GET /requests/admin (ADMIN / OWNER): every user's requests
+export interface ListAdminParams {
+  page: number // 0-based
+  size: number
+  // any of these, sent comma-separated; omitted: every one
+  state?: RequestStatus[]
+  closeReason?: CloseReason[]
+  userId?: number // as requester or courier
+  // ISO-8601 instants; the lower bound inclusive, the upper exclusive
+  createdFrom?: string
+  createdTo?: string
+  closedFrom?: string // never matches a request without a closedAt
+  closedTo?: string
+}

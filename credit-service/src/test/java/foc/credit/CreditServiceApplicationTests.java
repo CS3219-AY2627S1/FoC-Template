@@ -1,0 +1,157 @@
+/*
+ * AI-assisted (CS3219 AI Usage Policy disclosure):
+ * Tool: Claude Code (Opus 5.5), 2026-10-09.
+ * Scope: scaffolded following the user-service pattern: the context loads
+ * against a real Postgres, and Flyway's V1 has created the schema from
+ * docs/credit-service.md, including the common pool's single row.
+ * 2026-10-10 (PR #166 review): the slice amount CHECK and index cases;
+ * then the outbox index case and @Transactional on the negative cases
+ * (Leong Wei Zhi's review).
+ * 2026-10-11, Claude Code (Opus 5.5), issue #169: the lot cases (a slice
+ * needs its lot, a drained lot is allowed and a negative one is not, the
+ * lot indexes skip drained lots); the slice amount case gives its slice
+ * a lot.
+ * 2026-10-25, Claude Code (Opus 5.5), PR #247 review follow-up: a
+ * courier share on a record that is not RESOLVED is rejected (V5).
+ * PR #248 review: the held-reservations index is partial (V5).
+ * 2026-11-06, Claude Code (Opus 5.5), PR #289 CI fix: the common-pool
+ * case checks the single row only; its balance depends on which committing
+ * class shared the container first.
+ * Author review: Ryan Ang, pending pull request review.
+ */
+package foc.credit;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
+
+@SpringBootTest
+class CreditServiceApplicationTests extends PostgresTestContainer {
+
+	@Autowired
+	private JdbcTemplate jdbc;
+
+	@Test
+	void contextLoads() {
+	}
+
+	@Test
+	void baselineCreatesTheDesignTables() {
+		List<String> tables = jdbc.queryForList(
+				"select table_name from information_schema.tables where table_schema = 'public'", String.class);
+
+		assertThat(tables).contains("credit_account", "credit_reservation", "credit_reservation_slice",
+				"credit_lot", "credit_history", "common_pool", "redistribution_run", "outbox_event");
+	}
+
+	// the negative cases roll back, so a constraint that stops holding
+	// leaves no row behind for the other classes sharing the container
+	@Test
+	@Transactional
+	void commonPoolIsOneRow() {
+		// V1 seeds it with balance 0, but classes that commit (expiry,
+		// closure) move credits into it, so only the row itself is
+		// order-independent
+		assertThat(jdbc.queryForList("select id from common_pool", Integer.class)).containsExactly(1);
+		// a second row breaks the single-row rule
+		assertThatThrownBy(() -> jdbc.update("insert into common_pool (id, balance) values (2, 0)"))
+				.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	@Transactional
+	void negativeBalanceIsRejected() {
+		assertThatThrownBy(() -> jdbc.update(
+				"insert into credit_account (user_id, available, reserved, created_at) values ('u-neg', -1, 0, now())"))
+				.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	@Transactional
+	void nonPositiveSliceAmountIsRejected() {
+		jdbc.update("insert into credit_account (user_id, available, reserved, created_at) values ('u-slice', 0, 5, now())");
+		jdbc.update("insert into credit_reservation (request_ref, requester_id, amount, status, created_at)"
+				+ " values ('r-slice', 'u-slice', 5, 'HELD', now())");
+
+		Long lotId = jdbc.queryForObject(
+				"insert into credit_lot (owner_id, remaining, earned_at) values ('u-slice', 0, now()) returning id",
+				Long.class);
+
+		assertThatThrownBy(() -> jdbc.update(
+				"insert into credit_reservation_slice (request_ref, lot_id, amount, earned_at)"
+						+ " values ('r-slice', ?, 0, now())", lotId))
+				.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	@Transactional
+	void aSliceNeedsTheLotItCameFrom() {
+		jdbc.update("insert into credit_account (user_id, available, reserved, created_at) values ('u-lot', 0, 5, now())");
+		jdbc.update("insert into credit_reservation (request_ref, requester_id, amount, status, created_at)"
+				+ " values ('r-lot', 'u-lot', 5, 'HELD', now())");
+
+		assertThatThrownBy(() -> jdbc.update(
+				"insert into credit_reservation_slice (request_ref, amount, earned_at) values ('r-lot', 5, now())"))
+				.as("no lot").isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	@Transactional
+	void aDrainedLotIsKeptButANegativeOneIsRejected() {
+		jdbc.update("insert into credit_account (user_id, available, reserved, created_at) values ('u-drained', 0, 0, now())");
+
+		assertThat(jdbc.update(
+				"insert into credit_lot (owner_id, remaining, earned_at) values ('u-drained', 0, now())")).isEqualTo(1);
+		assertThatThrownBy(() -> jdbc.update(
+				"insert into credit_lot (owner_id, remaining, earned_at) values ('u-drained', -1, now())"))
+				.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	@Transactional
+	void aCourierShareNeedsAResolvedRecord() {
+		jdbc.update("insert into credit_account (user_id, available, reserved, created_at) values ('u-share', 0, 0, now())");
+
+		assertThatThrownBy(() -> jdbc.update(
+				"insert into credit_reservation (request_ref, requester_id, courier_id, courier_share, amount, status,"
+						+ " created_at, settled_at) values ('r-share', 'u-share', 'u-share', 1, 3, 'TRANSFERRED', now(), now())"))
+				.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	void theLotIndexesSkipDrainedLots() {
+		assertThat(jdbc.queryForList(
+				"select indexdef from pg_indexes where indexname in"
+						+ " ('idx_credit_lot_owner_expires', 'idx_credit_lot_expires')", String.class))
+				.hasSize(2).allSatisfy(indexdef -> assertThat(indexdef).contains("remaining > 0"));
+	}
+
+	@Test
+	void slicesAreIndexedByRequestRef() {
+		assertThat(jdbc.queryForList(
+				"select indexname from pg_indexes where tablename = 'credit_reservation_slice'", String.class))
+				.contains("idx_credit_reservation_slice_request_ref");
+	}
+
+	@Test
+	void heldReservationsAreIndexed() {
+		assertThat(jdbc.queryForList(
+				"select indexdef from pg_indexes where indexname = 'idx_credit_reservation_held'", String.class))
+				.singleElement().asString().contains("(created_at, request_ref)", "status)::text = 'HELD'");
+	}
+
+	@Test
+	void unsentOutboxRowsAreIndexed() {
+		assertThat(jdbc.queryForList(
+				"select indexdef from pg_indexes where indexname = 'idx_outbox_event_unsent'", String.class))
+				.singleElement().asString().contains("(created_at)", "sent_at IS NULL");
+	}
+
+}

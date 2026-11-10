@@ -1,0 +1,228 @@
+<!--
+  AI-assisted (CS3219 AI Usage Policy disclosure):
+  Tool: Claude Code (Fable 5), 2026-09-14 – 2026-09-21; revised
+  2026-09-27 (Claude Code, Sonnet 5).
+  Scope: transcribed the team-decided architecture (AGENTS.md service
+  boundaries + D1 requirements interactions) into this document and the
+  companion diagram, and kept both aligned with the backlog and the
+  team's design decisions (each recorded here or in
+  docs/notification-service.md with its decision-maker). No architecture
+  or design decisions were made by the tool; remaining open decisions
+  are marked "TBD" for the team.
+  2026-09-27: team decision to reduce the Supplier Service capacity
+  target from 100,000 to 1,000 suppliers — updated here to match
+  docs/supplier-service.md's NFR2.1/D7.
+  2026-09-29 (Claude Code, Fable 5), issue #88: three resolved TBDs
+  struck, per the D2 design doc's follow-up list — the email provider
+  (Gmail SMTP, with a Mailpit container as the local SMTP target,
+  chosen by Leong Wei Zhi via options Q&A in the issue #88 PR) and the
+  User/Supplier DB engines (PostgreSQL, decided when user-db and
+  supplier-db were wired into compose.yaml in issue #85 and the
+  supplier scaffolding).
+  Reviewed by: Leong Wei Zhi (via pull request).
+  2026-10-09 (Claude Code, Opus 5.5), PR #163 Copilot review: the
+  Credit Service rows and the style paragraph brought in line with
+  the team's saga design (docs/credit-service.md D6-D9) — no sign-up
+  call from the User Service, and reservation, transfer and release
+  all by events. Transcription only; no decisions made by the tool.
+  2026-10-09, PR #163 review (Leong Wei Zhi): Notification row lists the saga's
+  submitted/rejected events; Credit DB engine no longer open
+  (PostgreSQL, docs/credit-service.md D1).
+  Author review: Ryan Ang, pending pull request review.
+  2026-10-11 (Claude Code, Fable 5), issue #151: API Gateway + Redis
+  denylist added per the team's gateway decisions (Leong Wei Zhi,
+  2026-10-11, options Q&A — docs/gateway.md G1-G10): Web rows route
+  through the gateway, authentication note updated for revocation,
+  legend covers the shared Redis store. Transcription only; no
+  decisions made by the tool.
+  2026-10-15 (Claude Code, Opus 5.5), PR #187 review (Leong Wei Zhi):
+  Order DB engine no longer open — PostgreSQL 17, chosen by Ko-Khan
+  via options Q&A when order-db was wired into compose.yaml
+  (2026-10-10). Transcription only.
+  2026-10-19 (Claude Code, Sonnet 5.5), issue #226: N8 supplier
+  bookmarks added to the scope paragraph and the open decisions, per
+  Alastair Tan Choon Wei's decisions on #225. Transcription only.
+  2026-10-26 (Claude Code, Sonnet 5.5), issue #226: the open bookmark-
+  cleanup decision moved to resolved (D12 in docs/supplier-service.md).
+  Transcription only.
+  2026-10-28 (Claude Code, Opus 5.5), issue #267: the User Service →
+  Broker → Credit Service dependency row, per the team's USR-1 to USR-9
+  (docs/credit-service.md D14). Transcription only.
+  2026-11-02 (Claude Code, Fable 5), issue #258: the Rating Service
+  joins the runtime picture now that N1 is merged (issues #249-#257,
+  decisions D1-D17 in docs/rating-service.md, made by Leong Wei Zhi) —
+  the scope paragraph, the style paragraph's domain list and three
+  dependency rows; the first nice-to-have drawn in the runtime diagram.
+  Transcription only; no decisions made by the tool.
+  Author review: Leong Wei Zhi, pending pull request review.
+  2026-11-04, Claude Code (Fable 5.1), notification D34: the legend's
+  user-id note and the rating row no longer name the removed `parties`
+  field. Author review: Leong Wei Zhi, pending pull request review.
+  2026-11-05, Claude Code (Opus 5.5), issue #48: the N5 note links the
+  new deployment record (docs/deployment.md). Author review: Leong Wei
+  Zhi, pending pull request review.
+  2026-11-07 (Claude Code, Sonnet 5.5), issue #298: Supplier caching
+  (NFR1.1.1) removed from the non-functional list and the open-decisions
+  list, per the team's decision recorded in docs/supplier-service.md
+  D15. Transcription only; no decision made by the tool.
+  2026-11-10 (Claude Code, Sonnet 5.5), issue #326: the Order Service ->
+  Supplier Service row reworded to what PR #322 built (GET /suppliers for
+  Order F8.1); the Order F1.1.1 pickup validation is no longer claimed.
+  Transcription only.
+-->
+
+# Favours on Campus (FoC) — High-Level Service Architecture
+
+**Diagram type:** free-form service-level (container-level) architecture
+diagram. It shows every deployable component, the databases they own,
+the external systems the platform depends on, and all runtime
+relationships between them, traced back to the D1 requirements
+(`F`/`NFR` references). All technology choices shown were decided by the
+team; anything marked **TBD** ("to be decided") is a pending team
+decision, deliberately left open.
+
+**Architectural style:** distributed deployment × domain partitioning —
+i.e. **microservices** (per the L4 categorization of architecture
+styles). Each service owns exactly one business domain (users,
+suppliers, orders, credits, notifications, ratings) and its own database
+(database-per-service); services interact only through their published
+APIs. The request-event workflow is **event-driven** through the message
+broker (course milestone M6), decoupling the Notification Service and
+the Credit Service's reservation, transfer and release from the Order
+Service that produces the events.
+
+**Scope:** committed functional and non-functional requirements (F/NFR),
+plus the one nice-to-have that added a deployable service: **N1 ratings**
+shipped as its own `rating-service` with its own database (issues
+#249–#257, [`rating-service.md`](rating-service.md)), so excluding it
+would misstate the runtime structure — it is the first nice-to-have
+drawn in this diagram. The other selected nice-to-haves (N2 request
+history, N3 disputes, N4 centralized logging, N5 cloud
+deployment/CI-CD/Kubernetes, N6 requester–courier chat, N7 admin
+dashboard incl. admin credit adjustments, N8 supplier bookmarks) remain
+intentionally excluded: they live inside existing components (their
+design records: [`disputes.md`](disputes.md),
+[`supplier-service.md`](supplier-service.md) N8); N5 concerns
+deployment, not runtime structure ([`deployment.md`](deployment.md)). (In the latest backlog, chat and
+admin credit adjustment were reclassified from committed requirements
+to nice-to-haves N6/N7, so they no longer appear here.)
+
+**Diagram source:** [`architecture.mmd`](architecture.mmd) — GitHub
+renders it directly in the file view; the legend and dependency table
+below accompany it.
+
+## Legend (notation)
+
+| Notation | Meaning |
+| --- | --- |
+| Rectangle | A deployable service — its own Spring Boot app in its own Docker container (M7), one per top-level folder |
+| Rounded/stadium shape | People using the system through a browser |
+| Parallelogram | Message broker (RabbitMQ) — shared platform infrastructure in its own container; the exchange is the publishing service's surface; each queue is dedicated to one consuming service (see [`notification-service.md`](notification-service.md)) |
+| Double-bordered rectangle | External system outside the platform (the email provider) |
+| Cylinder | A database owned by **exactly one** service; no service reads another service's database. One exception: the Redis **token denylist** is shared platform infrastructure — written by the User Service at logout, read by the gateway on every request (see [`gateway.md`](gateway.md)) |
+| Thin arrow `-->` | **Synchronous** REST/JSON call over HTTP; the arrow points from caller to callee (request direction; the response returns along the same call) |
+| Thick arrow `==>` | **Asynchronous** event/message flow; the arrow points in the direction the data (event/email) travels |
+| Plain line `---` | Database access via Spring Data JPA (only ever from the owning service) |
+| "scheduler: …" inside a service node | A timer-driven behavior internal to that service (no cross-service call involved) |
+| `F… / NFR… / M…` on a line | The D1 requirement or course-mandated item that this relationship implements |
+| **TBD** | A decision the team has not made yet (kept open on purpose) |
+
+**Authentication note:** every authenticated Web API call carries a JWT
+issued by the User Service on login (User F7.1); sign-up/login and other
+public routes are anonymous. Tokens expire after one hour and logout
+invalidates the current token (User F7.1.1–F7.1.2) by denylisting its
+`jti` in Redis — the **API Gateway** rejects denylisted bearer tokens on
+every HTTP route, so revocation holds platform-wide for the REST APIs
+(issue #151, [`gateway.md`](gateway.md); accepted limit: the STOMP
+CONNECT-frame token on `/ws` is signature/expiry-checked by the
+Notification Service only, without a denylist lookup). Each service still verifies the signature
+itself and rejects requests the caller's role does not permit (User
+F6.1.5). Token-validation mechanics (shared `JWT_SECRET` per
+`.env.example`) are configuration, not a runtime call, so no arrow is
+drawn for it.
+Provisional convention (decided under Notification issue #67, before
+the User Service exists): the JWT's `sub` claim carries the platform
+user ID — the same ID the request events carry as `requesterId`/
+`courierId` and the Notification Service stores as recipient
+(notification D34) — and the User Service must mint tokens accordingly.
+
+**Abbreviations:** REST = HTTP/JSON web APIs · JWT = JSON Web Token ·
+OTP = one-time password · JPA = Java Persistence API (Spring Data JPA) ·
+SPA = single-page application · CRUD = create/read/update/delete ·
+TBD = to be decided.
+
+## Dependency summary (traceable to the D1 backlog)
+
+| From → To | Style | Purpose | Requirement |
+| --- | --- | --- | --- |
+| Web → Gateway | sync REST + WebSocket | every API call, `/api/<service>/**`; bearer JWTs verified and denylist-checked at the gateway, anonymous requests passed through (see [`gateway.md`](gateway.md)) | User F7.1.2 (revocation); M7 |
+| Web → User Service (via gateway) | sync REST | sign-up, login/logout, OTP flows, account update/delete/recover, roles (user/admin/owner), admin user management, profiles; JWT issued here | User F1–F8 |
+| Web → Supplier Service (via gateway) | sync REST | browse/search/filter vendors; admin vendor CRUD | Supplier F1–F2 |
+| Web → Order Service (via gateway) | sync REST | create/list/accept/collect–arrive/cancel/complete requests; re-release expired requests | Order F1–F8 (re-release: F6.4) |
+| Web → Credit Service (via gateway) | sync REST | available + reserved balances (shown in the user's profile), filtered transaction history; the account with its 5 starting credits (reserved balance 0) is created the first time the user is seen (see [`credit-service.md`](credit-service.md), D6) | Credit F1.1, F4; User F8.1 |
+| Web → Notification Service (via gateway) | sync REST | list recent notifications in-app, mark read/unread, retention window | Notif F3.1, F3.2, F3.4 |
+| Web → Rating Service (via gateway) | sync REST | submit the one immutable rating per direction of a completed request; the caller's own rating; any user's rating summary + paged review history for the public profile; report a user, admins list reports (see [`rating-service.md`](rating-service.md)) | N1.1–N1.4; User F8.1 |
+| Notification Service → Web (socket via gateway) | async WebSocket (STOMP) push, per-user destinations | request state-change updates to requester and assigned courier within 5 seconds; the system's **only standing connection** — all other Web ↔ service traffic is stateless REST (see [`notification-service.md`](notification-service.md), "Connection topology") | Notif F1.2; Order NFR1.1–1.2 |
+| User Service → Email Provider | async email (Gmail SMTP; a Mailpit container is the local dev/demo target) | OTP for sign-up verification, email-change confirmation, password reset | User F1.1.3, F2.1.1, F2.1.3, F4.2 |
+| Order Service → Supplier Service | sync REST | read supplier coordinates from the public `GET /suppliers` (the caller's token) for the 1 km acceptance-proximity check | Order F8.1 |
+| Order Service → Broker (RabbitMQ) → Credit Service | **async events** | reserve the reward on `request.submitted`, transfer on `request.completed`, release on `request.cancelled` / `request.expired`; repeated events for the same request processed once (see [`credit-service.md`](credit-service.md)) | Credit F2.1, F2.1.1, F3.1, F5.1, NFR1.1, NFR2.2, NFR2.2.1; **M6** |
+| Credit Service → Broker (RabbitMQ) → Order Service | **async events** | reservation reply: `credit.reserved` moves the request from pending to created, `credit.reservation-rejected` moves it to rejected when the available balance is insufficient (see [`credit-service.md`](credit-service.md), D7–D8) | Credit F2.1.3; Order F1.1.4; **M6** |
+| User Service → Broker (RabbitMQ) → Credit Service | **async events** | `user.created` when a verified sign-up inserts the user row opens the credit account (get-or-create stays the fallback); `user.purged` for each account the day-31 purge deletes closes it, moving its balance to the common pool so redistribution skips it (see [`credit-service.md`](credit-service.md), D14) | Credit F1.1, F6.1.1; User F3.1.3 |
+| Order Service → Broker (RabbitMQ) → Notification Service | **async events** | event on every request state transition (submitted/created/accepted/collected/completed/cancelled/expired/rejected); at-least-once, persisted across restarts; consumer deduplicates, retries, dead-letters exhausted retries; delivery failure never affects the producing operation; new event types need no publisher changes | Order F0.2; Notif F1.1, F1.3, F1.4, F2.1–F2.3, NFR1.1–1.2; **M6** |
+| Order Service → Broker (RabbitMQ) → Rating Service | **async events** | `request.completed` (the producer's existing stream, no N1 change) builds the rating-eligibility projection, so eligibility checks need no call to the Order Service; idempotent via the consumer's own inbox (see [`rating-service.md`](rating-service.md), D2–D5) | N1.1; **M6** |
+| Rating Service → Broker (RabbitMQ) → Notification Service | **async events** | `rating.submitted` (ids + stars; the Notification Service tells the ratee only, D34) through a transactional outbox notifies the ratee in-app; consumed on the Notification Service's own queue trio bound to the `rating-events` exchange (see [`rating-service.md`](rating-service.md) D7/D8, [`notification-service.md`](notification-service.md) D16 note) | N1 (#44 decision); Notif F1.1–F1.4 |
+
+Timer-driven behaviors stay **inside** the owning service (no arrow):
+request expiry from the created or accepted state at the deadline, with
+credits released when Credit Service consumes resulting `request.expired` event (Order
+F6.1–F6.2; Credit F2.1.1), auto-completion 1 hour after the courier
+marks arrival (Order F7.2, which publishes the same `request.completed` event
+as a manual confirmation), deleted-account purge on the 31st
+day (User F3.1.3), and earned-credit expiry after 3 months into a common
+pool with monthly redistribution (Credit F6.1–F6.1.2).
+
+## Capacity and performance targets (NFRs)
+
+These shape sizing and implementation rather than adding components:
+
+- **User Service:** 60 000 accounts (User NFR2); account operations and
+  permission checks within 2 s, excluding OTP email delivery (User
+  NFR3); passwords hashed with SHA256 or equivalent (User NFR1.1);
+  uniqueness checks complete before other asynchronous operations can
+  access the records (User NFR4).
+- **Supplier Service:** 1,000 suppliers (Supplier NFR2, revised
+  2026-09-27 from the original 100,000 — see docs/supplier-service.md
+  D7); listings within 5 s (Supplier NFR1.1). No caching: NFR1.1.1 was
+  removed on 2026-11-07 — see docs/supplier-service.md D15.
+- **Order Service:** courier listings reflect requests entering/leaving
+  the created state within 5 s; every state change visible to requester
+  and assigned courier within 5 s (Order NFR1.1–1.2) — via the
+  broker → Notification → Web path.
+- **Credit Service:** balances updated within 5 s of confirmed delivery
+  (Credit NFR1.1); failed transfers revert to pre-transaction balances
+  and duplicate payments are prevented (Credit NFR2).
+- **Notification Service:** at-least-once event delivery, undelivered
+  events persisted across restarts (Notif NFR1).
+- **Web App:** responsive across mobile and wide-screen widths
+  (UI NFR1).
+
+## Decisions still open (team, not AI)
+
+Resolved 2026-11-07: the **supplier caching mechanism** (Supplier
+NFR1.1.1) is no longer open — the team removed the caching requirement
+and will not implement it (docs/supplier-service.md D15).
+
+Resolved 2026-10-26: the **bookmark cleanup on account purge** (N8.5) is
+a direct API call — the User Service's purge job calls the Supplier
+Service's internal `POST /purge/bookmarks` before it deletes the
+accounts (D12 in [`supplier-service.md`](supplier-service.md)). Decided
+by Alastair Tan Choon Wei. N8 is outside this runtime diagram, so the
+call is drawn only in `supplier-service.mmd`.
+
+Resolved 2026-09-29: the **email provider** for OTP delivery (User
+F1.1.3) is **Gmail SMTP**, with a Mailpit container in compose as the
+local dev/demo SMTP target — decided by the User Service owner in the
+issue #88 PR, as the D2 design doc's provider comparison left open.
+
+An exported image of this diagram (SVG/PNG) is kept with the D1
+document; this Mermaid source is the version of record.

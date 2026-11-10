@@ -1,0 +1,115 @@
+---
+title: "Favours on Campus (FoC) — High-Level Service Architecture"
+---
+%% AI-assisted (CS3219 AI Usage Policy disclosure):
+%% Tool: Claude Code (Fable 5), 2026-09-14 – 2026-09-21; revised
+%% 2026-09-27 (Claude Code, Sonnet 5).
+%% Scope: transcribed the team-decided architecture (AGENTS.md service
+%% boundaries + D1 requirements) into this diagram and kept it aligned
+%% with the backlog and the team's design decisions (recorded in
+%% docs/architecture.md and docs/notification-service.md). No design
+%% decisions were made by the tool; open decisions are marked "TBD".
+%% 2026-09-27: Supplier DB capacity label updated 100,000 -> 1,000 to
+%% match the team's revised NFR2.1 (docs/supplier-service.md, D7).
+%% 2026-09-29 (Claude Code, Fable 5), issue #88: three resolved TBDs
+%% struck — email provider (Gmail SMTP + local Mailpit, chosen by
+%% Leong Wei Zhi via options Q&A in the issue #88 PR) and the User/
+%% Supplier DB engines (PostgreSQL, decided with issue #85 and the
+%% supplier scaffolding). Details in docs/architecture.md.
+%% Reviewed by: Leong Wei Zhi (via pull request).
+%% 2026-11-04, Claude Code (Fable 5.1), notification D34: the rating edge
+%% label no longer names the removed parties field. Author review: Leong
+%% Wei Zhi, pending pull request review.
+%% 2026-10-09 (Claude Code, Opus 5.5), PR #163 Copilot review: Credit
+%% Service edges brought in line with the team's saga design
+%% (docs/credit-service.md D6-D9): the User -> Credit and Order ->
+%% Credit REST edges removed, reservation and its replies shown as
+%% broker events. Transcription only; no decisions made by the tool.
+%% 2026-10-09, PR #163 review (Leong Wei Zhi): Order states include the saga's
+%% pending and rejected (pending the Order F0.1 rewording listed in
+%% docs/credit-service.md); Credit DB labelled PostgreSQL (its D1).
+%% Author review: Ryan Ang, pending pull request review.
+%% 2026-10-11 (Claude Code, Fable 5), issue #151: API Gateway node and
+%% Redis denylist store added per the team's gateway/denylist decisions
+%% (Leong Wei Zhi, 2026-10-11, options Q&A — docs/gateway.md G1–G10):
+%% all WEB REST edges and the STOMP push now route through the gateway,
+%% which rejects revoked tokens platform-wide. Transcription only.
+%% 2026-10-15 (Claude Code, Opus 5.5), PR #187 review (Leong Wei Zhi):
+%% Order DB labelled PostgreSQL (chosen by Ko-Khan via options Q&A when
+%% order-db was wired into compose.yaml, 2026-10-10).
+%% 2026-10-28 (Claude Code, Opus 5.5), issue #267: the user-events
+%% exchange in the broker node and the user.created / user.purged path
+%% from the User Service to the Credit Service (team decision USR-1).
+%% Author review: Ryan Ang, pending pull request review.
+%% 2026-11-02 (Claude Code, Fable 5), issue #258: Rating Service node,
+%% its database, the rating-events exchange in the broker label and the
+%% three N1 paths (Web via gateway, request.completed in,
+%% rating.submitted out) — the merged N1 nice-to-have, decisions D1-D17
+%% in docs/rating-service.md (Leong Wei Zhi). Transcription only.
+%% Author review: Leong Wei Zhi, pending pull request review.
+%% 2026-11-07 (Claude Code, Sonnet 5.5), issue #298: the Supplier Service
+%% node no longer mentions caching (NFR1.1.1 removed, docs/supplier-
+%% service.md D15). Transcription only; no decision made by the tool.
+%% 2026-11-10 (Claude Code, Sonnet 5.5), issue #326: the Order -> Supplier
+%% edge relabelled to what PR #322 built (GET /suppliers for Order F8.1);
+%% the Order F1.1.1 pickup validation is no longer claimed. Transcription
+%% only.
+%% Legend and dependency table: see docs/architecture.md
+flowchart TB
+    USERS(["Users: requester / courier / admin<br/>(NUS students and platform admins)"])
+    WEB["<b>Web App</b> (web/)<br/>TypeScript + React single-page app;<br/>responsive desktop + mobile UI (UI NFR1);<br/>renders in-app notifications"]
+
+    USERS -->|"uses (browser, HTTPS)"| WEB
+
+    GATEWAY["<b>API Gateway</b> (gateway/)<br/>OpenResty (nginx + Lua) — single entry point, path-prefix<br/>routing /api/&lt;service&gt;/**; verifies bearer JWTs (HS256 + exp)<br/>and rejects denylisted (logged-out) tokens; anonymous requests<br/>pass through; proxies the notification WebSocket<br/>(docs/gateway.md, issue #151)"]
+
+    WEB -->|"REST/JSON + WebSocket: every API call,<br/>/api/&lt;service&gt;/** (backends have no published ports)"| GATEWAY
+
+    USER_SVC["<b>User Service</b><br/>Java + Spring Boot — accounts, auth (JWT, OTP),<br/>roles incl. owner (User F6), profiles; hashed passwords<br/>(User F1.1.5, NFR1.1); login lockout (User F5.2);<br/>scheduler: purge deleted accounts on the 31st day (User F3.1.3)"]
+    SUP_SVC["<b>Supplier Service</b><br/>Java + Spring Boot — vendor/landmark CRUD,<br/>browsing, search and filter"]
+    ORDER_SVC["<b>Order Service</b><br/>Java + Spring Boot — request lifecycle states (Order F0.1):<br/>pending, created, accepted, collected, completed, cancelled,<br/>expired, rejected (pending/rejected: Credit saga, docs/credit-service.md);<br/>1 km acceptance-proximity rule (Order F8.1);<br/>schedulers: expire overdue requests (Order F6.1–F6.2),<br/>auto-complete 1 h after courier arrival (Order F7.2)"]
+    CREDIT_SVC["<b>Credit Service</b><br/>Java + Spring Boot — balances (available + reserved),<br/>consumes request events for reservation, atomic transfer<br/>and release; publishes reservation replies; transaction history;<br/>scheduler: expire earned credits after 3 months into common<br/>pool + monthly redistribution (Credit F6)"]
+    NOTIF_SVC["<b>Notification Service</b><br/>Java + Spring Boot — consumes request events,<br/>notifies each party; idempotent, with retries;<br/>retains notifications for a defined window"]
+    RATING_SVC["<b>Rating Service</b> (nice-to-have N1, issue #44)<br/>Java + Spring Boot — one immutable rating per direction<br/>of a completed request; rating summaries + review history<br/>for public profiles; user reports for admin review;<br/>eligibility from consumed request.completed events<br/>(docs/rating-service.md)"]
+    BROKER[/"<b>Message Broker</b> — RabbitMQ<br/>shared platform infrastructure, own Docker container;<br/>durable request-events, credit-events, user-events and<br/>rating-events exchanges + durable<br/>work/retry/dead-letter queues (docs/notification-service.md,<br/>docs/credit-service.md, docs/rating-service.md)"/]
+    EMAIL[["<b>External Email Provider</b><br/>Gmail SMTP (Mailpit locally) — delivers<br/>OTP emails to users' u.nus.edu inboxes"]]
+
+    GATEWAY -->|"REST/JSON: sign-up, login/logout, OTP flows, account<br/>update/delete/recover, roles, admin user management,<br/>profiles (User F1–F8)"| USER_SVC
+    GATEWAY -->|"REST/JSON: browse, search, filter suppliers;<br/>admin vendor CRUD (Supplier F1–F2)"| SUP_SVC
+    GATEWAY -->|"REST/JSON: create / list / accept / collect–arrive /<br/>cancel / complete / re-release requests (Order F1–F8)"| ORDER_SVC
+    GATEWAY -->|"REST/JSON: available + reserved balances shown in profile<br/>(User F8.1), filtered transaction history (Credit F4); account with<br/>5 starting credits created the first time the user is seen (Credit F1.1)"| CREDIT_SVC
+    GATEWAY -->|"REST/JSON: list recent notifications,<br/>mark read/unread"| NOTIF_SVC
+    GATEWAY -->|"REST/JSON: submit rating, own rating lookup,<br/>rating summary + review history (public profile),<br/>report a user, admin report list (N1.1–N1.4)"| RATING_SVC
+    NOTIF_SVC ==>|"async: WebSocket (STOMP) push to per-user<br/>destinations — state-change updates within 5 s<br/>(socket proxied through the gateway's /api/notification/ws)"| WEB
+
+    USER_SVC ==>|"send OTP emails: sign-up verification,<br/>email-change confirmation, password reset<br/>(User F1.1.3, F2.1.1, F2.1.3, F4.2)"| EMAIL
+    ORDER_SVC -->|"REST/JSON: GET /suppliers (caller's token), pickup<br/>coordinates for the 1 km acceptance-proximity check (Order F8.1)"| SUP_SVC
+    ORDER_SVC ==>|"publish typed event on every request state<br/>transition, fire-and-forget — M6 async workflow"| BROKER
+    BROKER ==>|"deliver events: at-least-once, persisted across<br/>restarts; consumer deduplicates, retries,<br/>dead-letters exhausted retries"| NOTIF_SVC
+    BROKER ==>|"deliver request.submitted / completed / cancelled / expired:<br/>reserve on submission (Credit F2.1), transfer on completion<br/>(Credit F3.1, F5.1), release on cancel/expiry (Credit F2.1.1);<br/>repeated events processed once (Credit NFR2.2.1)"| CREDIT_SVC
+    CREDIT_SVC ==>|"publish credit.reserved /<br/>credit.reservation-rejected"| BROKER
+    BROKER ==>|"deliver reservation replies: request moves from<br/>pending to created, or to rejected when the balance<br/>is insufficient (Credit F2.1.3, Order F1.1.4)"| ORDER_SVC
+    USER_SVC ==>|"publish user.created (verified sign-up) /<br/>user.purged (day-31 purge), through an outbox"| BROKER
+    BROKER ==>|"deliver user events: open the credit account;<br/>close it, its balance to the common pool,<br/>no further redistribution shares (Credit F1.1, F6.1.1)"| CREDIT_SVC
+    BROKER ==>|"deliver request.completed: upsert the rating-eligibility<br/>projection — no call to the Order Service;<br/>repeated events processed once (N1.1)"| RATING_SVC
+    RATING_SVC ==>|"publish rating.submitted (ids + stars;<br/>ratee told only, notification D34), through an outbox"| BROKER
+    BROKER ==>|"deliver rating.submitted on the Notification Service's<br/>own queue trio: the ratee's in-app notification<br/>(#44 decision, issue #255)"| NOTIF_SVC
+
+    USER_DB[("User DB<br/>PostgreSQL<br/>60 000 accounts (User NFR2)")]
+    SUP_DB[("Supplier DB<br/>PostgreSQL<br/>1,000 suppliers (Supplier NFR2)")]
+    ORDER_DB[("Order DB<br/>PostgreSQL")]
+    CREDIT_DB[("Credit DB<br/>PostgreSQL")]
+    NOTIF_DB[("Notification DB<br/>PostgreSQL")]
+    RATING_DB[("Rating DB<br/>PostgreSQL — Flyway-owned schema")]
+
+    REDIS[("Token denylist<br/>Redis — platform store: denylist:&lt;jti&gt; keys expiring<br/>with the token; AOF-persisted (docs/gateway.md G2/G7)")]
+
+    USER_SVC ---|"logout writes: SET denylist:&lt;jti&gt; EX &lt;until exp&gt;<br/>(POST /auth/logout, issue #151)"| REDIS
+    GATEWAY ---|"per-request reads: EXISTS denylist:&lt;jti&gt;<br/>(fail open on Redis outage, G6)"| REDIS
+
+    USER_SVC ---|"Spring Data JPA"| USER_DB
+    SUP_SVC ---|"Spring Data JPA"| SUP_DB
+    ORDER_SVC ---|"Spring Data JPA"| ORDER_DB
+    CREDIT_SVC ---|"Spring Data JPA"| CREDIT_DB
+    NOTIF_SVC ---|"Spring Data JPA"| NOTIF_DB
+    RATING_SVC ---|"Spring Data JPA"| RATING_DB

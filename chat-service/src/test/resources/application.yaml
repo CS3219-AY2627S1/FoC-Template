@@ -1,0 +1,61 @@
+# AI-assisted (CS3219 AI Usage Policy disclosure):
+# Tool: Claude Code (Opus 5.5), 2026-10-31, N6 chat.
+# Scope: test configuration: the datasource comes from
+# PostgresTestContainer (Flyway builds the schema, as in production),
+# Redis points at an unresolvable host (the denylist fails open), and
+# fixed test secrets.
+# Author review: Ko-Khan, pending pull request review.
+# 2026-11-08, Claude Code (Fable 5.1), issue #305: the push-fanout listener
+# stays stopped unless a test brings a broker (ChatStompIntegrationTest
+# does, through Testcontainers). Author review: Leong Wei Zhi, pending pull
+# request review.
+# Same day, PR #306 review: the broker host is unresolvable, so stray
+# pushes fail fast.
+
+# This file replaces the main application.yaml on the test classpath
+# (same name), so every chat.* setting the beans read is repeated here.
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  rabbitmq:
+    # no broker in most tests: a push publish fails fast here instead of
+    # reaching a developer's compose RabbitMQ (PR #306 review);
+    # ChatStompIntegrationTest's @ServiceConnection replaces the host
+    host: rabbitmq.invalid
+    connection-timeout: 200ms
+    listener:
+      simple:
+        # no broker in most tests: ChatStompIntegrationTest turns it on
+        auto-startup: false
+  data:
+    redis:
+      # no Redis in tests: lookups fail fast and fail open
+      host: redis.invalid
+      timeout: 200ms
+      connect-timeout: 200ms
+      repositories:
+        enabled: false
+
+chat:
+  web-allowed-origin: http://localhost:5173
+  websocket:
+    allowed-origins: http://localhost:*
+  jwt:
+    secret: test-secret-0123456789abcdef0123456789abcdef
+  internal:
+    token: test-internal-token
+  message:
+    max-text-length: 500
+    max-image-bytes: 2097152
+  retention:
+    days: 30
+    # never during a test run: ChatServiceTests calls purge() itself
+    purge-cron: "-"
+
+management:
+  health:
+    redis:
+      enabled: false
