@@ -28,7 +28,7 @@ import {
   ordersApi,
   parseUtcDate,
 } from "../../lib/api";
-import { useDisplayNames, useSuppliers } from "../../lib/people";
+import { useSuppliers } from "../../lib/people";
 
 const POLL_INTERVAL = 2000;
 const POLL_TIMEOUT = 15000;
@@ -91,7 +91,6 @@ export default function MyRequests() {
   const [cancelError, setCancelError] = useState<string | null>(null);
 
   const shownOrders = [...ongoingItems, ...completedItems];
-  const courierNames = useDisplayNames(shownOrders.map((o) => o.courier_id));
   const suppliers = useSuppliers([
     ...shownOrders.map((o) => o.supplier_id),
     editOrder?.supplier_id,
@@ -362,9 +361,8 @@ export default function MyRequests() {
     const isOpen = order.status === "OPEN";
     const noAssign = order.courier_id === null;
     const supplier = suppliers[order.supplier_id];
-    const courier = order.courier_id
-      ? courierNames[order.courier_id] ?? "Assigned"
-      : "Not assigned yet";
+    // Names come with the order detail; the list only says whether one is assigned.
+    const courier = order.courier_id ? "Assigned" : "Not assigned yet";
     const open = () => navigate(`/orders/${order.order_id}`);
 
     return (

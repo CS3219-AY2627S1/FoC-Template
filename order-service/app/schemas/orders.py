@@ -1,4 +1,4 @@
-# AI-INFLUENCED: Sprint 1 order schemas and validation implemented with Codex.
+# AI-INFLUENCED: Order schemas and order detail display names implemented with Codex.
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -69,6 +69,9 @@ class OrderResponse(BaseModel):
 
 
 class OrderDetailResponse(OrderResponse):
+    supplier_name: str | None = None
+    requester_name: str | None = None
+    courier_name: str | None = None
     proof_of_delivery_photo: str | None = None
 
 

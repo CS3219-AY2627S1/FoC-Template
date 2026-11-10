@@ -46,8 +46,7 @@
     "POST /api/users/otp/verify",
     "POST /api/users/password/forgot",
     "POST /api/users/password/reset",
-    "POST /api/users/register",
-    "GET /api/users/{user_id}/public"
+    "POST /api/users/register"
   ],
   "proxied_prefixes": [
     "/api/chat",

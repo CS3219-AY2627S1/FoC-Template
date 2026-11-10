@@ -48,7 +48,6 @@ EXPOSED_ROUTES: tuple[tuple[str, str], ...] = (
     ("POST", "/api/users/password/reset"),
     ("GET", "/api/users/me"),
     ("PATCH", "/api/users/me"),
-    ("GET", "/api/users/{user_id}/public"),
     ("GET", "/api/users/admin"),
     ("POST", "/api/users/admin"),
     ("POST", "/api/users/admin/{user_id}/suspend"),

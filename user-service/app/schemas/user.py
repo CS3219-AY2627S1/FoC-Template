@@ -1,3 +1,4 @@
+# AI-influenced: Added the internal display-name lookup contract for order details.
 from __future__ import annotations
 
 import re
@@ -76,11 +77,7 @@ class ProfileResponse(BaseModel):
     email_verified: bool
 
 
-class PublicProfileResponse(BaseModel):
-    """What any signed-in user may see about another user: the name only."""
-
-    model_config = ConfigDict(from_attributes=True)
-
+class UserNameResponse(BaseModel):
     id: str
     display_name: str
 

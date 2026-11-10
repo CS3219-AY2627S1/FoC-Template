@@ -1,4 +1,4 @@
-# AI-INFLUENCED: Sprint 1 Order Service API tests generated with Codex.
+# AI-INFLUENCED: Order Service API and detail-name tests generated with Codex.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -37,10 +37,15 @@ def fake_session() -> object:
 
 
 @pytest.fixture
-def client(fake_session: object):
+def client(fake_session: object, monkeypatch: pytest.MonkeyPatch):
     app = FastAPI()
     register_exception_handlers(app)
     app.include_router(order_routes.router)
+    monkeypatch.setattr(
+        order_routes,
+        "get_order_names",
+        AsyncMock(return_value=("The Deck", "Alice", "Bob")),
+    )
 
     async def override_get_session():
         yield fake_session
@@ -185,11 +190,8 @@ def test_deliver_maps_database_failure(client, monkeypatch):
     assert response.json()["code"] == "order_delivery_failed"
 
 
-def test_deliver_without_photo(client, fake_session, monkeypatch):
-    order = _stored_order(requester_id="requester-1")
-    order.courier_id = "courier-1"
-    order.status = OrderStatus.AWAITING_APPROVAL
-    deliver = AsyncMock(return_value=order)
+def test_deliver_requires_photo(client, monkeypatch):
+    deliver = AsyncMock()
     monkeypatch.setattr(order_routes.order_service, "deliver_order", deliver)
 
     response = client.post(
@@ -197,9 +199,9 @@ def test_deliver_without_photo(client, fake_session, monkeypatch):
         headers={"X-User-Id": "courier-1", "X-User-Role": "client"},
     )
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "AWAITING_APPROVAL"
-    deliver.assert_awaited_once_with(fake_session, "order-1", "courier-1", None)
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_error"
+    deliver.assert_not_awaited()
 
 
 def test_deliver_rejects_invalid_photo(client, monkeypatch):
@@ -516,6 +518,9 @@ def test_get_order_happy_path(
     response = client.get("/orders/order-1", headers={"X-User-Id": user_id})
     assert response.status_code == 200
     assert response.json()["proof_of_delivery_photo"] is None
+    assert response.json()["supplier_name"] == "The Deck"
+    assert response.json()["requester_name"] == "Alice"
+    assert response.json()["courier_name"] == "Bob"
     assert response.headers["cache-control"] == "private, no-store"
 
 

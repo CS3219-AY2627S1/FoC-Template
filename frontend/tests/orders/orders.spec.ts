@@ -35,9 +35,6 @@ const ACCEPTED = order({
 
 const COMMON = {
   [`GET /api/suppliers/sup-1`]: () => ({ body: makeSupplier() }),
-  [`GET /api/users/${COURIER}/public`]: () => ({
-    body: { id: COURIER, display_name: "Charles Babbage" },
-  }),
   [`GET /api/credits/${ME}/balance`]: () => ({
     body: { user_id: ME, available_balance: 100, reserved_balance: 0 },
   }),
@@ -74,9 +71,8 @@ test.describe("orders", () => {
     await expect(openRow.getByText("Coffee Bean")).toBeVisible();
     await expect(openRow.getByText("Courier: Not assigned yet")).toBeVisible();
     await expect(openRow.getByRole("button", { name: "Delete" })).toHaveCount(0);
-    await expect(rows.filter({ hasText: "Printing" })).toContainText(
-      "Courier: Charles Babbage",
-    );
+    // Names come with the order detail; the list only says one is assigned.
+    await expect(rows.filter({ hasText: "Printing" })).toContainText("Courier: Assigned");
 
     await openRow.getByRole("button", { name: "Cancel" }).click();
     // Clicking a button inside the row does not open the order.
@@ -111,7 +107,9 @@ test.describe("orders", () => {
     await mockApi(page, {
       ...COMMON,
       "GET /api/orders/requested/ongoing": () => ({ body: [ACCEPTED] }),
-      "GET /api/orders/order-accepted": () => ({ body: ACCEPTED }),
+      "GET /api/orders/order-accepted": () => ({
+        body: { ...ACCEPTED, supplier_name: "Coffee Bean", courier_name: "Charles Babbage" },
+      }),
     });
 
     await page.goto("/orders/mine");
@@ -128,8 +126,9 @@ test.describe("orders", () => {
     await expect(page.getByText("You", { exact: true })).toBeVisible();
     await expect(page.getByText("Charles Babbage")).toBeVisible();
     // Readable timeline, no raw ids or SCREAMING_CASE statuses.
-    await expect(page.getByText("Heading to vendor")).toBeVisible();
-    await expect(page.getByText("Awaiting confirmation")).toBeVisible();
+    const progress = page.getByRole("list", { name: "Order progress" });
+    await expect(progress.getByText("Heading to vendor")).toBeVisible();
+    await expect(progress.getByText("Awaiting confirmation")).toBeVisible();
     await expect(page.getByText("AWAITING_APPROVAL")).toHaveCount(0);
     await expect(page.getByText(COURIER)).toHaveCount(0);
     await expect(page.getByText("sup-1", { exact: true })).toHaveCount(0);
@@ -205,10 +204,10 @@ test.describe("orders", () => {
       "GET /api/suppliers": () => ({ body: supplierList([makeSupplier()]) }),
       "GET /api/orders": () => ({ body: [open] }),
       "GET /api/orders/o-open": () => ({
-        body: accepted ? { ...open, status: "ACCEPTED", courier_id: ME } : open,
-      }),
-      [`GET /api/users/${requester}/public`]: () => ({
-        body: { id: requester, display_name: "Ada Lovelace" },
+        body: {
+          ...(accepted ? { ...open, status: "ACCEPTED", courier_id: ME } : open),
+          requester_name: "Ada Lovelace",
+        },
       }),
       "POST /api/orders/o-open/accept": () => {
         accepted = true;

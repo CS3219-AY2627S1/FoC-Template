@@ -1,5 +1,6 @@
 // AI-assisted: MyDeliveries page — courier's active and completed deliveries with Pick up/Withdraw/Deliver actions.
-// UI tweaks (Claude Opus 5.5): clickable rows with supplier and requester names. Reviewed by authors.
+// UI tweaks (Claude Opus 5.5): clickable rows with the supplier name. Reviewed by authors.
+// Proof of delivery: "Mark delivered" asks for a photo first (DeliveryPhotoModal).
 import {
   Box,
   Button,
@@ -14,9 +15,10 @@ import { notifications } from "@mantine/notifications";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { OrderStatusBadge } from "../../components/StatusPill";
+import { DeliveryPhotoModal } from "../../components/DeliveryPhotoModal";
 import { OrderChatButton } from "../../components/chat/OrderChatButton";
 import { ApiError, type OrderResponse, ordersApi, parseUtcDate } from "../../lib/api";
-import { useDisplayNames, useSuppliers } from "../../lib/people";
+import { useSuppliers } from "../../lib/people";
 
 /** The row's own buttons should not also open the order. */
 function stop(e: React.SyntheticEvent) {
@@ -32,10 +34,10 @@ export default function MyDeliveries() {
   const [loadingCompleted, setLoadingCompleted] = useState(false);
 
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
+  const [deliveryOrderId, setDeliveryOrderId] = useState<string | null>(null);
 
   const navigate = useNavigate();
   const shownOrders = [...activeItems, ...completedItems];
-  const requesterNames = useDisplayNames(shownOrders.map((o) => o.requester_id));
   const suppliers = useSuppliers(shownOrders.map((o) => o.supplier_id));
 
   useEffect(() => {
@@ -133,28 +135,24 @@ export default function MyDeliveries() {
     }
   }
 
-  async function handleDeliver(id: string) {
-    addLoading(id);
-    try {
-      await ordersApi.deliver(id);
-      window.dispatchEvent(new Event("credits-changed"));
-      const updated = await ordersApi.assignedActive();
-      setActiveItems(updated);
-    } catch (err) {
-      notifications.show({
-        color: "red",
-        title: "Deliver failed",
-        message: err instanceof ApiError ? err.message : "Failed to deliver",
+  // DeliveryPhotoModal uploads the photo and marks the order delivered.
+  function handleDelivered() {
+    window.dispatchEvent(new Event("credits-changed"));
+    ordersApi
+      .assignedActive()
+      .then(setActiveItems)
+      .catch((err) => {
+        notifications.show({
+          color: "red",
+          title: "Failed to refresh deliveries",
+          message: err instanceof ApiError ? err.message : "Failed to refresh",
+        });
       });
-    } finally {
-      removeLoading(id);
-    }
   }
 
   function renderRow(order: OrderResponse, showActions: boolean) {
     const isLoading = loadingIds.has(order.order_id);
     const supplier = suppliers[order.supplier_id];
-    const requester = requesterNames[order.requester_id];
     const open = () => navigate(`/orders/${order.order_id}`);
 
     return (
@@ -179,11 +177,9 @@ export default function MyDeliveries() {
         <Group justify="space-between" wrap="nowrap" align="flex-start">
           <Stack gap={4}>
             <Text fw={600}>{order.name}</Text>
-            {(supplier || requester) && (
+            {supplier && (
               <Text size="xs" c="dimmed">
-                {[supplier?.name, requester && `for ${requester}`]
-                  .filter(Boolean)
-                  .join(" · ")}
+                {supplier.name}
               </Text>
             )}
             <Group gap="xs" wrap="wrap">
@@ -224,7 +220,7 @@ export default function MyDeliveries() {
                   <Button
                     size="xs"
                     color="green"
-                    onClick={() => handleDeliver(order.order_id)}
+                    onClick={() => setDeliveryOrderId(order.order_id)}
                   >
                     Mark delivered
                   </Button>
@@ -240,6 +236,11 @@ export default function MyDeliveries() {
   return (
     <Stack gap="lg">
       <Title order={2}>My Deliveries</Title>
+      <DeliveryPhotoModal
+        orderId={deliveryOrderId}
+        onClose={() => setDeliveryOrderId(null)}
+        onDelivered={handleDelivered}
+      />
 
       <Tabs value={activeTab} onChange={setActiveTab}>
         <Tabs.List>

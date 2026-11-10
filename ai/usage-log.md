@@ -1,3 +1,5 @@
+<!-- AI-INFLUENCED: Record order details, proof photos, UI styling, and request/delivery navigation updates with Codex. -->
+
 # AI Usage Log
 
 Per the CS3219 AI Usage Policy (Project Document, Appendix 2). Record every

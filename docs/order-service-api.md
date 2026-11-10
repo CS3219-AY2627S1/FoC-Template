@@ -251,13 +251,13 @@ Return orders available to the authenticated caller for courier discovery.
 - **Current limitation:** no deadline predicate is applied. An overdue order
   remains visible while its persisted status is still `OPEN`.
 
-### 5.3 `GET /orders/{order_id}` — requester order detail **(implemented)**
+### 5.3 `GET /orders/{order_id}` — participant order detail **(implemented)**
 
-Return one order only when it belongs to the authenticated requester.
+Return one order to its authenticated requester or assigned courier.
 
-- **Auth:** trusted `X-User-Id` header required; caller must own the order.
+- **Auth:** trusted `X-User-Id` header required; caller must be the requester or assigned courier.
 - **Path parameter:** `order_id` — server-generated UUID string.
-- **200 response:** the complete `OrderResponse`.
+- **200 response:** the complete `OrderResponse`, `proof_of_delivery_photo`, and nullable `supplier_name`, `requester_name`, and `courier_name` fields. Names are resolved through Supplier Service and User Service. If a name lookup fails, its field is `null` while the original ID remains available. An unassigned courier has `courier_name: null`.
 - **403 response:** the order belongs to another requester.
 
   ```json
@@ -278,7 +278,7 @@ Return one order only when it belongs to the authenticated requester.
 
 - **500 response:** `order_retrieval_failed` when the database lookup fails.
 
-The implementation does not provide courier or administrator detail access.
+The implementation does not provide administrator detail access unless the administrator is also the requester or assigned courier.
 
 ### 5.4 `DELETE /orders/{order_id}` — delete an order **(implemented)**
 

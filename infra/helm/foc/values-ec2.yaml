@@ -1,3 +1,4 @@
+# AI-INFLUENCED: Configure the deployed proof-of-delivery photo bucket with Codex.
 # Host and origin placeholders are filled by scripts/render-ec2-values.sh after terraform apply.
 # Image tags (global.backup.image.tag and each <svc>.image.tag) are managed by CI; do not edit by hand.
 createNamespaces: false

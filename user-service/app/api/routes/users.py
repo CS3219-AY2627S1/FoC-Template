@@ -1,3 +1,4 @@
+# AI-influenced: Added internal user-name lookup for order detail enrichment.
 from __future__ import annotations
 
 import logging
@@ -22,10 +23,10 @@ from app.schemas.user import (
     LoginResponse,
     ProfileResponse,
     ProfileUpdateRequest,
-    PublicProfileResponse,
     RegisterRequest,
     RegisterResponse,
     RoleUpdateRequest,
+    UserNameResponse,
 )
 from app.services import security
 from app.services.exceptions import (
@@ -206,6 +207,15 @@ async def get_profile(
     return ProfileResponse.model_validate(user)
 
 
+@router.get("/internal/{user_id}/name", response_model=UserNameResponse)
+async def get_user_name(user_id: str, session: SessionDep) -> UserNameResponse:
+    """Return only a display name to internal services; the gateway does not expose this path."""
+    user = await UserService(session).get_profile(user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
+    return UserNameResponse(id=user.id, display_name=user.display_name)
+
+
 @router.patch("/me", response_model=ProfileResponse)
 async def update_profile(
     payload: ProfileUpdateRequest,
@@ -225,27 +235,6 @@ async def update_profile(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
     return ProfileResponse.model_validate(user)
-
-
-@router.get("/{user_id}/public", response_model=PublicProfileResponse)
-async def get_public_profile(
-    user_id: str,
-    session: SessionDep,
-    x_user_id: UserIdHeaderDep = None,
-) -> PublicProfileResponse:
-    """Display name of another user, e.g. the courier or requester of an order.
-
-    Only the name is returned; email, contact number and role stay private.
-    """
-    if x_user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="missing identity header"
-        )
-    service = UserService(session)
-    user = await service.get_profile(user_id)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
-    return PublicProfileResponse.model_validate(user)
 
 
 @router.post("/admin", response_model=AdminUserResponse, status_code=status.HTTP_201_CREATED)

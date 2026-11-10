@@ -1,4 +1,4 @@
-// AI-assisted (OpenCode + Claude): typed fetch wrapper for the API gateway,
+// AI-assisted (OpenCode + Claude + Codex): typed fetch wrapper for the API gateway,
 // attaches the JWT bearer token and normalizes error payloads. Extended with
 // ordersApi and creditsApi for D3. Reviewed by authors.
 import type { ChatAttachment, ChatConversation, ChatHistoryPage, WsTicket } from "./chat/types";
@@ -182,22 +182,6 @@ export const authApi = {
   },
 };
 
-// ---- Other users (name only) ----
-export interface PublicProfile {
-  id: string;
-  display_name: string;
-}
-
-export const usersApi = {
-  /** Display name of another user, e.g. the courier or requester of an order. */
-  publicProfile(userId: string) {
-    return request<PublicProfile>(
-      "GET",
-      `/api/users/${encodeURIComponent(userId)}/public`,
-    );
-  },
-};
-
 // ---- Admin user management ----
 export const adminUsersApi = {
   list(
@@ -300,6 +284,13 @@ export interface OrderResponse {
   created_at: string;
 }
 
+export interface OrderDetailResponse extends OrderResponse {
+  supplier_name: string | null;
+  requester_name: string | null;
+  courier_name: string | null;
+  proof_of_delivery_photo: string | null;
+}
+
 export interface OrderCreate {
   name: string;
   details: string;
@@ -346,7 +337,7 @@ export const ordersApi = {
     );
   },
   get(id: string) {
-    return request<OrderResponse>("GET", `/api/orders/${id}`);
+    return request<OrderDetailResponse>("GET", `/api/orders/${id}`);
   },
   create(body: OrderCreate) {
     return request<OrderResponse>("POST", "/api/orders", body);
@@ -363,8 +354,10 @@ export const ordersApi = {
   pickup(id: string) {
     return request<OrderResponse>("POST", `/api/orders/${id}/pickup`);
   },
-  deliver(id: string) {
-    return request<OrderResponse>("POST", `/api/orders/${id}/deliver`);
+  deliver(id: string, photo: File) {
+    const body = new FormData();
+    body.append("photo", photo);
+    return request<OrderResponse>("POST", `/api/orders/${id}/deliver`, body);
   },
   withdraw(id: string) {
     return request<OrderResponse>(
