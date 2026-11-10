@@ -248,8 +248,8 @@ orders (system-wide N4).
 > Downstream effect: on successful deactivation the service writes a
 > SupplierDeactivated fact to a transactional outbox, and an async relay
 > (`app/services/event_worker.py`) publishes it to the `foc.supplier.events`
-> exchange. The Order Service consumes it and cancels affected pre-pickup
-> (OPEN/ACCEPTED) orders - it owns that cancellation cascade. Event contract:
+> exchange. The Order Service consumes it and cancels affected `OPEN`
+> orders (`ACCEPTED` and later continue) - it owns that cancellation cascade. Event contract:
 > [`event-catalog.md`](../../docs/event-catalog.md).
 
 ### 5.6 `POST /suppliers/{id}/reactivate` — reactivate

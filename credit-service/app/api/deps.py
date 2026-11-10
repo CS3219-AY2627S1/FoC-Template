@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Annotated
 
 from fastapi import Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,3 +41,6 @@ async def get_credit_service(
     session: AsyncSession = Depends(get_session),
 ) -> CreditService:
     return CreditService(session)
+
+
+IdentityDep = Annotated[Identity, Depends(require_identity)]

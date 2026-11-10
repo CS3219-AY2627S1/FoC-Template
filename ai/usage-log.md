@@ -1,4 +1,4 @@
-<!-- AI-INFLUENCED: Record Order Service photo and D3 Postman updates with Codex. -->
+<!-- AI-INFLUENCED: Record order details, proof photos, UI styling, and request/delivery navigation updates with Codex. -->
 
 # AI Usage Log
 
@@ -16,6 +16,29 @@ Format for each entry:
 - Prompt(s): <exact prompt(s) + key responses, or a link>
 - Author review: <how you validated/edited/tested the output>
 ```
+
+## 07/11/2026 — Javier
+
+- Tool: Claude (model: Claude Opus 5.5)
+- Scope: Integrated the standalone chat-service (supplied as a zip) into the
+  monorepo as the requester-courier chat N2H. Ported it to the repo layout and
+  conventions (`requirements.txt`, `ruff.toml`, `pytest.ini`, repo-root Dockerfile
+  with `foc_shared`, `GET /health`, gateway-trusted `X-User-Id`, `{code, message}`
+  errors, shared env names); added an order-event adapter (From slide deck) 
+  (`app/integrations/order_events.py`) that maps `foc.order.events` onto the 
+  generic chat operations with an idempotency inbox; added a WebSocket relay,
+  chat routes and an Origin allowlist to the API gateway; added the Messages page,
+  chat client and order chat button to the frontend; wired chat-service into compose,
+  `.env.example`, the Makefile and scripts, a Helm chart + namespace, the secrets 
+  scripts, CI (lint, Postgres-backed tests, compose e2e, k3d smoke, image build, tag bump)
+  and the docs. Top-level dirs changed: `chat-service` (new), `api-gateway`,
+  `frontend`, `infra`, `scripts`, `.github`, `docs`, root files.
+- Prompt(s): "Integrate this [chat-service.zip] to foc project main branch with
+  the project standard and format with this [chat-service.md] concept and architecture
+  design."
+- Author review: Passed pytests, and end to end tested chat feature. Did manual 
+  tweak on UI for better UX. Tweak backend to delete closed chat within a time
+  but deactivate for now. 
 
 ## 08/11/2026 — John
 
@@ -1327,3 +1350,241 @@ commit=False)` so the settlement and its task result commit once,
   `dot -Tsvg notification-service/docs/notification-service-architecture.dot -o notification-service/docs/notification-service-architecture.svg`
   and confirmed it is non-empty. Grepped every cited test name against `tests/`.
   Re-read the Markdown for the one-sentence-per-line rule and no em dashes.
+
+## 09/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: N2H campus map. Added the `CampusMap` component (Leaflet +
+  OpenStreetMap via react-leaflet) with a red teardrop SVG pin anchored at its
+  bottom tip and a recenter control that restores the location and default
+  zoom, plus a "View on map" button after Location on the supplier detail
+  page. The supplier map opens in a `SupplierMapModal` using the same map style
+  as the order location picker, so no separate page or route is needed. Files:
+  `frontend/src/components/CampusMap.tsx`,
+  `frontend/src/components/SupplierMapModal.tsx`,
+  `frontend/src/pages/suppliers/SupplierDetail.tsx`,
+  `frontend/src/App.tsx`.
+- Prompt(s):
+  1. "I am going to use the Leaflet + OpenStreetMap approach. I have already
+     installed leaflet, react-leaflet and the related packages. Create a new
+     `CampusMap` component for map display. Then update the supplier card: add
+     a map button after the location, navigate to `CampusMap`, read the
+     supplier's longitude/latitude, and show the location on the map."
+  2. "Change the marker to red, the kind with a pointed tip at the bottom, with
+     the tip corresponding to the place."
+  3. "Move the map button from the supplier card to the supplier detail page,
+     again after Location. Also add a recenter button to the map view that
+     moves the supplier to the center and restores the default size. When done,
+     make the first commit, with the message matching the other commits."
+  4. "Change the supplier map to use the same modal form as the order create
+     screen instead of navigating to a new page."
+- Author review: `npx tsc --noEmit`, `npm run lint` (only pre-existing warnings)
+  and `npm run build` pass. Verified in Playwright that View on map opens the
+  modal in place (URL unchanged), shows the supplier pin and location text, and
+  closes with Escape.
+
+## 09/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Order creation location helpers. Auto-fill Pickup location from the
+  selected supplier's building/floor/location, and add a locate action after
+  the Delivery location title that opens a map picker modal where clicking the
+  map places a pin. On confirm the point is reverse-geocoded through the public
+  OSM Nominatim service (coordinate fallback plus a warning when it is
+  unavailable) and the address fills the delivery field. The lookup pins
+  `accept-language=en` so addresses stay English regardless of the browser
+  locale. Opening the picker first requests the browser's current position
+  with `navigator.geolocation.getCurrentPosition()` and uses it as the default
+  pin when available, falling back to the supplier location otherwise.
+  Extended `CampusMap` with a selectable mode, a responsive height
+  prop, modal-safe size invalidation, and a recenter control that does not leak
+  clicks to the map. Files: `frontend/src/pages/orders/CreateOrder.tsx`,
+  `frontend/src/components/LocationPickerModal.tsx`,
+  `frontend/src/lib/geocoding.ts`,
+  `frontend/src/components/CampusMap.tsx`.
+- Prompt(s):
+  1. "Now modify the order creation screen. Add: after a supplier is selected,
+     auto-fill the pickup location (the merchant's). For the delivery location,
+     add a locate icon after the title; clicking it opens a map to pick a point
+     and fill the address. If any part is impossible or hard to implement, pause
+     and tell me."
+  2. "No need to change order-service for now. The delivery field is filled in
+     Chinese — is that related to the system language or something? If possible,
+     change it to English."
+  3. "When picking an address, request the current position first, e.g. via
+     navigator.geolocation.getCurrentPosition(); if it succeeds use that as the
+     default and wait for confirmation and edits, otherwise keep the previous
+     picker-confirmation flow."
+- Author review: `npx tsc --noEmit`, `npm run lint` (only pre-existing warnings)
+  and `npm run build` pass. Verified in Playwright that selecting a supplier
+  fills the pickup address, the locate icon opens the picker, clicking the map
+  moves the pin, and confirming fills the geocoded address. Confirmed with a
+  direct Nominatim call that `accept-language=en` returns an English
+  display_name. Verified in Playwright that granting geolocation defaults the
+  pin to the current position and denying it falls back to the supplier
+  coordinates.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Store delivery-point coordinates on orders. Added nullable
+  `delivery_latitude`/`delivery_longitude` columns to `orders` (Alembic
+  migration `20261110_order_delivery_coordinates`), mirroring the supplier
+  fields and validating them to -90..90 / -180..180. The coordinates are
+  accepted by `OrderCreate`/`OrderUpdate`, returned by `OrderResponse`, and
+  persisted on create. The pending-update snapshot now dumps only the fields
+  the client sent, so an update without coordinates cannot null them out. The
+  create-order form submits the map picker's coordinates. Files:
+  `order-service/app/models/orders.py`, `order-service/app/schemas/orders.py`,
+  `order-service/app/repositories/orders.py`,
+  `order-service/app/services/orders.py`,
+  `order-service/migrations/versions/20261110_order_delivery_coordinates.py`,
+  `frontend/src/lib/api.ts`, `frontend/src/pages/orders/CreateOrder.tsx`, plus
+  tests.
+- Prompt(s): "Now I need to modify order-service: add storage for the delivery
+  location position, following the supplier's longitude/latitude, to prepare
+  for later work."
+- Author review: `ruff check` and `ruff format --check` pass; order-service
+  `pytest` reports 239 passed, 15 skipped (Postgres/env-gated). Frontend `tsc`,
+  `eslint` (only pre-existing warnings) and `vite build` pass. Added schema
+  range tests and a migration upgrade/downgrade test.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Replaced the OpenRouteService modal prototype with a simpler Google
+  Maps hand-off on the deliveries page. Active `ACCEPTED` and `PICKED_UP` rows
+  show a Navigate button that opens Google Maps directions in a new tab with
+  walking travel mode. The destination is the supplier's coordinates for the
+  pickup stage (falling back to the pickup address text) and the stored
+  delivery coordinates for the delivery stage (falling back to the delivery
+  address). Files: `frontend/src/pages/deliveries/MyDeliveries.tsx`.
+- Prompt(s): "Temporarily revert the other changes and implement the simpler
+  feature first: clicking the delivery navigation button should jump to Google
+  Maps for navigation."
+- Author review: `tsc`, `eslint` (only pre-existing warnings) and `vite build`
+  pass. Playwright verified both stages open Google Maps with the expected
+  destination and `travelmode=walking`, and completed rows expose no button.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Stop stale delivery coordinates after edits. The create-order form now
+  clears the picked coordinates when the user types a different delivery
+  address, and the edit-order form sends coordinates explicitly: it keeps the
+  stored pin when the address is unchanged and sends null when the text was
+  edited. Added repository tests covering explicit-null clearing and unset-field
+  preservation. Files: `frontend/src/pages/orders/CreateOrder.tsx`,
+  `frontend/src/pages/orders/MyRequests.tsx`,
+  `order-service/tests/test_orders_repository.py`.
+- Prompt(s): "Two things to fix before merge. 1) Stale delivery coordinates
+  after an edit: the edit form only sends the delivery_location text, so the old
+  lat/lng stay on the order and Navigate routes to the old pin; same in
+  CreateOrder when the user picks on the map and then types a different address.
+  Have the forms send the coordinates explicitly (null when the address
+  changed)."
+- Author review: `tsc`, `eslint` (only pre-existing warnings) and `vite build`
+  pass; order-service repository tests pass; Playwright verified both create and
+  edit payloads submit null coordinates after typing a new address.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Open Google Maps synchronously from the deliveries page. The Navigate
+  action now reads the already-loaded supplier from `useSuppliers` instead of
+  awaiting `suppliersApi.get`, so `window.open` runs inside the click handler and
+  is not blocked as a popup. Removed the per-row navigation loading state.
+  Files: `frontend/src/pages/deliveries/MyDeliveries.tsx`.
+- Prompt(s): "2) Navigate can be blocked as a popup: window.open runs after an
+  await suppliersApi.get(...). Use suppliers[order.supplier_id] from
+  useSuppliers, which is already loaded, so no fetch is needed."
+- Author review: `tsc`, `eslint` (only pre-existing warnings) and `vite build`
+  pass. Playwright verified both stages open Google Maps with the expected
+  destinations and that clicking Navigate makes no additional supplier request.
+## 19/10/2026 - credit-service owner (fill in name)
+
+- Tool: DeepSeek Harness (model: deepseek-flash)
+- Scope: credit-service participant side of the Order approval transfer task.
+  Generated: `OrderApprovalRequestedEvent` and `CreditTransferResult` in
+  `app/schemas/interop.py` (mirroring `order-service/app/schemas/
+  order_approval_events.py` and `credit_events.py`), `TaskResultKind.TRANSFER`
+  with `transferred` / `transfer_failed` outcomes, `_transfer_reservation(
+  commit=False)` so the settlement and its task result commit once,
+  `CreditService.handle_approval_requested` /
+  `report_transfer_retries_exhausted` / `_record_transfer_outcome` /
+  `_publish_transfer_outcome`, the consumer binding for
+  `OrderApprovalRequested`, `tests/test_approval_requests.py` (15 cases), the
+  event-catalog/README rows, and a hermetic-test change (the HTTP suites now
+  stub reservation publishing instead of waiting on a RabbitMQ connect).
+  The contract (event names, payload fields, reply fields, routing key) was
+  specified by the Order Service owner (Alexander) in the team thread; the tool
+  implemented it against the order-side schemas.
+- Prompt(s):
+  1. (Team thread, Alexander) "Event: OrderApprovalRequested ... Credit Service
+     actions: Find the reservation by reservation_id and verify it matches
+     order_id and requester_id. Transfer the reserved credits to the account
+     identified by courier_id. Process duplicate events idempotently; retry
+     transient errors, then report a definitive failure ... Credit Service
+     publishes CreditTransferSucceeded / CreditTransferFailed ... Set the
+     routing key to event_type."
+  2. "现在就实现（推荐）" - implement the contract.
+- Author review: `pytest` (111 tests passing, 15 new) and `ruff check` /
+  `ruff format` clean; the reply model round-trips through the strict
+  `CreditTransferResult` (extra=forbid, six fields) on both the success and
+  failure paths, and the order-side `approval_consumer` / `approval_worker` were
+  read to confirm the routing keys and field expectations. Not validated in
+  this environment: an end-to-end run against a live RabbitMQ/Order Service.
+
+## 19/10/2026 - credit-service owner (fill in name)
+
+- Tool: DeepSeek Harness (model: deepseek-flash)
+- Scope: system-wide API observability. Moved the credit-service observability
+  layer into `shared/foc_shared/observability.py` (per-service registry, HTTP
+  metrics with a `service` label, error-envelope `code` counters,
+  `/metrics` + `/health/ready` routes, `X-Request-Id` propagation, JSON logging,
+  broker state) with an `Observability(...).install(app, ...)` on-ramp.
+  credit-service now consumes the shared layer (local `middleware.py`,
+  `logging.py`, `context.py`, `health.py` and `routes/observability.py` reduced
+  to shims/removed; metric names unchanged). Onboarded user-service and
+  supplier-service (HTTP metrics + readiness; supplier also records envelope
+  codes), added Prometheus scrape targets and per-service tests, and documented
+  the onboarding steps in `docs/observability.md` / `shared/README.md`.
+  The decision to build a shared library rather than an edge-only gateway
+  audit was made by the author; the tool implemented it.
+- Prompt(s):
+  1. "我之前的 api metric 审计是只针对 credit service 的吗？我需要对整个系统的
+     所有服务的 api 都要做一个审计。请问我们可不可以做到？" - scope check and
+     feasibility analysis (shared library vs gateway-level audit).
+  2. "直接做 P2 共享库 + 逐服务接入" - implement the shared library and onboard
+     the services.
+- Author review: `pytest` 111 (credit) + 89 (supplier) + 31 (user) passing and
+  `ruff check` / `ruff format --check` clean across the four trees. Some suites
+  were run against the credit-service venv with `PYTHONPATH=shared` because
+  only credit-service has a local venv in this environment; the same dependency
+  sets are declared in each service's `requirements.txt`. Not covered: a live
+  Prometheus/Grafana run (no Docker) and the gateway/order/notification
+  onboarding.
+
+## 19/10/2026 - credit-service owner (fill in name)
+
+- Tool: DeepSeek Harness (model: deepseek-flash)
+- Scope: aligned user-service with the shared error envelope so its errors carry
+  a business `code`. Generated: `user-service/app/errors.py` (handlers for
+  `StarletteHTTPException`, `RequestValidationError` and unhandled exceptions;
+  message-prefix + status mapping to codes; `OBS.record_error_code` from each
+  handler), `register_exception_handlers(app)` in `app/main.py`, two onboarding
+  tests (`test_errors_use_the_shared_envelope_and_record_their_code`,
+  `test_validation_errors_use_the_shared_envelope`), and updated the three
+  existing assertions that read `resp.json()["detail"]`. Response shape change
+  (breaking for clients that read `detail`) requested by the author; the
+  frontend already accepts both shapes (`frontend/src/lib/api.ts` `extractError`).
+- Prompt(s):
+  1. "user service 错误码怎么了？格式不对吗？" - explained the envelope
+     inconsistency and the audit impact.
+  2. "你直接把user-service改掉，功能跑通就行，直接交到pr#18的commit里面去，
+     让他们审就行了" - implement and push to PR #18.
+- Author review: `pytest` 33 (user) + 111 (credit) + 89 (supplier) passing;
+  `ruff check` / `ruff format --check` clean. Codes asserted in tests for
+  `otp_locked`, `admin_guard`, `last_admin_guard`, `unauthorized` and
+  `validation_error`; the 422/401/400 bodies no longer contain `detail`.
+

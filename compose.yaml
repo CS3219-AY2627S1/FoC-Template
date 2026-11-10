@@ -1,8 +1,10 @@
+# AI-INFLUENCED: Check S3Mock readiness using its documented endpoint with Codex.
 # ─────────────────────────────────────────────────────────────
 # FoC — Friend on Campus · Docker Compose (local deployment)
 # ─────────────────────────────────────────────────────────────
 # Mandatory containerized setup (M7). Brings up:
 #   - 5 backend microservices (FastAPI) + custom API gateway
+#   - chat-service (N2H: requester-courier chat over WebSockets)
 #   - 1 React (Vite) frontend
 #   - 1 PostgreSQL instance per backend service (DB-per-service)
 #   - 1 RabbitMQ broker (async/event-driven workflow, M6)
@@ -37,6 +39,7 @@ services:
       ORDER_SERVICE_URL: ${ORDER_SERVICE_URL}
       CREDIT_SERVICE_URL: ${CREDIT_SERVICE_URL}
       NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL}
+      CHAT_SERVICE_URL: ${CHAT_SERVICE_URL}
     ports:
       - "${GATEWAY_PORT:-8080}:8000"
     depends_on:
@@ -45,6 +48,7 @@ services:
       order-service: {condition: service_healthy}
       credit-service: {condition: service_healthy}
       notification-service: {condition: service_healthy}
+      chat-service: {condition: service_healthy}
     networks: [foc-net]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -150,6 +154,31 @@ services:
       timeout: 5s
       retries: 5
 
+  chat-service:
+    build:
+      context: .
+      dockerfile: chat-service/Dockerfile
+    env_file: [.env]
+    environment:
+      DATABASE_URL: ${CHAT_DATABASE_URL}
+      CHAT_ORDER_EVENTS_ENABLED: ${CHAT_ORDER_EVENTS_ENABLED}
+      CHAT_PHOTO_BUCKET: ${CHAT_PHOTO_BUCKET}
+      CHAT_PHOTO_REGION: ${CHAT_PHOTO_REGION}
+      AWS_ENDPOINT_URL_S3: ${AWS_ENDPOINT_URL_S3}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${CHAT_PHOTO_REGION}
+    depends_on:
+      chat-db: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      s3mock: {condition: service_healthy}
+    networks: [foc-net]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ==========================================================
   # Frontend (React + Vite responsive SPA)
   # ==========================================================
@@ -230,6 +259,19 @@ services:
       timeout: 5s
       retries: 5
 
+  chat-db:
+    <<: *postgres-common
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${CHAT_DB_NAME:-chat_db}
+    volumes: [chat-db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${CHAT_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ==========================================================
   # Message broker (RabbitMQ) — event-driven workflow (M6)
   # ==========================================================
@@ -239,12 +281,20 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    # Management UI + broker metrics for Prometheus (queue depth, unacked,
+    # consumer count). The plugin list lives in a mounted file: the image
+    # cannot rewrite /etc/rabbitmq/enabled_plugins (root-owned) at boot, so
+    # RABBITMQ_ENABLED_PLUGINS fails with "permission denied" and aborts
+    # startup. Tracing is a client concern, not a broker one — see
+    # docs/observability.md.
+    volumes:
+      - ./observability/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
     ports:
       - "5672:5672"     # AMQP
       - "15672:15672"   # management UI
     networks: [foc-net]
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -265,7 +315,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ==========================================================
   # Object storage (S3Mock) — S3-compatible store for delivery photos
   # ==========================================================
   s3mock:
@@ -277,10 +326,57 @@ services:
       - "9090:9090"     # S3 API (HTTP)
     networks: [foc-net]
     healthcheck:
-      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:9090/ >/dev/null 2>&1 || exit 1"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/favicon.ico"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 180s
+
+  # Observability (N2H) — opt-in profile, never started by `make up`
+  #   make obs-up   # == docker compose --profile observability up -d
+  #
+  # Exposure: only Grafana is reachable from the host, and only on loopback.
+  # Prometheus is internal (Grafana proxies its queries) so nobody can query
+  # the metric store directly, and the per-service /metrics endpoints stay on
+  # foc-net — the gateway is default-deny and never forwards them.
+  # ==========================================================
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    profiles: ["observability"]
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=6h"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/helm/foc/charts/observability/files/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    expose:
+      - "9090"
+    depends_on:
+      credit-service: {condition: service_healthy}
+    networks: [foc-net]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    profiles: ["observability"]
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # Login required: the dashboard is the single viewing surface, so treat
+      # it like any other admin UI (loopback binding + credentials).
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./infra/helm/foc/charts/observability/files/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ./infra/helm/foc/charts/observability/files/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ./infra/helm/foc/charts/observability/files/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      prometheus: {condition: service_started}
+    networks: [foc-net]
 
 networks:
   foc-net:
@@ -292,3 +388,6 @@ volumes:
   order-db-data:
   credit-db-data:
   notification-db-data:
+  chat-db-data:
+  prometheus-data:
+  grafana-data:

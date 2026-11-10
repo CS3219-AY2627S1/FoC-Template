@@ -47,3 +47,31 @@ def test_order_create_rejects_deadline_without_timezone() -> None:
 
     with pytest.raises(ValidationError):
         OrderCreate.model_validate(payload)
+
+
+def test_order_create_accepts_delivery_coordinates() -> None:
+    payload = _valid_payload()
+    payload["delivery_latitude"] = 1.2940156
+    payload["delivery_longitude"] = 103.7738478
+
+    order = OrderCreate.model_validate(payload)
+
+    assert order.delivery_latitude == 1.2940156
+    assert order.delivery_longitude == 103.7738478
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("delivery_latitude", 91),
+        ("delivery_latitude", -91),
+        ("delivery_longitude", 181),
+        ("delivery_longitude", -181),
+    ],
+)
+def test_order_create_rejects_out_of_range_delivery_coordinates(field: str, value: float) -> None:
+    payload = _valid_payload()
+    payload[field] = value
+
+    with pytest.raises(ValidationError):
+        OrderCreate.model_validate(payload)

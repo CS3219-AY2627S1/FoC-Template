@@ -30,6 +30,7 @@ admin portal.
 | `/notifications` | authenticated | Full notification list |
 | `/admin/suppliers` | admin | Supplier CRUD: table + create/edit form + deactivate |
 | `/admin/clients` | admin | Client accounts: search/filter, suspend/reinstate, create admin |
+| `/messages`, `/messages/:conversationId` | authenticated | Requester-courier chat (N2H): live messages, receipts, typing, replies, photos, location sharing |
 
 Client-side role checks are **UX only**; the gateway + services enforce
 authorization (RBAC is the server's responsibility).

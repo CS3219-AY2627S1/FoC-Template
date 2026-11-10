@@ -202,7 +202,7 @@ async def withdraw_order(
 
 
 async def deliver_order(
-    session: AsyncSession, order_id: str, courier_id: str, photo: proof_photo.Photo | None
+    session: AsyncSession, order_id: str, courier_id: str, photo: proof_photo.Photo
 ) -> OrderTable:
     photo_key = None
     committed = False
@@ -221,8 +221,7 @@ async def deliver_order(
                 )
 
             assert_transition(current_status, OrderStatus.AWAITING_APPROVAL)
-            if photo is not None:
-                photo_key = await proof_photo.upload(order_id, photo)
+            photo_key = await proof_photo.upload(order_id, photo)
             delivered_at = datetime.now(UTC)
             order.proof_of_delivery_photo_key = photo_key
             order.awaiting_approval_at = delivered_at
@@ -422,7 +421,11 @@ async def get_order_for_participant(
         raise OrderNotFoundError(order_id)
     is_requester = user_id == order.requester_id
     is_courier = order.courier_id is not None and user_id == order.courier_id
-    if not (is_requester or is_courier):
+    # An open, unassigned order is already listed to every user under Take Errands,
+    # so any user may open it before accepting. Once taken it is private again.
+    # AI-assisted (Claude Opus 5.5); reviewed by authors.
+    is_open = order.status == OrderStatus.OPEN and order.courier_id is None
+    if not (is_requester or is_courier or is_open):
         raise OrderAccessDeniedError(order_id)
     photo = None
     if order.proof_of_delivery_photo_key:
@@ -567,7 +570,10 @@ async def update_order(
         if await release_tasks.get_for_order(session, order_id):
             raise OrderStateConflictError(order_id, "This order has a pending terminal action.")
 
-        proposed_order = updated_order.model_dump(mode="json")
+        # Keep only the fields the client actually sent so optional fields
+        # (e.g. delivery coordinates) are not overwritten with None when the
+        # stored update is re-validated and applied later.
+        proposed_order = updated_order.model_dump(mode="json", exclude_unset=True)
         pending = await update_tasks.get_pending_for_order(session, order_id)
         if pending is not None:
             if pending.proposed_order != proposed_order:

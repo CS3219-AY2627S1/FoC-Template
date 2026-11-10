@@ -1,4 +1,4 @@
-# AI-INFLUENCED: Sprint 1 order schemas and validation implemented with Codex.
+# AI-INFLUENCED: Order schemas and order detail display names implemented with Codex.
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -40,6 +40,8 @@ class OrderCreate(BaseModel):
     supplier_id: NonEmptyString
     pickup_location: NonEmptyString
     delivery_location: NonEmptyString
+    delivery_latitude: float | None = Field(default=None, ge=-90, le=90)
+    delivery_longitude: float | None = Field(default=None, ge=-180, le=180)
 
     @field_validator("deadline")
     @classmethod
@@ -64,11 +66,16 @@ class OrderResponse(BaseModel):
     courier_id: str | None
     pickup_location: str
     delivery_location: str
+    delivery_latitude: float | None = None
+    delivery_longitude: float | None = None
     status: OrderStatus
     created_at: datetime
 
 
 class OrderDetailResponse(OrderResponse):
+    supplier_name: str | None = None
+    requester_name: str | None = None
+    courier_name: str | None = None
     proof_of_delivery_photo: str | None = None
 
 
@@ -98,6 +105,8 @@ class OrderUpdate(BaseModel):
     supplier_id: NonEmptyString
     pickup_location: NonEmptyString
     delivery_location: NonEmptyString
+    delivery_latitude: float | None = Field(default=None, ge=-90, le=90)
+    delivery_longitude: float | None = Field(default=None, ge=-180, le=180)
 
     @field_validator("deadline")
     @classmethod

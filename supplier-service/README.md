@@ -68,5 +68,6 @@ interactive docs at `/docs`.
 - Architecture: [`docs/architecture.md`](docs/architecture.md)
 - Data model: [`docs/data-model.md`](docs/data-model.md)
 - API contract: [`docs/api-contract.md`](docs/api-contract.md)
+- Observability: [`../docs/observability.md`](../docs/observability.md)
 
 Owner: John Gao Jiahao.

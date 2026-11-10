@@ -31,6 +31,7 @@ withdrawn, or exchanged for money, and only circulate within the platform.
 | Frontend | React + TypeScript + Vite (responsive SPA) |
 | Databases | PostgreSQL — one instance per service (DB-per-service) |
 | Async messaging | RabbitMQ (order lifecycle events) |
+| Real-time | WebSockets (chat-service, relayed by the gateway; one-time tickets) |
 | Containerization | Docker + Docker Compose |
 | Tooling | `ruff` (lint/format), `pytest` (tests), `make` (dev tasks) |
 
@@ -69,6 +70,7 @@ microservice lives in its own top-level folder.
 ├── order-service/        # errand lifecycle + state machine + events
 ├── credit-service/       # closed credit economy (reserve/transfer/release)
 ├── notification-service/ # consumes order events, notifies users
+├── chat-service/         # generic real-time chat
 ├── frontend/             # React + Vite responsive SPA
 ├── shared/               # small shared Python lib (event schemas, contracts)
 ├── data/                 # provided supplier seed CSV + images

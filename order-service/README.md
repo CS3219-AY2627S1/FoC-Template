@@ -14,8 +14,8 @@ and expiry (backlog: Order Service; project M4).
   cannot accept own order, single courier per order, ≤3 concurrent.
 - **F3** courier flow: pickup → deliver → requester approve/complete; courier
   withdraw; requester cancellation of an assigned `ACCEPTED` order before pickup.
-- **F4** cancel `OPEN` and `ACCEPTED` orders when their supplier is deactivated
-  (event-driven); orders from `PICKED_UP` onward continue.
+- **F4** cancel `OPEN` orders when their supplier is deactivated
+  (event-driven); accepted and later orders continue.
 - **F5** lifecycle **state machine** — see `app/services/lifecycle.py`
   (status set: `OPEN, ACCEPTED, PICKED_UP, AWAITING_APPROVAL, COMPLETED,
   CANCELLED, EXPIRED`). Invalid transitions are rejected.
@@ -25,8 +25,8 @@ and expiry (backlog: Order Service; project M4).
 Requester deletion is available only for an unassigned `OPEN` order and removes
 the row after credit release. Requester cancellation is available only for an
 assigned `ACCEPTED` order before pickup and retains the row as `CANCELLED` after
-credit release. Supplier deactivation may independently cancel `OPEN` or
-`ACCEPTED` orders and publishes an Order-owned cancellation fact.
+credit release. Supplier deactivation independently cancels `OPEN` orders
+and publishes an Order-owned cancellation fact.
 
 ## Events
 
@@ -201,27 +201,34 @@ F2.4.1).
 `POST /orders/{order_id}/deliver` marks an assigned order as delivered and
 moves it from `PICKED_UP` to `AWAITING_APPROVAL`. It accepts gateway-injected
 `client` and `admin` roles, but the caller's `X-User-Id` must match the
-assigned courier. A multipart `photo` file is optional. When supplied, it must
+assigned courier. A multipart `photo` file is required. It must
 contain a valid JPEG, PNG, or WebP image, at most 5 MiB and 20 million pixels,
 and is rebuilt from its pixels before upload to remove EXIF/GPS and other
 embedded metadata. EXIF rotation is applied first so phone photos stay upright.
 The rebuilt image is uploaded to a private S3 bucket. Its object key, the order update,
 and the `OrderDelivered` outbox record commit in one database transaction with
 `awaiting_approval_at`, which starts the 24-hour approval clock. Without a
-photo, delivery skips S3 and the photo key remains null. The event worker
-publishes after commit. Invalid images and S3 failures leave the order
+photo, delivery is rejected. The event worker publishes after commit. Invalid
+images and S3 failures leave the order
 unchanged. If the database transaction fails after upload, the service attempts
 to delete the unreferenced image.
 
 Configure `ORDER_PHOTO_BUCKET` and `ORDER_PHOTO_REGION` before uploading photos.
 The workload needs `s3:PutObject`, `s3:GetObject`, and `s3:DeleteObject` on its
-private photo bucket. Run `alembic upgrade head` to add the nullable photo key
-column. `GET /orders/{order_id}` returns the image as a base64 data URI in
+private photo bucket. Startup runs the Alembic migration that adds the nullable
+photo key column. `GET /orders/{order_id}` returns the image as a base64 data URI in
 `proof_of_delivery_photo` to the requester or assigned courier. It returns
-`null` when no photo was supplied and uses `Cache-Control: private, no-store`. Order
+`null` for orders delivered before photos were required and uses
+`Cache-Control: private, no-store`. Order
 listings omit photo bytes and the private S3 key is never returned. Retrieval also
 removes metadata from photos stored before this change; existing S3 objects are
 not rewritten by a read.
+
+The same detail response includes nullable `supplier_name`, `requester_name`,
+and `courier_name`. Order Service fetches these from Supplier Service and the
+internal User Service name route. If a lookup is unavailable, the corresponding
+name is `null` and the original ID remains in the response. Set
+`USER_SERVICE_URL` for deployments where the default service DNS name differs.
 
 At runtime, FastAPI also serves the live specification at `/openapi.json` and
 interactive documentation at `/docs`.
@@ -269,5 +276,6 @@ starts at migration time.
 - API contract: [`docs/api-contract.md`](docs/api-contract.md)
 - Data model: [`docs/data-model.md`](docs/data-model.md)
 - State machine: [`docs/order-state-machine.svg`](docs/order-state-machine.svg)
+- Observability: [`../docs/observability.md`](../docs/observability.md)
 
 Owner: Alexander Gerald.

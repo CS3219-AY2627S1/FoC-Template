@@ -45,6 +45,7 @@ individual contributions.
 | order-service | Alexander Gerald |
 | credit-service | Frank Yu |
 | notification-service | John Gao Jiahao |
+| chat-service (N2H) | John Gao Jiahao |
 | frontend | Zhou Shiyao |
 | shared / infra / CI | John Gao Jiahao |
 

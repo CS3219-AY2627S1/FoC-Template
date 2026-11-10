@@ -1,7 +1,11 @@
+# AI-influenced: Configure User Service lookup for order details.
 namespace: foc-order
 replicas: 1
 port: 8000
 healthPath: /health
+
+metrics:
+  enabled: true
 
 image:
   repository: foc/order-service
@@ -10,6 +14,7 @@ image:
 env:
   LOG_LEVEL: info
   SUPPLIER_SERVICE_URL: http://supplier-service.foc-supplier.svc.cluster.local:8000
+  USER_SERVICE_URL: http://user-service.foc-user.svc.cluster.local:8000
   CREDIT_SERVICE_URL: http://credit-service.foc-credit.svc.cluster.local:8000
   ORDER_PHOTO_BUCKET: ""
   ORDER_PHOTO_REGION: ap-southeast-1

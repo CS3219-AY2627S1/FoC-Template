@@ -19,3 +19,5 @@ pytest-asyncio>=0.23
 aiosqlite>=0.20
 
 alembic>=1.13
+# observability: shared /metrics endpoint (foc_shared.observability)
+prometheus-client>=0.20

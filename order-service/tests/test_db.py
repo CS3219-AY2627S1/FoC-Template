@@ -387,3 +387,29 @@ def test_single_event_outbox_migration_preserves_pending_publications() -> None:
             "update-1",
         }
     engine.dispose()
+
+
+def test_order_delivery_coordinates_migration_adds_nullable_columns():
+    path = Path(__file__).parents[1] / "migrations/versions/20261110_order_delivery_coordinates.py"
+    spec = importlib.util.spec_from_file_location("order_delivery_coordinates_migration", path)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE orders (order_id VARCHAR PRIMARY KEY)"))
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+        columns = {column["name"] for column in inspect(connection).get_columns("orders")}
+        assert {"delivery_latitude", "delivery_longitude"} <= columns
+        connection.execute(text("INSERT INTO orders (order_id) VALUES ('order-1')"))
+        row = connection.execute(
+            text("SELECT delivery_latitude, delivery_longitude FROM orders")
+        ).one()
+        assert row == (None, None)
+        migration.downgrade()
+        columns = {column["name"] for column in inspect(connection).get_columns("orders")}
+        assert "delivery_latitude" not in columns
+        assert "delivery_longitude" not in columns
+    engine.dispose()

@@ -26,8 +26,8 @@ test.describe("profile", () => {
 
     await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
     await expect(page.getByText(CLIENT_PROFILE.email)).toBeVisible();
-    await expect(page.getByText("client", { exact: true })).toBeVisible();
-    await expect(page.getByText("Yes", { exact: true })).toBeVisible();
+    await expect(page.getByText("Email verified")).toHaveCount(0);
+    await expect(page.getByText("client", { exact: true })).toHaveCount(0);
     // Only display name and contact number are editable.
     await expect(page.getByRole("textbox")).toHaveCount(2);
     await expect(page.getByLabel("Display name")).toHaveValue("Ada Lovelace");

@@ -215,10 +215,10 @@ gateway strips them and injects identity from the JWT).
 | `00 Setup` | Health (sets `runId`); register + Mailpit-OTP + verify + login for requester/courier/courier2; `/me` → ids; admin login; first active `supplierId`; admin-created `demoSupplierId`. |
 | `01 Initial allocation (2.2)` | Each user polled to 100 available / 0 reserved; ledger shows exactly one `allocation` +100. |
 | `02 Create + reservation (1.5, 2.3)` | Create reward-20 order → 201 OPEN; reward reserved synchronously (available −20 / reserved +20); insufficient credits → 409; past deadline → 422; timezone-naive deadline → 422. |
-| `03 Query (1.3)` | Order in the courier's available feed; `min_reward`/`max_reward` filters; requester feed excludes own order; get-one requester 200 / unrelated 403 / unknown 404; requester `/requested/ongoing`. |
+| `03 Query (1.3)` | Order in the courier's available feed; `min_reward`/`max_reward` filters; requester feed excludes own order; get-one requester 200 / unrelated user on an OPEN order 200 (it is listed to everyone) / unknown 404; requester `/requested/ongoing`. |
 | `04 AuthZ + invalid transitions (1.2, 1.3)` | Accept own → 409; pickup before accept → 403; courier approve/cancel others' → 403; no bearer → 401. |
-| `05 Happy path + concurrency (1.2, 1.4, 2.3)` | Accept → ACCEPTED; second courier → 409; pickup → deliver without an optional proof photo → AWAITING_APPROVAL; re-pickup → 409; approve → 202 (idempotent same `task_id`); poll → COMPLETED; requester reserved −20, courier available +20; completed lists. |
-| `06 Withdraw idempotency (1.4)` | Accept then withdraw (`Idempotency-Key`) → OPEN; replay same key → identical body; same key on a different order → 409; withdrawn order courier get-one → 403. |
+| `05 Happy path + concurrency (1.2, 1.4, 2.3)` | Accept → ACCEPTED; second courier → 409; unrelated get-one once assigned → 403; pickup → deliver without a photo → 422; deliver with proof photo → AWAITING_APPROVAL; requester retrieves photo; re-pickup → 409; approve → 202 (idempotent same `task_id`); poll → COMPLETED; requester reserved −20, courier available +20; completed lists. |
+| `06 Withdraw idempotency (1.4)` | Accept then withdraw (`Idempotency-Key`) → OPEN; replay same key → identical body; same key on a different order → 409; withdrawn courier get-one of the reopened order → 200 OPEN, unassigned; once courier2 takes it → 403. |
 | `07 Update / amendment (2.3)` | Full-body PATCH reward 30 → 202 → poll `completed`; reward 30, available −10 / reserved +10; PATCH reward 100000 → 202 → poll `rejected` with `failure_reason`; reward/balance unchanged. |
 | `08 Cancel + delete (2.3)` | OPEN cancel → 409; courier accepts → ACCEPTED cancel → CANCELLED + credits released + re-cancel 409; another ACCEPTED cancel → released; OPEN delete → poll deletion task `completed` + credits released + get-one 404. |
 | `09 Expiry (1.2, 2.3)` | Order with deadline now+10s polled until EXPIRED by the sweeper; credits released; accepting it → 409. |
@@ -249,9 +249,8 @@ docker compose up --build -d
 curl -s http://localhost:8080/health      # -> {"status":"ok"}
 ```
 
-The D3 delivery request omits the optional photo, so it works without a photo
-bucket. Uploading a photo through that endpoint still requires a configured
-private S3 bucket.
+The D3 delivery request uploads `postman/fixtures/proof.png` from the repository
+root. The Compose stack provides the private S3-compatible photo bucket.
 
 ## Concurrency demo — `scripts/d3-race.sh`
 

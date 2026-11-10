@@ -21,6 +21,7 @@ internally **layered** (`api/routes` → `services` → `repositories`).
 | order-service | Errand lifecycle + state machine | order-db | sync + publishes events |
 | credit-service | Closed credit economy | credit-db | sync + consumes & publishes events |
 | notification-service | User notifications from order events; read API for the bell | notification-db | consumes events + sync (HTTP read API) |
+| chat-service (N2H) | Generic real-time chat; one chat per accepted order, driven by order events | chat-db | sync (HTTP + WebSocket via gateway) + consumes order events + publishes chat events |
 | frontend | Responsive SPA (requester/courier/admin) | — | sync (HTTP) |
 | rabbitmq | Event broker | — | async |
 
@@ -59,12 +60,14 @@ flowchart TB
         ORD["order-service :8000"]
         CR["credit-service :8000"]
         NOT["notification-service :8000"]
+        CHAT["chat-service :8000"]
 
         USDB[("user-db")]
         SUPDB[("supplier-db")]
         ORDDB[("order-db")]
         CRDB[("credit-db")]
         NOTDB[("notification-db")]
+        CHATDB[("chat-db")]
     end
 
     MQ(["RabbitMQ broker (foc-net)"])
@@ -77,12 +80,14 @@ flowchart TB
     GW -->|"proxy /api/orders/*"| ORD
     GW -->|"proxy /api/credits/*"| CR
     GW -->|"proxy /api/notifications/*"| NOT
+    GW -->|"proxy /api/chat/*<br/>relay WebSocket /api/chat/ws"| CHAT
 
     US --- USDB
     SUP --- SUPDB
     ORD --- ORDDB
     CR --- CRDB
     NOT --- NOTDB
+    CHAT --- CHATDB
 
     US -.->|"publishes UserRegistered<br/>on foc.user.events (fanout)"| MQ
     MQ -.->|"consumes UserRegistered<br/>-> allocate initial credits"| CR
@@ -90,6 +95,7 @@ flowchart TB
     ORD -.->|"publishes order events<br/>on foc.order.events (topic)"| MQ
     MQ -.->|"consumes order events"| CR
     MQ -.->|"consumes order events<br/>-> builds notifications"| NOT
+    MQ -.->|"consumes order events<br/>-> open/close order chats"| CHAT
 
     ORD -->|"GET /suppliers/{id}<br/>validate supplier"| SUP
     ORD -->|"POST /credits/reservations<br/>reserve credits"| CR
@@ -99,8 +105,8 @@ flowchart TB
     classDef store fill:#f0f0f0,stroke:#888,color:#1a1a1a;
     classDef async fill:#fdf3e6,stroke:#b8863a,color:#1a1a1a;
     class Browser,FE,GW pub;
-    class US,SUP,ORD,CR,NOT svc;
-    class USDB,SUPDB,ORDDB,CRDB,NOTDB store;
+    class US,SUP,ORD,CR,NOT,CHAT svc;
+    class USDB,SUPDB,ORDDB,CRDB,NOTDB,CHATDB store;
     class MQ async;
 ```
 
@@ -151,6 +157,14 @@ flowchart TB
   consume path, not a pending one. See
   [`notification-service/docs/architecture.md`](../notification-service/docs/architecture.md).
 
+- **chat-service is a generic chat service.** It only stores conversations, 
+  members and messages. Order chats come from an optional adapter
+  that consumes `foc.order.events` on its own queue (see
+  [`event-catalog.md`](./event-catalog.md));
+  Browsers reach it only through the gateway: HTTP under `/api/chat/*`, and a
+  WebSocket at `/api/chat/ws` that the gateway relays after chat-service accepts
+  a one-time ticket. Diagrams: [`chat-service/docs/architecture.md`](../chat-service/docs/architecture.md).
+
 ### Supplier Service (C4 Level 3 — Component)
 
 <!-- AI-influenced: diagram drafted with OpenCode (Claude Opus); see ai/usage-log.md -->
@@ -192,8 +206,10 @@ among the others. Each backend service now has its own component view under its
 - [`order-service/docs/architecture.md`](../order-service/docs/architecture.md)
 - [`credit-service/docs/architecture.md`](../credit-service/docs/architecture.md)
 - [`notification-service/docs/architecture.md`](../notification-service/docs/architecture.md)
+- [`chat-service/docs/architecture.md`](../chat-service/docs/architecture.md) (N2H)
 
 Related design views:
 [`rbac.md`](./rbac.md) (role to capability matrix + supplier-write sequence),
-and per-service data models under each service's `docs/data-model.md`.
+per-service data models under each service's `docs/data-model.md`, and
+in-cluster monitoring in [`observability.md`](./observability.md).
 

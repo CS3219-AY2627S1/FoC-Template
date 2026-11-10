@@ -18,12 +18,17 @@ createNamespaces: true
 smokeTest:
   enabled: false
 
+observability:
+  enabled: true
+
 namespaces:
   - foc-supplier
   - foc-user
   - foc-credit
   - foc-order
   - foc-notification
+  - foc-chat
   - foc-messaging
   - foc-gateway
   - foc-frontend
+  - foc-observability

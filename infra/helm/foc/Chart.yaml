@@ -24,6 +24,9 @@ dependencies:
   - name: notification-service
     version: 0.1.0
     repository: "file://charts/notification-service"
+  - name: chat-service
+    version: 0.1.0
+    repository: "file://charts/chat-service"
   - name: rabbitmq
     version: 0.1.0
     repository: "file://charts/rabbitmq"
@@ -33,3 +36,7 @@ dependencies:
   - name: frontend
     version: 0.1.0
     repository: "file://charts/frontend"
+  - name: observability
+    version: 0.1.0
+    repository: "file://charts/observability"
+    condition: observability.enabled

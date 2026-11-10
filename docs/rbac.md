@@ -65,6 +65,13 @@ reached). `403` = authenticated but wrong role (rejected in the service).
 | `POST /api/orders` | 401 | allowed | allowed | order-service |
 | `POST /api/orders/{id}/accept` | 401 | allowed (courier) | allowed | order-service |
 | `POST /api/orders/{id}/cancel` | 401 | allowed (own) | allowed | order-service |
+| `GET /api/credits/{user_id}/balance` · `/transactions` | 401 | allowed (own only) | allowed | `credits.py::_require_self_or_admin` |
+| `POST /api/chat/ws-ticket` | 401 | allowed (own ticket) | allowed (own ticket) | gateway authn; chat-service issues a ticket for `X-User-Id` |
+| `GET /api/chat/conversations` | 401 | allowed (own chats) | allowed (own chats) | chat-service lists only chats the caller is a member of |
+| `GET /api/chat/conversations/{id}[/messages]` | 401 | members only (403 otherwise) | members only (403 otherwise) | chat-service `_require_member`; a removed courier loses access |
+| `POST /api/chat/conversations/{id}/attachments` | 401 | members of an open chat (403/409 otherwise) | members of an open chat (403/409 otherwise) | chat-service `require_can_post`; the photo is visible only to the uploader until sent |
+| `GET /api/chat/conversations/{id}/attachments/{attachment_id}` | 401 | uploader (unsent), or members whose history includes the message | same | chat-service `attachment_for`; 404 for a deleted message or history the member cannot see, 403 for non-members |
+| WebSocket `/api/chat/ws?ticket=` | 403 without a valid ticket | allowed (own chats) | allowed (own chats) | chat-service redeems the one-time ticket; every frame checks membership |
 
 ¹ Admin-only, with additional business guards that return `400` (not `403`):
 an admin cannot suspend or demote **itself**, an admin account cannot be

@@ -60,7 +60,7 @@ def _event(event_id: str = "supplier-event-1") -> SupplierDeactivatedEvent:
     )
 
 
-async def test_cancels_only_pre_pickup_orders_and_deduplicates(order_store) -> None:
+async def test_cancels_only_open_orders_and_deduplicates(order_store) -> None:
     async with order_store() as session, session.begin():
         session.add_all(
             [
@@ -74,7 +74,7 @@ async def test_cancels_only_pre_pickup_orders_and_deduplicates(order_store) -> N
         )
 
     async with order_store() as session:
-        assert await supplier_deactivation.process_supplier_deactivated(session, _event()) == 2
+        assert await supplier_deactivation.process_supplier_deactivated(session, _event()) == 1
     async with order_store() as session:
         assert await supplier_deactivation.process_supplier_deactivated(session, _event()) == 0
 
@@ -87,14 +87,14 @@ async def test_cancels_only_pre_pickup_orders_and_deduplicates(order_store) -> N
 
     assert statuses == {
         "open": OrderStatus.CANCELLED,
-        "accepted": OrderStatus.CANCELLED,
+        "accepted": OrderStatus.ACCEPTED,
         "picked-up": OrderStatus.PICKED_UP,
         "awaiting": OrderStatus.AWAITING_APPROVAL,
         "completed": OrderStatus.COMPLETED,
         "other-supplier": OrderStatus.OPEN,
     }
-    assert len(facts) == 2
-    assert {fact.payload["order_id"] for fact in facts} == {"open", "accepted"}
+    assert len(facts) == 1
+    assert {fact.payload["order_id"] for fact in facts} == {"open"}
     assert {fact.payload["event_type"] for fact in facts} == {"OrderCancelled"}
     assert all("supplier-1" in fact.payload["reason"] for fact in facts)
     assert all(

@@ -36,4 +36,4 @@ The diagram above is the authoritative component view (PNG fallback:
 
 Supplier owns `supplier-db` and never reads another service's data. Order
 Service consumes `SupplierDeactivated` and independently cancels affected
-pre-pickup (`OPEN` / `ACCEPTED`) orders; Order owns that cascade.
+`OPEN` orders; `ACCEPTED` and later orders continue. Order owns that cascade.

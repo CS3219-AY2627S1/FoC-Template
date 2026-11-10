@@ -49,6 +49,7 @@ Owns PostgreSQL database `user_db`. Models: `user`, `otp`, `outbox`
 
 - Architecture: [`docs/architecture.md`](docs/architecture.md)
 - Registration / OTP flow: [`docs/flowchart.md`](docs/flowchart.md)
+- Observability: [`../docs/observability.md`](../docs/observability.md)
 
 ## Layout
 

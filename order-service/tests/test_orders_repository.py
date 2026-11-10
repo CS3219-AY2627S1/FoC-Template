@@ -14,7 +14,9 @@ from app.repositories.orders import (
     list_available_orders,
     list_requested_completed_orders,
     list_requested_ongoing_orders,
+    update_order,
 )
+from app.schemas.orders import OrderUpdate
 from app.services.lifecycle import OrderStatus
 
 
@@ -24,6 +26,9 @@ class _AsyncSessionAdapter:
 
     async def scalars(self, statement):
         return self.session.scalars(statement)
+
+    async def flush(self) -> None:
+        self.session.flush()
 
 
 def _open_order(order_id: str, deadline: datetime) -> OrderTable:
@@ -133,3 +138,80 @@ async def test_participant_lists_filter_identity_and_status() -> None:
         "completed-new",
         "completed-old",
     ]
+
+
+def _coordinate_order(engine, now: datetime) -> Session:
+    OrderTable.__table__.create(engine)
+    session = Session(engine)
+    order = _open_order("order-1", now + timedelta(hours=2))
+    order.delivery_latitude = 1.2940156
+    order.delivery_longitude = 103.7738478
+    session.add(order)
+    session.commit()
+    return session
+
+
+async def test_update_order_clears_coordinates_when_explicitly_null() -> None:
+    engine = create_engine("sqlite://")
+
+    @event.listens_for(engine, "connect")
+    def register_postgres_string_functions(connection, _record) -> None:
+        connection.create_function("btrim", 1, lambda value: value.strip())
+        connection.create_function("char_length", 1, len)
+
+    now = datetime.now(UTC)
+    session = _coordinate_order(engine, now)
+    order = session.get(OrderTable, "order-1")
+
+    update = OrderUpdate(
+        name="Updated",
+        details="Updated details",
+        reward=7,
+        deadline=now + timedelta(hours=3),
+        supplier_id="supplier-1",
+        pickup_location="Library",
+        delivery_location="COM2",
+        delivery_latitude=None,
+        delivery_longitude=None,
+    )
+    await update_order(order, update, _AsyncSessionAdapter(session))
+    session.commit()
+    session.refresh(order)
+
+    assert order.delivery_latitude is None
+    assert order.delivery_longitude is None
+
+    session.close()
+    engine.dispose()
+
+
+async def test_update_order_keeps_coordinates_when_not_sent() -> None:
+    engine = create_engine("sqlite://")
+
+    @event.listens_for(engine, "connect")
+    def register_postgres_string_functions(connection, _record) -> None:
+        connection.create_function("btrim", 1, lambda value: value.strip())
+        connection.create_function("char_length", 1, len)
+
+    now = datetime.now(UTC)
+    session = _coordinate_order(engine, now)
+    order = session.get(OrderTable, "order-1")
+
+    update = OrderUpdate(
+        name="Updated",
+        details="Updated details",
+        reward=7,
+        deadline=now + timedelta(hours=3),
+        supplier_id="supplier-1",
+        pickup_location="Library",
+        delivery_location="COM2",
+    )
+    await update_order(order, update, _AsyncSessionAdapter(session))
+    session.commit()
+    session.refresh(order)
+
+    assert order.delivery_latitude == 1.2940156
+    assert order.delivery_longitude == 103.7738478
+
+    session.close()
+    engine.dispose()

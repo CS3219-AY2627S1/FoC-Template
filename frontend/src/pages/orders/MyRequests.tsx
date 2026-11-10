@@ -1,4 +1,7 @@
-// AI-assisted: MyRequests page — requester's ongoing and completed orders with Edit/Delete/Cancel/Approve actions.
+// AI-assisted: MyRequests page — requester's ongoing and completed orders with Edit/Cancel/Approve actions.
+// UI tweaks (Claude Opus 5.5): one Cancel button (deletes an order nobody accepted
+// yet, cancels with a reason after acceptance), clickable rows, names instead of
+// ids. Reviewed by authors.
 import {
   Box,
   Button,
@@ -15,7 +18,9 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { OrderStatusBadge } from "../../components/StatusPill";
+import { OrderChatButton } from "../../components/chat/OrderChatButton";
 import {
   ApiError,
   type OrderResponse,
@@ -23,6 +28,7 @@ import {
   ordersApi,
   parseUtcDate,
 } from "../../lib/api";
+import { useSuppliers } from "../../lib/people";
 
 const POLL_INTERVAL = 2000;
 const POLL_TIMEOUT = 15000;
@@ -49,7 +55,13 @@ interface EditForm {
   deliveryLocation: string;
 }
 
+/** The row's own buttons should not also open the order. */
+function stop(e: React.SyntheticEvent) {
+  e.stopPropagation();
+}
+
 export default function MyRequests() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<string | null>("ongoing");
 
   const [ongoingItems, setOngoingItems] = useState<OrderResponse[]>([]);
@@ -78,7 +90,11 @@ export default function MyRequests() {
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const shownOrders = [...ongoingItems, ...completedItems];
+  const suppliers = useSuppliers([
+    ...shownOrders.map((o) => o.supplier_id),
+    editOrder?.supplier_id,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,6 +186,17 @@ export default function MyRequests() {
       supplier_id: supplierId,
       pickup_location: editForm.pickupLocation,
       delivery_location: editForm.deliveryLocation,
+      // The edit form has no map picker: keep the stored pin when the address
+      // is unchanged, but clear it explicitly when the text was edited so the
+      // courier is not routed to a stale location.
+      delivery_latitude:
+        editForm.deliveryLocation.trim() === editOrder.delivery_location
+          ? (editOrder.delivery_latitude ?? null)
+          : null,
+      delivery_longitude:
+        editForm.deliveryLocation.trim() === editOrder.delivery_location
+          ? (editOrder.delivery_longitude ?? null)
+          : null,
     };
     setEditSubmitting(true);
     try {
@@ -212,7 +239,6 @@ export default function MyRequests() {
   }
 
   async function handleDelete(id: string) {
-    setDeleteConfirmId(null);
     addPolling(id);
     try {
       const actionResp = await ordersApi.delete(id);
@@ -223,28 +249,29 @@ export default function MyRequests() {
       if (result === "timeout") {
         notifications.show({
           color: "yellow",
-          title: "Delete",
+          title: "Cancel",
           message: "Still processing",
         });
       } else if (result.status === "completed") {
         setOngoingItems((prev) => prev.filter((o) => o.order_id !== id));
+        window.dispatchEvent(new Event("credits-changed"));
         notifications.show({
           color: "green",
-          title: "Deleted",
-          message: "Order deleted",
+          title: "Cancelled",
+          message: "Request cancelled and removed",
         });
       } else {
         notifications.show({
           color: "red",
-          title: "Delete failed",
+          title: "Cancel failed",
           message: result.failure_reason ?? "Unknown error",
         });
       }
     } catch (err) {
       notifications.show({
         color: "red",
-        title: "Delete failed",
-        message: err instanceof ApiError ? err.message : "Failed to delete",
+        title: "Cancel failed",
+        message: err instanceof ApiError ? err.message : "Failed to cancel",
       });
     } finally {
       removePolling(id);
@@ -260,6 +287,13 @@ export default function MyRequests() {
   async function handleCancel(e: React.FormEvent) {
     e.preventDefault();
     if (!cancelOrder) return;
+    // Nobody accepted it yet: order-service only allows deleting it.
+    if (cancelOrder.status === "OPEN" && cancelOrder.courier_id === null) {
+      const id = cancelOrder.order_id;
+      setCancelOrder(null);
+      await handleDelete(id);
+      return;
+    }
     setCancelError(null);
     const id = cancelOrder.order_id;
     const reason = cancelReason;
@@ -337,16 +371,38 @@ export default function MyRequests() {
     const polling = pollingIds.has(order.order_id);
     const isOpen = order.status === "OPEN";
     const noAssign = order.courier_id === null;
+    const supplier = suppliers[order.supplier_id];
+    // Names come with the order detail; the list only says whether one is assigned.
+    const courier = order.courier_id ? "Assigned" : "Not assigned yet";
+    const open = () => navigate(`/orders/${order.order_id}`);
 
     return (
       <Box
         key={order.order_id}
         p="sm"
-        style={{ border: "1px solid #dee2e6", borderRadius: 8, marginBottom: 8 }}
+        role="link"
+        tabIndex={0}
+        aria-label={`Open ${order.name}`}
+        onClick={open}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && e.target === e.currentTarget) open();
+        }}
+        style={{
+          border: "1px solid #dee2e6",
+          borderRadius: 8,
+          marginBottom: 8,
+          cursor: "pointer",
+        }}
+        data-testid="order-row"
       >
         <Group justify="space-between" wrap="nowrap" align="flex-start">
           <Stack gap={4}>
             <Text fw={600}>{order.name}</Text>
+            {supplier && (
+              <Text size="xs" c="dimmed">
+                {supplier.name}
+              </Text>
+            )}
             <Group gap="xs" wrap="wrap">
               <OrderStatusBadge status={order.status} />
               <Text size="sm">Reward: {order.reward} cr</Text>
@@ -354,57 +410,26 @@ export default function MyRequests() {
                 Deadline: {parseUtcDate(order.deadline).toLocaleString()}
               </Text>
               <Text size="sm" c="dimmed">
-                Courier: {order.courier_id ? order.courier_id.slice(0, 8) + "…" : "Unassigned"}
+                Courier: {courier}
               </Text>
             </Group>
           </Stack>
-          <Group gap="xs" wrap="nowrap">
+          <Group gap="xs" wrap="nowrap" onClick={stop} onKeyDown={stop}>
             {polling && <Loader size="sm" />}
+            {!polling && <OrderChatButton orderId={order.order_id} />}
             {!polling && isOpen && noAssign && (
-              <>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  onClick={() => openEditModal(order)}
-                >
-                  Edit
-                </Button>
-                {deleteConfirmId === order.order_id ? (
-                  <Group gap="xs" wrap="nowrap">
-                    <Text size="xs" c="red">
-                      Confirm?
-                    </Text>
-                    <Button
-                      size="xs"
-                      color="red"
-                      onClick={() => handleDelete(order.order_id)}
-                    >
-                      Yes
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant="subtle"
-                      onClick={() => setDeleteConfirmId(null)}
-                    >
-                      No
-                    </Button>
-                  </Group>
-                ) : (
-                  <Button
-                    size="xs"
-                    color="red"
-                    variant="outline"
-                    onClick={() => setDeleteConfirmId(order.order_id)}
-                  >
-                    Delete
-                  </Button>
-                )}
-              </>
-            )}
-            {!polling && (isOpen || order.status === "ACCEPTED") && (
               <Button
                 size="xs"
-                color="orange"
+                variant="outline"
+                onClick={() => openEditModal(order)}
+              >
+                Edit
+              </Button>
+            )}
+            {!polling && ((isOpen && noAssign) || order.status === "ACCEPTED") && (
+              <Button
+                size="xs"
+                color="red"
                 variant="outline"
                 onClick={() => openCancelModal(order)}
               >
@@ -487,7 +512,11 @@ export default function MyRequests() {
           <Stack gap="md">
             <TextInput
               label="Supplier (read-only)"
-              value={editOrder?.supplier_id ?? ""}
+              value={
+                editOrder
+                  ? suppliers[editOrder.supplier_id]?.name ?? editOrder.supplier_id
+                  : ""
+              }
               disabled
             />
             <TextInput
@@ -561,31 +590,54 @@ export default function MyRequests() {
       <Modal
         opened={cancelOrder !== null}
         onClose={() => setCancelOrder(null)}
-        title="Cancel Order"
+        title="Cancel request"
       >
-        <form onSubmit={handleCancel}>
-          <Stack gap="md">
-            <Textarea
-              label="Reason"
-              required
-              value={cancelReason}
-              onChange={(e) => setCancelReason(e.currentTarget.value)}
-            />
-            {cancelError && (
-              <Text c="red" size="sm">
-                {cancelError}
+        {cancelOrder?.status === "OPEN" && cancelOrder.courier_id === null ? (
+          <form onSubmit={handleCancel}>
+            <Stack gap="md">
+              <Text size="sm">
+                Nobody has accepted <b>{cancelOrder.name}</b> yet, so it will be
+                removed and your reserved credits returned.
               </Text>
-            )}
-            <Button
-              type="submit"
-              color="red"
-              loading={cancelSubmitting}
-              disabled={!cancelReason.trim()}
-            >
-              Confirm Cancel
-            </Button>
-          </Stack>
-        </form>
+              <Group justify="flex-end">
+                <Button variant="subtle" onClick={() => setCancelOrder(null)}>
+                  Keep it
+                </Button>
+                <Button type="submit" color="red">
+                  Cancel request
+                </Button>
+              </Group>
+            </Stack>
+          </form>
+        ) : (
+          <form onSubmit={handleCancel}>
+            <Stack gap="md">
+              <Text size="sm">
+                A courier has already accepted this errand. Let them know why
+                you are cancelling.
+              </Text>
+              <Textarea
+                label="Reason"
+                required
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.currentTarget.value)}
+              />
+              {cancelError && (
+                <Text c="red" size="sm">
+                  {cancelError}
+                </Text>
+              )}
+              <Button
+                type="submit"
+                color="red"
+                loading={cancelSubmitting}
+                disabled={!cancelReason.trim()}
+              >
+                Confirm Cancel
+              </Button>
+            </Stack>
+          </form>
+        )}
       </Modal>
     </Stack>
   );

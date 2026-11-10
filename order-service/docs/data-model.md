@@ -26,6 +26,8 @@ erDiagram
         string   reservation_id                    "not null, UNIQUE, indexed (credit reservation, value ref)"
         string   pickup_location                   "not null, CHECK not blank"
         string   delivery_location                 "not null, CHECK not blank"
+        float    delivery_latitude                 "nullable (map-picked delivery coordinate, N2H)"
+        float    delivery_longitude                "nullable (map-picked delivery coordinate, N2H)"
         string   proof_of_delivery_photo_key       "nullable (S3 object key)"
         enum     status                            "not null (OPEN|ACCEPTED|PICKED_UP|AWAITING_APPROVAL|COMPLETED|CANCELLED|EXPIRED)"
         datetime awaiting_approval_at              "nullable (set on delivery; drives auto-approval)"

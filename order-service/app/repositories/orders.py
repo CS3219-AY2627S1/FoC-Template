@@ -34,6 +34,8 @@ async def create_order(
         reservation_id=reservation_id,
         pickup_location=new_order.pickup_location,
         delivery_location=new_order.delivery_location,
+        delivery_latitude=new_order.delivery_latitude,
+        delivery_longitude=new_order.delivery_longitude,
         status=OrderStatus.OPEN,
     )
 

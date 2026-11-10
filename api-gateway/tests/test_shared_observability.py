@@ -1,0 +1,110 @@
+"""Behaviour of the shared observability layer, driven over HTTP."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from foc_shared.observability import Observability
+
+
+def _app(**install_kwargs) -> FastAPI:
+    app = FastAPI()
+    Observability("svc-test", prefix="svctest").install(app, **install_kwargs)
+    return app
+
+
+def test_metrics_scrape_is_bounded_by_the_refresh_timeout(caplog):
+    async def slow_refresh() -> None:
+        await asyncio.sleep(5)
+
+    client = TestClient(
+        _app(check_broker=False, metrics_refresh=slow_refresh, metrics_refresh_timeout=0.05)
+    )
+    with caplog.at_level(logging.WARNING, logger="app"):
+        started = time.perf_counter()
+        response = client.get("/metrics")
+        elapsed = time.perf_counter() - started
+
+    assert response.status_code == 200
+    assert elapsed < 1.0
+    assert "svctest_http_requests_total" in response.text
+    warnings = [r for r in caplog.records if r.name == "app" and r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "timed out" in warnings[0].getMessage()
+
+
+def test_metrics_scrape_reports_a_refresh_raised_timeout_as_a_refresh_failure(caplog):
+    async def refresh_raising_timeout() -> None:
+        raise TimeoutError("connect timeout")
+
+    client = TestClient(
+        _app(check_broker=False, metrics_refresh=refresh_raising_timeout, metrics_refresh_timeout=5)
+    )
+    with caplog.at_level(logging.WARNING, logger="app"):
+        response = client.get("/metrics")
+
+    assert response.status_code == 200
+    records = [r for r in caplog.records if r.name == "app"]
+    assert [(r.levelno, r.getMessage()) for r in records] == [
+        (logging.ERROR, "Metrics refresh failed.")
+    ]
+    assert records[0].exc_info[0] is TimeoutError
+
+
+def test_readiness_is_degraded_when_the_extra_check_raises():
+    def broken_extra() -> dict[str, str]:
+        raise RuntimeError("boom")
+
+    response = TestClient(_app(check_broker=False, readiness_extra=broken_extra)).get(
+        "/health/ready"
+    )
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "degraded"
+    assert body["checks"] == {"extra": "unavailable"}
+
+
+def test_readiness_is_ready_when_the_extra_check_passes():
+    response = TestClient(_app(check_broker=False, readiness_extra=lambda: {"cache": "ok"})).get(
+        "/health/ready"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    assert body["checks"] == {"cache": "ok"}
+
+
+def test_install_can_skip_the_metrics_and_readiness_routes():
+    client = TestClient(_app(check_broker=False, metrics_route=False, readiness_route=False))
+
+    assert client.get("/metrics").status_code == 404
+    assert client.get("/health/ready").status_code == 404
+
+
+def test_http_method_label_collapses_unknown_methods_to_other():
+    app = FastAPI()
+    obs = Observability("svc-test", prefix="svctest")
+    obs.install(app, check_broker=False)
+
+    @app.api_route("/thing", methods=["GET", "XFOO"])
+    async def thing() -> dict[str, str]:
+        return {"ok": "yes"}
+
+    client = TestClient(app)
+    client.request("XFOO", "/thing")
+    client.request("XBAR", "/thing")
+    client.get("/thing")
+
+    recorded = {
+        sample.labels["method"]
+        for family in obs.http_requests.collect()
+        for sample in family.samples
+    }
+    assert recorded == {"GET", "OTHER"}

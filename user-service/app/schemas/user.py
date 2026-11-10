@@ -1,3 +1,4 @@
+# AI-influenced: Added the internal display-name lookup contract for order details.
 from __future__ import annotations
 
 import re
@@ -74,6 +75,11 @@ class ProfileResponse(BaseModel):
     contact_number: str | None
     role: Role
     email_verified: bool
+
+
+class UserNameResponse(BaseModel):
+    id: str
+    display_name: str
 
 
 class AdminUserResponse(BaseModel):

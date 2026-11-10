@@ -13,6 +13,8 @@ the detailed request and response schemas for the routes being proxied.
 | Order service | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD` | `/api/orders/...` | `/orders/...` | JWT | Forwarded unchanged |
 | Credit service | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD` | `/api/credits/...` | `/credits/...` | JWT | Forwarded unchanged |
 | Notification service | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD` | `/api/notifications/...` | `/notifications/...` | JWT | Forwarded unchanged |
+| Chat service | `GET`, `POST`, `HEAD` | `/api/chat/...` | `/chat/...` | JWT | Forwarded unchanged |
+| Chat WebSocket | WebSocket upgrade | `/api/chat/ws` | `/chat/ws` | One-time ticket (see below) | Frames relayed both ways |
 
 The per-area method set above is the superset the proxy will accept, not the
 authoritative allowlist. The actual (method, path) pairs the gateway forwards
@@ -78,6 +80,18 @@ X-User-Role: client
 The gateway removes client-supplied `Authorization`, `X-User-Id`, and
 `X-User-Role` headers before forwarding, then adds the validated identity
 headers.
+
+## WebSocket relay
+
+WebSocket routes are not authenticated by the gateway. The backend authenticates
+the handshake itself: the client first calls the JWT-protected
+`POST /api/chat/ws-ticket` and then connects to `/api/chat/ws?ticket=<ticket>`.
+chat-service redeems the ticket once, within 30 seconds.
+
+Once open, frames of up to 1 MiB are relayed both ways (a larger client frame closes
+the socket with `1009`), and the backend's close code is passed to the client. A
+close without a code becomes `1000`; codes a server may not send become `1011`.
+
 
 ## Gateway-owned responses
 
@@ -163,5 +177,6 @@ credentialed cookies.
 | `ORDER_SERVICE_URL` | `http://order-service:8000` | Order-service upstream |
 | `CREDIT_SERVICE_URL` | `http://credit-service:8000` | Credit-service upstream |
 | `NOTIFICATION_SERVICE_URL` | `http://notification-service:8000` | Notification-service upstream |
-| `JWT_SECRET` | `change-me-in-dev-only` | Shared JWT signing secret |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | Allowed browser origins |
+| `CHAT_SERVICE_URL` | `http://chat-service:8000` | Chat-service upstream (HTTP and WebSocket) |
+| `JWT_SECRET` | Empty | Shared JWT signing secret |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | Allowed browser origins (also the WebSocket `Origin` allowlist) |

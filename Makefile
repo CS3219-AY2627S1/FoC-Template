@@ -4,7 +4,7 @@
 # ─────────────────────────────────────────────────────────────
 
 # Backend Python services (each has its own venv + requirements.txt).
-PY_SERVICES := api-gateway user-service supplier-service order-service credit-service notification-service
+PY_SERVICES := api-gateway user-service supplier-service order-service credit-service notification-service chat-service
 
 # Docker Compose command (v2).
 COMPOSE := docker compose
@@ -77,6 +77,21 @@ config: env ## Validate the compose file
 .PHONY: seed
 seed: ## Run the supplier data seeder against the running stack
 	$(COMPOSE) exec supplier-service python -c "import asyncio; from app.services.seeder import seed_suppliers; asyncio.run(seed_suppliers())"
+
+# ---- Observability (N2H: metrics -> analytics) --------------
+.PHONY: obs-up
+obs-up: env ## Start Grafana (Prometheus stays internal to the compose net)
+	$(COMPOSE) --profile observability up -d prometheus grafana
+	@echo "Grafana    http://127.0.0.1:$${GRAFANA_PORT:-3000}  (login required; dashboard: Credit Service - Observability)"
+	@echo "Prometheus is internal only: query it from Grafana Explore."
+
+.PHONY: obs-down
+obs-down: ## Stop the observability stack (keeps collected data)
+	$(COMPOSE) --profile observability stop prometheus grafana
+
+.PHONY: obs-load
+obs-load: ## Generate credit-service traffic (needs FOC_TOKEN and FOC_USER_ID)
+	@bash scripts/load-credit.sh
 
 .PHONY: clean
 clean: ## Stop stack + remove volumes and local venvs

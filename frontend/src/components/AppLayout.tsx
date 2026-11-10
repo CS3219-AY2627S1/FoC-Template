@@ -1,4 +1,6 @@
 // AI-assisted: responsive app shell with nav items, credits widget, desktop navbar and mobile bottom tab bar.
+// UI tweaks (Claude Opus 5.5): grouped nav, admin menu, avatar account menu, credits tooltip.
+// Reviewed by authors.
 import {
   ActionIcon,
   AppShell,
@@ -6,6 +8,8 @@ import {
   Badge,
   Box,
   Burger,
+  Button,
+  Divider,
   Drawer,
   Group,
   Indicator,
@@ -14,6 +18,8 @@ import {
   ScrollArea,
   Stack,
   Text,
+  Tooltip,
+  UnstyledButton,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import {
@@ -21,6 +27,8 @@ import {
   IconBuildingStore,
   IconClipboardList,
   IconLogout,
+  IconMessages,
+  IconChevronDown,
   IconShieldCog,
   IconShoppingBag,
   IconTruck,
@@ -28,38 +36,54 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import React, { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { BalanceResponse, creditsApi, parseUtcDate } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useNotifications } from "../lib/useNotifications";
+import { useChat } from "../lib/chat/context";
+import { totalUnread } from "../lib/chat/store";
 
 interface NavItem {
   to: string;
   label: string;
   icon: React.ReactNode;
+  /** Desktop nav items are grouped by this, with a divider between groups. */
+  group: "request" | "deliver" | "admin" | "account";
   adminOnly?: boolean;
+  /** Only in the mobile menu; desktop reaches it from a header icon instead. */
+  mobileOnly?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: "/suppliers", label: "Suppliers", icon: <IconBuildingStore size={18} /> },
-  { to: "/profile", label: "Profile", icon: <IconUser size={18} /> },
-  { to: "/errands", label: "Errands", icon: <IconShoppingBag size={18} /> },
-  { to: "/orders/mine", label: "My requests", icon: <IconClipboardList size={18} /> },
-  { to: "/deliveries", label: "My deliveries", icon: <IconTruck size={18} /> },
-  { to: "/notifications", label: "Notifications", icon: <IconBell size={18} /> },
+  // As a requester: pick a vendor and post an errand, then track it.
+  { to: "/suppliers", label: "Request Errand", icon: <IconBuildingStore size={18} />, group: "request" },
+  { to: "/orders/mine", label: "My Requests", icon: <IconClipboardList size={18} />, group: "request" },
+  // As a courier: take someone's errand, then deliver it.
+  { to: "/errands", label: "Take Errands", icon: <IconShoppingBag size={18} />, group: "deliver" },
+  { to: "/deliveries", label: "My Deliveries", icon: <IconTruck size={18} />, group: "deliver" },
   {
     to: "/admin/suppliers",
     label: "Manage Suppliers",
     icon: <IconShieldCog size={18} />,
+    group: "admin",
     adminOnly: true,
   },
   {
     to: "/admin/clients",
     label: "Client Accounts",
     icon: <IconUsers size={18} />,
+    group: "admin",
     adminOnly: true,
   },
+  // Desktop reaches these from the header icons (bell, chat, avatar).
+  { to: "/messages", label: "Messages", icon: <IconMessages size={18} />, group: "account", mobileOnly: true },
+  { to: "/notifications", label: "Notifications", icon: <IconBell size={18} />, group: "account", mobileOnly: true },
+  { to: "/profile", label: "Profile", icon: <IconUser size={18} />, group: "account", mobileOnly: true },
 ];
+
+// Admin links sit in one "Admin" menu on desktop so the header fits a laptop
+// screen; the menu label also marks the user as an admin.
+const DESKTOP_GROUPS: NavItem["group"][] = ["request", "deliver"];
 
 function initials(name: string | undefined, email: string | undefined): string {
   if (name) {
@@ -98,9 +122,9 @@ function NotificationBell() {
           <Text fw={600} size="sm">
             Notifications
           </Text>
-          <ActionIcon
+          <Button
             variant="subtle"
-            size="sm"
+            size="compact-xs"
             disabled={unreadCount === 0}
             onClick={(e) => {
               e.stopPropagation();
@@ -108,8 +132,8 @@ function NotificationBell() {
             }}
             aria-label="Mark all as read"
           >
-            <Text size="xs">Mark all</Text>
-          </ActionIcon>
+            Mark all as read
+          </Button>
         </Group>
         <Menu.Divider />
         {items.length === 0 ? (
@@ -157,11 +181,149 @@ function NotificationBell() {
   );
 }
 
+function ChatButton({ unread }: { unread: number }) {
+  return (
+    <Indicator
+      label={unread > 99 ? "99+" : unread}
+      size={16}
+      color="red"
+      disabled={unread === 0}
+      offset={4}
+      data-testid="nav-unread"
+    >
+      <ActionIcon
+        component={NavLink}
+        to="/messages"
+        variant="subtle"
+        color="gray"
+        aria-label={unread ? `Messages, ${unread} unread` : "Messages"}
+      >
+        <IconMessages size={20} />
+      </ActionIcon>
+    </Indicator>
+  );
+}
+
+function CreditsBadge({ balance }: { balance: BalanceResponse }) {
+  const navigate = useNavigate();
+  const reserved = balance.reserved_balance;
+  return (
+    <Tooltip
+      multiline
+      w={260}
+      withArrow
+      label={
+        <>
+          <b>Available</b>: credits you can spend on new requests.
+          <br />
+          <b>Reserved</b>: held for your open requests until they complete or are
+          cancelled.
+        </>
+      }
+    >
+      <Badge
+        component="button"
+        type="button"
+        color="teal"
+        variant="light"
+        tt="none"
+        visibleFrom="xs"
+        style={{ cursor: "pointer", border: 0, flexShrink: 0 }}
+        onClick={() => navigate("/profile#credits")}
+        data-testid="credits-badge"
+      >
+        {balance.available_balance} avail
+        {reserved > 0 ? ` | ${reserved} rsv` : ""}
+      </Badge>
+    </Tooltip>
+  );
+}
+
+function AccountMenu({ onLogout }: { onLogout: () => void }) {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  return (
+    <Menu position="bottom-end" width={220} shadow="md">
+      <Menu.Target>
+        <UnstyledButton aria-label="Account menu" visibleFrom="sm" style={{ display: "flex" }}>
+          <Avatar radius="xl" color="brand" size="sm">
+            {initials(user?.display_name, user?.email)}
+          </Avatar>
+        </UnstyledButton>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Box px="sm" py={6}>
+          <Text size="sm" fw={600} truncate>
+            {user?.display_name}
+          </Text>
+          <Text size="xs" c="dimmed" truncate>
+            {user?.email}
+          </Text>
+        </Box>
+        <Menu.Divider />
+        <Menu.Item leftSection={<IconUser size={16} />} onClick={() => navigate("/profile")}>
+          Profile
+        </Menu.Item>
+        <Menu.Item color="red" leftSection={<IconLogout size={16} />} onClick={onLogout}>
+          Log out
+        </Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
+  );
+}
+
+function AdminMenu({ items }: { items: NavItem[] }) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  return (
+    <Menu position="bottom-start" shadow="md" width={200}>
+      <Menu.Target>
+        <UnstyledButton
+          style={{
+            ...navLinkStyle({ isActive: pathname.startsWith("/admin") }),
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          Admin
+          <IconChevronDown size={14} stroke={2.2} />
+        </UnstyledButton>
+      </Menu.Target>
+      <Menu.Dropdown>
+        {items.map((item) => (
+          <Menu.Item
+            key={item.to}
+            leftSection={item.icon}
+            onClick={() => navigate(item.to)}
+          >
+            {item.label}
+          </Menu.Item>
+        ))}
+      </Menu.Dropdown>
+    </Menu>
+  );
+}
+
+function navLinkStyle({ isActive }: { isActive: boolean }): React.CSSProperties {
+  return {
+    textDecoration: "none",
+    fontWeight: 600,
+    whiteSpace: "nowrap",
+    color: isActive ? "var(--mantine-color-brand-7)" : "#495057",
+    borderBottom: isActive
+      ? "2px solid var(--mantine-color-brand-6)"
+      : "2px solid transparent",
+    paddingBottom: 4,
+  };
+}
+
 export function AppLayout() {
-  const { user, role, isAdmin, logout } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
   const [drawerOpened, drawer] = useDisclosure(false);
   const [balance, setBalance] = useState<BalanceResponse | null>(null);
+  const unread = useChat((s) => totalUnread(s.convs), 0);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -178,71 +340,58 @@ export function AppLayout() {
     navigate("/login", { replace: true });
   };
 
+  // Below this width the nav moves into the burger menu. Admins carry an extra
+  // menu, so they switch over at a wider screen.
+  const navFrom = isAdmin ? "lg" : "md";
+
   return (
     <AppShell header={{ height: 60 }} padding="md">
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
-          <Group gap="xs" wrap="nowrap">
+          <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
             <IconBuildingStore size={22} />
-            <Text fw={700} size="lg">
+            <Text fw={700} size="lg" visibleFrom="lg">
               Campus Errands
             </Text>
           </Group>
 
-          {/* Desktop nav */}
-          <Group gap="lg" visibleFrom="sm" wrap="nowrap">
-            {items.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                style={({ isActive }) => ({
-                  textDecoration: "none",
-                  fontWeight: 600,
-                  color: isActive ? "var(--mantine-color-brand-7)" : "#495057",
-                  borderBottom: isActive
-                    ? "2px solid var(--mantine-color-brand-6)"
-                    : "2px solid transparent",
-                  paddingBottom: 4,
-                })}
-              >
-                {item.label}
-              </NavLink>
-            ))}
+          {/* Desktop nav: requester links | courier links | admin menu */}
+          <Group gap="lg" visibleFrom={navFrom} wrap="nowrap" data-testid="desktop-nav">
+            {DESKTOP_GROUPS.map((group) => ({
+              group,
+              links: items.filter((i) => i.group === group && !i.mobileOnly),
+            }))
+              .filter(({ links }) => links.length > 0)
+              .map(({ group, links }, gi) => (
+                <React.Fragment key={group}>
+                  {gi > 0 && <Divider orientation="vertical" my={4} />}
+                  <Group gap="md" wrap="nowrap">
+                    {links.map((item) => (
+                      <NavLink key={item.to} to={item.to} style={navLinkStyle}>
+                        {item.label}
+                      </NavLink>
+                    ))}
+                  </Group>
+                </React.Fragment>
+              ))}
+            {isAdmin && (
+              <>
+                <Divider orientation="vertical" my={4} />
+                <AdminMenu items={items.filter((i) => i.group === "admin")} />
+              </>
+            )}
           </Group>
 
-          <Group gap="sm" wrap="nowrap">
-            {role && (
-              <Badge
-                color={isAdmin ? "brand" : "gray"}
-                variant="light"
-                visibleFrom="xs"
-              >
-                {isAdmin ? "Admin" : "Client"}
-              </Badge>
-            )}
-            {balance && (
-              <Badge color="teal" variant="light" visibleFrom="xs">
-                {balance.available_balance} avail / {balance.reserved_balance} rsv
-              </Badge>
-            )}
+          <Group gap="sm" wrap="nowrap" style={{ flexShrink: 0 }}>
+            {balance && <CreditsBadge balance={balance} />}
+            <ChatButton unread={unread} />
             <NotificationBell />
-            <Avatar radius="xl" color="brand" size="sm" visibleFrom="sm">
-              {initials(user?.display_name, user?.email)}
-            </Avatar>
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              onClick={handleLogout}
-              visibleFrom="sm"
-              aria-label="Log out"
-            >
-              <IconLogout size={20} />
-            </ActionIcon>
+            <AccountMenu onLogout={handleLogout} />
             {/* Mobile burger */}
             <Burger
               opened={drawerOpened}
               onClick={drawer.toggle}
-              hiddenFrom="sm"
+              hiddenFrom={navFrom}
               size="sm"
             />
           </Group>
@@ -262,13 +411,13 @@ export function AppLayout() {
         opened={drawerOpened}
         onClose={drawer.close}
         title="Menu"
-        hiddenFrom="sm"
+        hiddenFrom={navFrom}
         size="70%"
       >
         <Stack gap="xs">
-          {role && (
-            <Badge color={isAdmin ? "brand" : "gray"} variant="light">
-              {isAdmin ? "Admin" : "Client"}
+          {isAdmin && (
+            <Badge color="brand" variant="light">
+              Admin
             </Badge>
           )}
           {items.map((item) => (
@@ -278,17 +427,16 @@ export function AppLayout() {
               to={item.to}
               label={item.label}
               leftSection={item.icon}
+              rightSection={
+                item.to === "/messages" && unread > 0 ? (
+                  <Badge size="xs" circle>
+                    {unread > 99 ? "99+" : unread}
+                  </Badge>
+                ) : undefined
+              }
               onClick={drawer.close}
             />
           ))}
-          <MantineNavLink
-            label="Log out"
-            leftSection={<IconLogout size={18} />}
-            onClick={() => {
-              drawer.close();
-              handleLogout();
-            }}
-          />
         </Stack>
       </Drawer>
     </AppShell>

@@ -1,5 +1,4 @@
-/* AI-assisted (OpenCode + Claude): base document styles. Component layout and
-   responsiveness are handled by Mantine. Reviewed by authors. */
+/* AI-assisted (OpenCode + Claude + Codex): base styles and responsive order detail layout. */
 :root {
   color-scheme: light;
 }
@@ -17,4 +16,315 @@ body,
 
 body {
   background: var(--mantine-color-gray-1, #f0f1f3);
+}
+
+/* Order details */
+.order-detail {
+  padding: 26px 0 18px;
+  color: #253247;
+}
+
+.order-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #8590a0;
+  font-size: 12px;
+}
+
+.order-breadcrumb a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #66758b;
+  text-decoration: none;
+}
+
+.order-breadcrumb a:hover { color: var(--mantine-color-brand-6); }
+
+.order-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 26px 0 28px;
+}
+
+.order-eyebrow {
+  margin-bottom: 8px;
+  color: #718097;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.7px;
+}
+
+.order-detail-title.mantine-Title-root {
+  color: #1a283c;
+  font-size: clamp(27px, 3.2vw, 36px);
+  line-height: 1.2;
+  letter-spacing: -1.1px;
+  overflow-wrap: anywhere;
+}
+
+.order-detail-description {
+  margin: 10px 0 0;
+  color: #66758b;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.order-header-status.mantine-Badge-root {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 26px;
+  padding: 0 13px;
+  height: 29px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.order-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  align-items: start;
+  gap: 22px;
+}
+
+.order-detail-main, .order-detail-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.order-panel {
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid #e3e8ef;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgb(28 43 65 / 2%);
+}
+
+.order-panel-heading, .order-heading-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.order-panel-heading { margin-bottom: 24px; }
+.order-panel-heading .mantine-Title-root {
+  color: #253247;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
+}
+
+.order-section-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  color: var(--mantine-color-brand-6);
+  background: #f0f4f9;
+}
+
+.order-route { padding: 2px 0 0 4px; }
+.order-route-stop {
+  position: relative;
+  display: flex;
+  gap: 18px;
+  padding-bottom: 29px;
+}
+
+.order-route-stop:last-child { padding-bottom: 0; }
+.order-route-stop:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 39px;
+  bottom: 6px;
+  border-left: 1px dashed #c8d4e4;
+}
+
+.order-route-marker {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  margin-top: 1px;
+  border: 1px solid #d9e3f0;
+  border-radius: 50%;
+  color: #5676a4;
+  background: #f5f8fc;
+}
+
+.order-route-marker[data-stop="delivery"] {
+  color: #338575;
+  background: #f1f8f6;
+  border-color: #d4e8e2;
+}
+
+.order-route-info { min-width: 0; }
+.order-field-label {
+  display: block;
+  color: #66758b;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.order-location {
+  margin: 5px 0 4px;
+  color: #26374c;
+  font-size: 17px;
+  line-height: 1.45;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.order-supplier-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #6781a5;
+  font-size: 12px;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.order-supplier-link:hover { text-decoration: underline; }
+.order-supplier-link svg { flex-shrink: 0; }
+
+.order-notes {
+  margin-top: 26px;
+  padding: 16px 18px;
+  border: 1px solid #edf0f4;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.order-notes-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #66758b;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.order-notes p {
+  margin: 8px 0 0;
+  color: #455469;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.order-sidebar-title.mantine-Title-root {
+  margin-bottom: 20px;
+  font-size: 14px;
+  font-weight: 650;
+  color: #29384d;
+}
+
+.order-reward {
+  padding: 17px 18px 15px;
+  margin-bottom: 22px;
+  border-radius: 10px;
+  background: #f0f4fa;
+}
+
+.order-reward-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #657e9f;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.order-reward-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-top: 4px;
+  color: #365a8a;
+  font-size: 32px;
+  font-weight: 650;
+  letter-spacing: -1px;
+  line-height: 1.4;
+}
+
+.order-reward-amount span { color: #7d91ad; font-size: 13px; font-weight: 400; letter-spacing: 0; }
+.order-summary-row { display: flex; gap: 11px; align-items: flex-start; margin-top: 19px; }
+.order-summary-row > svg { color: #8b9aaf; flex-shrink: 0; margin-top: 2px; }
+.order-summary-row time { display: block; margin-top: 4px; font-size: 13px; font-weight: 550; line-height: 1.7; }
+.order-summary-time { color: #66758b; font-weight: 400; margin-left: 7px; white-space: nowrap; }
+.order-people { display: flex; flex-direction: column; gap: 19px; }
+.order-person { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.order-person-info { min-width: 0; }
+.order-person-name { display: block; color: #344359; font-size: 14px; font-weight: 600; margin-top: 3px; overflow-wrap: anywhere; }
+.order-you-tag { display: inline-block; margin-left: 4px; padding: 1px 5px; border-radius: 4px; background: #f0f3f7; color: #8491a4; font-size: 9px; font-weight: 500; vertical-align: middle; }
+
+.order-progress { list-style: none; margin: 0; padding: 0; }
+.order-progress li { position: relative; display: flex; align-items: center; gap: 12px; min-height: 23px; padding-bottom: 21px; color: #7a8799; font-size: 13px; }
+.order-progress li:last-child { padding-bottom: 0; }
+.order-progress li:not(:last-child)::after { content: ""; position: absolute; top: 27px; bottom: 4px; left: 10px; width: 1px; background: #e6ebf1; }
+.order-progress li[data-state="done"]::after { background: #c9d7e9; }
+.order-progress-dot { position: relative; z-index: 1; display: grid; place-items: center; flex-shrink: 0; height: 22px; width: 22px; border: 1px solid #e1e6ed; border-radius: 50%; color: #7392b8; background: #fff; }
+.order-progress-dot > span { width: 5px; height: 5px; border-radius: 50%; background: #d8dfe8; }
+.order-progress li[data-state="done"] { color: #65758a; }
+.order-progress li[data-state="done"] .order-progress-dot { background: #f0f4fa; border-color: #dce5f1; }
+.order-progress li[data-state="current"] { color: #3d5d8f; font-weight: 600; }
+.order-progress li[data-state="current"] .order-progress-dot { background: #5474a2; border-color: #5474a2; box-shadow: 0 0 0 4px #f0f4fa; }
+.order-progress li[data-state="current"] .order-progress-dot > span { background: #fff; }
+.order-progress li:last-child[aria-current="step"] { color: #2d8873; font-weight: 600; }
+.order-progress li:last-child[aria-current="step"] .order-progress-dot { color: #fff; background: #3e9b85; border-color: #3e9b85; }
+.order-progress-current { margin-left: auto; color: inherit; font-size: 9px; opacity: 0.8; }
+.order-terminal-status { display: flex; align-items: center; gap: 12px; color: #8992a1; font-size: 13px; }
+.order-terminal-status .order-progress-dot { background: #f8f0f0; color: #a86666; border-color: #f0dede; }
+.order-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; padding-top: 19px; border-top: 1px solid #edf0f4; }
+.order-detail-actions .mantine-Button-root { flex: 1 1 auto; }
+
+.order-proof-heading { justify-content: space-between; gap: 10px; margin-bottom: 18px; }
+.order-proof-heading .mantine-Button-root { font-size: 11px; font-weight: 500; }
+.order-proof-image-button { display: block; position: relative; width: 100%; border: 1px solid #e7ebf0; border-radius: 9px; overflow: hidden; background: #f4f6f9; }
+.order-proof-image { display: block; width: 100%; max-height: 400px; object-fit: contain; }
+.order-proof-expand { display: grid; place-items: center; position: absolute; right: 12px; bottom: 12px; width: 31px; height: 31px; border: 1px solid rgb(255 255 255 / 50%); border-radius: 7px; color: #fff; background: rgb(32 45 62 / 45%); transition: background 150ms ease; }
+.order-proof-image-button:hover .order-proof-expand { background: rgb(32 45 62 / 75%); }
+.order-proof-image-button:focus-visible { outline: 3px solid var(--mantine-color-brand-3); outline-offset: 3px; }
+.order-proof-caption { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 13px; color: #66758b; font-size: 11px; line-height: 1.6; }
+.order-proof-caption strong { color: #53667f; font-weight: 500; }
+.order-proof-full-image { display: block; width: 100%; max-height: 75vh; object-fit: contain; }
+.order-reference { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 24px; color: #66758b; font-size: 11px; }
+.order-reference code { font-size: 11px; letter-spacing: 0.2px; overflow-wrap: anywhere; }
+
+@media (max-width: 800px) {
+  .order-detail-grid { grid-template-columns: minmax(0, 1fr); }
+  .order-detail-sidebar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .order-detail-sidebar > section:last-child { grid-column: 1 / -1; }
+}
+
+@media (max-width: 520px) {
+  .order-detail { padding-top: 15px; }
+  .order-detail-header { flex-wrap: wrap; gap: 14px; margin: 22px 0; }
+  .order-header-status.mantine-Badge-root { margin-top: 0; }
+  .order-detail-title.mantine-Title-root { font-size: 28px; }
+  .order-panel { padding: 20px; border-radius: 12px; }
+  .order-detail-grid { gap: 16px; }
+  .order-detail-main, .order-detail-sidebar { gap: 16px; }
+  .order-detail-sidebar { grid-template-columns: minmax(0, 1fr); }
+  .order-proof-heading { gap: 6px; }
+  .order-proof-view-label { display: none; }
+  .order-proof-view-button.mantine-Button-root { flex-shrink: 0; width: 28px; padding: 0; }
+  .order-proof-view-button .mantine-Button-section { margin: 0; }
+  .order-proof-image { max-height: 320px; }
+  .order-reference code { flex-basis: calc(100% - 32px); }
 }

@@ -35,6 +35,7 @@ authorizes the caller, strips client-supplied trusted headers, forwards via
 | `/api/orders` | order-service |
 | `/api/credits` | credit-service |
 | `/api/notifications` | notification-service |
+| `/api/chat` | chat-service (HTTP, plus the WebSocket relay at `/api/chat/ws`) |
 
 ## Run
 
@@ -59,5 +60,6 @@ See `app/services/auth.py` and `app/api/routes/proxy.py`.
 - Architecture: [`docs/architecture.md`](docs/architecture.md)
 - API contract: [`docs/api-contract.md`](docs/api-contract.md)
 - Request flow: [`docs/flowchart.md`](docs/flowchart.md)
+- Observability: [`../docs/observability.md`](../docs/observability.md) (edge metrics on internal port 9100)
 
 Owner: Javier Enrique Wong.

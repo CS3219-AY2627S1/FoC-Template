@@ -151,6 +151,8 @@ responsibility.
 | `courier_id`        | string \| null | Assigned courier; `null` for a newly created or withdrawn order.|
 | `pickup_location`   | string         | Required, stripped, and non-empty.                              |
 | `delivery_location` | string         | Required, stripped, and non-empty.                              |
+| `delivery_latitude` | number \| null | Optional map-picked latitude (`-90..90`), N2H; `null` when not set. |
+| `delivery_longitude`| number \| null | Optional map-picked longitude (`-180..180`), N2H; `null` when not set. |
 | `status`            | `OrderStatus`  | Server-managed lifecycle state; initially `OPEN`.               |
 | `created_at`        | date-time      | Database-generated creation timestamp.                          |
 
@@ -162,10 +164,13 @@ Those internal fields are not exposed by `OrderResponse`.
 ### `OrderDetailResponse`
 
 `GET /orders/{order_id}` returns `OrderDetailResponse`, which is `OrderResponse`
-plus one field.
+plus resolved display names and the delivery photo.
 
 | Field                      | Type           | Notes                                                                 |
 | -------------------------- | -------------- | --------------------------------------------------------------------- |
+| `supplier_name`            | string \| null | Supplier display name, resolved for the response.                     |
+| `requester_name`           | string \| null | Requester display name, resolved from user-service.                   |
+| `courier_name`             | string \| null | Assigned courier display name; `null` when unassigned.                |
 | `proof_of_delivery_photo`  | string \| null | Base64 data URI of the delivery photo, or `null` when none was supplied. |
 
 The service returns the image inline as a `data:` URI (for example
@@ -216,11 +221,15 @@ The request body contains only client-provided fields:
 }
 ```
 
+`delivery_latitude` and `delivery_longitude` are optional map-picked
+coordinates (N2H); omit them when the client has no map fix.
+
 ### `OrderUpdate`
 
 `PATCH /orders/{order_id}` takes the same client-editable fields as `OrderCreate`
 (`name`, `details`, `reward`, `deadline`, `supplier_id`, `pickup_location`,
-`delivery_location`) and forbids extra fields.
+`delivery_location`, and the optional `delivery_latitude` / `delivery_longitude`)
+and forbids extra fields.
 
 ### `OrderCancellationRequest`
 
