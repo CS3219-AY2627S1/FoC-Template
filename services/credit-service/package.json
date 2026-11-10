@@ -1,0 +1,31 @@
+{
+  "name": "@errandboard/credit-service",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "npm run build && NODE_ENV=test node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "amqp-connection-manager": "^5.0.0",
+    "amqplib": "^2.2.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "jose": "^6.2.12",
+    "mongoose": "^9.0.0",
+    "pino": "^10.4.0",
+    "pino-http": "^11.0.0",
+    "redis": "^5.12.1"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.0.0",
+    "pino-pretty": "^13.2.0",
+    "typescript": "^5.0.0"
+  }
+}

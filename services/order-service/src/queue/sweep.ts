@@ -1,0 +1,47 @@
+import { Errand } from "../models/Errand.js";
+import { logger } from "../logger.js";
+import {
+  expireOpenErrand,
+  disputeErrandAfterDeadline,
+  completeErrandAfterDeadline,
+} from "../services/order.services.js";
+import { ErrandStatus } from "../status/errandState.js";
+import { flushPendingEvents } from "../event/errand.events.js";
+import { flushPendingStatusEvents } from "../event/status.events.js";
+import { reconcileOnePendingCreation } from "../services/order-creation.service.js";
+
+// most due errands a single sweep tick handles per status; the rest wait for the next tick
+const LIFECYCLE_SWEEP_BATCH = 200;
+
+async function sweep(
+  status: ErrandStatus,
+  field: "expiresAt" | "deliverBy" | "confirmBy",
+  transition: (id: string) => Promise<unknown>,
+  now: Date,
+) {
+  const due = await Errand.find({ status, [field]: { $lte: now } })
+    .select("_id")
+    .limit(LIFECYCLE_SWEEP_BATCH)
+    .lean();
+
+  for (const { _id } of due) {
+    try {
+      logger.info({ status, errandId: _id }, "Processing errand")
+      await transition(_id.toString());
+      logger.info({ status, errandId: _id, transition: transition.name }, "Applied transition to errand")
+    } catch (err) {
+      logger.warn({ err, status, errandId: _id }, "Lifecycle sweep skip");
+    }
+  }
+  return due.length;
+}
+
+export async function runLifecycleSweep() {
+  const now = new Date();
+  await flushPendingEvents();
+  await flushPendingStatusEvents();
+  for (let count = 0; count < LIFECYCLE_SWEEP_BATCH && await reconcileOnePendingCreation(now); count++) { /* bounded recovery batch */ }
+  await sweep("OPEN", "expiresAt", expireOpenErrand, now);
+  await sweep("PICKED_UP", "deliverBy", disputeErrandAfterDeadline, now);
+  await sweep("PENDING_COMPLETION", "confirmBy", completeErrandAfterDeadline, now);
+}

@@ -1,0 +1,313 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel obsolete runs after another commit to the same branch or PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  user-service:
+    name: User Service (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: services/user-service
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: services/user-service/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check source types
+        run: npm run typecheck
+
+      # tsconfig.test.json includes src/ (for ambient types like express.d.ts)
+      # plus tests/; tsx executes tests without type checking.
+      - name: Check test types
+        run: npm run typecheck:tests
+
+      # These tests validate documents in memory; MongoDB is not required.
+      - name: Run unit tests
+        run: npm test
+
+      - name: Compile service
+        run: npm run build
+
+  supplier-service:
+    name: Supplier Service (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: services/supplier-service
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: services/supplier-service/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check source types
+        run: npm run typecheck
+
+      - name: Check test types
+        run: npm run typecheck:tests
+
+      - name: Run unit tests
+        run: npm test
+  
+      - name: Compile service
+        run: npm run build
+
+  order-service:
+    name: Order Service (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: services/order-service
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: services/order-service/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check source types
+        run: npm run typecheck
+
+      - name: Check test types
+        run: npm run typecheck:tests
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Compile service
+        run: npm run build
+
+  credit-service:
+    name: Credit Service (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: services/credit-service
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: services/credit-service/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check source types
+        run: npm run typecheck
+
+      # The Credit test script builds the service before running its unit tests.
+      - name: Build and run unit tests
+        run: npm test
+
+  notification-service:
+    name: Notification service (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: services/notification-service
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: services/notification-service/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check source types
+        run: npm run typecheck
+      
+      - name: Check test types
+        run: npm run typecheck:tests
+
+      - name: Run unit tests
+        run: npm test
+      
+      - name: Compile service
+        run: npm run build
+
+
+
+  frontend:
+    name: Frontend (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Test outage and authentication handling
+        run: npm test
+
+      - name: Lint frontend
+        run: npm run lint
+
+      - name: Build frontend
+        run: npm run build
+
+  compose-config:
+    name: Validate Compose configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # Compose interpolation placeholders only; no containers are started and
+      # these values are never used for deployment or exposed as real secrets.
+      MONGO_ROOT_PASSWORD: ci-placeholder-root
+      MONGO_USER_SERVICE_PASSWORD: ci-placeholder-user
+      MONGO_SUPPLIER_SERVICE_PASSWORD: ci-placeholder-supplier
+      MONGO_ORDER_SERVICE_PASSWORD: ci-placeholder-order
+      MONGO_CREDIT_SERVICE_PASSWORD: ci-placeholder-credit
+      MONGO_NOTIFICATION_SERVICE_PASSWORD: ci-placeholder-notification
+      MONGO_REPLICA_SET_KEY: ci-placeholder-replica-set-key-1234567890
+      RABBITMQ_DEFAULT_USER: ci-placeholder-rabbit-user
+      RABBITMQ_DEFAULT_PASS: ci-placeholder-rabbit-password
+      JWT_SECRET: ci-placeholder-jwt-secret
+      CREDIT_INTERNAL_API_KEY: ci-placeholder-credit-internal-key
+      ORDER_CREDIT_API_KEY: ci-placeholder-order-credit-key
+      VAPID_PUBLIC_KEY: ci-placeholder-vapid-public-key
+      VAPID_PRIVATE_KEY: ci-placeholder-vapid-private-key
+      VAPID_SUBJECT: ci-placeholder-vapid-subject
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Validate Compose without loading a local environment file
+        run: docker compose --env-file /dev/null -f compose.yaml config --quiet
+
+  deploy:
+    name: Build and register ECS deployment
+    needs: [user-service, supplier-service, order-service, credit-service, notification-service, frontend, compose-config]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: errandboard-ecs-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Assume scoped AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::614099836367:role/ErrandBoardGitHubDeployRole
+          aws-region: ap-southeast-1
+          allowed-account-ids: '614099836367'
+
+      - name: Build ARM64 images and update ECS task definitions
+        run: bash scripts/deploy-ecs.sh
