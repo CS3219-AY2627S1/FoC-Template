@@ -2,9 +2,9 @@
 
 Goal: use **measurement** to answer "what would make this service more
 available", instead of guessing. The implementation is shared — one library,
-one set of conventions — and today it is installed in **credit-service,
-user-service and supplier-service**; the broker metrics they depend on are
-scraped too. No frontend work: everything below is reachable with `curl`,
+one set of conventions — and today it is installed in every backend service
+(credit, user, supplier, order, notification and chat) and in the API gateway;
+the broker metrics they depend on are scraped too. No frontend work: everything below is reachable with `curl`,
 Postman, Prometheus and Grafana.
 
 ```python
@@ -27,11 +27,15 @@ Services with an error envelope additionally call
 | user-service | ✅ metrics + readiness (envelope codes on the user-service roadmap) | `user` |
 | order-service | ✅ metrics + readiness | `order` |
 | notification-service | ✅ metrics + readiness | `notification` |
-| api-gateway | ✅ edge metrics, route collapsed to `/api/<service>/*` | `gateway` |
+| chat-service | ✅ metrics + readiness | `chat` |
+| api-gateway | ✅ edge metrics on internal port 9100, route collapsed to `/api/<service>/*` | `gateway` |
 
-> Status: every backend service is instrumented. Grafana
-> (`http://127.0.0.1:3000`) is the only exposed surface; `/metrics` stays on
-> `foc-net` and Prometheus is not published. The gateway is instrumented for
+> Status: every backend service, including chat-service, is instrumented.
+> Grafana is the only viewing surface and it is admin-only, see
+> [Access](#access). `/metrics` stays on the internal network and Prometheus is
+> never published. The gateway serves its own metrics on a separate
+> internal-only port, 9100 (`GATEWAY_METRICS_PORT`), which is never published.
+> `curl localhost:8080/metrics` returns 404. The gateway is instrumented for
 > **edge** signals only (401/403/404/5xx that never reach a backend) and its
 > route label is collapsed per downstream service, so it does not duplicate the
 > per-service numbers. Tracing is deliberately out of scope, see
@@ -193,7 +197,7 @@ make up
 
 # 2. optional observability profile (does not change `make up`)
 make obs-up
-#    Grafana  http://127.0.0.1:3000  (login required: admin / $GRAFANA_ADMIN_PASSWORD)
+#    Grafana  http://localhost:3000  (login required, see "Access" below)
 #    Prometheus is NOT published: Grafana proxies its queries, so the metric
 #    store is not reachable from the host at all.
 
@@ -208,6 +212,37 @@ FOC_TOKEN=$TOKEN FOC_USER_ID=$UID_ make obs-load
 docker compose exec -T credit-service python -c \
   "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/metrics').read().decode()[:400])"
 ```
+
+### Access
+
+Services expose `/metrics` only on the internal network.
+That is compose `foc-net` locally and the pod network in the cluster.
+Prometheus scrapes them internally and is never published.
+Grafana is the only viewing surface.
+It is admin-only: login is required, anonymous access is off and sign-up is off.
+It is never routed through the API gateway and has no ingress and no security-group port.
+
+Local (compose):
+
+1. Run `make obs-up`.
+2. Open http://localhost:3000.
+3. Log in as `admin` with `$GRAFANA_ADMIN_PASSWORD`.
+   The default is `admin`, and Grafana asks you to change it.
+
+Compose binds Grafana to `127.0.0.1` only.
+
+EC2 cluster:
+
+Grafana runs in the `foc-observability` namespace as a ClusterIP service with no ingress.
+Reach it through an SSH tunnel to a kubectl port-forward:
+
+```bash
+ssh -L 3000:localhost:3000 <host> -t 'sudo k3s kubectl -n foc-observability port-forward svc/grafana 3000:3000'
+```
+
+Then open http://localhost:3000.
+The admin password comes from an optional `grafana-admin` secret, key `admin-password`.
+Without that secret, Grafana uses the default `admin` user and forces a password change on first login.
 
 ### Self-test without Docker
 
