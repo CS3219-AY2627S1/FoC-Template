@@ -27,9 +27,14 @@ Contents:
   OBS.install(app, readiness_session_dep=get_session)
   ```
 
-  Instrumented today: credit-service, user-service, supplier-service. The
-  gateway is not instrumented (it only proxies and would duplicate the
-  service-level numbers); order/notification are pending their open PRs.
+  All seven services are instrumented, including the gateway, which serves its metrics on an internal port (9100).
+  `install()` takes these optional arguments:
+
+  - `metrics_route=False` keeps `/metrics` off the app, so it can be served with `serve_metrics(port)` on an internal port instead.
+  - `readiness_route=False` leaves `/health/ready` to the service.
+  - `metrics_refresh_timeout` (seconds, default 1.0) bounds the gauge refresh that runs before each scrape.
+
+  Metric labels are bounded: the route is the route template or `<unmatched>` (the gateway uses `<other>`), and unknown HTTP methods become `OTHER`.
 
 ## Usage
 

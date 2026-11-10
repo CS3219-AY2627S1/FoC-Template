@@ -180,7 +180,9 @@ aws ssm start-session --target <instance-id> \
 A host with SSH access can do the same with `ssh -L 3000:localhost:3000 <host> -t 'sudo k3s kubectl -n foc-observability port-forward svc/grafana 3000:3000'`.
 
 Grafana is admin-only (no anonymous access, no sign-up).
-Without a password Secret it starts with `admin` / `admin` and forces a change on first login, so set the password through a SealedSecret named `grafana-admin` (key `admin-password`) in `foc-observability`:
+Without the optional `grafana-admin` secret (key `admin-password`) in `foc-observability`, Grafana starts with `admin` / `admin`.
+Grafana prompts for a password change on first login, but the prompt can be skipped, so admins should set the password on first login.
+On EC2, create the sealed `grafana-admin` secret before the first sync:
 
 ```
 kubectl create secret generic grafana-admin -n foc-observability \

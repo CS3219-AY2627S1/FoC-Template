@@ -4,7 +4,7 @@ Goal: use **measurement** to answer "what would make this service more available
 The implementation is shared (one library, one set of conventions).
 It is installed in all seven services: credit, user, supplier, order, notification, chat and the API gateway.
 The broker metrics they depend on are scraped too.
-No frontend work is needed: everything below is reachable with `curl`, Postman, Prometheus and Grafana.
+No frontend work is needed: everything below is reachable with `curl` inside the network, Prometheus and Grafana.
 
 ```python
 # onboarding a service (see shared/foc_shared/observability.py)
@@ -22,7 +22,7 @@ Services with an error envelope additionally call
 | Service | Status | Prefix |
 | --- | --- | --- |
 | credit-service | ✅ metrics + readiness + all business/saga/consumer counters | `credit` |
-| supplier-service | ✅ metrics + readiness + envelope `code` counters | `supplier` |
+| supplier-service | ✅ metrics + readiness | `supplier` |
 | user-service | ✅ metrics + readiness (envelope codes on the user-service roadmap) | `user` |
 | order-service | ✅ metrics + readiness | `order` |
 | notification-service | ✅ metrics + readiness | `notification` |
@@ -30,15 +30,13 @@ Services with an error envelope additionally call
 | api-gateway | ✅ edge metrics on internal port 9100, route collapsed to `/api/<service>/*` | `gateway` |
 
 > Status: every backend service, including chat-service, is instrumented.
-> Grafana is the only viewing surface and it is admin-only, see
-> [Access](#access). `/metrics` stays on the internal network and Prometheus is
-> never published. The gateway serves its own metrics on a separate
-> internal-only port, 9100 (`GATEWAY_METRICS_PORT`), which is never published.
-> `curl localhost:8080/metrics` returns 404. The gateway is instrumented for
-> **edge** signals only (401/403/404/5xx that never reach a backend) and its
-> route label is collapsed per downstream service, so it does not duplicate the
-> per-service numbers. Tracing is deliberately out of scope, see
-> [§7 Known gaps](#7-known-gaps).
+> Grafana is the only viewing surface and it is admin-only, see [Access](#access).
+> `/metrics` stays on the internal network and Prometheus is never published.
+> The gateway serves its own metrics on a separate internal-only port, 9100 (`GATEWAY_METRICS_PORT`), which is never published.
+> `curl localhost:8080/metrics` does not return metrics.
+> The gateway is instrumented for **edge** signals only (401/403/404/5xx that never reach a backend).
+> Its route label is collapsed per downstream service, so it does not duplicate the per-service numbers.
+> Tracing is deliberately out of scope, see [§7 Known gaps](#7-known-gaps).
 
 ### Adding a service
 
@@ -144,7 +142,7 @@ action.
 # stop only the broker; the consumer keeps logging, connections drop
 docker compose stop rabbitmq
 # watch the async-path signals
-curl -s localhost:8000/metrics | grep -E 'credit_(event_publish|consumer)'
+docker compose exec prometheus wget -qO- http://credit-service:8000/metrics | grep -E 'credit_(event_publish|consumer)'
 ```
 
 - `credit_event_publish_total{result="failed"}` climbs, and
@@ -178,7 +176,7 @@ scripts/load-credit.sh          # same user, concurrent reservations
 
 ```bash
 # 409s from insufficient funds are an economy signal, not an outage
-curl -s localhost:8000/metrics | grep credit_http_errors_total
+docker compose exec prometheus wget -qO- http://credit-service:8000/metrics | grep credit_http_errors_total
 ```
 
 - `insufficient_credits` climbing means the 100-credit allocation or the reward
@@ -264,8 +262,10 @@ The EC2 node does not open port 22 (the security group allows 80/443 only and th
 A host with SSH access can do the same in one step with `ssh -L 3000:localhost:3000 <host> -t 'sudo k3s kubectl -n foc-observability port-forward svc/grafana 3000:3000'`.
 
 The admin password comes from an optional `grafana-admin` secret, key `admin-password`.
-Without that secret, Grafana uses the default `admin` user and forces a password change on first login.
-See [`infra/argocd/README.md`](../infra/argocd/README.md) for how to seal the secret.
+Without that secret, Grafana starts with `admin` / `admin`.
+Grafana prompts for a password change on first login, but the prompt can be skipped, so admins should set the password on first login.
+For EC2, create the sealed `grafana-admin` secret before the first sync.
+See [`infra/argocd/README.md`](../infra/argocd/README.md) for the sealing steps.
 
 ### Self-test without Docker
 
