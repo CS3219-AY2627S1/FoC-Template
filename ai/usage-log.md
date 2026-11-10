@@ -1,5 +1,8 @@
 <!--
 AI Assistance Disclosure:
+Additional AI assistance: OpenAI Codex, date: 2026-11-10.
+Scope: Recorded the approved local logging plan and implementation/verification for #66.
+Author review: Plan approved by Ron; implementation review pending.
 Additional AI assistance: OpenAI Codex (GPT-6), date: 2026-11-09.
 Scope: Recorded the exact issue #64 fix-and-push authorization and browser validation.
 Author review: PENDING.
@@ -124,8 +127,21 @@ socket access is explicitly accepted for a trusted local collector. A bounded
 isolated smoke check and manual browser demonstration will provide evidence.
 
 An isolated worktree preserves the author's dirty main checkout and unrelated
-research/disclosures. Implementation and verification results will be recorded
-before the PR is marked ready for review.
+research/disclosures. The five core configuration files were implemented in a
+separate agent worktree and cherry-picked by a merger agent. Exact image pins are
+Alloy 1.21.3, Loki 3.7.9 and Grafana 13.3.0; image pulls, Compose validation,
+Alloy validation and Loki configuration verification passed. Grafana's automatic
+plugin preinstallation/update is disabled to preserve the pinned bundled plugins.
+
+The first expanded smoke run passed collection/privacy checks but failed its
+restart probe: Docker reassigns dynamically published host ports on restart.
+A tiny actual-nginx probe demonstrated a changed port. The smoke script now
+rediscovers its ephemeral Grafana port; the corrected complete smoke run passes,
+including all five sources, source/project exclusions, actual nginx streams,
+mixed/nested JSON, Bearer/PostgreSQL-URL masking, login enforcement, configured
+retention, restart persistence and independent application operation while logging
+is stopped. Its owned containers/network/volumes were removed. A seven-day
+deletion test is not claimed. Browser/review results will follow before readiness.
 
 The Supplier UI entries for issues #29, #30, #31, and #34 continue the same workstream.
 To avoid duplicating prompt text, their initiating implementation request is quoted once

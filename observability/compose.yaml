@@ -38,6 +38,9 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      # Keep the pinned image's bundled plugins; avoid startup downloads/updates.
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_PLUGINS_PREINSTALL_AUTO_UPDATE: "false"
     volumes:
       - ./grafana/datasources.yaml:/etc/grafana/provisioning/datasources/loki.yaml:ro
       - grafana-data:/var/lib/grafana
