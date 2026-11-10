@@ -11,15 +11,21 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 
+import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db import Base, get_session
 from app.main import app
+from app.models.task_result import CreditTaskResult, TaskResultKind, TaskResultOutcome
 from app.observability import health as broker_health
 from app.observability import metrics
-from app.schemas.interop import OrderActionEvent
+from app.schemas.interop import (
+    OrderActionEvent,
+    OrderApprovalRequestedEvent,
+    OrderUpdateRequestedEvent,
+)
 from app.services import publisher
 from app.services.consumer import CreditEventConsumer
 from app.services.credit_service import CreditService
@@ -210,6 +216,191 @@ async def test_saga_retries_exhausted_is_counted(session, monkeypatch):
     assert metrics.metric_value(metrics.SAGA_RETRIES_EXHAUSTED, kind="release") == before + 1
 
 
+# ── success counters follow the commit ──────────────────────────────────────
+
+
+@pytest.fixture
+def quiet_publisher(monkeypatch):
+    async def _noop(event) -> None:
+        return None
+
+    monkeypatch.setattr(publisher, "publish_credit_event", _noop)
+    monkeypatch.setattr(publisher, "publish_reservation_event", _noop)
+
+
+async def _seed(session) -> tuple[CreditService, str]:
+    service = CreditService(session)
+    await service.ensure_account("requester")
+    await service.ensure_account("courier")
+    reservation = await service.reserve(user_id="requester", order_id="order-1", amount=40)
+    return service, reservation.id
+
+
+async def _lose_the_save_race(session, service, kind: TaskResultKind, task_id: str) -> None:
+    """Another worker stored this task's outcome after our pre-check ran."""
+    session.add(
+        CreditTaskResult(
+            task_id=task_id,
+            kind=kind.value,
+            reservation_id="other",
+            order_id="other",
+            requester_id="requester",
+            outcome=TaskResultOutcome.RELEASED.value,
+        )
+    )
+    await session.commit()
+    session.expunge_all()
+
+    original = service._task_results.get
+    calls = {"n": 0}
+
+    async def _first_call_misses(key):
+        calls["n"] += 1
+        return None if calls["n"] == 1 else await original(key)
+
+    service._task_results.get = _first_call_misses
+
+
+def _release_request(reservation_id: str) -> OrderActionEvent:
+    return OrderActionEvent(
+        event_type="OrderDeletionRequested",
+        task_id="task-rel",
+        order_id="order-1",
+        reservation_id=reservation_id,
+        requester_id="requester",
+        timestamp=datetime.now(UTC),
+    )
+
+
+def _update_request(reservation_id: str, reward: int) -> OrderUpdateRequestedEvent:
+    return OrderUpdateRequestedEvent(
+        task_id="task-upd",
+        order_id="order-1",
+        reservation_id=reservation_id,
+        requester_id="requester",
+        reward=reward,
+        timestamp=datetime.now(UTC),
+    )
+
+
+def _approval_request(reservation_id: str) -> OrderApprovalRequestedEvent:
+    return OrderApprovalRequestedEvent(
+        task_id="task-apr",
+        order_id="order-1",
+        reservation_id=reservation_id,
+        requester_id="requester",
+        courier_id="courier",
+        timestamp=datetime.now(UTC),
+    )
+
+
+async def test_release_request_counts_success_once_committed(session, quiet_publisher):
+    service, reservation_id = await _seed(session)
+    before = metrics.metric_value(metrics.RELEASE_OPS, outcome="ok")
+
+    await service.handle_release_requested(_release_request(reservation_id))
+
+    assert metrics.metric_value(metrics.RELEASE_OPS, outcome="ok") == before + 1
+
+
+async def test_release_request_not_counted_when_save_loses_race(session, quiet_publisher):
+    service, reservation_id = await _seed(session)
+    await _lose_the_save_race(session, service, TaskResultKind.RELEASE, "task-rel")
+    before = metrics.metric_value(metrics.RELEASE_OPS, outcome="ok")
+    dup_before = metrics.metric_value(metrics.DUPLICATE_SUPPRESSED, op="task_result")
+
+    await service.handle_release_requested(_release_request(reservation_id))
+
+    assert metrics.metric_value(metrics.RELEASE_OPS, outcome="ok") == before
+    assert metrics.metric_value(metrics.DUPLICATE_SUPPRESSED, op="task_result") == dup_before + 1
+
+
+async def test_update_request_counts_amended_once_committed(session, quiet_publisher):
+    service, reservation_id = await _seed(session)
+    before = metrics.metric_value(metrics.AMENDMENT_OPS, outcome="amended")
+
+    await service.handle_update_requested(_update_request(reservation_id, reward=55))
+
+    assert metrics.metric_value(metrics.AMENDMENT_OPS, outcome="amended") == before + 1
+
+
+async def test_update_request_counts_unchanged_once_committed(session, quiet_publisher):
+    service, reservation_id = await _seed(session)
+    before = metrics.metric_value(metrics.AMENDMENT_OPS, outcome="unchanged")
+
+    await service.handle_update_requested(_update_request(reservation_id, reward=40))
+
+    assert metrics.metric_value(metrics.AMENDMENT_OPS, outcome="unchanged") == before + 1
+
+
+async def test_update_request_not_counted_when_save_loses_race(session, quiet_publisher):
+    service, reservation_id = await _seed(session)
+    await _lose_the_save_race(session, service, TaskResultKind.AMEND, "task-upd")
+    amended_before = metrics.metric_value(metrics.AMENDMENT_OPS, outcome="amended")
+    unchanged_before = metrics.metric_value(metrics.AMENDMENT_OPS, outcome="unchanged")
+
+    dup_before = metrics.metric_value(metrics.DUPLICATE_SUPPRESSED, op="task_result")
+    await service.handle_update_requested(_update_request(reservation_id, reward=55))
+
+    assert metrics.metric_value(metrics.AMENDMENT_OPS, outcome="amended") == amended_before
+    assert metrics.metric_value(metrics.AMENDMENT_OPS, outcome="unchanged") == unchanged_before
+    assert metrics.metric_value(metrics.DUPLICATE_SUPPRESSED, op="task_result") == dup_before + 1
+
+
+async def test_approval_request_counts_transfer_once_committed(session, quiet_publisher):
+    service, reservation_id = await _seed(session)
+    before = metrics.metric_value(metrics.TRANSFER_OPS, outcome="ok")
+
+    await service.handle_approval_requested(_approval_request(reservation_id))
+
+    assert metrics.metric_value(metrics.TRANSFER_OPS, outcome="ok") == before + 1
+
+
+async def test_approval_request_not_counted_when_save_loses_race(session, quiet_publisher):
+    service, reservation_id = await _seed(session)
+    await _lose_the_save_race(session, service, TaskResultKind.TRANSFER, "task-apr")
+    before = metrics.metric_value(metrics.TRANSFER_OPS, outcome="ok")
+
+    dup_before = metrics.metric_value(metrics.DUPLICATE_SUPPRESSED, op="task_result")
+    await service.handle_approval_requested(_approval_request(reservation_id))
+
+    assert metrics.metric_value(metrics.TRANSFER_OPS, outcome="ok") == before
+    assert metrics.metric_value(metrics.DUPLICATE_SUPPRESSED, op="task_result") == dup_before + 1
+
+
+async def test_release_request_on_released_reservation_counts_only_already_released(
+    session, quiet_publisher
+):
+    service, reservation_id = await _seed(session)
+    await service.release_for_order("order-1")
+    ok_before = metrics.metric_value(metrics.RELEASE_OPS, outcome="ok")
+    already_before = metrics.metric_value(metrics.RELEASE_OPS, outcome="already_released")
+
+    await service.handle_release_requested(_release_request(reservation_id))
+
+    assert metrics.metric_value(metrics.RELEASE_OPS, outcome="ok") == ok_before
+    assert (
+        metrics.metric_value(metrics.RELEASE_OPS, outcome="already_released") == already_before + 1
+    )
+
+
+async def test_approval_request_on_transferred_reservation_counts_only_already_transferred(
+    session, quiet_publisher
+):
+    service, reservation_id = await _seed(session)
+    await service.transfer_for_order("order-1", "courier")
+    ok_before = metrics.metric_value(metrics.TRANSFER_OPS, outcome="ok")
+    already_before = metrics.metric_value(metrics.TRANSFER_OPS, outcome="already_transferred")
+
+    await service.handle_approval_requested(_approval_request(reservation_id))
+
+    assert metrics.metric_value(metrics.TRANSFER_OPS, outcome="ok") == ok_before
+    assert (
+        metrics.metric_value(metrics.TRANSFER_OPS, outcome="already_transferred")
+        == already_before + 1
+    )
+
+
 # ── consumer metrics ─────────────────────────────────────────────────────────
 
 
@@ -250,7 +441,7 @@ async def test_consumer_records_messages_and_freshness():
     assert last > 0
 
 
-# ── readiness ──────────────────────────────────────────────────────
+# ── readiness ───────────────────────────────────────────────────────────────
 
 
 def test_readiness_reports_degraded_when_broker_is_down(client):

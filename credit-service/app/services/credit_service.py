@@ -257,7 +257,7 @@ class CreditService:
         if commit:
             await self._session.commit()
             await self._session.refresh(reservation)
-        metrics.record_amendment("unchanged" if delta == 0 else "amended")
+            metrics.record_amendment("unchanged" if delta == 0 else "amended")
         return reservation
 
     # ── F3: transfers ────────────────────────────────────────────────────────
@@ -340,7 +340,7 @@ class CreditService:
         if commit:
             await self._session.commit()
             await self._session.refresh(reservation)
-        metrics.record_transfer("ok")
+            metrics.record_transfer("ok")
         return reservation
 
     # ── F4: releases ─────────────────────────────────────────────────────────
@@ -401,7 +401,7 @@ class CreditService:
         if commit:
             await self._session.commit()
             await self._session.refresh(reservation)
-        metrics.record_release("ok")
+            metrics.record_release("ok")
         return reservation
 
     # ── Event handling ───────────────────────────────────────────────────────
@@ -451,12 +451,15 @@ class CreditService:
             await self._record_release_outcome(event, TaskResultOutcome.RELEASE_FAILED, reason)
             return
 
+        stages_release = reservation.status == ReservationStatus.RESERVED.value
         try:
             await self._release_reservation(reservation, commit=False)
         except ServiceError as exc:
             await self._record_release_outcome(event, TaskResultOutcome.RELEASE_FAILED, str(exc))
             return
-        await self._record_release_outcome(event, TaskResultOutcome.RELEASED)
+        committed = await self._record_release_outcome(event, TaskResultOutcome.RELEASED)
+        if committed and stages_release:
+            metrics.record_release("ok")
 
     async def handle_update_requested(self, event: OrderUpdateRequestedEvent) -> None:
         """Amend the reservation to the reward carried by the order update
@@ -482,12 +485,14 @@ class CreditService:
             await self._record_amend_outcome(event, TaskResultOutcome.AMEND_REJECTED, reason)
             return
 
+        delta = event.reward - reservation.amount
         try:
             await self._amend_reservation(reservation, event.reward, commit=False)
         except ServiceError as exc:
             await self._record_amend_outcome(event, TaskResultOutcome.AMEND_REJECTED, str(exc))
             return
-        await self._record_amend_outcome(event, TaskResultOutcome.AMENDED)
+        if await self._record_amend_outcome(event, TaskResultOutcome.AMENDED):
+            metrics.record_amendment("unchanged" if delta == 0 else "amended")
 
     async def handle_user_registered_event(self, event: UserRegisteredEvent) -> None:
         await self.ensure_account(event.user_id)
@@ -517,6 +522,7 @@ class CreditService:
             await self._record_transfer_outcome(event, TaskResultOutcome.TRANSFER_FAILED, reason)
             return
 
+        stages_transfer = reservation.status == ReservationStatus.RESERVED.value
         try:
             # commit=False: the settlement and its recorded outcome are committed
             # together, so Order can never be told about a transfer that is not
@@ -525,7 +531,9 @@ class CreditService:
         except ServiceError as exc:
             await self._record_transfer_outcome(event, TaskResultOutcome.TRANSFER_FAILED, str(exc))
             return
-        await self._record_transfer_outcome(event, TaskResultOutcome.TRANSFERRED)
+        committed = await self._record_transfer_outcome(event, TaskResultOutcome.TRANSFERRED)
+        if committed and stages_transfer:
+            metrics.record_transfer("ok")
 
     async def report_release_retries_exhausted(
         self, event: OrderActionEvent, error: Exception
@@ -616,8 +624,10 @@ class CreditService:
         event: OrderActionEvent,
         outcome: TaskResultOutcome,
         reason: str | None = None,
-    ) -> None:
-        result = await self._save_task_result(
+    ) -> bool:
+        """Return True when this call committed the outcome (False: a concurrent
+        duplicate won and its stored outcome was published instead)."""
+        result, committed = await self._save_task_result(
             CreditTaskResult(
                 task_id=event.task_id,
                 kind=TaskResultKind.RELEASE.value,
@@ -630,14 +640,17 @@ class CreditService:
         )
         metrics.record_saga_task("release", outcome.value)
         await self._publish_release_outcome(result)
+        return committed
 
     async def _record_amend_outcome(
         self,
         event: OrderUpdateRequestedEvent,
         outcome: TaskResultOutcome,
         reason: str | None = None,
-    ) -> None:
-        result = await self._save_task_result(
+    ) -> bool:
+        """Return True when this call committed the outcome (False: a concurrent
+        duplicate won and its stored outcome was published instead)."""
+        result, committed = await self._save_task_result(
             CreditTaskResult(
                 task_id=event.task_id,
                 kind=TaskResultKind.AMEND.value,
@@ -651,14 +664,17 @@ class CreditService:
         )
         metrics.record_saga_task("amend", outcome.value)
         await self._publish_amend_outcome(result)
+        return committed
 
     async def _record_transfer_outcome(
         self,
         event: OrderApprovalRequestedEvent,
         outcome: TaskResultOutcome,
         reason: str | None = None,
-    ) -> None:
-        result = await self._save_task_result(
+    ) -> bool:
+        """Return True when this call committed the outcome (False: a concurrent
+        duplicate won and its stored outcome was published instead)."""
+        result, committed = await self._save_task_result(
             CreditTaskResult(
                 task_id=event.task_id,
                 kind=TaskResultKind.TRANSFER.value,
@@ -671,12 +687,13 @@ class CreditService:
         )
         metrics.record_saga_task("transfer", outcome.value)
         await self._publish_transfer_outcome(result)
+        return committed
 
-    async def _save_task_result(self, result: CreditTaskResult) -> CreditTaskResult:
+    async def _save_task_result(self, result: CreditTaskResult) -> tuple[CreditTaskResult, bool]:
         """Persist the outcome and commit it together with whatever state change
         the caller already staged (release or amendment), so the operation can
         never be committed without its outcome. A concurrent duplicate keeps the
-        first recorded outcome."""
+        first recorded outcome; the flag says whether this call committed."""
         try:
             await self._task_results.add(result)
             await self._session.commit()
@@ -686,8 +703,8 @@ class CreditService:
             if existing is None:
                 raise
             metrics.record_duplicate_suppressed("task_result")
-            return existing
-        return result
+            return existing, False
+        return result, True
 
     @staticmethod
     async def _publish_release_outcome(result: CreditTaskResult) -> None:
