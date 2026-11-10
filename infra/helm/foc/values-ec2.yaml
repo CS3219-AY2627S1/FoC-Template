@@ -12,29 +12,29 @@ global:
   backup:
     image:
       repository: pg-backup
-      tag: 1897ddfd49dfc8446203be3c4cfa9bc28f48242d
+      tag: bbd92026fc88b472fc46e8dccdbaab5d7ad94636
     s3EndpointUrl: ""
     bucket: cs3219-g31-foc-backups-f6748651
 supplier-service:
-  image: {repository: supplier-service, tag: 1897ddfd49dfc8446203be3c4cfa9bc28f48242d}
+  image: {repository: supplier-service, tag: bbd92026fc88b472fc46e8dccdbaab5d7ad94636}
 user-service:
-  image: {repository: user-service, tag: 1897ddfd49dfc8446203be3c4cfa9bc28f48242d}
+  image: {repository: user-service, tag: bbd92026fc88b472fc46e8dccdbaab5d7ad94636}
 credit-service:
-  image: {repository: credit-service, tag: 1897ddfd49dfc8446203be3c4cfa9bc28f48242d}
+  image: {repository: credit-service, tag: bbd92026fc88b472fc46e8dccdbaab5d7ad94636}
 order-service:
-  image: {repository: order-service, tag: 1897ddfd49dfc8446203be3c4cfa9bc28f48242d}
+  image: {repository: order-service, tag: bbd92026fc88b472fc46e8dccdbaab5d7ad94636}
   env:
     ORDER_PHOTO_BUCKET: "cs3219-g31-foc-photos-e102d87e"
     ORDER_PHOTO_REGION: ap-southeast-1
 notification-service:
-  image: {repository: notification-service, tag: 1897ddfd49dfc8446203be3c4cfa9bc28f48242d}
+  image: {repository: notification-service, tag: bbd92026fc88b472fc46e8dccdbaab5d7ad94636}
 chat-service:
-  image: {repository: chat-service, tag: 1897ddfd49dfc8446203be3c4cfa9bc28f48242d}
+  image: {repository: chat-service, tag: bbd92026fc88b472fc46e8dccdbaab5d7ad94636}
   env:
     CHAT_PHOTO_BUCKET: "cs3219-g31-foc-photos-e102d87e"
     CHAT_PHOTO_REGION: ap-southeast-1
 api-gateway:
-  image: {repository: api-gateway, tag: 1897ddfd49dfc8446203be3c4cfa9bc28f48242d}
+  image: {repository: api-gateway, tag: bbd92026fc88b472fc46e8dccdbaab5d7ad94636}
   env:
     CORS_ALLOWED_ORIGINS: https://13.215.134.195.nip.io
   ingress:
@@ -43,7 +43,7 @@ api-gateway:
       enabled: true
       issuer: letsencrypt-prod
 frontend:
-  image: {repository: frontend, tag: 1897ddfd49dfc8446203be3c4cfa9bc28f48242d}
+  image: {repository: frontend, tag: bbd92026fc88b472fc46e8dccdbaab5d7ad94636}
   env:
     API_BASE_URL: https://13.215.134.195.nip.io
   ingress:
