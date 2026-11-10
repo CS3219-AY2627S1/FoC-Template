@@ -120,7 +120,7 @@ gate:
 
    This reads `secrets.env`, builds each Secret, and seals it with `pub-cert.pem` into committed `<namespace>-<name>.yaml` manifests.
 
-6. Fill the ClusterIssuer contact email in `infra/argocd/platform/cluster-issuer-letsencrypt-prod.yaml` (replace the `TODO-REPLACE-ME@example.com` placeholder), then commit.
+6. The ClusterIssuer contact email in `infra/argocd/platform/cluster-issuer-letsencrypt-prod.yaml` is already set; update it if the owner changes.
 
 7. Bootstrap the node.
    Open an SSM session to the node, transfer the sealing key and cert to it (paste over the SSM session, or use `aws ssm send-command` with a SecureString parameter, so the key never touches git), then load the key and apply the root Application:
@@ -232,7 +232,6 @@ Mark the gate jobs as required so a red CI run cannot merge:
 The GHCR push step and the `Bump EC2 image tags` job are not gate checks; they run only on `main` after the gates pass.
 `Trivy config (report-only)` uploads a SARIF report and does not gate.
 
-## Open item
+## Order photo upload
 
-The `ORDER_PHOTO_BUCKET` / `ORDER_PHOTO_REGION` env vars and the S3 permissions raised in the PR #14 review are not handled here and remain open.
-They need a dedicated bucket, the matching IAM permission on the instance role, and the env wired through the chart before order photo upload works on EC2.
+Order photo upload on EC2 is wired: the photos S3 bucket (`infra/terraform/photos.tf`), the instance-role S3 grant (`infra/terraform/iam.tf`), and the `ORDER_PHOTO_BUCKET` / `ORDER_PHOTO_REGION` env (set by `scripts/render-ec2-values.sh` into `values-ec2.yaml`) are all in place.

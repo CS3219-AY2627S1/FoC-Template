@@ -8,8 +8,6 @@ through environment variables so the folders run in order.
 
 - `FoC-D2.postman_collection.json` — the collection (Postman schema v2.1).
 - `FoC-local.postman_environment.json` — local environment variables.
-- The curl + jq twin of this flow is [`../scripts/demo.sh`](../scripts/demo.sh)
-  (numbered blocks 01–07 match the folders one-to-one).
 
 ## Per-service reference collections
 
@@ -150,12 +148,19 @@ npx newman run FoC-D2.postman_collection.json \
 
 ### Mode (b) — CI-ish (skip OTP, use a pre-verified client)
 
-Pre-create and verify a client with the shell script (which auto-reads the
-dev-mode OTP), then run folders `02`–`07` against that verified `clientEmail`:
+Register and verify a client manually via folder `01` (reading the OTP from
+Mailpit at http://localhost:8025), then run folders `02`–`07` against that
+verified `clientEmail`:
 
 ```bash
-# Creates + verifies a client, prints its email at the end:
-NO_PAUSE=1 ./../scripts/demo.sh            # or run from repo root: ./scripts/demo.sh
+# Register + verify a client via folder 01 (OTP from Mailpit at
+# http://localhost:8025) and capture the generated clientEmail:
+npx newman run FoC-D2.postman_collection.json \
+  -e FoC-local.postman_environment.json \
+  --folder "01 Registration (User)" \
+  --env-var otpCode=<the-6-digits> \
+  --export-environment /tmp/foc-env.json
+# the generated clientEmail is now in /tmp/foc-env.json
 
 npx newman run FoC-D2.postman_collection.json \
   -e FoC-local.postman_environment.json \
@@ -175,8 +180,8 @@ Because `01 Registration` is skipped, folder `02` logs in the already-verified
 > the client to admin (`Promote client -> admin`), so re-running the whole
 > collection against the *same* `clientEmail` would then see an admin where it
 > expects a client (breaking the RBAC/suspend assertions). Generate a new
-> verified client (e.g. run `demo.sh` again, or register+verify a new email)
-> before each clean end-to-end mode-(b) run.
+> verified client (register + verify a new email via folder `01`, reading the
+> OTP from Mailpit) before each clean end-to-end mode-(b) run.
 
 ## Notes on assertions
 

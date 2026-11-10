@@ -39,15 +39,15 @@ individual contributions.
 
 | Area | Owner(s) |
 | ----- | ----- |
-| api-gateway | _TBD_ |
-| user-service | _TBD_ |
-| supplier-service | _TBD_ |
-| order-service | _TBD_ |
-| credit-service | _TBD_ |
-| notification-service | John |
-| chat-service (N2H) | _TBD_ |
-| frontend | _TBD_ |
-| shared / infra / CI | _TBD_ |
+| api-gateway | Javier Enrique Wong |
+| user-service | Javier Enrique Wong |
+| supplier-service | John Gao Jiahao |
+| order-service | Alexander Gerald |
+| credit-service | Frank Yu |
+| notification-service | John Gao Jiahao |
+| chat-service (N2H) | John Gao Jiahao |
+| frontend | Zhou Shiyao |
+| shared / infra / CI | John Gao Jiahao |
 
 ## AI usage
 

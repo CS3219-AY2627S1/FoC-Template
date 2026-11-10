@@ -154,5 +154,12 @@ make test-credit-service
 
 Database: `credit-db` (PostgreSQL). Exposes `GET /health`.
 
-> Status: **implemented** per the D1 backlog (Credit F1–F5, N1–N2) plus the
+## Docs
+
+- Architecture: [`docs/architecture.md`](docs/architecture.md)
+- Data model + reservation lifecycle: [`docs/data-model.md`](docs/data-model.md)
+- Observability: [`../docs/observability.md`](../docs/observability.md) (full business, saga, and consumer metrics)
+
+> Status: **implemented** per the D1 backlog (Credit F1-F5, N1-N2) plus the
 > observability N2H (metrics, structured logs, readiness).
+> Owner: Frank Yu.

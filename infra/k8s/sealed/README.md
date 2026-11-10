@@ -10,7 +10,7 @@ It is used only to encrypt and is excluded from the ArgoCD sync.
 ## Sealed manifests
 
 `seal-secrets.sh` reads the plaintext `../secrets/secrets.env`, builds each Secret, and seals it with `pub-cert.pem` into `<namespace>-<name>.yaml`.
-Each real `*.yaml` is produced by a team member holding the key and committed separately (none ship in this PR).
+Each real `*.yaml` is produced by a team member holding the key and committed separately (the committed manifests live here as `<namespace>-<name>.yaml`).
 
 ## Deletion is manual
 

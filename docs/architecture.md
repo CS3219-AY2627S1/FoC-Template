@@ -1,7 +1,8 @@
 # Architecture
 
-> Placeholder for the FoC architecture documentation. Keep the diagram source
-> here and export an image for slides/README.
+> Single source of truth for the FoC system architecture: the C4 L2 container
+> view and per-service component views. Diagram sources live alongside their
+> rendered images; keep both in sync when a diagram changes.
 
 ## Style
 
@@ -16,9 +17,9 @@ internally **layered** (`api/routes` → `services` → `repositories`).
 | --------- | -------------- | ---------- | ---------- |
 | api-gateway | Single public entry point; edge authentication (JWT verify) + trusted-header injection; routing | — | sync (HTTP) |
 | user-service | Registration, authentication (JWT issue), profile, admin user management | user-db | sync + publishes events |
-| supplier-service | Supplier CRUD, discovery, seeding | supplier-db | sync |
+| supplier-service | Supplier CRUD, discovery, seeding | supplier-db | sync + publishes events |
 | order-service | Errand lifecycle + state machine | order-db | sync + publishes events |
-| credit-service | Closed credit economy | credit-db | sync + consumes events |
+| credit-service | Closed credit economy | credit-db | sync + consumes & publishes events |
 | notification-service | User notifications from order events; read API for the bell | notification-db | consumes events + sync (HTTP read API) |
 | chat-service (N2H) | Generic real-time chat; one chat per accepted order, driven by order events | chat-db | sync (HTTP + WebSocket via gateway) + consumes order events + publishes chat events |
 | frontend | Responsive SPA (requester/courier/admin) | — | sync (HTTP) |
@@ -56,7 +57,7 @@ flowchart TB
         direction TB
         US["user-service :8000"]
         SUP["supplier-service :8000"]
-        ORD["order-service :8000<br/><i>PR #5, unmerged</i>"]
+        ORD["order-service :8000"]
         CR["credit-service :8000"]
         NOT["notification-service :8000"]
         CHAT["chat-service :8000"]
@@ -76,7 +77,7 @@ flowchart TB
 
     GW -->|"verify JWT, inject<br/>X-User-Id / X-User-Role"| US
     GW -->|"proxy /api/suppliers/*"| SUP
-    GW -->|"proxy /api/orders/* (PR #5)"| ORD
+    GW -->|"proxy /api/orders/*"| ORD
     GW -->|"proxy /api/credits/*"| CR
     GW -->|"proxy /api/notifications/*"| NOT
     GW -->|"proxy /api/chat/*<br/>relay WebSocket /api/chat/ws"| CHAT
@@ -91,22 +92,20 @@ flowchart TB
     US -.->|"publishes UserRegistered<br/>on foc.user.events (fanout)"| MQ
     MQ -.->|"consumes UserRegistered<br/>-> allocate initial credits"| CR
 
-    ORD -.->|"publishes order events<br/>on foc.order.events (topic, PR #5)"| MQ
-    MQ -.->|"consumes order events (PR #5)"| CR
+    ORD -.->|"publishes order events<br/>on foc.order.events (topic)"| MQ
+    MQ -.->|"consumes order events"| CR
     MQ -.->|"consumes order events<br/>-> builds notifications"| NOT
     MQ -.->|"consumes order events<br/>-> open/close order chats"| CHAT
 
-    ORD -.->|"GET /suppliers/id<br/>validate supplier (PR #5)"| SUP
-    ORD -.->|"POST /credits/reservations<br/>reserve credits (PR #5)"| CR
+    ORD -->|"GET /suppliers/{id}<br/>validate supplier"| SUP
+    ORD -->|"POST /credits/reservations<br/>reserve credits"| CR
 
     classDef pub fill:#e8f0fe,stroke:#4a6fa5,color:#1a1a1a;
     classDef svc fill:#eef7ee,stroke:#4a8a4a,color:#1a1a1a;
     classDef store fill:#f0f0f0,stroke:#888,color:#1a1a1a;
     classDef async fill:#fdf3e6,stroke:#b8863a,color:#1a1a1a;
-    classDef planned fill:#f6ecfb,stroke:#8a4aa5,color:#1a1a1a,stroke-dasharray:4 3;
     class Browser,FE,GW pub;
-    class US,SUP,CR,NOT,CHAT svc;
-    class ORD planned;
+    class US,SUP,ORD,CR,NOT,CHAT svc;
     class USDB,SUPDB,ORDDB,CRDB,NOTDB,CHATDB store;
     class MQ async;
 ```
@@ -117,11 +116,10 @@ flowchart TB
 | --- | --- |
 | Blue box | Container whose host port is **published** (the trust boundary: only `frontend` :5173 and `api-gateway` :8080 are reachable from outside the Docker network). |
 | Green box | Backend FastAPI service, reachable only on the internal `foc-net` network (`:8000` in-container). |
-| Purple dashed box | `order-service` — exists only on branch `origin/implementation/order-service` (**PR #5, not merged**). |
 | Cylinder (grey) | A service-owned PostgreSQL database (DB-per-service; no service touches another's DB). |
 | Stadium (orange) | The RabbitMQ event broker. |
 | Solid arrow | Synchronous HTTP call, labelled with intent. |
-| Dashed arrow | Asynchronous event flow (AMQP) **or** an as-yet-unmerged PR #5 relationship, labelled `PR #5`. |
+| Dashed arrow | Asynchronous event flow (AMQP), labelled with the event. |
 
 ### Explained elements
 
@@ -143,15 +141,14 @@ flowchart TB
   verification `user-service` writes an outbox row and its background relay
   publishes `UserRegistered` to the `foc.user.events` **fanout** exchange
   (`app/services/events.py`); `credit-service` consumes it and provisions the
-  initial credit balance (`app/services/consumer.py`). Drawn **solid** because
-  the publish path is implemented, not planned.
-- **Everything labelled `PR #5` is dashed.** `order-service` and the order
-  event flows on `foc.order.events` (topic) — plus its synchronous
-  `GET /suppliers/{id}` (validate supplier) and `POST /credits/reservations`
-  (reserve credits) calls — live only on the unmerged
-  `implementation/order-service` branch (`app/clients/suppliers.py`,
-  `app/clients/credits.py`). They are shown for context but are not yet on
-  `main`.
+  initial credit balance (`app/services/consumer.py`). Drawn **dashed** like
+  every AMQP flow in this diagram; the publish path is fully implemented.
+- **`order-service` is merged and live on `main`.** It publishes order-lifecycle
+  events to the `foc.order.events` (topic) exchange, consumed by `credit-service`
+  and `notification-service`. Its synchronous `GET /suppliers/{id}` (validate
+  supplier) and `POST /credits/reservations` (reserve credits) calls use
+  `app/clients/suppliers.py` and `app/clients/credits.py`. The async event edges
+  are dashed (AMQP); the two synchronous client calls are solid.
 - **`notification-service` consumes order events.** On this branch the
   notification-service binds a durable queue to `foc.order.events` and turns
   each order fact into a per-recipient notification (`app/services/consumer.py`,
@@ -172,9 +169,9 @@ flowchart TB
 
 <!-- AI-influenced: diagram drafted with OpenCode (Claude Opus); see ai/usage-log.md -->
 
-![Supplier Service — C4 Component Diagram](./supplier-service-architecture.png)
+![Supplier Service - C4 Component Diagram](../supplier-service/docs/supplier-service-architecture.png)
 
-Source: `supplier-service-architecture.svg` (scalable). Built to the L6
+Source: [`supplier-service/docs/supplier-service-architecture.svg`](../supplier-service/docs/supplier-service-architecture.svg) (scalable). Built to the L6
 "Guidelines for Architecture Diagrams": titled + labelled, legend explaining notation,
 acronyms expanded (RBAC, CRUD), each element described in 1–2 lines, and every
 relationship labelled with direction + intent.
@@ -195,19 +192,24 @@ layered **Interface → Domain → Persistence**:
 External relationships: the **API Gateway** (sole entry for client traffic,
 supplies verified identity + role), the **Order Service** (validates a supplier
 by ID before creating orders), the read-only **baseline catalog data**, the
-shared **contracts library**, and **RabbitMQ** (dashed — the planned Sprint 3
-supplier-deactivation cascade). State is persisted to the service-owned
-`supplier-db`.
+shared **contracts library**, and **RabbitMQ** (the supplier-deactivation
+cascade to the Order Service, published via a Supplier outbox and relay). State
+is persisted to the service-owned `supplier-db`.
 
 The system-level Container (C4 L2) view above shows how this service fits
-among the others. TODO (other services): add matching component diagrams for
-user-, order-, and credit-service. The notification-service component view is
-done: see
-[`notification-service/docs/architecture.md`](../notification-service/docs/architecture.md)
-and its
-[`notification-service-architecture.svg`](../notification-service/docs/notification-service-architecture.svg).
+among the others. Each backend service now has its own component view under its
+`docs/`:
+
+- [`api-gateway/docs/architecture.md`](../api-gateway/docs/architecture.md)
+- [`user-service/docs/architecture.md`](../user-service/docs/architecture.md)
+- [`supplier-service/docs/architecture.md`](../supplier-service/docs/architecture.md)
+- [`order-service/docs/architecture.md`](../order-service/docs/architecture.md)
+- [`credit-service/docs/architecture.md`](../credit-service/docs/architecture.md)
+- [`notification-service/docs/architecture.md`](../notification-service/docs/architecture.md)
+- [`chat-service/docs/architecture.md`](../chat-service/docs/architecture.md) (N2H)
+
 Related design views:
-[`rbac.md`](./rbac.md) (role → capability matrix + supplier-write sequence),
-`user-service/docs/architecture.md` (user_db data model), and
-`supplier-service/docs/data-model.md` (supplier_db data model).
+[`rbac.md`](./rbac.md) (role to capability matrix + supplier-write sequence),
+per-service data models under each service's `docs/data-model.md`, and
+in-cluster monitoring in [`observability.md`](./observability.md).
 

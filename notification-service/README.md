@@ -40,7 +40,8 @@ app/
 
 ## Configuration
 
-All configuration comes from environment variables (see `.env.example`).
+All configuration comes from environment variables (see `.env.example` and `config.py` for defaults).
+In the full stack, `DATABASE_URL` is supplied by Docker Compose from `NOTIFICATION_DATABASE_URL`.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -83,3 +84,6 @@ make test-notification-service
 - [`docs/api-contract.md`](./docs/api-contract.md) the read API endpoints, headers, and errors.
 - [`docs/data-model.md`](./docs/data-model.md) the `notifications` table.
 - [`docs/requirements-traceability.md`](./docs/requirements-traceability.md) the D1 requirement to code to test map.
+- [`../docs/observability.md`](../docs/observability.md) the shared Prometheus metrics and readiness probe.
+
+Owner: John Gao Jiahao.

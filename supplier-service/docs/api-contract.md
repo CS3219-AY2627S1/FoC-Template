@@ -5,7 +5,7 @@
 Contract that the supplier-service exposes to its consumers (the frontend via
 the API Gateway, and other backend services). This is the **human-readable**
 reference; the machine-readable companion is
-[`supplier-service-openapi.yaml`](./supplier-service-openapi.yaml). The two are
+[`supplier-service-openapi.yaml`](../../docs/supplier-service-openapi.yaml). The two are
 kept in sync — endpoint set, field names, enums, and error codes are identical.
 
 > Status: **implemented** — list, detail, create, update, and deactivate are
@@ -55,7 +55,6 @@ exposed to clients directly.
 | `404 Not Found`            | Supplier ID does not exist (F3.2).                                           |
 | `409 Conflict`             | State conflict (e.g. deactivating an already-deactivated supplier).          |
 | `422 Unprocessable Entity` | Validation error (missing mandatory field, category not in the allowed set). |
-| `501 Not Implemented`      | Scaffold placeholder — remove once implemented.                              |
 
 ### Error format
 
@@ -99,7 +98,7 @@ The gateway **authenticates** the caller (verifies the JWT and injects the
 trusted `X-User-Id` / `X-User-Role` headers, stripping any client-supplied
 copies); it does **not** perform the admin-vs-client check. This service
 performs its own role check (`app/api/deps.py::require_admin`) using the trusted
-role header (backlog N4). See [`rbac.md`](./rbac.md).
+role header (backlog N4). See [`rbac.md`](../../docs/rbac.md).
 
 ---
 
@@ -176,6 +175,9 @@ List **active** suppliers. Supports filtering, keyword search, and pagination.
   }
   ```
 
+  Each `items` entry is a full `Supplier` object (same shape as §5.2); fields
+  are omitted here for brevity.
+
 - **Notes:** Deactivated suppliers are excluded from discovery results
   (F1.4). Returns an empty `items` array (not `404`) when nothing matches
   (F1.4.1, F2.2.3).
@@ -243,10 +245,12 @@ orders (system-wide N4).
 - **409:** already deactivated.
 - **404:** unknown id.
 
-> Downstream effect (planned, Sprint 3): deactivation is intended to trigger
-> the order-cancellation cascade. The supplier-service is synchronous-only
-> today; the event mechanism is documented in
-> [`event-catalog.md`](./event-catalog.md) and owned by the Order Service.
+> Downstream effect: on successful deactivation the service writes a
+> SupplierDeactivated fact to a transactional outbox, and an async relay
+> (`app/services/event_worker.py`) publishes it to the `foc.supplier.events`
+> exchange. The Order Service consumes it and cancels affected `OPEN`
+> orders (`ACCEPTED` and later continue) - it owns that cancellation cascade. Event contract:
+> [`event-catalog.md`](../../docs/event-catalog.md).
 
 ### 5.6 `POST /suppliers/{id}/reactivate` — reactivate
 
@@ -314,6 +318,6 @@ deactivated supplier — Order F1.1.6).
 
 ## 9. Related documents
 
-- [`supplier-service-openapi.yaml`](./supplier-service-openapi.yaml) — machine-readable OpenAPI 3.1 spec.
-- [`architecture.md`](./architecture.md) — supplier-service component diagram.
-- [`event-catalog.md`](./event-catalog.md) — async order-lifecycle events.
+- [`supplier-service-openapi.yaml`](../../docs/supplier-service-openapi.yaml) — machine-readable OpenAPI 3.1 spec.
+- [`supplier-service-architecture.svg`](./supplier-service-architecture.svg) - supplier-service component diagram.
+- [`event-catalog.md`](../../docs/event-catalog.md) — async order-lifecycle events.

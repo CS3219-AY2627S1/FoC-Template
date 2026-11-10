@@ -1,20 +1,26 @@
 # Event Catalog
 
-Canonical list of asynchronous events (project M6). Schemas live in
-`shared/foc_shared/events.py` so all parties share one contract. Consumers must
-handle redelivery **idempotently**.
+Canonical list of asynchronous events (project M6). The fanout and order
+notification envelopes live in `shared/foc_shared/events.py`; the task-request
+schemas live in the Order Service (`order-service/app/schemas/`) and the
+credit-reply schemas in the Credit Service
+(`credit-service/app/schemas/interop.py`). Consumers must handle redelivery
+**idempotently**.
 
 Broker: RabbitMQ. The exchanges:
 
-- `foc.user.events` (**fanout**) — published by User Service.
-- `foc.order.events` (**topic**, routing key = event type) — published by
-  Order Service (PR #5).
-- `foc.credit.events` (**topic**) — Credit Service replies to order tasks.
-- `foc.chat.events` (**topic**) — published by Chat Service (N2H), see below.
-- `foc.chat.fanout` (**fanout**) — Chat Service internal: delivers socket frames
+- `foc.user.events` (**fanout**) - published by User Service.
+- `foc.order.events` (**topic**, routing key = event type) - published by
+  Order Service.
+- `foc.credit.events` (**topic**, routing key = event type) - published by
+  Credit Service (the task replies below).
+- `foc.supplier.events` (**topic**) - published by Supplier Service
+  (the `SupplierDeactivated` cascade, consumed by Order Service).
+- `foc.chat.events` (**topic**) - published by Chat Service (N2H), see below.
+- `foc.chat.fanout` (**fanout**) - Chat Service internal: delivers socket frames
   to whichever chat-service replica holds the recipient's WebSocket.
 
-## User events — `foc.user.events` (fanout)
+## User events - `foc.user.events` (fanout)
 
 | Event | Published when | Publisher | Consumed by | Payload (`foc_shared.events`) | Effect |
 | ----- | -------------- | --------- | ----------- | ----------------------------- | ------ |
@@ -25,24 +31,75 @@ This is the one async flow already implemented on `main`: verification writes an
 relay publishes it to the fanout exchange (see
 `user-service/docs/flowchart.md` §5).
 
-## Order events — `foc.order.events` (topic)
+## Order events - `foc.order.events` (topic)
 
-Publisher = Order Service (**planned, PR #5**); consumers = Credit Service and
-Notification Service. Routing key = event type.
+Publisher = Order Service. Routing key = event type.
+Each consumer binds only the keys it needs: Credit Service
+(`credit-service/app/services/consumer.py`) and Notification Service
+(`notification-service/app/services/consumer.py`).
 
-| Event | Published when (backlog) | Consumed by | Effect |
-| ----- | ------------------------ | ----------- | ------ |
+### Lifecycle events (consumed)
+
+| Event | Published when | Consumed by | Effect |
+| ----- | -------------- | ----------- | ------ |
 | `OrderAccepted` | Courier accepts (F2.6.1) | Notification | Notify requester |
 | `OrderPickedUp` | Courier picks up (F3.4.1) | Notification | Notify requester |
 | `OrderDelivered` | Courier marks delivered (F3.1.1) | Notification | Notify requester |
-| `OrderCompleted` | Requester approves / auto (F3.5.1) | Credit, Notification | Transfer credits; notify both |
+| `OrderApproved` | Approval transfer confirmed by Credit (F3.5.1) | Notification | Notify requester + courier; this is the live completion event |
+| `OrderCompleted` | Legacy direct-completion key (F3.5.1) | Credit, Notification | Transfer credits; notify both |
 | `OrderCancelled` | Requester cancels / supplier deactivation (F3.3.1, F4.1.3) | Credit, Notification | Release credits; notify |
 | `CourierWithdrawn` | Courier withdraws (F3.2.2) | Credit, Notification | Keep credits reserved; notify requester |
 | `OrderExpired` | Sweeper finds expired (F6.1.1) | Credit, Notification | Release credits; notify requester |
-| `OrderDeletionRequested` | Requester deletes a pending order (F3.3) | Credit | Release credits; reply `CreditReleased` / `CreditReleaseFailed` |
-| `OrderCancellationRequested` | Requester/supplier cancels (F3.3.1, F4.1.3) | Credit | Release credits; reply `CreditReleased` / `CreditReleaseFailed` |
+
+The live approve flow emits `OrderApprovalRequested` (below) and then
+`OrderApproved`.
+`OrderCompleted` is a legacy key that Credit and Notification still bind but the
+current Order flow does not emit; both consumers treat `OrderApproved` and
+`OrderCompleted` identically.
+
+### Task-request events (Order -> Credit)
+
+Each carries a `task_id`; Credit replies on `foc.credit.events` (see below).
+
+| Event | Published when | Consumed by | Effect |
+| ----- | -------------- | ----------- | ------ |
+| `OrderDeletionRequested` | Requester deletes a pending order (F3.3) | Credit | Release the reservation; reply `CreditReleased` / `CreditReleaseFailed` |
+| `OrderCancellationRequested` | Requester/supplier cancels (F3.3.1, F4.1.3) | Credit | Release the reservation; reply `CreditReleased` / `CreditReleaseFailed` |
 | `OrderUpdateRequested` | Requester edits a pending order (reward may change) | Credit | Amend the reservation; reply `CreditAmended` / `CreditAmendRejected` |
 | `OrderApprovalRequested` | Requester approves / auto-approval (F3.5.1) | Credit | Transfer the reservation to `courier_id`; reply `CreditTransferSucceeded` / `CreditTransferFailed` |
+
+### Outcome events (emitted best-effort, no current consumer)
+
+These are published after a task resolves, for audit and future consumers.
+They go out with `mandatory=False` (`order-service/app/services/events.py`), so
+no bound queue is required: `OrderUpdated`, `OrderUpdateFailed`, `OrderDeleted`,
+`OrderDeletionFailed`, `OrderCancellationFailed`, `OrderApprovalFailed`.
+
+`OrderExpiryRequested` exists in the schema but is dead code: expiry is
+signalled by `OrderExpired`, and no service binds it
+(`credit-service/app/schemas/interop.py`).
+
+## Credit replies - `foc.credit.events` (topic)
+
+Publisher = Credit Service (`credit-service/app/services/publisher.py`).
+Consumer = Order Service (its release, update, and approval consumers).
+Routing key = event type; each reply echoes the request's `task_id`.
+
+| Event | Replies to | Payload (`credit-service/app/schemas/interop.py`) | Effect on Order |
+| ----- | ---------- | ------------------------------------------------- | --------------- |
+| `CreditReleased` / `CreditReleaseFailed` | `OrderDeletionRequested`, `OrderCancellationRequested` | `event_type`, `task_id`, `order_id?`, `reservation_id`, `timestamp`, `reason?` | Finish the delete/cancel task |
+| `CreditAmended` / `CreditAmendRejected` | `OrderUpdateRequested` | `event_type`, `task_id`, `order_id?`, `reservation_id`, `requester_id`, `amount`, `reason?` | Apply or reject the reward change |
+| `CreditTransferSucceeded` / `CreditTransferFailed` | `OrderApprovalRequested` | `event_type`, `task_id`, `order_id`, `reservation_id`, `timestamp`, `reason?` (no requester/amount) | Complete or fail the approval |
+
+## Supplier events - `foc.supplier.events` (topic)
+
+Publisher = Supplier Service, via a transactional outbox + relay
+(`supplier-service/app/services/event_worker.py`).
+Consumer = Order Service (`order-service/app/services/supplier_consumer.py`).
+
+| Event | Published when | Consumed by | Payload (`supplier-service/app/schemas/supplier_events.py`) | Effect |
+| ----- | -------------- | ----------- | ----------------------------------------------------------- | ------ |
+| `SupplierDeactivated` | Admin deactivates a supplier (F4.1.3) | Order Service | `event_type`, `event_id`, `supplier_id`, `timestamp` | Cancel the supplier's `OPEN` orders, each of which emits `OrderCancelled` |
 
 ### Order events consumed by Chat Service (N2H)
 
@@ -67,31 +124,23 @@ Notification Service. Routing key = event type.
 | `member.added`, `member.removed` | `conversation_id`, `user_id` |
 | `message.created`, `message.updated` | `message`, `member_ids` (recipients) |
 
-
 ## Task request/reply contract
 
-The deletion, cancellation, update and approval workflows are coordinated by the
-Order Service as tasks. Each request carries a `task_id` that Credit echoes on the
-definitive reply published to `foc.credit.events` (topic, routing key = event
-type):
-
-- `OrderDeletionRequested` / `OrderCancellationRequested` →
-  `CreditReleased` or `CreditReleaseFailed`
-- `OrderUpdateRequested` → `CreditAmended` or `CreditAmendRejected`
-- `OrderApprovalRequested` → `CreditTransferSucceeded` or `CreditTransferFailed`
-  (payload: `event_type`, `task_id`, `order_id`, `reservation_id`, `timestamp`,
-  `reason?` — no requester/amount fields)
-
-Credit handles requests idempotently per `task_id` and always replies —
+The deletion, cancellation, update, and approval workflows are coordinated by
+the Order Service as tasks.
+Credit handles each request idempotently per `task_id` and always replies,
 including for business rejections and for transient failures that exceed its
-retry budget — so the Order Service saga never waits forever.
+retry budget, so the Order Service saga never waits forever.
 
-## Order event envelope (scaffold)
+## Order event envelope
 
 See `OrderEvent` in `foc_shared.events`:
 
 - `event_type`, `order_id`, `requester_id`, `courier_id?`, `timestamp`,
-  `reason?`
+  `reason?`, `order_name?`
 
-TODO (team): finalize per-event payload fields (order name, new status, reward
-amount) and whether ordering matters for each flow.
+Consumers that need more than these fields (for example a new status or the
+reward amount) refetch from the owning service rather than widening the
+envelope. Handlers are idempotent, so redelivery is safe: the Credit Service
+keys on `task_id`, and the Notification Service keys on
+`(event_id, recipient_id)`.

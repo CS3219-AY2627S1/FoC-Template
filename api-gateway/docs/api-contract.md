@@ -16,6 +16,11 @@ the detailed request and response schemas for the routes being proxied.
 | Chat service | `GET`, `POST`, `HEAD` | `/api/chat/...` | `/chat/...` | JWT | Forwarded unchanged |
 | Chat WebSocket | WebSocket upgrade | `/api/chat/ws` | `/chat/ws` | One-time ticket (see below) | Frames relayed both ways |
 
+The per-area method set above is the superset the proxy will accept, not the
+authoritative allowlist. The actual (method, path) pairs the gateway forwards
+are defined in `app/exposed_routes.py` (default deny), which currently defines
+no `PUT` route; any `PUT` request therefore returns `404`.
+
 ## Path forwarding
 
 The gateway removes the public `/api` prefix before forwarding requests:
@@ -41,6 +46,8 @@ The following routes do not require a bearer token:
 | `/api/users/login` | Log in |
 | `/api/users/otp/verify` | Verify email OTP |
 | `/api/users/otp/resend` | Resend email OTP |
+| `/api/users/password/forgot` | Request a password reset |
+| `/api/users/password/reset` | Reset password with token |
 
 ### Protected routes
 

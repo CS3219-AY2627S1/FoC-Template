@@ -61,49 +61,49 @@
         <mxCell id="s3" value="S3 backups&lt;br&gt;&lt;small&gt;pg_dump nightly&lt;/small&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;fontSize=16;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="region">
           <mxGeometry x="840" y="530" width="230" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="e1" value="HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;" edge="1" parent="1" source="users" target="traefik">
+        <mxCell id="e1" value="HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.08;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="users" target="traefik">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e2" value="SSM" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;dashed=1;" edge="1" parent="1" source="admin" target="ec2">
+        <mxCell id="e2" value="SSM" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.9;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="admin" target="ec2">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e3" value="/" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;" edge="1" parent="ec2" source="traefik" target="frontend">
+        <mxCell id="e3" value="/" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;exitX=0.09;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="ec2" source="traefik" target="frontend">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e4" value="/api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;" edge="1" parent="ec2" source="traefik" target="gw">
+        <mxCell id="e4" value="/api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;exitX=0.33;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="ec2" source="traefik" target="gw">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;" edge="1" parent="ec2" source="gw" target="nsUser">
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;exitX=0.15;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="ec2" source="gw" target="nsUser">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;" edge="1" parent="ec2" source="gw" target="nsSup">
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;exitX=0.4;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="ec2" source="gw" target="nsSup">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;" edge="1" parent="ec2" source="gw" target="nsCred">
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;exitX=0.85;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="ec2" source="gw" target="nsCred">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;" edge="1" parent="ec2" source="gw" target="nsOrder">
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;exitX=1;exitY=0.35;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="ec2" source="gw" target="nsOrder">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;" edge="1" parent="ec2" source="gw" target="nsNotif">
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;exitX=1;exitY=0.65;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="ec2" source="gw" target="nsNotif">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e10" value="publishes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;dashed=1;" edge="1" parent="ec2" source="nsUser" target="rmq">
+        <mxCell id="e10" value="publishes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;dashed=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="ec2" source="nsUser" target="rmq">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e11" value="consumes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;dashed=1;" edge="1" parent="ec2" source="rmq" target="nsCred">
+        <mxCell id="e11" value="consumes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;dashed=1;exitX=0.6;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="ec2" source="rmq" target="nsCred">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e12" value="stop" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;dashed=1;strokeColor=#b85450;fontColor=#b20000;" edge="1" parent="region" source="cw" target="ec2">
+        <mxCell id="e12" value="stop" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;dashed=1;strokeColor=#b85450;fontColor=#b20000;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.28;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="region" source="cw" target="ec2">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e13" value="stop" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;dashed=1;strokeColor=#b85450;fontColor=#b20000;" edge="1" parent="region" source="eb" target="ec2">
+        <mxCell id="e13" value="stop" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;dashed=1;strokeColor=#b85450;fontColor=#b20000;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.42;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="region" source="eb" target="ec2">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e14" value="stop" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;dashed=1;strokeColor=#b85450;fontColor=#b20000;" edge="1" parent="region" source="bud" target="ec2">
+        <mxCell id="e14" value="stop" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;dashed=1;strokeColor=#b85450;fontColor=#b20000;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.56;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="region" source="bud" target="ec2">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="e15" value="backup" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;dashed=1;" edge="1" parent="region" source="ec2" target="s3">
+        <mxCell id="e15" value="backup" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=14;dashed=1;exitX=0.95;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="region" source="ec2" target="s3">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
       </root>

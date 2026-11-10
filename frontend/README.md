@@ -5,8 +5,10 @@ the **Mantine** UI library. It talks only to the **API Gateway**
 (`VITE_API_BASE_URL`) and is responsive across desktop and mobile viewports
 (project M1).
 
-For D2 the SPA implements the authentication flow and the supplier-management
-experience (browse + admin CRUD) plus an admin portal.
+For D3 the SPA covers authentication, supplier browse + admin CRUD, the
+errand/order lifecycle (create, browse, accept, pickup, deliver, approve),
+courier deliveries, a credits balance widget, and in-app notifications, plus an
+admin portal.
 
 ## Pages
 
@@ -15,9 +17,17 @@ experience (browse + admin CRUD) plus an admin portal.
 | `/login` | public | Email + password login (JWT) |
 | `/register` | public | Create a `@u.nus.edu` account |
 | `/verify-otp` | public | Verify email with the OTP code |
+| `/forgot-password` | public | Request a password-reset OTP |
+| `/reset-password` | public | Reset password with the OTP code |
 | `/suppliers` | authenticated | Browse suppliers: search, category/zone filter, sort, pagination |
 | `/suppliers/:id` | authenticated | Supplier detail; admins get edit/manage |
 | `/profile` | authenticated | View role/email (read-only) + edit name/contact |
+| `/errands` | authenticated | Browse open errands/orders to accept as courier |
+| `/orders/new` | authenticated | Create an order against a supplier |
+| `/orders/mine` | authenticated | Requester's own orders (ongoing + completed) |
+| `/orders/:id` | authenticated | Order detail with lifecycle actions |
+| `/deliveries` | authenticated | Courier's accepted/completed deliveries |
+| `/notifications` | authenticated | Full notification list |
 | `/admin/suppliers` | admin | Supplier CRUD: table + create/edit form + deactivate |
 | `/admin/clients` | admin | Client accounts: search/filter, suspend/reinstate, create admin |
 | `/messages`, `/messages/:conversationId` | authenticated | Requester-courier chat (N2H): live messages, receipts, typing, replies, photos, location sharing |
@@ -79,3 +89,9 @@ starts a fresh one.
 ```bash
 cd frontend && npm run build   # tsc typecheck + vite production build
 ```
+
+## Docs
+
+- Architecture + data flow: [`docs/architecture.md`](docs/architecture.md)
+
+Owner: Zhou Shiyao.
