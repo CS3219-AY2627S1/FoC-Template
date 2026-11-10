@@ -107,6 +107,29 @@ class ReportSubmissionStoreIntegrationTest {
     }
 
     @Test
+    void resolvedActiveReservationAllowsANewReportForTheSameOrder() throws Exception {
+        String submission = UUID.randomUUID().toString();
+        var store = at(START);
+        var begun = store.begin(submission, "requester", "v1:first", ReportCategory.ORDER,
+                "order-1", "First issue", List.of()).submission();
+        store.evidenceStored(submission, "requester");
+        store.acquireHoldLease(submission, "requester", START.plusSeconds(120));
+        store.complete(submission, "requester", new Report(begun.reportId(), "requester",
+                ReportCategory.ORDER, "First issue", "order-1", "courier",
+                ReportStatus.READY_FOR_REVIEW, START, null, null, null, null, List.of(), List.of()));
+        db.collection(FirestoreReportRepository.COLLECTION).document(begun.reportId())
+                .update("status", ReportStatus.RESOLVED.name()).get();
+
+        var replacement = store.begin(UUID.randomUUID().toString(), "requester", "v1:replacement",
+                ReportCategory.ORDER, "order-1", "Second issue", List.of());
+
+        assertTrue(replacement.created());
+        assertNotEquals(begun.reportId(), replacement.submission().reportId());
+        assertThrows(ConflictException.class, () -> store.begin(UUID.randomUUID().toString(), "requester",
+                "v1:third", ReportCategory.ORDER, "order-1", "Third issue", List.of()));
+    }
+
+    @Test
     void safeCompensationResultRemovesReservationAndDuplicateResultIsIdempotent() {
         String submission = UUID.randomUUID().toString();
         var store = at(START);
