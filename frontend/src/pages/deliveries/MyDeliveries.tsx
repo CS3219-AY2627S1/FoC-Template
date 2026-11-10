@@ -1,4 +1,4 @@
-// AI-assisted: MyDeliveries page — courier's active and completed deliveries with Pick up/Withdraw/Deliver actions.
+// AI-assisted: MyDeliveries page — courier's active and completed deliveries with Pick up/Withdraw/Deliver actions and Google Maps navigation.
 import {
   Box,
   Button,
@@ -10,9 +10,16 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { IconRoute } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { OrderStatusBadge } from "../../components/StatusPill";
-import { ApiError, type OrderResponse, ordersApi, parseUtcDate } from "../../lib/api";
+import {
+  ApiError,
+  type OrderResponse,
+  ordersApi,
+  parseUtcDate,
+  suppliersApi,
+} from "../../lib/api";
 
 export default function MyDeliveries() {
   const [activeTab, setActiveTab] = useState<string | null>("active");
@@ -23,6 +30,7 @@ export default function MyDeliveries() {
   const [loadingCompleted, setLoadingCompleted] = useState(false);
 
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
+  const [navigatingId, setNavigatingId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,6 +145,40 @@ export default function MyDeliveries() {
     }
   }
 
+  async function handleNavigate(order: OrderResponse) {
+    setNavigatingId(order.order_id);
+    try {
+      let destination: string;
+
+      if (order.status === "PICKED_UP") {
+        // Second stage: pick up -> delivery.
+        destination =
+          order.delivery_latitude != null && order.delivery_longitude != null
+            ? `${order.delivery_latitude},${order.delivery_longitude}`
+            : order.delivery_location;
+      } else {
+        // First stage: current location -> supplier (pickup point).
+        destination = order.pickup_location;
+        try {
+          const supplier = await suppliersApi.get(order.supplier_id);
+          if (supplier.latitude != null && supplier.longitude != null) {
+            destination = `${supplier.latitude},${supplier.longitude}`;
+          }
+        } catch {
+          // Fall back to the pickup address text when the lookup fails.
+        }
+      }
+
+      const url = new URL("https://www.google.com/maps/dir/");
+      url.searchParams.set("api", "1");
+      url.searchParams.set("destination", destination);
+      url.searchParams.set("travelmode", "walking");
+      window.open(url.toString(), "_blank", "noopener,noreferrer");
+    } finally {
+      setNavigatingId(null);
+    }
+  }
+
   function renderRow(order: OrderResponse, showActions: boolean) {
     const isLoading = loadingIds.has(order.order_id);
 
@@ -162,6 +204,17 @@ export default function MyDeliveries() {
           </Stack>
           {showActions && (
             <Group gap="xs" wrap="nowrap">
+              {(order.status === "ACCEPTED" || order.status === "PICKED_UP") && (
+                <Button
+                  size="xs"
+                  variant="light"
+                  leftSection={<IconRoute size={14} />}
+                  loading={navigatingId === order.order_id}
+                  onClick={() => handleNavigate(order)}
+                >
+                  Navigate
+                </Button>
+              )}
               {isLoading && <Loader size="sm" />}
               {!isLoading && order.status === "ACCEPTED" && (
                 <>

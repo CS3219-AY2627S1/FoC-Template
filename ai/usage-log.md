@@ -1425,3 +1425,20 @@ commit=False)` so the settlement and its task result commit once,
   `pytest` reports 239 passed, 15 skipped (Postgres/env-gated). Frontend `tsc`,
   `eslint` (only pre-existing warnings) and `vite build` pass. Added schema
   range tests and a migration upgrade/downgrade test.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Replaced the OpenRouteService modal prototype with a simpler Google
+  Maps hand-off on the deliveries page. Active `ACCEPTED` and `PICKED_UP` rows
+  show a Navigate button that opens Google Maps directions in a new tab with
+  walking travel mode. The destination is the supplier's coordinates for the
+  pickup stage (falling back to the pickup address text) and the stored
+  delivery coordinates for the delivery stage (falling back to the delivery
+  address). Files: `frontend/src/pages/deliveries/MyDeliveries.tsx`.
+- Prompt(s): "Temporarily revert the other changes and implement the simpler
+  feature first: clicking the delivery navigation button should jump to Google
+  Maps for navigation."
+- Author review: `tsc`, `eslint` (only pre-existing warnings) and `vite build`
+  pass. Playwright verified both stages open Google Maps with the expected
+  destination and `travelmode=walking`, and completed rows expose no button.
