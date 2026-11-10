@@ -1,0 +1,17 @@
+# Supplier service can be run independently, or included by ../compose.yaml.
+services:
+  supplier-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?Set POSTGRES_USER in supplier-service/.env}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in supplier-service/.env}@ep-odd-mode-az7quoka-pooler.c-3.ap-southeast-1.aws.neon.tech/${POSTGRES_DB:?Set POSTGRES_DB in supplier-service/.env}?sslmode=require&channel_binding=require
+      INTERNAL_GATEWAY_URL: ${INTERNAL_GATEWAY_URL:-http://internal-gateway}
+      RABBITMQ_URL: ${RABBITMQ_URL:?Set RABBITMQ_URL in supplier-service/.env}
+    ports:
+      - "3001:3001"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      internal-gateway:
+        condition: service_healthy

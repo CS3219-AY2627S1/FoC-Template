@@ -1,0 +1,216 @@
+/*
+AI Assistance Disclosure:
+Tool: Gemini, date: 2026-10-29
+Scope: Styled the responsive order audit-log page and its empty/error states
+Author review: I reviewed correctness and edited the changes to fit the project
+*/
+
+.page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.main,
+.footer {
+  width: min(880px, calc(100% - 48px));
+  margin-inline: auto;
+}
+
+.main {
+  flex: 1;
+  padding: 64px 0 84px;
+}
+
+.heading {
+  padding-bottom: 30px;
+  border-bottom: 1px solid #bfcab7;
+}
+
+.heading h1 {
+  margin: 0 0 14px;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: clamp(2.5rem, 6vw, 4rem);
+  font-weight: 400;
+  letter-spacing: -.04em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+.heading p {
+  margin: 0;
+  color: #626e63;
+  line-height: 1.7;
+}
+
+.button {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 10px 16px;
+  color: #286749;
+  background: #fff;
+  border: 1px solid #bfcab7;
+  border-radius: 5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: #eaf0e4;
+}
+
+.button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.history {
+  margin-top: 34px;
+  overflow-wrap: anywhere;
+}
+
+.listHeading,
+.entryHeading,
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.listHeading {
+  padding-bottom: 16px;
+}
+
+.listHeading h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.listHeading span,
+.pagination span {
+  color: #626e63;
+  font-size: .8rem;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid #ccd5c5;
+}
+
+.entry {
+  padding: 24px 0;
+  border-bottom: 1px solid #d8dfd1;
+}
+
+.entryHeading {
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.entry h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.actorBadge {
+  font-size: .75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: #eaf0e4;
+  color: #286749;
+}
+
+.actorBadge.system {
+  background: #f1efeb;
+  color: #626e63;
+}
+
+.entry p {
+  margin: 8px 0;
+  color: #526257;
+  font-size: .88rem;
+  line-height: 1.6;
+}
+
+.entry time,
+.entry p.orderId {
+  color: #626e63;
+  font-size: .78rem;
+  line-height: 1.6;
+}
+
+.entry p.reason {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: #fff;
+  border: 1px solid #d8dfd1;
+  border-left: 3px solid #286749;
+  border-radius: 4px;
+  font-size: .85rem;
+  white-space: pre-wrap;
+}
+
+.entry p.reason.disputed {
+  border-left-color: #b73a3a;
+  background: #fdf5f5;
+}
+
+.pagination {
+  margin-top: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  padding: 48px 16px;
+  margin: 0;
+  color: #626e63;
+  text-align: center;
+}
+
+.notice {
+  padding: 18px 20px;
+  color: #5d5942;
+  background: #f7f6ed;
+  border: 1px solid #e1ddc8;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.notice strong {
+  font-weight: 600;
+}
+
+.notice p {
+  margin: 6px 0 12px;
+}
+
+.footer {
+  padding: 22px 0 28px;
+  color: #6c776d;
+  border-top: 1px solid #d5ddce;
+  font-size: .72rem;
+}
+
+@media (max-width: 620px) {
+  .main,
+  .footer {
+    width: calc(100% - 32px);
+  }
+
+  .main {
+    padding: 46px 0 60px;
+  }
+
+  .pagination {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}

@@ -1,0 +1,70 @@
+/*
+AI Assistance Disclosure:
+Tool: ChatGPT (model: GPT-5.6 Sol High), date: 2026-09-13
+Scope: Generated the initial React, Vite, and TypeScript scaffold
+Author review: I reviewed correctness and edited the generated scaffold to fit the project
+*/
+
+:root {
+  font-family: 'Avenir Next', Avenir, 'Segoe UI', sans-serif;
+  color: #283a31;
+  background: #f7f8f2;
+  --admin-accent: #7041a0;
+  --admin-hover: #593080;
+  --admin-tint: #f2eafa;
+  color-scheme: light;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea {
+  font: inherit;
+}
+
+.adminBadge {
+  display: inline-block;
+  width: fit-content;
+  padding: 5px 9px;
+  color: var(--admin-accent);
+  background: var(--admin-tint);
+  border: 1px solid #d9c4ed;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+:root body button[data-admin-action] {
+  color: #fff;
+  background: var(--admin-accent);
+  border-color: var(--admin-accent);
+}
+
+:root body button[data-admin-action]:hover:not(:disabled) {
+  color: #fff;
+  background: var(--admin-hover);
+  border-color: var(--admin-hover);
+}
+
+:root body button[data-admin-action]:focus-visible {
+  outline-color: var(--admin-accent);
+}
+
+:focus-visible {
+  outline: 2px solid #286749;
+  outline-offset: 3px;
+}

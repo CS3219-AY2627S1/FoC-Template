@@ -1,0 +1,30 @@
+# Included by ../compose.yaml to use the shared RabbitMQ broker.
+services:
+  order-service:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      # Shared open/progress/settlement deadline, in seconds (15 minutes by default).
+      TIMEOUT_DURATION: ${TIMEOUT_DURATION:-900}
+      INTERNAL_GATEWAY_URL: ${INTERNAL_GATEWAY_URL:-http://internal-gateway}
+    ports:
+      - "127.0.0.1:3003:3002"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:3002/health', timeout=5)
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      internal-gateway:
+        condition: service_healthy

@@ -1,0 +1,52 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-5.6 Sol High), date: 2026-09-19
+# Scope: Included User Service in the root Compose configuration
+# Author review: I reviewed correctness and edited the changes to fit the project
+#
+# Tool: ChatGPT (model: GPT-6.1 Sol Max), date: 2026-10-06
+# Scope: Added the initial Credit Service and shared RabbitMQ Compose integration
+# Author review: I reviewed correctness and edited the changes to fit the project
+#
+# Tool: ChatGPT (model: GPT-6.1 Sol Max), date: 2026-10-07
+# Scope: Added shared RabbitMQ configuration for the signup-to-wallet workflow
+# Author review: I reviewed correctness and edited the changes to fit the project
+
+include:
+  - path: ./user-service/compose.yaml
+  - path: ./supplier-service/compose.yaml
+  - path: ./credit-service/compose.yaml
+  - path: ./order-service/compose.yaml
+  - path: ./internal-gateway/compose.yaml
+
+services:
+  ui:
+    build:
+      context: ./ui
+    environment:
+      INTERNAL_GATEWAY_URL: ${INTERNAL_GATEWAY_URL:-http://internal-gateway}
+      NGINX_DNS_RESOLVER: ${NGINX_DNS_RESOLVER:-127.0.0.11}
+    ports:
+      - "4173:80"
+    depends_on:
+      internal-gateway:
+        condition: service_healthy
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  rabbitmq-data:

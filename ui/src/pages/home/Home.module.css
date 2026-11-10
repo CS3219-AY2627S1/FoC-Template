@@ -1,0 +1,198 @@
+/*
+AI Assistance Disclosure:
+Tool: ChatGPT (model: GPT-5.6 Sol High), date: 2026-09-19
+Scope: Updated home-page styling for the shared account header
+Author review: I reviewed correctness and edited the changes to fit the project
+*/
+
+.page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  color: #283a31;
+  background:
+    radial-gradient(circle at 82% 18%, rgb(216 228 205 / 58%), transparent 25%),
+    #f7f8f2;
+}
+
+.main {
+  width: min(1120px, calc(100% - 48px));
+  margin: auto;
+  padding: 72px 0 90px;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 250px;
+  gap: 70px;
+  align-items: end;
+}
+
+.hero aside {
+  padding: 18px 0 18px 32px;
+  display: grid;
+  border-left: 1px solid #ccd5c5;
+}
+
+.hero aside strong {
+  margin: 10px 0;
+  font-family: Georgia, serif;
+  font-size: 4rem;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.hero aside p {
+  margin: 0;
+  color: #626e63;
+  font-size: .82rem;
+  line-height: 1.65;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #626e63;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.main h1 {
+  max-width: 760px;
+  margin: 18px 0 24px;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: clamp(3.2rem, 7vw, 6.3rem);
+  font-weight: 400;
+  letter-spacing: -0.06em;
+  line-height: 0.98;
+}
+
+.main h1 em {
+  color: #426549;
+  font-weight: 400;
+}
+
+.intro {
+  max-width: 56ch;
+  margin: 0;
+  color: #626e63;
+  font-size: 0.98rem;
+  line-height: 1.75;
+}
+
+.primaryAction {
+  width: fit-content;
+  min-height: 46px;
+  margin-top: 30px;
+  padding: 0 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+  color: white;
+  background: #286749;
+  border-radius: 5px;
+  font-size: .86rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.cards {
+  margin-top: 76px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid #bfcab7;
+}
+
+.cards article {
+  min-height: 220px;
+  padding: 28px 32px 24px 0;
+  border-right: 1px solid #d5ddce;
+}
+
+.cards article + article {
+  padding-left: 32px;
+}
+
+.cards article:last-child {
+  border-right: 0;
+}
+
+.cards span {
+  color: #426549;
+  font-family: 'Iowan Old Style', Georgia, serif;
+  font-size: 1.8rem;
+}
+
+.cards h2 {
+  margin: 38px 0 12px;
+  font-size: 1.08rem;
+}
+
+.cards p {
+  max-width: 30ch;
+  margin: 0;
+  color: #626e63;
+  font-size: 0.84rem;
+  line-height: 1.65;
+}
+
+.cards a {
+  margin-top: 18px;
+  display: inline-block;
+  color: #286749;
+  font-size: .8rem;
+  font-weight: 700;
+}
+
+.footer {
+  width: min(1120px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 22px 0 28px;
+  color: #6c776d;
+  border-top: 1px solid #d5ddce;
+  font-size: 0.72rem;
+}
+
+@media (max-width: 720px) {
+  .main,
+  .footer {
+    width: min(100% - 32px, 1120px);
+  }
+
+  .main {
+    padding: 52px 0 60px;
+  }
+
+  .main h1 {
+    font-size: clamp(3rem, 14vw, 4.8rem);
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 38px;
+  }
+
+  .hero aside {
+    padding: 18px 0 0;
+    border-top: 1px solid #ccd5c5;
+    border-left: 0;
+  }
+
+  .cards {
+    margin-top: 54px;
+    grid-template-columns: 1fr;
+  }
+
+  .cards article,
+  .cards article + article {
+    min-height: 0;
+    padding: 24px 0;
+    border-right: 0;
+    border-bottom: 1px solid #d5ddce;
+  }
+
+  .cards h2 {
+    margin-top: 18px;
+  }
+}

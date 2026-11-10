@@ -1,0 +1,16 @@
+.modal {
+  width: min(760px, calc(100% - 32px));
+  max-height: calc(100dvh - 48px);
+  margin: auto;
+  padding: 0;
+  overflow-y: auto;
+  color: #283a31;
+  background: #fff;
+  border: 1px solid #dce2d7;
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgb(25 38 29 / 24%);
+}
+
+.modal::backdrop {
+  background: rgb(25 38 29 / 48%);
+}

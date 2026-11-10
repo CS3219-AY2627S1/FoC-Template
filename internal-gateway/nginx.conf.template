@@ -1,0 +1,74 @@
+map $http_x_request_id $correlation_id {
+    default $request_id;
+    "~^[A-Za-z0-9_-]{1,64}$" $http_x_request_id;
+}
+
+log_format json_access escape=json
+    '{"timestamp":"$time_iso8601","service_name":"internal-gateway",'
+    '"message":"http.request_completed","http_request_id":"$correlation_id",'
+    '"method":"$request_method","status":$status,"duration_seconds":$request_time,'
+    '"upstream_status":"$upstream_status","upstream_seconds":"$upstream_response_time"}';
+
+server {
+    access_log /dev/stdout json_access;
+    error_log /dev/stderr warn;
+    listen 80;
+    server_name _;
+
+    # Resolve peers at request time so the gateway can start before them and
+    # pick up new container IPs without a reload or circular dependencies.
+    # Docker's resolver is a deployment default in Compose, not application code.
+    resolver ${NGINX_DNS_RESOLVER} valid=10s ipv6=off;
+    resolver_timeout 2s;
+    set $user_upstream "${USER_SERVICE_UPSTREAM}";
+    set $supplier_upstream "${SUPPLIER_SERVICE_UPSTREAM}";
+    set $order_upstream "${ORDER_SERVICE_UPSTREAM}";
+    set $credit_upstream "${CREDIT_SERVICE_UPSTREAM}";
+
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Request-ID $correlation_id;
+    proxy_hide_header X-Request-ID;
+    add_header X-Request-ID $correlation_id always;
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 30s;
+
+    location = /health {
+        access_log off;
+        default_type application/json;
+        return 200 '{"status":"healthy","service":"internal-gateway"}';
+    }
+
+    location /user-api/ {
+        # Demo flags are optional; absent flags leave normal routing unchanged.
+        if (-f /var/run/gateway-demo/user.disabled) { return 503; }
+        rewrite ^/user-api/(.*)$ /$1 break;
+        proxy_pass $user_upstream;
+    }
+
+    location /supplier-api/ {
+        if (-f /var/run/gateway-demo/supplier.disabled) { return 503; }
+        rewrite ^/supplier-api/(.*)$ /$1 break;
+        proxy_pass $supplier_upstream;
+    }
+
+    location /order-api/ {
+        if (-f /var/run/gateway-demo/order.disabled) { return 503; }
+        rewrite ^/order-api/(.*)$ /$1 break;
+        proxy_pass $order_upstream;
+    }
+
+    location /credit-api/ {
+        if (-f /var/run/gateway-demo/credit.disabled) { return 503; }
+        rewrite ^/credit-api/(.*)$ /$1 break;
+        proxy_pass $credit_upstream;
+    }
+
+    location / {
+        return 404;
+    }
+}

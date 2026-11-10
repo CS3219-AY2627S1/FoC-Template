@@ -1,0 +1,25 @@
+# Copy to terraform.tfvars (gitignored). Do not put passwords in this file.
+aws_region            = "ap-southeast-1"
+project_name          = "foc-demo"
+allowed_ingress_cidrs = ["0.0.0.0/0"] # Replace with your real public IP/CIDRs.
+
+# Phase 1: repositories and empty Secrets Manager containers.
+deploy_runtime = false
+start_services = false
+image_tag      = "demo-20261105-1" # Push this exact unique tag to all six repos.
+
+# Phase 2: set deploy_runtime=true; keep start_services=false until MQ is ready,
+# images are pushed, and Secrets Manager JSON values contain the MQ endpoint.
+# Phase 3: set start_services=true to create ECS services.
+# Broker credentials: export TF_VAR_mq_password using a masked local prompt.
+mq_username       = "focdemo"
+mq_engine_version = "4.2" # Verify current regional support first.
+mq_instance_type  = "mq.m7g.medium" # Evaluation size; NOT free-tier.
+
+# Enable only after measuring a useful baseline. Units: requests/minute/task.
+autoscaling_enabled = false
+autoscaling_service = "supplier"
+requests_per_target = 60
+
+# Set true only for intentional final destruction of nonempty repositories.
+force_delete_images = false
