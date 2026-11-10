@@ -13,7 +13,10 @@ class Settings(BaseSettings):
     order_events_exchange: str = "foc.order.events"
     user_events_exchange: str = "foc.user.events"
     credit_events_exchange: str = "foc.credit.events"
-    order_events_queue: str = "credit-service.order-events"
+    order_events_queue: str = Field(
+        default="credit-service.order-events",
+        validation_alias="CREDIT_ORDER_EVENTS_QUEUE",
+    )
     user_events_queue: str = "credit-service.user-events"
     initial_credit_allocation: int = 100
     # How many times a transiently failing order event is redelivered before the
