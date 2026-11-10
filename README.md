@@ -14,11 +14,11 @@ withdrawn, or exchanged for money, and only circulate within the platform.
 
 | Name | Role |
 | ----- | ----- |
-| Your Name | Your ownership |
-| Your Name | Your ownership |
-| Your Name | Your ownership |
-| Your Name | Your ownership |
-| Your Name | Your ownership |
+| Don | Credit Service & Cloud Deployment |
+| Josh | User Service |
+| Jun Sen | Frontend, Rating Service & Badges Service |
+| Sahana | Supplier Service & Admin Service |
+| Varun | Order Service & Load Test |
 
 ---
 
