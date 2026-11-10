@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 import sg.edu.nus.foc.reporting.error.BadRequestException;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -44,6 +45,7 @@ class ImageValidatorTest {
         assertEquals(100, ImageValidator.sanitize("x".repeat(101), "image/jpeg").length());
 
         assertFalse(ImageValidator.matches("image/jpeg", new byte[]{0, (byte) 0xd8, (byte) 0xff}));
+        assertFalse(ImageValidator.matches("image/jpeg", new byte[]{(byte) 0xff, (byte) 0xd8}));
         assertFalse(ImageValidator.matches("image/jpeg", new byte[]{(byte) 0xff, 0, (byte) 0xff}));
         assertFalse(ImageValidator.matches("image/jpeg", new byte[]{(byte) 0xff, (byte) 0xd8, 0}));
         byte[] invalidPng = png("x").getBytes();
@@ -52,6 +54,27 @@ class ImageValidatorTest {
         assertFalse(ImageValidator.matches("image/webp", "RIFF".getBytes(java.nio.charset.StandardCharsets.US_ASCII)));
         assertFalse(ImageValidator.matches("image/webp", "NOPExxxxWEBP".getBytes(java.nio.charset.StandardCharsets.US_ASCII)));
         assertFalse(ImageValidator.matches("image/webp", "RIFFxxxxNOPE".getBytes(java.nio.charset.StandardCharsets.US_ASCII)));
+        assertEquals("photo.jpg", ImageValidator.sanitize(null, "image/jpeg"));
+        assertThrows(BadRequestException.class, () -> validator.validate(List.of(
+                new MockMultipartFile("photos", "x", null, new byte[]{1}))));
+    }
+
+    @Test void rejectsEveryPngSignatureMismatchAndUnreadableFiles() throws Exception {
+        byte[] valid = png("x").getBytes();
+        assertFalse(ImageValidator.matches("image/png", new byte[7]));
+        for (int i = 0; i < valid.length; i++) {
+            byte[] changed = valid.clone();
+            changed[i]++;
+            assertFalse(ImageValidator.matches("image/png", changed), "byte " + i);
+        }
+
+        MultipartFile unreadable = org.mockito.Mockito.mock(MultipartFile.class);
+        org.mockito.Mockito.when(unreadable.isEmpty()).thenReturn(false);
+        org.mockito.Mockito.when(unreadable.getSize()).thenReturn(8L);
+        org.mockito.Mockito.when(unreadable.getContentType()).thenReturn("IMAGE/PNG");
+        org.mockito.Mockito.when(unreadable.getBytes()).thenThrow(new java.io.IOException("read failed"));
+        assertThrows(BadRequestException.class, () -> validator.validate(List.of(unreadable)));
+        assertThrows(BadRequestException.class, () -> validator.validate(java.util.Arrays.asList((MultipartFile) null)));
     }
 
     private static MockMultipartFile png(String name) {

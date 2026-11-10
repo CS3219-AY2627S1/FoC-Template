@@ -14,5 +14,9 @@ public interface OrderAssociationClient {
     }
     AssociatedOrder placeReportHold(String orderId, String reportId, boolean requireAssignedCourier,
                                     String bearerToken, String reporterRole);
+    default AssociatedOrder placeReportHold(String orderId, String reportId, String submissionId,
+                                            boolean requireAssignedCourier, String bearerToken, String reporterRole) {
+        return placeReportHold(orderId, reportId, requireAssignedCourier, bearerToken, reporterRole);
+    }
     void releaseReportHold(String orderId, String reportId, String bearerToken);
 }

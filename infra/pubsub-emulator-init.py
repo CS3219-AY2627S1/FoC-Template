@@ -34,7 +34,8 @@ for topic in ("order-completion", "open-order-refund",
               "courier-penalty-addition", "courier-penalty-deduction",
               "user-created", "credit-command-compensation",
               "credit-command-compensation-result",
-              "report-resolution-compensation", "report-resolution-compensation-result"):
+              "report-resolution-compensation", "report-resolution-compensation-result",
+              "report-creation-compensation", "report-creation-compensation-result"):
     create(f"/topics/{topic}-local-v1", {})
 
 for topic, route in (("order-completion", "completion"), ("open-order-refund", "open-refund")):
@@ -85,5 +86,15 @@ create("/subscriptions/order-resolution-result-local", {
     "topic": "projects/demo-foc-local/topics/report-resolution-compensation-result-local-v1",
     "ackDeadlineSeconds": 30,
     "pushConfig": {"pushEndpoint": "http://order-service:8080/api/orders/internal/report-resolution-compensations"},
+})
+create("/subscriptions/order-report-creation-compensation-local", {
+    "topic": "projects/demo-foc-local/topics/report-creation-compensation-local-v1",
+    "ackDeadlineSeconds": 30,
+    "pushConfig": {"pushEndpoint": "http://order-service:8080/api/orders/internal/report-creation-compensations"},
+})
+create("/subscriptions/report-creation-compensation-result-local", {
+    "topic": "projects/demo-foc-local/topics/report-creation-compensation-result-local-v1",
+    "ackDeadlineSeconds": 30,
+    "pushConfig": {"pushEndpoint": "http://reporting-service:8080/api/reports/internal/creation-compensation-results"},
 })
 print("Local emulator initialized: Order/Credit outcomes, user-created and two-way Report compensation; no cloud API used.")

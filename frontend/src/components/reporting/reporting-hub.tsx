@@ -7,9 +7,10 @@
  */
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import Image from "next/image"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { LoaderCircleIcon } from "lucide-react"
+import { LoaderCircleIcon, XIcon } from "lucide-react"
 
 import { RequireAuth } from "@/components/require-auth"
 import { ReportForm } from "@/components/reporting/report-form"
@@ -36,6 +37,7 @@ type ReportingTab = "create" | "submitted" | "against-me"
 const MAX_FILES = 5
 const MAX_FILE_BYTES = 5 * 1024 * 1024
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"])
+type PhotoPreview = { file: File; url: string }
 
 export function ReportingHub({ initialTab, initialCategory, initialOrderId }: {
   initialTab: ReportingTab
@@ -172,20 +174,32 @@ function ReportCard({ report, againstMe, onResponded }: { report: ReportResponse
 function ParticipantResponseForm({ reportId, onResponded }: { reportId: string; onResponded: () => void }) {
   const api = useApi()
   const inputRef = useRef<HTMLInputElement>(null)
+  const photosRef = useRef<PhotoPreview[]>([])
   const [explanation, setExplanation] = useState("")
-  const [photos, setPhotos] = useState<File[]>([])
+  const [photos, setPhotos] = useState<PhotoPreview[]>([])
   const [error, setError] = useState("")
   const [submitting, setSubmitting] = useState(false)
 
+  useEffect(() => { photosRef.current = photos }, [photos])
+  useEffect(() => () => photosRef.current.forEach(photo => URL.revokeObjectURL(photo.url)), [])
+
   function choosePhotos(files: FileList | null) {
     if (!files) return
-    const selected = Array.from(files)
-    if (selected.length > MAX_FILES) return setError("You can attach up to five photos.")
-    if (selected.some(file => !IMAGE_TYPES.has(file.type) || file.size === 0 || file.size > MAX_FILE_BYTES)) {
+    const incoming = Array.from(files)
+    if (photos.length + incoming.length > MAX_FILES) return setError("You can attach up to five photos.")
+    if (incoming.some(file => !IMAGE_TYPES.has(file.type) || file.size === 0 || file.size > MAX_FILE_BYTES)) {
       return setError("Each photo must be a non-empty JPEG, PNG, or WebP file no larger than 5 MiB.")
     }
-    setPhotos(selected)
+    setPhotos(current => [...current, ...incoming.map(file => ({ file, url: URL.createObjectURL(file) }))])
+    if (inputRef.current) inputRef.current.value = ""
     setError("")
+  }
+
+  function removePhoto(index: number) {
+    setPhotos(current => current.filter((photo, currentIndex) => {
+      if (currentIndex === index) URL.revokeObjectURL(photo.url)
+      return currentIndex !== index
+    }))
   }
 
   async function submit(event: React.FormEvent) {
@@ -199,9 +213,10 @@ function ParticipantResponseForm({ reportId, onResponded }: { reportId: string; 
     try {
       const body = new FormData()
       body.append("response", new Blob([JSON.stringify({ explanation: explanation.trim() })], { type: "application/json" }))
-      photos.forEach(photo => body.append("photos", photo))
+      photos.forEach(photo => body.append("photos", photo.file))
       await api<ReportResponse>(`/api/reports/${reportId}/response`, { method: "POST", body })
       setExplanation("")
+      photos.forEach(photo => URL.revokeObjectURL(photo.url))
       setPhotos([])
       if (inputRef.current) inputRef.current.value = ""
       onResponded()
@@ -220,8 +235,15 @@ function ParticipantResponseForm({ reportId, onResponded }: { reportId: string; 
     </Field>
     <Field>
       <FieldLabel htmlFor={`response-files-${reportId}`}>Evidence photos</FieldLabel>
-      <Input ref={inputRef} id={`response-files-${reportId}`} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={event => choosePhotos(event.target.files)} />
-      <FieldDescription>Up to five JPEG, PNG, or WebP files, 5 MiB each.{photos.length ? ` ${photos.length} selected.` : ""}</FieldDescription>
+      <Input ref={inputRef} id={`response-files-${reportId}`} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={event => choosePhotos(event.target.files)} disabled={photos.length >= MAX_FILES} />
+      <FieldDescription>Up to five JPEG, PNG, or WebP files, 5 MiB each.</FieldDescription>
+      {photos.length > 0 && <div className="grid grid-cols-2 gap-3 sm:grid-cols-3" aria-label="Response photo previews">
+        {photos.map((photo, index) => <div key={`${photo.file.name}-${photo.file.lastModified}-${index}`} className="relative overflow-hidden rounded-lg border bg-muted">
+          <Image src={photo.url} alt={`Preview of ${photo.file.name}`} width={240} height={160} unoptimized className="h-28 w-full object-cover" />
+          <Button type="button" size="icon-xs" variant="destructive" className="absolute right-2 top-2" aria-label={`Remove ${photo.file.name}`} onClick={() => removePhoto(index)}><XIcon /></Button>
+          <p className="truncate px-2 py-1 text-xs" title={photo.file.name}>{photo.file.name}</p>
+        </div>)}
+      </div>}
     </Field>
     {error && <Alert variant="destructive"><AlertTitle>Could not submit response</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
     <Button type="submit" disabled={submitting}>{submitting ? <><LoaderCircleIcon className="animate-spin" />Submitting…</> : "Submit response"}</Button>

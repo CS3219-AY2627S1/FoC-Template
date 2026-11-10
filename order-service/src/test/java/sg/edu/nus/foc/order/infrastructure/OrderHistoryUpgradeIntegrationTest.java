@@ -50,7 +50,7 @@ class OrderHistoryUpgradeIntegrationTest {
             try (ResultSet references = statement.executeQuery("select count(*) from pg_constraint where "
                     + "contype='f' and confrelid='orders'::regclass")) {
                 references.next();
-                assertEquals(7, references.getInt(1), "Checkpoint, outbox, attempt, report hold, penalty and report resolution foreign keys remain valid");
+                assertEquals(8, references.getInt(1), "Checkpoint, outbox, attempt, report hold, penalty, report resolution and report creation lifecycle foreign keys remain valid");
             }
         }
     }

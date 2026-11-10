@@ -1,5 +1,22 @@
 # Order Service Database Migration Workflow
 
+## V20 handoff — durable report-creation fencing (CHANGE-184, 2026-11-10)
+
+`V20__report_creation_compensation.sql` additively creates
+`order_report_creation_lifecycles` and `order_report_creation_compensations`.
+The lifecycle is keyed by the Reporting-allocated report ID, uniquely binds the
+browser submission ID/order/reporter, records ACTIVE or permanent CANCELLED, and
+retains whether a hold was ever created. The compensation table deduplicates the
+deterministic request and its durable result. Existing orders, holds, resolution
+journals and V1–V19 are unchanged; no legacy hold is guessed or backfilled.
+
+Normal matching Order startup applies V20 before Hibernate validation. Deploy
+this lifecycle fencing before enabling Reporting's creation flow. Clean and
+V19→V20 migration tests plus lifecycle/hold race integration tests require real
+PostgreSQL via Testcontainers. Rollback disables both creation flags but preserves
+all tombstones, deduplication rows, holds and outboxes; use a reviewed forward
+correction rather than dropping these audit/fencing tables or editing V20.
+
 ## V19 handoff - courier bad-attitude policy (CHANGE-170, 2026-11-01)
 
 V19__allow_courier_bad_attitude_penalty.sql extends the two deferred-penalty CHECK constraints on orders and order_courier_attempts to allow COURIER_BAD_ATTITUDE. It preserves old policy values, null/audit invariants, all rows and immutable V1-V18. Real PostgreSQL first reproduced the V18 rejection, then verified new policy persistence, completion and attempt archival with V19. Existing clean and older-schema upgrade preservation checks pass with latest version 19. Normal Flyway startup applies this migration before Hibernate validation; no cloud or user application database was manually changed. Deploy the matching Order/common binary before using the new policy.

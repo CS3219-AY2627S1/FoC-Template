@@ -8,7 +8,7 @@
 "use client"
 
 import Image from "next/image"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CheckCircle2Icon, LoaderCircleIcon, XIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -21,15 +21,18 @@ import { Textarea } from "@/components/ui/textarea"
 import { useApi } from "@/hooks/use-api"
 import type { Order } from "@/lib/orders"
 import { ApiError } from "@/lib/api"
-import { associatedOrderLabel, REPORT_CATEGORIES, reportCategoryRequiresOrder, validReportCategory, type AssociatedOrderPage, type ReportCategory, type ReportResponse } from "@/lib/reporting"
+import { associatedOrderLabel, REPORT_CATEGORIES, reportCategoryRequiresOrder, validReportCategory, type AssociatedOrderPage, type ReportCategory, type ReportResponse, type ReportSubmissionResponse } from "@/lib/reporting"
 
 const MAX_FILES = 5
 const MAX_FILE_BYTES = 5 * 1024 * 1024
 const TYPES = new Set(["image/jpeg", "image/png", "image/webp"])
+const SUBMISSION_KEY = "foc.reportSubmission.v1"
 
 type Preview = { file: File; url: string }
+type SavedSubmission = { submissionId: string; category: ReportCategory; description: string; orderId: string; files?: Array<{ name: string; size: number; type: string }> }
+type SubmissionStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">
 
-export function ReportForm({ initialCategory, initialOrderId, onSubmitted }: { initialCategory: ReportCategory; initialOrderId?: string; onSubmitted?: (report: ReportResponse) => void }) {
+export function ReportForm({ initialCategory, initialOrderId, onSubmitted, submissionStorage }: { initialCategory: ReportCategory; initialOrderId?: string; onSubmitted?: (report: ReportResponse) => void; submissionStorage?: SubmissionStorage }) {
   const api = useApi()
   const inputRef = useRef<HTMLInputElement>(null)
   const photosRef = useRef<Preview[]>([])
@@ -43,6 +46,11 @@ export function ReportForm({ initialCategory, initialOrderId, onSubmitted }: { i
   const [formError, setFormError] = useState("")
   const [successId, setSuccessId] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [submissionId, setSubmissionId] = useState("")
+  const [locked, setLocked] = useState(false)
+  const [submissionState, setSubmissionState] = useState<ReportSubmissionResponse["state"] | "">("")
+  const [expectedFiles, setExpectedFiles] = useState<Array<{ name: string; size: number; type: string }>>([])
+  const [needsFiles, setNeedsFiles] = useState(false)
   const required = reportCategoryRequiresOrder(category)
 
   useEffect(() => {
@@ -80,14 +88,72 @@ export function ReportForm({ initialCategory, initialOrderId, onSubmitted }: { i
   useEffect(() => { photosRef.current = photos }, [photos])
   useEffect(() => () => photosRef.current.forEach(photo => URL.revokeObjectURL(photo.url)), [])
 
+  useEffect(() => {
+    let saved: SavedSubmission | null = null
+    try {
+      const raw = (submissionStorage ?? window.sessionStorage).getItem(SUBMISSION_KEY)
+      if (raw) saved = JSON.parse(raw) as SavedSubmission
+    } catch { return }
+    if (!saved?.submissionId) return
+    const restored = saved
+    const timer = window.setTimeout(() => {
+      setSubmissionId(restored.submissionId); setCategory(restored.category); setDescription(restored.description)
+      setOrderId(restored.orderId); setLocked(true); setExpectedFiles(restored.files ?? [])
+      setNeedsFiles((restored.files?.length ?? 0) > 0)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [submissionStorage])
+
+  const finish = useCallback((report: ReportResponse) => {
+    try { (submissionStorage ?? window.sessionStorage).removeItem(SUBMISSION_KEY) } catch { /* completion is already durable */ }
+    setSuccessId(report.id); onSubmitted?.(report)
+    photosRef.current.forEach(photo => URL.revokeObjectURL(photo.url))
+    setDescription(""); setOrderId(""); setPhotos([]); setSubmissionId(""); setLocked(false); setSubmissionState("")
+  }, [onSubmitted, submissionStorage])
+
+  useEffect(() => {
+    if (!submissionId || !locked || submitting) return
+    let active = true
+    async function refresh() {
+      try {
+        const status = await api<ReportSubmissionResponse>(`/api/reports/submissions/${submissionId}`)
+        if (!active) return
+        setSubmissionState(status.state)
+        if (status.state !== "RECEIVED") setNeedsFiles(false)
+        if (status.state === "COMPLETED" && status.report) finish(status.report)
+        else if (["REJECTED", "COMPENSATED"].includes(status.state)) {
+          try { (submissionStorage ?? window.sessionStorage).removeItem(SUBMISSION_KEY) } catch { /* terminal server state still wins */ }
+          setSubmissionId(""); setLocked(false)
+          setFormError(status.lastError || "The previous submission did not complete. You can start a new report.")
+        } else if (status.state === "RECONCILIATION_REQUIRED") {
+          setFormError("This submission needs support review. Its order reservation has been retained safely.")
+        }
+      } catch { /* keep the stable local submission for a later retry */ }
+    }
+    void refresh()
+    const timer = window.setInterval(refresh, 5000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [api, finish, locked, submissionId, submissionStorage, submitting])
+
   const selectableOrders = useMemo(() => category === "COURIER" ? orders.filter(order => !!order.courierId) : orders, [category, orders])
   const selectedOrder = useMemo(() => orders.find(order => order.id === orderId), [orders, orderId])
   const orderItems = useMemo(() => Object.fromEntries(selectableOrders.map(order => [order.id, associatedOrderLabel(order)])), [selectableOrders])
 
   function addPhotos(files: FileList | null) {
+    if (locked && !needsFiles) return
     if (!files) return
     setFormError("")
     const incoming = Array.from(files)
+    if (needsFiles) {
+      const matches = incoming.length === expectedFiles.length && incoming.every((file, index) => {
+        const expected = expectedFiles[index]
+        return file.name === expected.name && file.size === expected.size && file.type === expected.type
+      })
+      if (!matches) return setFormError("Select the same evidence files, in the same order, to resume this submission.")
+      photos.forEach(photo => URL.revokeObjectURL(photo.url))
+      setPhotos(incoming.map(file => ({ file, url: URL.createObjectURL(file) }))); setNeedsFiles(false)
+      return
+    }
     if (photos.length + incoming.length > MAX_FILES) {
       setFormError("You can attach up to five photos.")
       return
@@ -102,6 +168,7 @@ export function ReportForm({ initialCategory, initialOrderId, onSubmitted }: { i
   }
 
   function removePhoto(index: number) {
+    if (locked) return
     setPhotos(current => current.filter((photo, currentIndex) => {
       if (currentIndex === index) URL.revokeObjectURL(photo.url)
       return currentIndex !== index
@@ -116,20 +183,47 @@ export function ReportForm({ initialCategory, initialOrderId, onSubmitted }: { i
     if (!description.trim()) return setFormError("Describe what happened.")
     if (required && !orderId) return setFormError("Select an associated order for this category.")
     if (required && selectedOrder?.isCompletionHold) return setFormError("This order has an active report. Please resolve it before proceeding.")
-    setSubmitting(true)
+    if (needsFiles) return setFormError("Select the same evidence files to resume this submission.")
+    let stableId = submissionId
+    try {
+      if (!stableId) stableId = crypto.randomUUID()
+      const files = photos.map(photo => ({ name: photo.file.name, size: photo.file.size, type: photo.file.type }))
+      const storage = submissionStorage ?? window.sessionStorage
+      storage.setItem(SUBMISSION_KEY, JSON.stringify({ submissionId: stableId, category, description: description.trim(), orderId: orderId || "", files }))
+      setExpectedFiles(files)
+    } catch {
+      return setFormError("This browser cannot safely retain a report retry. Enable session storage and try again.")
+    }
+    setSubmissionId(stableId); setLocked(true); setSubmitting(true)
     try {
       const body = new FormData()
-      body.append("report", new Blob([JSON.stringify({ category, description: description.trim(), orderId: orderId || null })], { type: "application/json" }))
+      body.append("report", new Blob([JSON.stringify({ submissionId: stableId, category, description: description.trim(), orderId: orderId || null })], { type: "application/json" }))
       photos.forEach(photo => body.append("photos", photo.file))
-      const result = await api<ReportResponse>("/api/reports", { method: "POST", body })
-      setSuccessId(result.id)
-      onSubmitted?.(result)
-      photos.forEach(photo => URL.revokeObjectURL(photo.url))
-      setDescription("")
-      setOrderId("")
-      setPhotos([])
+      const path = submissionId ? `/api/reports/submissions/${stableId}/resume` : "/api/reports"
+      const result = await api<ReportSubmissionResponse | ReportResponse>(path, { method: "POST", body })
+      if (!("state" in result)) finish(result)
+      else {
+      setSubmissionState(result.state)
+      if (result.state === "COMPLETED" && result.report) finish(result.report)
+      else setFormError(result.state === "RECONCILIATION_REQUIRED"
+        ? "This submission needs support review. Its order reservation has been retained safely."
+        : result.state === "COMPENSATING"
+          ? "Your submission is saved and is being safely rolled back. You can retry this status check later."
+          : "Your submission is durably saved and still processing. Retry or check its status shortly.")
+      }
     } catch (error) {
-      setFormError(error instanceof ApiError ? error.message : "The report could not be submitted. Your form has been kept so you can retry.")
+      setSubmissionState("RECEIVED")
+      if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+        try {
+          await api<ReportSubmissionResponse>(`/api/reports/submissions/${stableId}`)
+        } catch (statusError) {
+          if (statusError instanceof ApiError && statusError.status === 404) {
+            try { (submissionStorage ?? window.sessionStorage).removeItem(SUBMISSION_KEY) } catch { /* storage is already unavailable */ }
+            setSubmissionId(""); setLocked(false); setSubmissionState("")
+          }
+        }
+      }
+      setFormError(error instanceof ApiError ? error.message : "The report request was interrupted. Your stable submission ID has been kept for retry.")
     } finally {
       setSubmitting(false)
     }
@@ -143,7 +237,7 @@ export function ReportForm({ initialCategory, initialOrderId, onSubmitted }: { i
             <FieldGroup>
               <Field>
                 <FieldLabel htmlFor="report-category">Category (required)</FieldLabel>
-                <Select items={REPORT_CATEGORIES} value={category} onValueChange={value => {
+                <Select items={REPORT_CATEGORIES} value={category} disabled={locked} onValueChange={value => {
                   const next = value as ReportCategory
                   setCategory(next)
                   setOrderId("")
@@ -156,7 +250,7 @@ export function ReportForm({ initialCategory, initialOrderId, onSubmitted }: { i
 
               {required && <Field>
                 <FieldLabel htmlFor="report-order">Associated order (required)</FieldLabel>
-                <Select items={orderItems} value={orderId || null} onValueChange={value => setOrderId(value ?? "")} disabled={ordersLoading || !!ordersError}>
+                <Select items={orderItems} value={orderId || null} onValueChange={value => setOrderId(value ?? "")} disabled={locked || ordersLoading || !!ordersError}>
                   <SelectTrigger id="report-order" className="w-full" aria-label="Associated order"><SelectValue placeholder={ordersLoading ? "Loading associated orders..." : "Select an order"} /></SelectTrigger>
                   <SelectContent>{selectableOrders.map(order => <SelectItem key={order.id} value={order.id}>{associatedOrderLabel(order)}</SelectItem>)}</SelectContent>
                 </Select>
@@ -167,14 +261,15 @@ export function ReportForm({ initialCategory, initialOrderId, onSubmitted }: { i
 
               <Field>
                 <FieldLabel htmlFor="report-description">Description (required)</FieldLabel>
-                <Textarea id="report-description" value={description} onChange={event => setDescription(event.target.value)} maxLength={2000} rows={7} placeholder="What happened, when did it happen, and what outcome do you need?" required />
+                <Textarea id="report-description" value={description} onChange={event => setDescription(event.target.value)} disabled={locked} maxLength={2000} rows={7} placeholder="What happened, when did it happen, and what outcome do you need?" required />
                 <FieldDescription>{description.length}/2000 characters</FieldDescription>
               </Field>
 
               <Field>
                 <FieldLabel htmlFor="report-photos">Photos</FieldLabel>
-                <Input ref={inputRef} id="report-photos" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={event => addPhotos(event.target.files)} disabled={photos.length >= MAX_FILES} />
+                <Input ref={inputRef} id="report-photos" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={event => addPhotos(event.target.files)} disabled={(locked && !needsFiles) || photos.length >= MAX_FILES} />
                 <FieldDescription>Up to five JPEG, PNG, or WebP files, 5 MiB each.</FieldDescription>
+                {needsFiles && <FieldDescription>Select the same files in the same order to resume safely.</FieldDescription>}
                 {photos.length > 0 && <div className="grid grid-cols-2 gap-3 sm:grid-cols-3" aria-label="Photo previews">
                   {photos.map((photo, index) => <div key={`${photo.file.name}-${photo.file.lastModified}-${index}`} className="relative overflow-hidden rounded-lg border bg-muted">
                     <Image src={photo.url} alt={`Preview of ${photo.file.name}`} width={240} height={160} unoptimized className="h-28 w-full object-cover" />
@@ -187,8 +282,9 @@ export function ReportForm({ initialCategory, initialOrderId, onSubmitted }: { i
 
             {formError && <Alert variant="destructive"><AlertTitle>{formError}</AlertTitle>{formError.includes("active report") && <AlertDescription><a className="underline underline-offset-4" href="/reporting?tab=against-me">View reports against me and reply</a></AlertDescription>}</Alert>}
             {successId && <Alert><CheckCircle2Icon /><AlertTitle>Report submitted</AlertTitle><AlertDescription>Reference: {successId}</AlertDescription></Alert>}
-            <Button type="submit" className="w-full sm:w-auto" disabled={submitting || (required && ordersLoading)}>
-              {submitting ? <><LoaderCircleIcon className="animate-spin" />Submitting…</> : "Submit report"}
+            {locked && submissionState && <p className="text-sm text-muted-foreground">Saved submission status: {submissionState.replaceAll("_", " ").toLowerCase()}. Inactive pre-hold submissions expire after one hour.</p>}
+            <Button type="submit" className="w-full sm:w-auto" disabled={submitting || (required && ordersLoading) || submissionState === "COMPENSATING" || submissionState === "RECONCILIATION_REQUIRED"}>
+              {submitting ? <><LoaderCircleIcon className="animate-spin" />Submitting…</> : locked ? "Retry submission" : "Submit report"}
             </Button>
           </form>
         </CardContent>

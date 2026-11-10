@@ -192,16 +192,17 @@ describe("Reports", () => {
     expect(sessionStorage.getItem("report-resolution:courier:report-1")).toContain("Reviewed")
   })
   it("does not send an unrecoverable mutation when browser storage is unavailable", async () => {
-    const storage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("Storage unavailable") })
-    try {
-      render(<AdminReportsPage reportId="report-1" />)
-      fireEvent.click(await screen.findByRole("button", { name: "Mark report resolved" }))
-      fireEvent.change(screen.getByLabelText("Admin reply"), { target: { value: "Reviewed" } })
-      fireEvent.click(screen.getByRole("button", { name: "Confirm resolved" }))
-      expect(await screen.findByText(/Allow site storage/)).toBeInTheDocument()
-      expect(mocks.resolve).not.toHaveBeenCalled()
-      expect(screen.getByRole("button", { name: "Retry same request" })).toBeEnabled()
-    } finally { storage.mockRestore() }
+    const unavailable = {
+      getItem: vi.fn(() => null), removeItem: vi.fn(),
+      setItem: vi.fn(() => { throw new Error("Storage unavailable") }),
+    }
+    render(<AdminReportsPage reportId="report-1" resolutionStorage={unavailable} />)
+    fireEvent.click(await screen.findByRole("button", { name: "Mark report resolved" }))
+    fireEvent.change(screen.getByLabelText("Admin reply"), { target: { value: "Reviewed" } })
+    fireEvent.click(screen.getByRole("button", { name: "Confirm resolved" }))
+    expect(await screen.findByText(/Allow site storage/)).toBeInTheDocument()
+    expect(mocks.resolve).not.toHaveBeenCalled()
+    expect(screen.getByRole("button", { name: "Retry same request" })).toBeEnabled()
   })
   it("keeps a completed-order credit report out of Order command recovery", async () => {
     mocks.detail.mockResolvedValue({ ...report, violationCategory: "CREDITS", status: "READY_FOR_REVIEW", courierId: null,

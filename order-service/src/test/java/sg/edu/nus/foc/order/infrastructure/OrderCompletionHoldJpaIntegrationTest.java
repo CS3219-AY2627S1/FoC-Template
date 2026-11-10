@@ -8,7 +8,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ExecutionException;
@@ -26,6 +28,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -40,6 +43,8 @@ import sg.edu.nus.foc.order.domain.OrderProblem;
 import sg.edu.nus.foc.order.domain.OrderStatus;
 import sg.edu.nus.foc.order.messagingpublisher.interfaces.IOpenOrderRefundTaskPublisher;
 import sg.edu.nus.foc.order.messagingpublisher.interfaces.IOrderCompletionTaskPublisher;
+import sg.edu.nus.foc.order.application.reportcreation.ReportCreationLifecycle;
+import sg.edu.nus.foc.order.application.reportcreation.ReportCreationMessages;
 
 @SpringBootTest(properties = {
         "spring.profiles.active=local", "order.lifecycle.cron=-", "order.messaging.outbox.recovery-cron=-"
@@ -69,6 +74,8 @@ class OrderCompletionHoldJpaIntegrationTest {
     @Autowired private OrderTransitionService transitions;
     @Autowired private LifecycleProcessingService lifecycle;
     @Autowired private PlatformTransactionManager transactions;
+    @Autowired private JdbcTemplate jdbc;
+    @Autowired private ReportCreationLifecycle reportCreations;
 
     @MockitoSpyBean private OrderCompletionHoldPersistenceAdapter holdAdapter;
     @MockitoSpyBean private OrderEventOutboxPersistenceAdapter penaltyOutboxAdapter;
@@ -81,12 +88,64 @@ class OrderCompletionHoldJpaIntegrationTest {
 
     @BeforeEach
     void clearIsolatedDatabase() {
+        jdbc.update("delete from order_report_creation_compensations");
+        jdbc.update("delete from order_report_creation_lifecycles");
         outbox.deleteAll();
         receipts.deleteAll();
         holds.deleteAll();
         checkpoints.deleteAll();
         penaltyOutcomes.deleteAll();
         orders.deleteAll();
+    }
+
+    @Test
+    void creationCompensationBeforePlacementPersistsTombstoneAndBlocksLateHold() {
+        Order order = delivered();
+        String submission = UUID.randomUUID().toString();
+        String report = "creation-before-placement";
+        var request = creationCompensation(submission, report, order.getId(), "owner");
+
+        assertEquals("NOT_FOUND", reportCreations.compensate(request).outcome());
+        assertThrows(OrderProblem.class, () -> holdService.placeActive(order.getId(), report, submission,
+                "owner", false, null, "REQUESTER"));
+        assertFalse(holds.existsById(report));
+        assertFalse(orders.findById(order.getId()).orElseThrow().isCompletionHold());
+    }
+
+    @Test
+    void placementThenCompensationReleasesExactlyOnceAndDuplicateReplaysResult() {
+        Order order = delivered();
+        String submission = UUID.randomUUID().toString();
+        String report = "creation-after-placement";
+        holdService.placeActive(order.getId(), report, submission, "owner", false, null, "REQUESTER");
+        var request = creationCompensation(submission, report, order.getId(), "owner");
+
+        var first = reportCreations.compensate(request);
+        assertEquals("RELEASED", first.outcome());
+        assertEquals(first, reportCreations.compensate(request));
+        assertFalse(orders.findById(order.getId()).orElseThrow().isCompletionHold());
+        assertThrows(OrderProblem.class, () -> holdService.placeActive(order.getId(), report, submission,
+                "owner", false, null, "REQUESTER"));
+    }
+
+    @Test
+    void bindingMismatchNeverReleasesExistingCreationHold() {
+        Order order = delivered();
+        String submission = UUID.randomUUID().toString();
+        String report = "creation-binding";
+        holdService.placeActive(order.getId(), report, submission, "owner", false, null, "REQUESTER");
+        var wrong = creationCompensation(UUID.randomUUID().toString(), report, order.getId(), "owner");
+
+        assertEquals("BINDING_MISMATCH", reportCreations.compensate(wrong).outcome());
+        assertTrue(orders.findById(order.getId()).orElseThrow().isCompletionHold());
+        assertFalse(holds.findById(report).orElseThrow().getReleasedAt() != null);
+    }
+
+    private static ReportCreationMessages.Compensation creationCompensation(
+            String submission, String report, String order, String reporter) {
+        String event = UUID.nameUUIDFromBytes(("ReportCreationCompensationRequested:" + submission)
+                .getBytes(StandardCharsets.UTF_8)).toString();
+        return new ReportCreationMessages.Compensation(event, submission, report, order, reporter, 2);
     }
 
     @Test

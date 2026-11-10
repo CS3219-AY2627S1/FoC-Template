@@ -19,6 +19,7 @@ import sg.edu.nus.foc.order.domain.OrderProblem;
 import sg.edu.nus.foc.order.security.annotation.RequireOrderRole;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.beans.factory.annotation.Value;
 
 @RestController
 @RequestMapping("/api/orders/mine/active")
@@ -30,6 +31,8 @@ public class OrderCompletionHoldController {
     private final OrderCompletionHoldService holds;
     private final OrderQueryService queries;
     private final OrderMapper mapper;
+    @Value("${order.reports.creation.enabled:false}")
+    private boolean reportCreationEnabled;
 
     @GetMapping
     @Operation(summary = "List the authenticated participant's reportable orders", description = "mode=requester (default) lists owned Orders; mode=courier lists currently assigned errands; mode=participant lists both without duplicates. The matching verified role is required. SQL filters ownership/status before pagination: ACCEPTED, IN_PROGRESS, PICKED_UP and DELIVERED only; OPEN and terminal orders are excluded. Caller comes only from the validated token.")
@@ -66,10 +69,13 @@ public class OrderCompletionHoldController {
     public ActiveReportHoldResponse place(@PathVariable String orderId, @PathVariable String reportId,
             @Valid @RequestBody PlaceCompletionHoldRequest request, Principal principal,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
+        if (!reportCreationEnabled) {
+            throw new OrderProblem("SERVICE_UNAVAILABLE", "Durable report creation is not enabled.");
+        }
         requireRole(request.getReporterRole());
         return mapper.toActiveHoldResponse(!"REQUESTER".equals(request.getReporterRole())
-                ? holds.placeActive(orderId, reportId, caller(principal), request.getRequireAssignedCourier(), authorization, request.getReporterRole())
-                : holds.placeActive(orderId, reportId, caller(principal), request.getRequireAssignedCourier(), authorization), reportId);
+                ? holds.placeActive(orderId,reportId,request.getSubmissionId(),caller(principal),request.getRequireAssignedCourier(),authorization,request.getReporterRole())
+                : holds.placeActive(orderId,reportId,request.getSubmissionId(),caller(principal),request.getRequireAssignedCourier(),authorization,"REQUESTER"), reportId);
     }
 
     private void requireRole(String role) {

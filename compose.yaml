@@ -328,6 +328,10 @@ services:
       ORDER_COMPENSATION_PUSH_MODE: emulator
       # Both Report and Order use the real local resolution saga and private emulator.
       ORDER_REPORT_RESOLUTION_ENABLED: "true"
+      ORDER_REPORT_CREATION_ENABLED: "true"
+      REPORT_CREATION_COMPENSATION_RESULT_TOPIC: report-creation-compensation-result-local-v1
+      ORDER_REPORT_CREATION_COMPENSATION_SUBSCRIPTION: projects/demo-foc-local/subscriptions/order-report-creation-compensation-local
+      ORDER_REPORT_CREATION_PUSH_MODE: emulator
       REPORT_SERVICE_URL: http://reporting-service:8080
       ORDER_REPORT_RESOLUTION_TIMEOUT: 5s
       ORDER_REPORT_COMPENSATION_TOPIC: report-resolution-compensation-local-v1
@@ -376,6 +380,11 @@ services:
       # Outer request must outlast Order's inner Report call and final local commit.
       ORDER_SERVICE_TIMEOUT: 20s
       REPORT_RESOLUTION_ENABLED: "true"
+      REPORT_CREATION_ENABLED: "true"
+      REPORT_CREATION_HOLD_LEASE: 2m
+      REPORT_CREATION_COMPENSATION_TOPIC: report-creation-compensation-local-v1
+      REPORT_CREATION_COMPENSATION_RESULT_SUBSCRIPTION: projects/demo-foc-local/subscriptions/report-creation-compensation-result-local
+      REPORT_CREATION_RESULT_PUSH_MODE: emulator
       REPORT_PUBSUB_PROJECT_ID: demo-foc-local
       PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
       REPORT_RESOLUTION_RESULT_TOPIC: report-resolution-compensation-result-local-v1

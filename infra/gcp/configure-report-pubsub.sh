@@ -17,6 +17,7 @@ source "$ROOT/infra/environments/$environment.env"
 gc() { gcloud --project "$PROJECT_ID" --quiet "$@"; }
 exists() { "$@" >/dev/null 2>&1; }
 runtime="foc-reporting-service@$PROJECT_ID.iam.gserviceaccount.com"
+order_runtime="foc-order-service@$PROJECT_ID.iam.gserviceaccount.com"
 agent="serviceAccount:service-$PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com"
 report_url="https://reporting-service-$environment-$PROJECT_NUMBER.$REGION.run.app"
 order_url="https://order-service-$environment-$PROJECT_NUMBER.$REGION.run.app"
@@ -24,6 +25,8 @@ suffix=dev
 [[ $environment != production ]] || suffix=prod
 dlq="report-resolution-dead-letter-$suffix-v1"
 recovery="$dlq-recovery"
+creation_request_schema="report-creation-compensation-request-v1"
+creation_result_schema="report-creation-compensation-result-v1"
 
 ensure_subscription_topic() {
   local subscription=$1 topic=$2 actual
@@ -38,6 +41,8 @@ ensure_subscription_topic() {
 # Preflight bindings BEFORE cloud mutation. Topics already created by the owner are reused.
 ensure_subscription_topic "$REPORT_RESOLUTION_REQUEST_SUBSCRIPTION" "$ORDER_REPORT_COMPENSATION_TOPIC"
 ensure_subscription_topic "$ORDER_REPORT_COMPENSATION_RESULT_SUBSCRIPTION" "$REPORT_COMPENSATION_RESULT_TOPIC"
+ensure_subscription_topic "$ORDER_REPORT_CREATION_COMPENSATION_SUBSCRIPTION" "$REPORT_CREATION_COMPENSATION_TOPIC"
+ensure_subscription_topic "$REPORT_CREATION_COMPENSATION_RESULT_SUBSCRIPTION" "$REPORT_CREATION_COMPENSATION_RESULT_TOPIC"
 ensure_subscription_topic "$recovery" "$dlq"
 if [[ $phase == wire ]]; then
   # A missing service must not leave a half-wired subscription. prepare can run before deployment.
@@ -46,21 +51,38 @@ if [[ $phase == wire ]]; then
   done
 fi
 
-gc services enable pubsub.googleapis.com iamcredentials.googleapis.com
+gc services enable pubsub.googleapis.com iamcredentials.googleapis.com cloudscheduler.googleapis.com
 gc beta services identity create --service=pubsub.googleapis.com >/dev/null
+if ! exists gc pubsub schemas describe "$creation_request_schema"; then
+  gc pubsub schemas create "$creation_request_schema" --type=avro \
+    --definition-file "$ROOT/infra/pubsub-schemas/report-creation-compensation-request-v1.avsc"
+fi
+if ! exists gc pubsub schemas describe "$creation_result_schema"; then
+  gc pubsub schemas create "$creation_result_schema" --type=avro \
+    --definition-file "$ROOT/infra/pubsub-schemas/report-creation-compensation-result-v1.avsc"
+fi
 if ! exists gc iam service-accounts describe "$runtime"; then
   gc iam service-accounts create foc-reporting-service --display-name "FoC reporting-service (Cloud Run runtime)"
 fi
 gc iam service-accounts add-iam-policy-binding "$runtime" \
   --member "serviceAccount:$DEPLOYER_SA" --role roles/iam.serviceAccountUser >/dev/null
 
-for topic in "$ORDER_REPORT_COMPENSATION_TOPIC" "$REPORT_COMPENSATION_RESULT_TOPIC"; do
+for topic in "$ORDER_REPORT_COMPENSATION_TOPIC" "$REPORT_COMPENSATION_RESULT_TOPIC" \
+  "$REPORT_CREATION_COMPENSATION_TOPIC" "$REPORT_CREATION_COMPENSATION_RESULT_TOPIC"; do
   exists gc pubsub topics describe "$topic" ||
     gc pubsub topics create "$topic" --labels "service=reporting-service,environment=$environment"
 done
+gc pubsub topics update "$REPORT_CREATION_COMPENSATION_TOPIC" \
+  --schema "$creation_request_schema" --message-encoding json >/dev/null
+gc pubsub topics update "$REPORT_CREATION_COMPENSATION_RESULT_TOPIC" \
+  --schema "$creation_result_schema" --message-encoding json >/dev/null
 # Order already has Publisher. Preserve its policy; Report needs only its result topic.
 gc pubsub topics add-iam-policy-binding "$REPORT_COMPENSATION_RESULT_TOPIC" \
   --member "serviceAccount:$runtime" --role roles/pubsub.publisher >/dev/null
+gc pubsub topics add-iam-policy-binding "$REPORT_CREATION_COMPENSATION_TOPIC" \
+  --member "serviceAccount:$runtime" --role roles/pubsub.publisher >/dev/null
+gc pubsub topics add-iam-policy-binding "$REPORT_CREATION_COMPENSATION_RESULT_TOPIC" \
+  --member "serviceAccount:$order_runtime" --role roles/pubsub.publisher >/dev/null
 for push in "$REPORT_RESOLUTION_PUSH_SERVICE_ACCOUNT" "$ORDER_REPORT_COMPENSATION_PUSH_SERVICE_ACCOUNT"; do
   if ! exists gc iam service-accounts describe "$push"; then
     gc iam service-accounts create "${push%%@*}" --display-name "FoC Report saga push ($environment)"
@@ -70,6 +92,11 @@ for push in "$REPORT_RESOLUTION_PUSH_SERVICE_ACCOUNT" "$ORDER_REPORT_COMPENSATIO
   gc iam service-accounts add-iam-policy-binding "$push" \
     --member "serviceAccount:$DEPLOYER_SA" --role roles/iam.serviceAccountUser >/dev/null
 done
+if ! exists gc iam service-accounts describe "$REPORT_CREATION_SCHEDULER_SERVICE_ACCOUNT"; then
+  gc iam service-accounts create "${REPORT_CREATION_SCHEDULER_SERVICE_ACCOUNT%%@*}" --display-name "FoC Report creation recovery ($environment)"
+fi
+gc iam service-accounts add-iam-policy-binding "$REPORT_CREATION_SCHEDULER_SERVICE_ACCOUNT" \
+  --member "serviceAccount:$DEPLOYER_SA" --role roles/iam.serviceAccountUser >/dev/null
 if [[ $phase == prepare ]]; then
   echo "Report saga identities/topics ready for $environment. Flags unchanged."
   echo "Run bootstrap.sh for Report Firestore/bucket access, deploy both backends with flags disabled, then run: $0 $environment wire"
@@ -78,6 +105,8 @@ fi
 
 gc run services add-iam-policy-binding "reporting-service-$environment" --region "$REGION" \
   --member "serviceAccount:$REPORT_RESOLUTION_PUSH_SERVICE_ACCOUNT" --role roles/run.invoker >/dev/null
+gc run services add-iam-policy-binding "reporting-service-$environment" --region "$REGION" \
+  --member "serviceAccount:$REPORT_CREATION_SCHEDULER_SERVICE_ACCOUNT" --role roles/run.invoker >/dev/null
 gc run services add-iam-policy-binding "order-service-$environment" --region "$REGION" \
   --member "serviceAccount:$ORDER_REPORT_COMPENSATION_PUSH_SERVICE_ACCOUNT" --role roles/run.invoker >/dev/null
 exists gc pubsub topics describe "$dlq" ||
@@ -106,4 +135,18 @@ wire_subscription "$REPORT_RESOLUTION_REQUEST_SUBSCRIPTION" "$ORDER_REPORT_COMPE
   "$report_url/api/reports/internal/order-resolution-compensations" "$REPORT_RESOLUTION_PUSH_SERVICE_ACCOUNT" "$report_url"
 wire_subscription "$ORDER_REPORT_COMPENSATION_RESULT_SUBSCRIPTION" "$REPORT_COMPENSATION_RESULT_TOPIC" \
   "$order_url/api/orders/internal/report-resolution-compensations" "$ORDER_REPORT_COMPENSATION_PUSH_SERVICE_ACCOUNT" "$order_url"
+wire_subscription "$ORDER_REPORT_CREATION_COMPENSATION_SUBSCRIPTION" "$REPORT_CREATION_COMPENSATION_TOPIC" \
+  "$order_url/api/orders/internal/report-creation-compensations" "$ORDER_REPORT_COMPENSATION_PUSH_SERVICE_ACCOUNT" "$order_url"
+wire_subscription "$REPORT_CREATION_COMPENSATION_RESULT_SUBSCRIPTION" "$REPORT_CREATION_COMPENSATION_RESULT_TOPIC" \
+  "$report_url/api/reports/internal/creation-compensation-results" "$REPORT_RESOLUTION_PUSH_SERVICE_ACCOUNT" "$report_url"
+job="report-creation-recovery-$environment"
+if exists gc scheduler jobs describe "$job" --location "$REGION"; then
+  gc scheduler jobs update http "$job" --location "$REGION" --schedule "* * * * *" \
+    --uri "$report_url/api/reports/internal/creation-recovery" --http-method POST \
+    --oidc-service-account-email "$REPORT_CREATION_SCHEDULER_SERVICE_ACCOUNT" --oidc-token-audience "$report_url"
+else
+  gc scheduler jobs create http "$job" --location "$REGION" --schedule "* * * * *" \
+    --uri "$report_url/api/reports/internal/creation-recovery" --http-method POST \
+    --oidc-service-account-email "$REPORT_CREATION_SCHEDULER_SERVICE_ACCOUNT" --oidc-token-audience "$report_url"
+fi
 echo "Report saga push configured for $environment. Flags unchanged; verify indexes, IAM and delivery before activation."

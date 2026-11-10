@@ -29,6 +29,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -40,6 +41,7 @@ import org.springframework.web.multipart.MultipartFile;
 import sg.edu.nus.foc.reporting.error.BadRequestException;
 import sg.edu.nus.foc.reporting.error.ForbiddenException;
 import sg.edu.nus.foc.reporting.report.ReportService;
+import sg.edu.nus.foc.reporting.report.ReportCreationCoordinator;
 import sg.edu.nus.foc.reporting.report.ReportStatus;
 import sg.edu.nus.foc.reporting.security.CallerRoles;
 
@@ -50,24 +52,66 @@ import sg.edu.nus.foc.reporting.security.CallerRoles;
 public class ReportController {
     private final ReportService reports;
     private final CallerRoles callerRoles;
-    public ReportController(ReportService reports, CallerRoles callerRoles) {
+    private final ReportCreationCoordinator creations;
+    public ReportController(ReportService reports, CallerRoles callerRoles, ReportCreationCoordinator creations) {
         this.reports = reports;
         this.callerRoles = callerRoles;
+        this.creations = creations;
     }
 
     @Operation(summary = "Submit a report with up to five photos")
     @ApiResponse(responseCode = "201", description = "Report created")
+    @ApiResponse(responseCode = "200", description = "Completed idempotent submission replayed")
     @ApiResponse(responseCode = "400", description = "Invalid report or photos")
     @ApiResponse(responseCode = "404", description = "Order association unavailable")
     @ApiResponse(responseCode = "409", description = "Required courier missing or report hold conflicts")
     @ApiResponse(responseCode = "503", description = "Order or storage dependency unavailable")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    ResponseEntity<ReportResponse> create(@Valid @RequestPart("report") CreateReportRequest request,
+    @ApiResponse(responseCode = "202", description = "Submission is durably compensating or awaiting recovery")
+    ResponseEntity<ReportSubmissionResponse> create(@Valid @RequestPart("report") CreateReportRequest request,
                                           @RequestPart(value = "photos", required = false) List<MultipartFile> photos,
                                           @AuthenticationPrincipal Jwt jwt) {
-        String bearer = "Bearer " + jwt.getTokenValue();
-        return ResponseEntity.status(HttpStatus.CREATED).body(ReportResponse.from(reports.submit(jwt.getSubject(), bearer,
-                request.category(), request.description(), request.orderId(), photos)));
+        return submit(request, photos, jwt);
+    }
+
+    @Operation(summary = "Resume an idempotent report submission with the same input")
+    @ApiResponse(responseCode = "200", description = "Previously completed report returned")
+    @ApiResponse(responseCode = "201", description = "Report completed by this request")
+    @ApiResponse(responseCode = "202", description = "Submission remains in compensation or recovery")
+    @ApiResponse(responseCode = "409", description = "Submission input differs or submission is terminally fenced")
+    @PostMapping(value="/submissions/{submissionId}/resume", consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
+    ResponseEntity<ReportSubmissionResponse> resume(@PathVariable String submissionId,
+            @Valid @RequestPart("report") CreateReportRequest request,
+            @RequestPart(value="photos",required=false) List<MultipartFile> photos,
+            @AuthenticationPrincipal Jwt jwt) {
+        if(!submissionId.equals(request.submissionId())) throw new BadRequestException("Submission path and body differ.","submissionId");
+        return submit(request,photos,jwt);
+    }
+
+    @Operation(summary = "Get the authenticated caller's report submission status")
+    @ApiResponse(responseCode = "200", description = "Current durable submission state")
+    @ApiResponse(responseCode = "403", description = "Submission belongs to another caller")
+    @ApiResponse(responseCode = "404", description = "Submission not found")
+    @GetMapping("/submissions/{submissionId}")
+    ReportSubmissionResponse submission(@PathVariable String submissionId,@AuthenticationPrincipal Jwt jwt){
+        return ReportSubmissionResponse.from(creations.status(submissionId,jwt.getSubject()));
+    }
+
+    @Operation(summary = "Cancel the authenticated caller's pre-hold report submission")
+    @ApiResponse(responseCode = "200", description = "Submission cancelled and pending order reservation released")
+    @ApiResponse(responseCode = "403", description = "Submission belongs to another caller")
+    @ApiResponse(responseCode = "404", description = "Submission not found")
+    @ApiResponse(responseCode = "409", description = "Submission has progressed beyond the cancellable states")
+    @DeleteMapping("/submissions/{submissionId}")
+    ReportSubmissionResponse cancelSubmission(@PathVariable String submissionId,@AuthenticationPrincipal Jwt jwt){
+        return ReportSubmissionResponse.from(creations.cancel(submissionId,jwt.getSubject()));
+    }
+
+    private ResponseEntity<ReportSubmissionResponse> submit(CreateReportRequest request,List<MultipartFile> photos,Jwt jwt){
+        var outcome=creations.submit(request.submissionId(),jwt.getSubject(),"Bearer "+jwt.getTokenValue(),
+                request.category(),request.description(),request.orderId(),photos);
+        HttpStatus status=outcome.completed()?(outcome.created()?HttpStatus.CREATED:HttpStatus.OK):HttpStatus.ACCEPTED;
+        return ResponseEntity.status(status).body(ReportSubmissionResponse.from(outcome));
     }
 
     PageResponse<ReportResponse> list(int page, int size) {

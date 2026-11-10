@@ -1,3 +1,12 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: OpenAI Codex (GPT-5), dates: 2026-11-10
+ * Mode: Code generation and testing assistance.
+ * Scope: Generated the report controller test cases from
+ * user-approved contracts.
+ * Author review: I reviewed for correctness.
+ */
+
 package sg.edu.nus.foc.reporting.api;
 
 import java.time.Instant;
@@ -17,7 +26,8 @@ import static org.mockito.Mockito.*;
 class ReportControllerTest {
     private final ReportService service = mock(ReportService.class);
     private final CallerRoles roles = mock(CallerRoles.class);
-    private final ReportController controller = new ReportController(service, roles);
+    private final ReportCreationCoordinator creations = mock(ReportCreationCoordinator.class);
+    private final ReportController controller = new ReportController(service, roles, creations);
     private final Jwt jwt = Jwt.withTokenValue("token").header("alg", "none").subject("u").build();
     private final Report report = new Report("r", "u", ReportCategory.GENERAL, "description", null, null,
             ReportStatus.READY_FOR_REVIEW, Instant.parse("2026-10-13T00:00:00Z"), null, null, null,
@@ -25,8 +35,13 @@ class ReportControllerTest {
             Instant.parse("2026-10-13T00:00:00Z"))), List.of());
 
     @Test void createsListsViewsRespondsAndResolvesReports() {
-        when(service.submit(eq("u"), eq("Bearer token"), any(), any(), isNull(), isNull())).thenReturn(report);
-        var created = controller.create(new CreateReportRequest(ReportCategory.GENERAL, "description", null), null, jwt);
+        String submissionId="11111111-1111-4111-8111-111111111111";
+        var submission=new ReportSubmission(submissionId,"r","u","hash",ReportCategory.GENERAL,null,
+                "description",List.of(),ReportSubmissionState.COMPLETED,false,2,0,null,null,null,null,null,null,
+                report.createdAt(),report.createdAt());
+        when(creations.submit(eq(submissionId),eq("u"),eq("Bearer token"),any(),any(),isNull(),isNull()))
+                .thenReturn(new ReportCreationCoordinator.Outcome(submission,report,true));
+        var created = controller.create(new CreateReportRequest(submissionId,ReportCategory.GENERAL, "description", null), null, jwt);
         assertEquals(HttpStatus.CREATED, created.getStatusCode());
 
         when(service.list(1, 20)).thenReturn(new PageResult<>(List.of(report), 1, 20, 1, 1));
@@ -54,6 +69,46 @@ class ReportControllerTest {
         verify(service).awaitingResponseCount("u");
     }
 
+    @Test void resumesAndExposesEveryDurableSubmissionOutcome() {
+        String submissionId = "11111111-1111-4111-8111-111111111111";
+        var request = new CreateReportRequest(submissionId, ReportCategory.GENERAL, "description", null);
+        var completed = submission(submissionId, ReportSubmissionState.COMPLETED, "r");
+        var pending = submission(submissionId, ReportSubmissionState.HOLD_PENDING, null);
+
+        assertThrows(sg.edu.nus.foc.reporting.error.BadRequestException.class, () ->
+                controller.resume("22222222-2222-4222-8222-222222222222", request, null, jwt));
+
+        when(creations.submit(eq(submissionId), eq("u"), eq("Bearer token"), any(), any(), isNull(), isNull()))
+                .thenReturn(new ReportCreationCoordinator.Outcome(completed, report, false));
+        assertEquals(HttpStatus.OK, controller.resume(submissionId, request, null, jwt).getStatusCode());
+
+        when(creations.submit(eq(submissionId), eq("u"), eq("Bearer token"), any(), any(), isNull(), isNull()))
+                .thenReturn(new ReportCreationCoordinator.Outcome(pending, null, false));
+        var accepted = controller.resume(submissionId, request, null, jwt);
+        assertEquals(HttpStatus.ACCEPTED, accepted.getStatusCode());
+        assertNull(accepted.getBody().report());
+
+        when(creations.status(submissionId, "u"))
+                .thenReturn(new ReportCreationCoordinator.Outcome(pending, null, false));
+        assertEquals(ReportSubmissionState.HOLD_PENDING,
+                controller.submission(submissionId, jwt).state());
+
+        when(creations.cancel(submissionId, "u"))
+                .thenReturn(new ReportCreationCoordinator.Outcome(pending, null, false));
+        assertEquals(submissionId, controller.cancelSubmission(submissionId, jwt).submissionId());
+    }
+
+    @Test void listsReportsWithAdminFilters() {
+        when(service.list(2, 10, "order-1", ReportStatus.READY_FOR_REVIEW))
+                .thenReturn(new PageResult<>(List.of(report), 2, 10, 11, 2));
+
+        var page = controller.listFiltered(2, 10, "order-1", ReportStatus.READY_FOR_REVIEW);
+
+        assertEquals(1, page.items().size());
+        assertEquals(11, page.totalItems());
+        verify(service).list(2, 10, "order-1", ReportStatus.READY_FOR_REVIEW);
+    }
+
     @Test void streamsPrivateAttachmentsAndRejectsReopening() {
         Authentication authentication = mock(Authentication.class);
         when(service.attachment("r", "a", "u", false)).thenReturn(
@@ -79,5 +134,11 @@ class ReportControllerTest {
 
         when(roles.isAdmin(authentication)).thenReturn(false);
         assertThrows(ForbiddenException.class, () -> controller.detail("r", jwt, authentication));
+    }
+
+    private ReportSubmission submission(String submissionId, ReportSubmissionState state, String reportId) {
+        return new ReportSubmission(submissionId, reportId, "u", "hash", ReportCategory.GENERAL, null,
+                "description", List.of(), state, false, 2, 0, null, null, null, null, null, null,
+                report.createdAt(), report.createdAt());
     }
 }

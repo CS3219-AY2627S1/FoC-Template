@@ -225,7 +225,7 @@ class OrderCompensationPostgresIntegrationTest {
                 .schemas(schema).defaultSchema(schema).load();
         flyway.migrate();
         // V16 is additive: upgrading must not delegate legacy user-authorized commands.
-        assertEquals("19", flyway.info().current().getVersion().toString());
+        assertEquals("20", flyway.info().current().getVersion().toString());
         assertFalse(Boolean.TRUE.equals(jdbc.queryForObject("select automatic_execution from " + schema
                 + ".order_commands where command_id=?", Boolean.class, k)));
         assertEquals("RETRY", jdbc.queryForObject("select recovery_policy from " + schema + ".order_commands where command_id=?", String.class, k));

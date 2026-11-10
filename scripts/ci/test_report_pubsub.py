@@ -32,6 +32,12 @@ elif a[:3] == ['pubsub', 'topics', 'describe']:
     result = 0 if a[3] in d['topics'] else 1
 elif a[:3] == ['pubsub', 'topics', 'create']:
     d['topics'].append(a[3])
+elif a[:3] == ['pubsub', 'topics', 'update']:
+    d.setdefault('topic_updates', {})[a[3]] = a
+elif a[:3] == ['pubsub', 'schemas', 'describe']:
+    result = 0 if a[3] in d.setdefault('schemas', []) else 1
+elif a[:3] == ['pubsub', 'schemas', 'create']:
+    d.setdefault('schemas', []).append(a[3])
 elif a[:3] == ['pubsub', 'subscriptions', 'describe']:
     result = 0 if a[3] in d['subscriptions'] else 1
     if not result: print('projects/protean-vigil-509704-q4/topics/' + d['subscriptions'][a[3]]['topic'])
@@ -42,6 +48,12 @@ elif a[:3] == ['pubsub', 'subscriptions', 'modify-push-config']:
     d['subscriptions'][a[3]]['push'] = a
 elif a[:3] == ['run', 'services', 'describe']:
     result = 1 if d.get('missing_service') == a[3] else 0
+elif a[:3] == ['scheduler', 'jobs', 'describe']:
+    result = 0 if a[3] in d.setdefault('jobs', {}) else 1
+elif a[:4] == ['scheduler', 'jobs', 'create', 'http']:
+    d.setdefault('jobs', {})[a[4]] = a
+elif a[:4] == ['scheduler', 'jobs', 'update', 'http']:
+    d.setdefault('jobs', {})[a[4]] = a
 elif a[:2] == ['services', 'enable'] or a[:3] == ['beta', 'services', 'identity']:
     pass
 elif len(a) > 2 and a[2] in ['add-iam-policy-binding', 'update']:
@@ -136,16 +148,19 @@ gcloud() {
         self.assertEqual(0 if ok else 1, result.returncode, result.stdout + result.stderr)
         return json.loads(self.state.read_text())
 
-    def test_prepare_idempotent_and_never_touches_order_publisher_or_deploys(self):
+    def test_prepare_idempotent_and_grants_order_only_the_creation_result_topic(self):
         self.run_script(phase='prepare')
         state = self.run_script(phase='prepare')
-        self.assertEqual(3, len(state['accounts']))
+        self.assertEqual(4, len(state['accounts']))
+        self.assertEqual(2, len(state['schemas']))
         self.assertFalse(state['subscriptions'])
         creates = [c for c in state['calls'] if c[:3] == ['iam', 'service-accounts', 'create']]
-        self.assertEqual(3, len(creates))
+        self.assertEqual(4, len(creates))
         for c in state['calls']:
             self.assertNotEqual(['run', 'deploy'], c[:2])
-            self.assertNotIn('serviceAccount:foc-order-service@protean-vigil-509704-q4.iam.gserviceaccount.com', c)
+            if 'serviceAccount:foc-order-service@protean-vigil-509704-q4.iam.gserviceaccount.com' in c:
+                self.assertEqual('report-creation-compensation-result-dev-v1', c[3])
+                self.assertIn('roles/pubsub.publisher', c)
             self.assertNotIn('roles/pubsub.subscriber', c)
 
     def test_existing_pull_subscriptions_become_authenticated_push_without_recreation(self):
@@ -153,12 +168,17 @@ gcloud() {
             with self.subTest(environment=environment):
                 request = f'report-resolution-compensation-{suffix}-v1'
                 result = f'report-resolution-compensation-result-{suffix}-v1'
-                self.write({'accounts': [], 'topics': [request, result], 'calls': [],
-                            'subscriptions': {t + '-sub': {'topic': t} for t in [request, result]}})
+                creation_request = f'report-creation-compensation-{suffix}-v1'
+                creation_result = f'report-creation-compensation-result-{suffix}-v1'
+                topics = [request, result, creation_request, creation_result]
+                self.write({'accounts': [], 'topics': topics, 'calls': [],
+                            'subscriptions': {t + '-sub': {'topic': t} for t in topics}})
                 self.run_script(environment)
                 state = self.run_script(environment)
                 for topic, service, path in [(request, 'reporting-service', '/api/reports/internal/order-resolution-compensations'),
-                                              (result, 'order-service', '/api/orders/internal/report-resolution-compensations')]:
+                                              (result, 'order-service', '/api/orders/internal/report-resolution-compensations'),
+                                              (creation_request, 'order-service', '/api/orders/internal/report-creation-compensations'),
+                                              (creation_result, 'reporting-service', '/api/reports/internal/creation-compensation-results')]:
                     sub = state['subscriptions'][topic + '-sub']
                     audience = f'https://{service}-{environment}-374055363871.asia-southeast1.run.app'
                     push = sub['push']
@@ -166,7 +186,7 @@ gcloud() {
                     self.assertEqual(audience, push[push.index('--push-auth-token-audience') + 1])
                     self.assertIn('--push-auth-service-account', push)
                     self.assertFalse(any(c[:4] == ['pubsub', 'subscriptions', 'create', topic + '-sub'] for c in state['calls']))
-                self.assertEqual(3, len(state['subscriptions']))  # Includes retained DLQ recovery.
+                self.assertEqual(5, len(state['subscriptions']))  # Four saga pushes plus retained DLQ recovery.
                 self.assertTrue(any('roles/run.invoker' in c for c in state['calls']))
                 self.assertTrue(any('roles/iam.serviceAccountTokenCreator' in c for c in state['calls']))
                 self.assertTrue(any('--dead-letter-topic' in c for c in state['calls']))
@@ -177,6 +197,11 @@ gcloud() {
         self.assertIn('--dead-letter-topic', push)
         self.assertIn('--push-auth-token-audience', push)
         self.assertIn('--push-auth-service-account', push)
+        creation = state['subscriptions']['report-creation-compensation-dev-v1-sub']['push']
+        self.assertIn('/api/orders/internal/report-creation-compensations', creation[creation.index('--push-endpoint') + 1])
+        self.assertIn('report-creation-recovery-staging', state['jobs'])
+        self.assertIn('report-creation-compensation-dev-v1', state['topic_updates'])
+        self.assertIn('--schema', state['topic_updates']['report-creation-compensation-dev-v1'])
 
     def test_mismatched_binding_and_missing_backend_fail_before_mutation(self):
         for failure in ['wrong-topic', 'missing-backend']:
@@ -197,6 +222,10 @@ gcloud() {
             enabled = 'true' if environment == 'staging' else 'false'
             self.assertEqual(enabled, settings['REPORT_RESOLUTION_ENABLED'])
             self.assertEqual(enabled, settings['ORDER_REPORT_RESOLUTION_ENABLED'])
+            self.assertEqual('false', settings['REPORT_CREATION_ENABLED'])
+            self.assertEqual('false', settings['ORDER_REPORT_CREATION_ENABLED'])
+            self.assertEqual(f'report-creation-compensation-{suffix}-v1', settings['REPORT_CREATION_COMPENSATION_TOPIC'])
+            self.assertEqual(f'report-creation-compensation-result-{suffix}-v1', settings['REPORT_CREATION_COMPENSATION_RESULT_TOPIC'])
             self.assertEqual(f'report-resolution-compensation-{suffix}-v1', settings['ORDER_REPORT_COMPENSATION_TOPIC'])
             self.assertEqual(settings['REPORT_COMPENSATION_RESULT_TOPIC'] + '-sub',
                              settings['ORDER_REPORT_COMPENSATION_RESULT_SUBSCRIPTION'])
@@ -211,6 +240,8 @@ gcloud() {
         self.assertIn('REPORT_RESOLUTION_PUSH_AUDIENCE: "${REPORTING_SERVICE_URL}"', report)
         self.assertIn('REPORT_RESOLUTION_ENABLED: "${REPORT_RESOLUTION_ENABLED}"', report)
         self.assertIn('ORDER_REPORT_RESOLUTION_ENABLED: "${ORDER_REPORT_RESOLUTION_ENABLED}"', order)
+        self.assertIn('REPORT_CREATION_ENABLED: "${REPORT_CREATION_ENABLED}"', report)
+        self.assertIn('ORDER_REPORT_CREATION_ENABLED: "${ORDER_REPORT_CREATION_ENABLED}"', order)
 
 
 if __name__ == '__main__':

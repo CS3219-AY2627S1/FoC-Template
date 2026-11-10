@@ -1725,3 +1725,18 @@ Implementation repair within existing HTTP contracts: consume every page for tod
 ## CHANGE-182 - Approved bounded Supplier selection (2026-11-09)
 
 User explicitly approves the revised optional-search-and-browse proposal. A single Order-feature SupplierSelector reuses installed Base UI Combobox, Input/Button and useApi; each instance owns bounded page/query/selection and request cancellation state. This replaces CHANGE-181 all-pages Order loading without changing its independent Admin image/type repair. Existing synchronous authenticated Supplier list remains matching; no new endpoint, backend, schema, service, event, cache/index infrastructure or ADR. Selection is not a reservation: existing backend pair validation remains authoritative. Backend currently caches/scans all suppliers; separately proposed indexed/cursor search is still unapproved. This records the UI refinement, not100million-scale readiness.
+# ARCH-EVO-068 — Report creation uncertainty is rollback-only (2026-11-10)
+
+- Classification: approved architecture/specification change
+- Approval: user, 2026-11-10
+- Records: CHANGE-184 / ADR-068
+- Current rule: Reporting durably journals creation before Order effects. It never
+  rolls a creation forward in background or queries hold state. Uncertain placement
+  and failed activation are fenced and compensated through an Order lifecycle
+  tombstone that also blocks late placement. Inactive pre-hold work expires after
+  one hour. Resolution compensation remains separate and unchanged.
+- Supersedes: CHANGE-166/ADR-061's open creation-reconciliation requirement and
+  any proposal to recover creation by completing a report after the request.
+- Affected artifacts: Reporting creation/storage/API/scheduler, Order hold API,
+  V20 persistence and compensation push/result contracts, frontend Report form,
+  AsyncAPI/OpenAPI, gateway and environment/provisioning records.

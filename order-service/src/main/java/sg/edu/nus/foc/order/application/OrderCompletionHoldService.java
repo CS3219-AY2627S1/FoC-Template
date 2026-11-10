@@ -57,6 +57,12 @@ public class OrderCompletionHoldService {
     @Transactional
     public Order placeActive(String orderId, String reportId, String reporterId,
                              boolean requireAssignedCourier, String authorization, String reporterRole) {
+        return placeActive(orderId,reportId,null,reporterId,requireAssignedCourier,authorization,reporterRole);
+    }
+
+    @Transactional
+    public Order placeActive(String orderId,String reportId,String submissionId,String reporterId,
+                             boolean requireAssignedCourier,String authorization,String reporterRole) {
         if (reportId == null || reportId.isBlank() || reportId.length() > 128 || !reportId.equals(reportId.strip())) {
             throw new OrderProblem("VALIDATION_ERROR", "A report ID of 1 through 128 characters is required.");
         }
@@ -84,8 +90,14 @@ public class OrderCompletionHoldService {
                     : orders.getActiveForReportHoldUpdate(orderId, actor))
                     .orElseThrow(() -> OrderProblem.notFound("Active order not found."));
         }
+        boolean newCreationLifecycle=false;
+        if(submissionId!=null){
+            if(creationLifecycle==null)throw new IllegalStateException("Report creation lifecycle is unavailable.");
+            newCreationLifecycle=creationLifecycle.registerPlacement(reportId,submissionId,orderId,reporterId);
+        }
         Optional<OrderCompletionHold> previous = holds.findByReportId(reportId);
         if (previous.isPresent()) {
+            if(newCreationLifecycle)throw OrderProblem.conflict("Report ID is already bound to another hold lifecycle.");
             previous.get().requireBinding(orderId, order.getRequesterId());
             if (previous.get().getReleasedAt() != null) throw OrderProblem.conflict("This report hold has already been released.");
         }
@@ -99,15 +111,19 @@ public class OrderCompletionHoldService {
         if (courierReport) order.placeCourierReportHold(actor);
         else order.placeCompletionHold(actor);
         holds.save(new OrderCompletionHold(reportId, orderId, order.getRequesterId(), Instant.now()));
+        if(submissionId!=null)creationLifecycle.holdCreated(reportId);
         Order saved = orders.save(order);
         audit.action("PLACE_COMPLETION_HOLD", orderId, actor, reportId, "accepted");
         return saved;
     }
 
     private sg.edu.nus.foc.order.application.reportresolution.ReportResolutionReleaseGuard resolutionGuard;
+    private sg.edu.nus.foc.order.application.reportcreation.ReportCreationLifecycle creationLifecycle;
 
     @org.springframework.beans.factory.annotation.Autowired
     public void setResolutionGuard(sg.edu.nus.foc.order.application.reportresolution.ReportResolutionReleaseGuard guard) { this.resolutionGuard = guard; }
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setCreationLifecycle(sg.edu.nus.foc.order.application.reportcreation.ReportCreationLifecycle lifecycle){this.creationLifecycle=lifecycle;}
 
     @Transactional
     public Order release(String orderId, String reportId, String adminId) {
@@ -119,7 +135,15 @@ public class OrderCompletionHoldService {
         return releaseInternal(orderId, reportId, adminId, commandId, owner);
     }
 
+    @Transactional
+    public Order releaseForCreationCompensation(String orderId,String reportId,String submissionId){
+        return releaseInternal(orderId,reportId,"creation:"+submissionId,null,null,true);
+    }
+
     private Order releaseInternal(String orderId, String reportId, String adminId, String commandId, String owner) {
+        return releaseInternal(orderId,reportId,adminId,commandId,owner,false);
+    }
+    private Order releaseInternal(String orderId,String reportId,String adminId,String commandId,String owner,boolean creationCompensation){
         Order order = orders.getForLifecycleUpdate(orderId)
                 .orElseThrow(() -> OrderProblem.notFound("Order not found."));
         OrderCompletionHold hold = holds.findByReportId(reportId)
@@ -127,7 +151,7 @@ public class OrderCompletionHoldService {
         if (!orderId.equals(hold.getOrderId())) {
             throw OrderProblem.conflict("Report hold belongs to a different order.");
         }
-        if (resolutionGuard != null) {
+        if (resolutionGuard != null && !creationCompensation) {
             if (commandId == null) resolutionGuard.manual(reportId);
             else resolutionGuard.coordinated(reportId, commandId, owner);
         }

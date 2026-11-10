@@ -20,7 +20,7 @@ class UserDeletionBarrierMigrationTest {
     void cleanDatabaseHasConsistentBarrierConstraints() {
         Flyway migration = flyway("clean", null);
         migration.migrate();
-        assertEquals("19", migration.info().current().getVersion().toString());
+        assertEquals("20", migration.info().current().getVersion().toString());
         JdbcTemplate sql = sql();
         sql.update("insert into clean.order_user_deletion_guards(user_id) values ('student')");
         assertThrows(DataIntegrityViolationException.class, () -> sql.update(
@@ -37,7 +37,7 @@ class UserDeletionBarrierMigrationTest {
                 + "values ('old','owner','CREATE',?,'hash','{}'::jsonb)", UUID.randomUUID().toString());
         Flyway migration = flyway("upgrade", null);
         migration.migrate();
-        assertEquals("19", migration.info().current().getVersion().toString());
+        assertEquals("20", migration.info().current().getVersion().toString());
         assertEquals("PENDING", sql.queryForObject("select status from upgrade.order_commands where command_id='old'", String.class));
         assertEquals("RETRY", sql.queryForObject("select recovery_policy from upgrade.order_commands where command_id='old'", String.class));
         assertEquals(0, sql.queryForObject("select count(*) from upgrade.order_user_deletion_guards", Integer.class));

@@ -1,0 +1,20 @@
+{
+  "doc": "AI Assistance Disclosure: OpenAI Codex, 2026-11-10. Durable report-creation compensation result schema.",
+  "type": "record",
+  "name": "ReportCreationCompensationResult",
+  "namespace": "sg.edu.nus.foc.reporting.events.v1",
+  "fields": [
+    { "name": "eventId", "type": "string" },
+    { "name": "compensationId", "type": "string" },
+    { "name": "submissionId", "type": "string" },
+    { "name": "reportId", "type": "string" },
+    { "name": "orderId", "type": "string" },
+    { "name": "reporterId", "type": "string" },
+    { "name": "generation", "type": "long" },
+    { "name": "outcome", "type": {
+      "type": "enum",
+      "name": "ReportCreationCompensationOutcome",
+      "symbols": ["RELEASED", "ALREADY_RELEASED", "NOT_FOUND", "BINDING_MISMATCH", "RECONCILIATION_REQUIRED"]
+    } }
+  ]
+}

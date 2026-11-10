@@ -49,6 +49,8 @@ const page = (items: ReportResponse[]) => ({ items, page: 1, size: 20, totalItem
 
 beforeEach(() => {
   vi.clearAllMocks(); mocks.uid = "courier-1"; mocks.search = ""
+  Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn((file: File) => `blob:${file.name}`) })
+  Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() })
   mocks.replace.mockImplementation((url: string) => {
     mocks.search = url.split("?")[1] ?? ""
     mocks.listeners.forEach(listener => listener())
@@ -90,7 +92,7 @@ describe("reporting hub", () => {
     expect(mocks.api).toHaveBeenCalledWith("/api/reports/mine?view=against-me&page=1&size=20", expect.anything())
   })
 
-  it("submits one multipart courier response and keeps its fields after a failed attempt", async () => {
+  it("previews and removes response photos, then keeps remaining fields after a failed attempt", async () => {
     let responseAttempts = 0
     mocks.api.mockImplementation((path: string) => {
       if (path === "/api/reports/report-1/response") {
@@ -106,16 +108,23 @@ describe("reporting hub", () => {
     const explanation = await screen.findByLabelText("Your response (required)")
     fireEvent.change(explanation, { target: { value: "The item was intact at delivery." } })
     const photo = new File([new Uint8Array([1])], "handoff.webp", { type: "image/webp" })
-    fireEvent.change(screen.getByLabelText("Evidence photos"), { target: { files: [photo] } })
+    const receipt = new File([new Uint8Array([2])], "receipt.png", { type: "image/png" })
+    const photoInput = screen.getByLabelText("Evidence photos")
+    fireEvent.change(photoInput, { target: { files: [photo, receipt] } })
+    expect(await screen.findByAltText("Preview of handoff.webp")).toBeInTheDocument()
+    expect(screen.getByAltText("Preview of receipt.png")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Remove handoff.webp" }))
+    expect(screen.queryByAltText("Preview of handoff.webp")).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Submit response" }))
 
     expect(await screen.findByText("Evidence storage is unavailable.")).toBeInTheDocument()
     expect(explanation).toHaveValue("The item was intact at delivery.")
-    expect(screen.getByText(/1 selected/)).toBeInTheDocument()
+    expect(screen.getByAltText("Preview of receipt.png")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Submit response" }))
     await waitFor(() => expect(responseAttempts).toBe(2))
     const responseCall = mocks.api.mock.calls.filter(([path]) => path === "/api/reports/report-1/response").at(-1)
     expect(responseCall?.[1]).toMatchObject({ method: "POST", body: expect.any(FormData) })
+    expect((responseCall?.[1]?.body as FormData).getAll("photos")).toEqual([receipt])
   })
 
   it("shows an expired report as closed without a response form", async () => {

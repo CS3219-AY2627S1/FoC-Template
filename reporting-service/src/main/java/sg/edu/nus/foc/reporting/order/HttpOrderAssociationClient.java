@@ -21,7 +21,9 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriUtils;
 import sg.edu.nus.foc.reporting.config.ReportingProperties;
 import sg.edu.nus.foc.reporting.error.ConflictException;
+import sg.edu.nus.foc.reporting.error.BadRequestException;
 import sg.edu.nus.foc.reporting.error.DependencyUnavailableException;
+import sg.edu.nus.foc.reporting.error.ForbiddenException;
 import sg.edu.nus.foc.reporting.error.NotFoundException;
 
 @Component
@@ -37,13 +39,17 @@ public class HttpOrderAssociationClient implements OrderAssociationClient {
     HttpOrderAssociationClient(RestClient client) { this.client = client; }
     @Override public AssociatedOrder placeReportHold(String orderId, String reportId,
                                                       boolean requireAssignedCourier, String bearerToken, String reporterRole) {
+        return placeReportHold(orderId, reportId, reportId, requireAssignedCourier, bearerToken, reporterRole);
+    }
+    @Override public AssociatedOrder placeReportHold(String orderId, String reportId, String submissionId,
+                                                      boolean requireAssignedCourier, String bearerToken, String reporterRole) {
         try {
             String id = UriUtils.encodePathSegment(orderId, StandardCharsets.UTF_8);
             String report = UriUtils.encodePathSegment(reportId, StandardCharsets.UTF_8);
             AssociatedOrder result = client.put()
                     .uri(URI.create("/api/orders/mine/active/" + id + "/report-holds/" + report))
                     .header(HttpHeaders.AUTHORIZATION, bearerToken)
-                    .body(new PlaceReportHoldRequest(requireAssignedCourier, reporterRole))
+                    .body(new PlaceReportHoldRequest(requireAssignedCourier, reporterRole, submissionId))
                     .retrieve().body(AssociatedOrder.class);
             if (result == null || !orderId.equals(result.id()) || result.requesterId() == null
                     || result.status() == null || !reportId.equals(result.reportId())
@@ -52,6 +58,11 @@ public class HttpOrderAssociationClient implements OrderAssociationClient {
             }
             return result;
         } catch (HttpClientErrorException e) {
+            if (e.getStatusCode().isSameCodeAs(HttpStatus.BAD_REQUEST))
+                throw new BadRequestException("The selected order report request is invalid.");
+            if (e.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)
+                    || e.getStatusCode().isSameCodeAs(HttpStatus.FORBIDDEN))
+                throw new ForbiddenException("You are not authorised to report the selected order.");
             if (e.getStatusCode().isSameCodeAs(HttpStatus.NOT_FOUND)) throw new NotFoundException("The selected order is unavailable for reporting.");
             if (e.getStatusCode().isSameCodeAs(HttpStatus.CONFLICT)) {
                 if (e.getResponseBodyAsString().contains("This order already has an active report.")
@@ -81,5 +92,5 @@ public class HttpOrderAssociationClient implements OrderAssociationClient {
         } catch (RestClientException e) { throw new DependencyUnavailableException("Order Service is unavailable.", e); }
     }
 
-    private record PlaceReportHoldRequest(boolean requireAssignedCourier, String reporterRole) { }
+    private record PlaceReportHoldRequest(boolean requireAssignedCourier, String reporterRole, String submissionId) { }
 }
