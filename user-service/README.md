@@ -23,6 +23,9 @@ Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-08
 Scope: Login-events known limitations and the speed-limit numbers, from tests on the Compose stack;
 2026-11-10: removed the AWS limitation after the team stopped the AWS deployment.
 Author review of additional changes: Reviewed and approved by @t-leongchuan
+Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-10
+Scope: Documented the admin accounts endpoints and the audit viewer's previousHash.
+Author review of additional changes: Reviewed and approved by @t-leongchuan
 -->
 
 # User Service
@@ -104,7 +107,9 @@ The gateway strips `/api/v1` before forwarding.
 | `PUT /api/v1/users/{id}/role` | ADMINISTRATOR | `{ role: "MEMBER" \| "ADMINISTRATOR", reason? }`. Same role → no change. Promotion only for ACTIVE accounts; demotion for ACTIVE or SUSPENDED |
 | `POST /api/v1/users/{id}/suspend` | ADMINISTRATOR | `{ reason }` (required). ACTIVE → SUSPENDED; their existing logins stop working at once |
 | `POST /api/v1/users/{id}/restore` | ADMINISTRATOR | `{ reason }` (required). SUSPENDED → ACTIVE |
-| `GET /api/v1/admin/audit` | ADMINISTRATOR | Audit entries, newest first. Filters `targetId`, `actorId`, `action`; paging `?before=<nextCursor>`, `limit` (default 50, max 200) |
+| `GET /api/v1/admin/accounts` | ADMINISTRATOR | Accounts, newest first: `{ id, username, displayName, email, role, status, createdAt, lastLoginAt }`. `search` (part of username, email or display name, any case, max 100 chars), filters `status`, `role`; paging `?before=<nextCursor>`, `limit` (default 50, max 100). `lastLoginAt` is the newest SUCCESS in the login log (so at most 90 days back), else null |
+| `GET /api/v1/admin/accounts/{id}` | ADMINISTRATOR | One account, same fields; 404 `USER_NOT_FOUND` |
+| `GET /api/v1/admin/audit` | ADMINISTRATOR | Audit entries, newest first, each with its `hash` and `previousHash` (the link to the entry before). Filters `targetId`, `actorId`, `action`; paging `?before=<nextCursor>`, `limit` (default 50, max 200) |
 | `GET /api/v1/admin/audit/verify` | ADMINISTRATOR | Checks the hash chain → `{ valid, checkedEntries, firstInvalidId, latestHash }` |
 | `GET /api/v1/admin/login-events` | ADMINISTRATOR | Login attempts, newest first. Filters `accountId`, `outcome`, `reason`; paging `?before=<nextCursor>`, `limit` (default 50, max 100). Without `accountId`, attempts on unknown usernames are included |
 | `GET /auth/verify` | **other services only** (not exposed by the gateway) | → `{ id, role }` for the bearer token |

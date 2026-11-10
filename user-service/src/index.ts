@@ -20,6 +20,9 @@
  * Additional AI assistance: Claude Code (Claude Sonnet 5.5), date: 2026-11-08
  * Scope: Mounted the admin login-events router and started/stopped the daily 90-day cleanup (N2H1a).
  * Author review of additional changes: Reviewed and approved by @t-leongchuan
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-10
+ * Scope: Mounted the admin accounts router (N2H1 admin pages).
+ * Author review of additional changes: Reviewed and approved by @t-leongchuan
  */
 import { authRouter } from "./auth";
 import { profileRouter } from "./profile";
@@ -31,6 +34,7 @@ import { loadAppConfig, loadAuditKey, DB_RESILIENCE } from "./config";
 import { adminAuditRouter } from "./adminAudit";
 import { pool } from "./db";
 import { adminLoginEventsRouter } from "./adminLoginEvents";
+import { adminAccountsRouter } from "./adminAccounts";
 import { startLoginEventsCleanup } from "./loginEventsRetention";
 import { createProducer } from "./kafka";
 import { startOutboxPublisher } from "./publisher";
@@ -75,6 +79,7 @@ app.use(profileRouter);
 app.use(usersRouter);
 app.use(adminAuditRouter);
 app.use(adminLoginEventsRouter);
+app.use(adminAccountsRouter);
 
 app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
   // Expected: the database is temporarily unreachable. Tell callers to try again later.

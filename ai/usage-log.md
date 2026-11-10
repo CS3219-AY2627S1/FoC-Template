@@ -104,6 +104,9 @@ Author review: Reviewed and approved by @mattis.
 Additional AI assistance: Claude Code (Claude Sonnet 5.5, Claude Opus 5.5), date: 2026-11-08 to 2026-11-10
 Scope: Drafted the User Service author's four N2H1a login-audit-log entries; the author approved them.
 Author review: Reviewed and approved by @t-leongchuan
+Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-10
+Scope: Drafted the User Service author's two N2H1 admin-pages entries; the author edited and approved them.
+Author review: Reviewed and approved by @t-leongchuan
 -->
 
 # AI Usage Log
@@ -2400,3 +2403,48 @@ It counted gateway logins in the team's demo scripts by reading them (Supplier `
 ### Key response
 
 Claude removed the AWS cloud-gateway items (PR #54) from the login-events notes, keeping one line on what would be missing if that deployment were revived, and kept the client-IP, shared rate-limit bucket and login-burst notes. It rebased the branch onto `main` at `1c7823b` and trial-merged it with the open branches (PR 63 CI, PR 68 logging, `credit_fe`): no conflicts in its files. Tests on the combined code: User Service 36/36, frontend 121/121, Credit Service 52/52, and Credit's new session verifier against the real User Service routes (member, administrator, bad token, suspended account, service down).
+
+## 2026-11-10 — User Service and frontend: N2H1 admin pages decisions
+
+- **Tool:** Claude Code (Claude Opus 5.5)
+- **Allowed-use scope:** describing the existing frontend and admin endpoints so the author could decide; presenting general alternatives with their consequences; recording the author's answers (no design decisions by Claude)
+- **Repository files affected:** none (decisions recorded in the author's own notes)
+- **Author review:** All decisions were made by the author.
+
+### Prompts
+
+> "Looks good, let's move on assuming that both will get merged and reviewed and move on to the UI part.(Usual format, full(er) context)"
+
+> "U0. Scope: (a). Option (b), adding account reviews, is too much new work in one night. If it's half-finished, the demo breaks. Option (c) is a dead end [...] Option (a) gives a complete story: find an account, see who it is, see its logins and history, suspend it, then watch its blocked login attempts appear."
+
+> "Search: part of a username, email or display name. [...] Filters: status and role [...] Order: newest first with “load more” [...] Email: show it in the list. [...] Last successful login: yes [...] One account’s page: the same fields plus the date it was created."
+
+> "U2. Getting there. One “Admin” button in the header, placed next to “Manage Suppliers”. Don’t replace or move Ron’s button tonight [...] Inside it are three tabs: Accounts, Login activity, Audit log. Addresses go under /admin/..."
+
+> "Reason entry: a pop-up box with a reason field and a Confirm button [...] On your own account page, hide the buttons for things you can’t do to yourself. For “last admin” and anything else, show the button and display the server’s error. [...] IP: hide it for now. [...] Browser: a short summary like “Chrome on Linux”. Hover over it to see the full text. Time: Singapore time [...] Verify: only when the button is pressed. [...] Hashes: show them shortened, and show each entry’s link to the one before. [...] U6. Account page layout: stacked sections (details, logins, audit), each showing about 10 rows with “load more”."
+
+> "1. Header: (a). It’s the only option that fixes the whole problem without hiding or moving anyone else’s work."
+
+### Key response
+
+Claude described the frontend as built (header, link row, Supplier admin pages, reusable dialog, toasts, Singapore time on the credit page) and the admin endpoints that exist, noting that nothing lists or looks up accounts. It posed seven questions (U0 scope, U1 accounts list, U2 navigation, U3 actions and refusals, U4 login activity, U5 audit log, U6 account layout), each with general alternatives and their consequences and no recommendation. After the first build it reported that at phone width the administrators' header was wider than the screen (already before the new button, after the credit balance was added) and gave four general options; the author chose to let it wrap. The answers were recorded in the author's own words.
+
+## 2026-11-10 — User Service and frontend: N2H1 admin pages implementation
+
+- **Tool:** Claude Code (Claude Opus 5.5)
+- **Mode:** generate
+- **Allowed-use scope:** implementation code, tests and documentation for the author's decisions above; no new design
+- **Repository files affected:** `user-service/src/adminAccounts.ts` (new), `user-service/src/audit.ts`, `user-service/src/index.ts`, `user-service/test/adminAccounts.test.ts` (new), `user-service/README.md`, `frontend/src/admin/*` (new), `frontend/src/api/adminApi.ts` (new), `frontend/src/api/adminApi.spec.ts` (new), `frontend/src/App.tsx`, `frontend/src/components/TopBar.tsx`, `frontend/nginx.conf`, `frontend/vite.config.ts`, `frontend/README.md`
+- **Author review:** Reviewed and approved by @t-leongchuan
+
+### Prompts
+
+> (the author's answers in the entry above)
+
+### Key response
+
+Claude built `GET /admin/accounts` (search, status/role filters, newest first with a cursor, email and last successful login) and `GET /admin/accounts/{id}`, added each audit entry's `previousHash` to the audit viewer, and added the gateway and Vite routes. In the frontend it built the Admin button, the three tabs, the accounts list, the account page (details, suspend/restore/role through a reason pop-up, the account's login attempts and audit entries, 10 at a time), the login activity page and the audit log page with "Verify chain". On phones the header's buttons now wrap onto a second line instead of widening the page; wider screens are unchanged.
+
+Claude's own implementation choices, listed for the author: the endpoint paths `/admin/accounts` and `/admin/accounts/{id}` (following "Addresses go under /admin/..."); the cursor is the last account's id; search is limited to 100 characters; page sizes 50 (max 100); the field name `previousHash`; the wording of labels, dialogs and messages; the browser-summary matching rules; seconds shown in login times.
+
+A test found that a member opening an admin URL still triggered the admin requests before the notice; Claude changed the pages so nothing is requested unless the user is an administrator.

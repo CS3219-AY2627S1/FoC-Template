@@ -15,6 +15,9 @@
  * Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: added
  * the Suppliers / Open errands / My errands / Post errand navigation row.
  * Author review: Reviewed and approved by @mattis.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-10. Scope: added the
+ * administrators' "Admin" button next to "Manage Suppliers", and let the header row wrap onto
+ * a second line on phones (author's decision). Author review: Reviewed and approved by @t-leongchuan
  */
 import { Link, NavLink } from 'react-router'
 import { useAuth } from '../auth/authContext'
@@ -43,7 +46,8 @@ export function TopBar({ creditRefreshKey = 0 }: { creditRefreshKey?: number }) 
           <span className="hidden font-semibold text-navy-900 sm:inline">{APP_NAME}</span>
         </div>
 
-        <div className="flex min-w-0 items-center gap-3">
+        {/* On phones these may wrap onto a second line instead of widening the page; from sm up it is one line */}
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-2 sm:flex-nowrap">
           {user.role === 'ADMINISTRATOR' && (
             <Link
               to="/suppliers/admin"
@@ -51,6 +55,14 @@ export function TopBar({ creditRefreshKey = 0 }: { creditRefreshKey?: number }) 
             >
               <span className="sm:hidden">Manage</span>
               <span className="hidden sm:inline">Manage Suppliers</span>
+            </Link>
+          )}
+          {user.role === 'ADMINISTRATOR' && (
+            <Link
+              to="/admin/accounts"
+              className="inline-flex shrink-0 rounded-lg border border-navy-100 px-2 py-1.5 text-sm font-semibold text-navy-800 hover:bg-navy-50 sm:px-3"
+            >
+              Admin
             </Link>
           )}
           <CreditBalanceSummary key={user.username} refreshKey={creditRefreshKey} />

@@ -5,6 +5,9 @@
  *        admin-actions lock themselves and run in the caller's transaction, the author's
  *        HMAC hash-chain recipe, chain verification, and the paged viewer query.
  * Author review: Reviewed and approved by @t-leongchuan
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-10
+ * Scope: The viewer also returns each entry's link to the one before (previousHash).
+ * Author review of additional changes: Reviewed and approved by @t-leongchuan
  */
 import { createHmac } from "node:crypto";
 import { PoolClient } from "pg";
@@ -142,7 +145,7 @@ export async function listAudit(q: AuditQuery) {
   const result = await pool.query(
     `SELECT a.id, a.occurred_at, a.actor_type, a.actor_id, actor.username AS actor_username,
             a.action, a.target_id, target.username AS target_username,
-            a.previous_value, a.new_value, a.reason, a.hash
+            a.previous_value, a.new_value, a.reason, a.prev_hash, a.hash
      FROM audit_log a
      LEFT JOIN users actor  ON actor.id  = a.actor_id
      LEFT JOIN users target ON target.id = a.target_id
@@ -162,6 +165,7 @@ export async function listAudit(q: AuditQuery) {
       previousValue: r.previous_value,
       newValue: r.new_value,
       reason: r.reason,
+      previousHash: r.prev_hash, // the hash of the entry before; the chain's link
       hash: r.hash,
     })),
     nextCursor: result.rows.length > q.limit ? String(rows[rows.length - 1].id) : null,

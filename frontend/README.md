@@ -26,6 +26,9 @@ Author review: Reviewed and approved by @mattis.
 Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: documented
 the N2 description box on the create page and ApiError's retryAfterSeconds.
 Author review: Reviewed and approved by @mattis.
+Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-10. Scope: documented
+the User Service admin pages (accounts, login activity, audit log).
+Author review: Reviewed and approved by @t-leongchuan
 -->
 
 # Frontend
@@ -116,6 +119,8 @@ Docker. It forwards API calls:
 | `POST /api/v1/auth/register` | user-service `POST /auth/register` |
 | `GET`/`PATCH /api/v1/whoami` | user-service `GET`/`PATCH /whoami` |
 | `PUT /api/v1/users/{id}/role` | user-service `PUT /users/{id}/role` |
+| `POST /api/v1/users/{id}/suspend` / `restore` | user-service (same path, prefix stripped) |
+| `GET /api/v1/admin/accounts[/{id}]`, `/admin/login-events`, `/admin/audit[/verify]` | user-service (prefix stripped) |
 | `/api/v1/suppliers...` | supplier-service (same path) |
 | `/api/v1/errands...` | order-service `/errands...` |
 | `/api/v1/admin/errands...` | order-service `/admin/errands...` (no screens yet) |
@@ -225,3 +230,25 @@ runner; it also checks mobile overflow and captures desktop/mobile screenshots.
   shows "From your description" until it is edited. Nothing is submitted automatically. Any
   failure shows one message; a 429 shows a countdown from `Retry-After`, read through the
   shared client's `ApiError.retryAfterSeconds`.
+
+### User Service admin pages
+
+Administrators get an **Admin** button in the header (next to Manage Suppliers). It opens
+`/admin/accounts`; the three tabs are **Accounts**, **Login activity** (`/admin/login-activity`)
+and **Audit log** (`/admin/audit`). Code: `src/admin/`, calls in `src/api/adminApi.ts`.
+
+- **Accounts:** search (username, email or display name), status and role filters in the URL,
+  newest first with "Load more". Each row links to `/admin/accounts/{id}`.
+- **Account page:** details (email, joined, last successful login), then Suspend/Restore and
+  Make administrator/Make member, each through a pop-up with a reason (required for
+  suspend/restore, optional for role). On your own account those buttons are hidden; any other
+  refusal (e.g. last administrator) is the server's message shown in the pop-up. Below: the
+  account's login attempts and audit entries, 10 at a time.
+- **Login activity:** every attempt, including unknown usernames; outcome and reason filters.
+  The IP is not shown (behind nginx it is nginx's own address until client-IP handling is
+  settled); the browser is a rough "Chrome on Linux" summary with the full text on hover.
+- **Audit log:** entries with shortened `hash` and `previousHash`; **Verify chain** runs only
+  when pressed.
+- Times are Singapore time. Members who open these URLs see "Administrator access required"
+  and no admin request is made; the User Service checks the role on every call anyway.
+
