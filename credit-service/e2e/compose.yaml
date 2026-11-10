@@ -1,3 +1,5 @@
+# Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+# Scope: Required HTTP verifier configuration for #58. Author review: Reviewed and approved by @phuc.
 # AI Assistance Disclosure: Claude Code (Claude Opus 5.5), 2026-10-16. Scope: an isolated stack
 # for the Credit Service end-to-end test (author's choice: separate test stack). Mirrors the
 # kafka, credit-db, credit-migrate and credit-service definitions in the root compose.yaml.
@@ -80,6 +82,8 @@ services:
     pull_policy: never
     init: true
     environment:
+      # Kafka-only fixture does not call HTTP; verification remains fail-closed.
+      USER_SERVICE_BASE_URL: http://user-service:3001
       DATABASE_URL: postgres://credit_app:e2eapp@credit-db:5432/credits
       KAFKA_BROKERS: kafka:9092
       KAFKA_CLIENT_ID: credit-service

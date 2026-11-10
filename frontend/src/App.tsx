@@ -1,3 +1,5 @@
+/* Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+ * Scope: Protected Credit history route for #65. Author review: Reviewed and approved by @phuc. */
 /*
  * AI Assistance Disclosure:
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-09-26
@@ -14,6 +16,7 @@
  */
 import { Navigate, Route, Routes } from 'react-router'
 import { RequireAuth } from './components/RequireAuth'
+import { CreditTransactionsPage } from './credits/CreditTransactionsPage'
 import { CreateErrandPage } from './errands/CreateErrandPage'
 import { ErrandDetailPage } from './errands/ErrandDetailPage'
 import { MyErrandsPage } from './errands/MyErrandsPage'
@@ -39,6 +42,7 @@ export default function App() {
       <Route path="/suppliers/new" element={<RequireAuth><SupplierFormPage mode="create" /></RequireAuth>} />
       <Route path="/suppliers/:id/edit" element={<RequireAuth><SupplierFormPage mode="edit" /></RequireAuth>} />
       <Route path="/errands" element={<RequireAuth><OpenErrandsPage /></RequireAuth>} />
+      <Route path="/credits" element={<RequireAuth><CreditTransactionsPage /></RequireAuth>} />
       <Route path="/errands/mine" element={<RequireAuth><MyErrandsPage /></RequireAuth>} />
       <Route path="/errands/new" element={<RequireAuth><CreateErrandPage /></RequireAuth>} />
       <Route path="/errands/:id" element={<RequireAuth><ErrandDetailPage /></RequireAuth>} />

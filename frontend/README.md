@@ -1,4 +1,6 @@
 <!--
+Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+Scope: Credit history usage documentation for #65. Author review: Reviewed and approved by @phuc.
 AI Assistance Disclosure:
 Tool: Claude Code (Claude Opus 5.5), date: 2026-09-26
 Scope: Documented how to run the frontend and how requests are routed.
@@ -185,6 +187,35 @@ detail page links here) and `/errands/:id`. The top bar links to all of them.
   reason code. The form checks the same limits as `order-service/src/domain/validation.ts` and
   shows the server's 400 `details` next to the matching fields.
 - Deadlines are entered in the browser's time zone and sent as UTC ISO timestamps.
+<!-- AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-11-09.
+Scope: Credit frontend usage documentation for #65. Author review: Reviewed and approved by @phuc. -->
+
+### Credit transactions
+
+Open **My credits** in the main navigation (`/credits`). This protected page calls
+`GET /api/v1/me/credit/transactions` using the shared authenticated client.
+It shows all six ledger types, transaction/errand/reservation references, and signed
+available/reserved credit changes. A compact block beside the user details in the shared
+top bar stacks Reserved above Available, using `GET /api/v1/me/credit`
+independently of history filters and pagination. Refresh on the Credit page reloads
+the balance and history. If the balance is unavailable or the account is still
+being created, the header shows unknown amounts and a compact Retry control.
+
+The optional From/To dates include both selected calendar days in Singapore time
+(UTC+08:00). The frontend converts the inclusive end date to the following midnight
+for the API's exclusive `to` timestamp. Filters and pagination survive refresh and
+browser back/forward through `/credits?from=YYYY-MM-DD&to=YYYY-MM-DD&page=0&size=20`.
+Applying dates or changing the selected page size resets the page after Apply filters.
+Page sizes are 20, 50 and 100. Clear filters restores all history and the default size.
+
+The page validates dates before requesting data, cancels superseded requests,
+and supports loading, empty, out-of-range, failure/retry and refresh states.
+Authenticated 401 responses use the existing global logout handler.
+
+Focused tests cover date boundaries, query/auth serialization, filtering, paging,
+request races, error recovery, and route protection. `e2e/credit-ui.spec.ts` adds a
+live User/Kafka/Credit/nginx browser journey to the existing disposable Compose test
+runner; it also checks mobile overflow and captures desktop/mobile screenshots.
 - **Filling the form from a description (N2).** `/errands/new` opens with a "Describe your
   errand" box. On load it calls `GET /api/v1/errands/extract/status`; if the feature is
   unavailable, or that call fails, the box says so and the form works as before. "Fill in the

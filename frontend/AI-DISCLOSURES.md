@@ -1,4 +1,6 @@
 <!--
+Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+Scope: Credit history frontend disclosure for #65. Author review: Reviewed and approved by @phuc.
 AI Assistance Disclosure:
 Tool: Claude Code (Claude Opus 5.5), date: 2026-09-26
 Scope: Sidecar disclosure for frontend files that cannot carry a comment, plus Vite template files.
@@ -214,6 +216,22 @@ also show the total item quantity. New component tests cover losing the race on 
 a scratch Playwright run against the Compose stack had a second courier win the race through the API
 while the first clicked Accept on the board.
 
+## 2026-11-09 - Credit transaction frontend
+
+OpenAI Codex (GPT-6) generated the issue #65 Credit history page, URL/date helpers,
+API client, protected route/navigation integration, tests, browser journey and
+associated documentation from the existing transaction endpoint. Source files carry
+inline attribution. Author review: Reviewed and approved by @phuc. See `../ai/usage-log.md` for exact
+prompts and verification results.
+
+The #65 balance-summary follow-up exposes the existing Credit getBalance query,
+adds authenticated balance reads to the frontend API client and displays current
+available/reserved totals above history. Balance loading/error/retry is independent
+of date filters and paging. Tool: OpenAI Codex (GPT-6), 2026-11-09; Author review: Reviewed and approved by @phuc.
+
+The balance display was revised at the user's request: large cards were removed,
+with small available/reserved amounts placed beside the username in the shared
+header. OpenAI Codex (GPT-6), 2026-11-09; Author review: Reviewed and approved by @phuc.
 ## 2026-11-09 — N2: filling the create-errand form from a description
 
 - **Tool:** Claude Code (Claude Opus 5.5)

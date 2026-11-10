@@ -1,4 +1,8 @@
 <!--
+Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+Scope: Credit frontend summary for #65. Author review: Reviewed and approved by @phuc.
+Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+Scope: Credit history endpoint summary for #58. Author review: Reviewed and approved by @phuc.
 AI Assistance Disclosure:
 Additional AI assistance: OpenAI Codex, date: 2026-11-10.
 Scope: Added optional local centralised logging instructions and AI summary for #66.
@@ -122,3 +126,19 @@ browser test to check the existing "Request an errand from here" link and its ex
 Supplier preselection URL after PR #59 removed the old placeholder. The existing
 member and administrator browser journeys both passed locally. Author review is
 pending; the exact prompt and verification results are in `ai/usage-log.md`.
+
+OpenAI Codex (GPT-6) assisted on 2026-11-09 with the requested authenticated Credit
+transaction history endpoint from issue #58: own-user reads, optional date bounds,
+pagination, live User Service verification, independent Kafka startup, gateway and
+Compose wiring, and focused HTTP/database tests. Author review: Reviewed and approved by @phuc.
+Exact prompts and verification evidence are recorded in `ai/usage-log.md`;
+JSON dependency attribution is in `credit-service/AI-DISCLOSURES.md`.
+
+OpenAI Codex (GPT-6) assisted on 2026-11-09 with the Credit transaction frontend
+in issue #65: authenticated history, Singapore date filters, pagination, responsive
+transaction cards, failure recovery, tests and local preview startup. Author review: Reviewed and approved by @phuc. Exact prompts and verification are recorded in `ai/usage-log.md`.
+
+The issue #65 Credit view now also displays live available and reserved balances
+from the existing balance query through authenticated GET /api/v1/me/credit.
+OpenAI Codex (GPT-6), 2026-11-09; Author review: Reviewed and approved by @phuc. Verification and the exact
+request are recorded in `ai/usage-log.md`.

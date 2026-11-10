@@ -1,3 +1,7 @@
+/* Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+ * Scope: Run Playwright through Node across Windows/Linux for #65. Author review: Reviewed and approved by @phuc. */
+/* Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+ * Scope: Avoid a fixed Credit HTTP port in disposable UI stacks for #58. Author review: Reviewed and approved by @phuc. */
 /**
  * AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-09-27.
  * Scope: Added disposable Compose orchestration for the real-browser Supplier
@@ -52,6 +56,7 @@ const environment = {
   BOOTSTRAP_ADMIN_EMAIL: 'supplier-ui-admin@u.nus.edu',
   BOOTSTRAP_ADMIN_PASSWORD: adminPassword,
   FRONTEND_PORT: String(frontendPort),
+  CREDIT_PORT: '0',
   USER_PORT: String(userPort),
   SUPPLIER_PORT: String(supplierPort),
   SUPPLIER_UI_BASE_URL: frontendBaseUrl,
@@ -73,7 +78,7 @@ try {
   ])
 
   console.log(`\nRunning the real-browser Supplier UI journey at ${frontendBaseUrl}...`)
-  run(localPlaywright(), ['test'], { cwd: frontendDirectory })
+  run(process.execPath, [resolve(frontendDirectory, 'node_modules', '@playwright', 'test', 'cli.js'), 'test'], { cwd: frontendDirectory })
   console.log('\nPASS: live member/admin Supplier UI journeys and responsive overflow checks completed.')
 } catch (error) {
   retainFailureDiagnostics(error)
@@ -176,9 +181,4 @@ function listenOnAvailablePort() {
       resolveListen({ server, port: address.port })
     })
   })
-}
-
-function localPlaywright() {
-  const executable = process.platform === 'win32' ? 'playwright.cmd' : 'playwright'
-  return resolve(frontendDirectory, 'node_modules', '.bin', executable)
 }
