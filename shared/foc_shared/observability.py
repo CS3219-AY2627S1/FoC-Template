@@ -12,7 +12,9 @@ obs.install(app, readiness_session_dep=get_session)
 
 What a service gets:
 
-- ``GET /metrics`` - Prometheus exposition from its own registry
+- ``GET /metrics`` - Prometheus exposition from its own registry, or the same
+  registry on a separate internal port via :meth:`Observability.serve_metrics`
+  for a public-facing service (the gateway)
 - ``GET /health/ready`` - database (when a session dependency is given) and
   broker readiness; ``GET /health`` is left untouched
 - HTTP request/latency/status metrics labelled by **route template** and by
@@ -41,10 +43,12 @@ import asyncio
 import json
 import logging
 import math
+import threading
 import time
 from collections.abc import Awaitable, Callable, Iterable
 from contextvars import ContextVar, Token
 from uuid import uuid4
+from wsgiref.simple_server import WSGIServer
 
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, Response
@@ -55,6 +59,7 @@ from prometheus_client import (
     Gauge,
     Histogram,
     generate_latest,
+    start_http_server,
 )
 from sqlalchemy import text
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -460,8 +465,14 @@ class Observability:
         metrics_refresh: Callable[[], Awaitable[None]] | None = None,
         metrics_refresh_timeout: float = 1.0,
         route_labeler: Callable[[str], str] | None = None,
+        metrics_route: bool = True,
+        readiness_route: bool = True,
     ) -> None:
         """Mount ``/metrics`` and ``/health/ready`` and add the middleware.
+
+        ``metrics_route=False`` keeps ``/metrics`` off the app (serve it with
+        :meth:`serve_metrics` on an internal port instead); ``readiness_route=False``
+        leaves ``/health/ready`` to the service.
 
         ``check_broker`` should stay ``True`` only for a service that keeps
         :func:`set_broker_state` up to date (a long-lived consumer). Services
@@ -481,10 +492,18 @@ class Observability:
         """
         self.route_labeler = route_labeler
         app.add_middleware(ObservabilityMiddleware, observability=self)
-        app.include_router(self._metrics_router(metrics_refresh, metrics_refresh_timeout))
-        app.include_router(
-            self._readiness_router(readiness_session_dep, readiness_extra, check_broker)
-        )
+        if metrics_route:
+            app.include_router(self._metrics_router(metrics_refresh, metrics_refresh_timeout))
+        if readiness_route:
+            app.include_router(
+                self._readiness_router(readiness_session_dep, readiness_extra, check_broker)
+            )
+
+    def serve_metrics(
+        self, port: int, addr: str = "0.0.0.0"
+    ) -> tuple[WSGIServer, threading.Thread]:
+        """Serve this registry on its own port; returns ``(server, thread)``."""
+        return start_http_server(port, addr=addr, registry=self.registry)
 
     def _metrics_router(
         self, refresh: Callable[[], Awaitable[None]] | None, timeout: float

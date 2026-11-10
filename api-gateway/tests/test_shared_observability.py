@@ -79,3 +79,10 @@ def test_readiness_is_ready_when_the_extra_check_passes():
     body = response.json()
     assert body["status"] == "ready"
     assert body["checks"] == {"cache": "ok"}
+
+
+def test_install_can_skip_the_metrics_and_readiness_routes():
+    client = TestClient(_app(check_broker=False, metrics_route=False, readiness_route=False))
+
+    assert client.get("/metrics").status_code == 404
+    assert client.get("/health/ready").status_code == 404

@@ -50,11 +50,12 @@ scrape_configs:
 
   # The gateway is the edge: its metrics show 401/403/404/5xx that never reach
   # a backend. Its route label is collapsed to /api/<service>/* so it does not
-  # duplicate the per-service panels.
+  # duplicate the per-service panels. Its /metrics lives on the internal-only
+  # port 9100 (GATEWAY_METRICS_PORT), never on the public proxy port.
   - job_name: api-gateway
     metrics_path: /metrics
     static_configs:
-      - targets: ["api-gateway:8000"]
+      - targets: ["api-gateway:9100"]
         labels:
           service: api-gateway
 
