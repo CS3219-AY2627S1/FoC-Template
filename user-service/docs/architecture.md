@@ -20,7 +20,7 @@ orchestrator and have no DB access of their own.
 | Orchestrator | `app/services/user.py` (`UserService`) | The only component that spans both repositories in one transaction — e.g. `register()` writes a `User` row and an `OtpCode` row together. |
 | Security | `app/services/security.py` | Password hashing (`bcrypt`) and JWT issuance (`sub`/`role`/`exp` — must match api-gateway's verifier). Stateless. |
 | OTP codes | `app/services/otp.py` | Generate/hash a 6-digit code, compute its 5-minute expiry. Stateless. |
-| Notification | `app/services/notification.py` | `send_otp_email()` — sends through the configured SMTP provider without logging OTP values. |
+| Notification | `app/services/notification.py` | `send_otp_email()` / `send_password_reset_email()` - send through the configured SMTP provider; OTP values are logged only under the dev-only `OTP_DEV_MODE` escape hatch. |
 | Events | `app/services/events.py` | Stores `UserRegistered` in a transactional outbox and retries RabbitMQ delivery in the background. |
 | Exceptions | `app/services/exceptions.py` | Domain errors (`EmailAlreadyRegisteredError`, `InvalidOtpError`, etc.) — routes catch these, never raw ones from repositories. |
 | User repository | `app/repositories/user.py` | CRUD on `User` rows. |

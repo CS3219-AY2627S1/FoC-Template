@@ -17,9 +17,9 @@ internally **layered** (`api/routes` → `services` → `repositories`).
 | --------- | -------------- | ---------- | ---------- |
 | api-gateway | Single public entry point; edge authentication (JWT verify) + trusted-header injection; routing | — | sync (HTTP) |
 | user-service | Registration, authentication (JWT issue), profile, admin user management | user-db | sync + publishes events |
-| supplier-service | Supplier CRUD, discovery, seeding | supplier-db | sync |
+| supplier-service | Supplier CRUD, discovery, seeding | supplier-db | sync + publishes events |
 | order-service | Errand lifecycle + state machine | order-db | sync + publishes events |
-| credit-service | Closed credit economy | credit-db | sync + consumes events |
+| credit-service | Closed credit economy | credit-db | sync + consumes & publishes events |
 | notification-service | User notifications from order events; read API for the bell | notification-db | consumes events + sync (HTTP read API) |
 | frontend | Responsive SPA (requester/courier/admin) | — | sync (HTTP) |
 | rabbitmq | Event broker | — | async |
@@ -56,7 +56,7 @@ flowchart TB
         direction TB
         US["user-service :8000"]
         SUP["supplier-service :8000"]
-        ORD["order-service :8000<br/><i>PR #5, unmerged</i>"]
+        ORD["order-service :8000"]
         CR["credit-service :8000"]
         NOT["notification-service :8000"]
 
@@ -74,7 +74,7 @@ flowchart TB
 
     GW -->|"verify JWT, inject<br/>X-User-Id / X-User-Role"| US
     GW -->|"proxy /api/suppliers/*"| SUP
-    GW -->|"proxy /api/orders/* (PR #5)"| ORD
+    GW -->|"proxy /api/orders/*"| ORD
     GW -->|"proxy /api/credits/*"| CR
     GW -->|"proxy /api/notifications/*"| NOT
 
@@ -87,21 +87,19 @@ flowchart TB
     US -.->|"publishes UserRegistered<br/>on foc.user.events (fanout)"| MQ
     MQ -.->|"consumes UserRegistered<br/>-> allocate initial credits"| CR
 
-    ORD -.->|"publishes order events<br/>on foc.order.events (topic, PR #5)"| MQ
-    MQ -.->|"consumes order events (PR #5)"| CR
+    ORD -.->|"publishes order events<br/>on foc.order.events (topic)"| MQ
+    MQ -.->|"consumes order events"| CR
     MQ -.->|"consumes order events<br/>-> builds notifications"| NOT
 
-    ORD -.->|"GET /suppliers/id<br/>validate supplier (PR #5)"| SUP
-    ORD -.->|"POST /credits/reservations<br/>reserve credits (PR #5)"| CR
+    ORD -->|"GET /suppliers/{id}<br/>validate supplier"| SUP
+    ORD -->|"POST /credits/reservations<br/>reserve credits"| CR
 
     classDef pub fill:#e8f0fe,stroke:#4a6fa5,color:#1a1a1a;
     classDef svc fill:#eef7ee,stroke:#4a8a4a,color:#1a1a1a;
     classDef store fill:#f0f0f0,stroke:#888,color:#1a1a1a;
     classDef async fill:#fdf3e6,stroke:#b8863a,color:#1a1a1a;
-    classDef planned fill:#f6ecfb,stroke:#8a4aa5,color:#1a1a1a,stroke-dasharray:4 3;
     class Browser,FE,GW pub;
-    class US,SUP,CR,NOT svc;
-    class ORD planned;
+    class US,SUP,ORD,CR,NOT svc;
     class USDB,SUPDB,ORDDB,CRDB,NOTDB store;
     class MQ async;
 ```
@@ -112,11 +110,10 @@ flowchart TB
 | --- | --- |
 | Blue box | Container whose host port is **published** (the trust boundary: only `frontend` :5173 and `api-gateway` :8080 are reachable from outside the Docker network). |
 | Green box | Backend FastAPI service, reachable only on the internal `foc-net` network (`:8000` in-container). |
-| Purple dashed box | `order-service` — exists only on branch `origin/implementation/order-service` (**PR #5, not merged**). |
 | Cylinder (grey) | A service-owned PostgreSQL database (DB-per-service; no service touches another's DB). |
 | Stadium (orange) | The RabbitMQ event broker. |
 | Solid arrow | Synchronous HTTP call, labelled with intent. |
-| Dashed arrow | Asynchronous event flow (AMQP) **or** an as-yet-unmerged PR #5 relationship, labelled `PR #5`. |
+| Dashed arrow | Asynchronous event flow (AMQP), labelled with the event. |
 
 ### Explained elements
 
@@ -138,15 +135,14 @@ flowchart TB
   verification `user-service` writes an outbox row and its background relay
   publishes `UserRegistered` to the `foc.user.events` **fanout** exchange
   (`app/services/events.py`); `credit-service` consumes it and provisions the
-  initial credit balance (`app/services/consumer.py`). Drawn **solid** because
-  the publish path is implemented, not planned.
-- **Everything labelled `PR #5` is dashed.** `order-service` and the order
-  event flows on `foc.order.events` (topic) — plus its synchronous
-  `GET /suppliers/{id}` (validate supplier) and `POST /credits/reservations`
-  (reserve credits) calls — live only on the unmerged
-  `implementation/order-service` branch (`app/clients/suppliers.py`,
-  `app/clients/credits.py`). They are shown for context but are not yet on
-  `main`.
+  initial credit balance (`app/services/consumer.py`). Drawn **dashed** like
+  every AMQP flow in this diagram; the publish path is fully implemented.
+- **`order-service` is merged and live on `main`.** It publishes order-lifecycle
+  events to the `foc.order.events` (topic) exchange, consumed by `credit-service`
+  and `notification-service`. Its synchronous `GET /suppliers/{id}` (validate
+  supplier) and `POST /credits/reservations` (reserve credits) calls use
+  `app/clients/suppliers.py` and `app/clients/credits.py`. The async event edges
+  are dashed (AMQP); the two synchronous client calls are solid.
 - **`notification-service` consumes order events.** On this branch the
   notification-service binds a durable queue to `foc.order.events` and turns
   each order fact into a per-recipient notification (`app/services/consumer.py`,

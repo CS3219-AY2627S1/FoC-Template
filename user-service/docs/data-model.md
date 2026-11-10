@@ -16,7 +16,7 @@ another service's data (DB-per-service).
 erDiagram
     users ||--o{ email_otps : "has"
     users {
-        string   id              PK "primary key: uuid4 hex"
+        string   id              PK "primary key: uuid4 string (36 chars)"
         string   email              "not null, unique, indexed"
         string   password_hash      "not null (bcrypt)"
         boolean  email_verified     "not null, default false"
@@ -27,7 +27,7 @@ erDiagram
         datetime created_at         "not null"
     }
     email_otps {
-        string   id              PK "primary key: uuid4 hex"
+        string   id              PK "primary key: uuid4 string (36 chars)"
         string   user_id         FK "not null, indexed, -> users.id (ON DELETE CASCADE)"
         string   purpose            "not null (email_verification|password_reset)"
         string   code_hash          "not null (hashed OTP)"
@@ -37,7 +37,7 @@ erDiagram
         datetime created_at         "not null"
     }
     event_outbox {
-        string   id              PK "primary key: uuid4 hex"
+        string   id              PK "primary key: uuid4 string (36 chars)"
         string   event_type         "not null, indexed"
         string   aggregate_id       "not null, indexed (logical ref to users.id, no FK)"
         text     payload            "not null (serialized event JSON)"

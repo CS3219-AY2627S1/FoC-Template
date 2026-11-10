@@ -88,10 +88,12 @@ red = rejected at the gateway.
   spoof identity via headers.
 
 > **Known failure mode (hit this once already):** `is_public(path)` in
-> `api-gateway/app/auth.py` matches by exact string against
-> `PUBLIC_PREFIXES`. That list is currently:
+> `api-gateway/app/services/auth.py` matches each path against
+> `PUBLIC_ROUTE_PREFIXES` by prefix (exact match or prefix + "/"). That list
+> is currently:
 > `/health`, `/api/users/register`, `/api/users/login`,
-> `/api/users/otp/verify`, `/api/users/otp/resend`. If user-service's route
+> `/api/users/otp/verify`, `/api/users/otp/resend`,
+> `/api/users/password/forgot`, `/api/users/password/reset`. If user-service's route
 > paths ever change (they were renamed once already, from `/verify-otp` /
 > `/resend-otp` to `/otp/verify` / `/otp/resend`), the gateway's allowlist
 > does **not** update itself — it silently starts requiring a JWT for a
@@ -167,9 +169,8 @@ flowchart TD
   both succeed — only the one that wins the atomic update proceeds to set
   `email_verified = true` and enqueue `UserRegistered`; the other gets
   "code already used."
-- `OtpCode.purpose` (`OtpPurpose.EMAIL_VERIFICATION` today,
-  `PASSWORD_RESET` reserved) means the same table and repository can back a
-  future forgot-password flow without a schema change.
+- `OtpCode.purpose` distinguishes `EMAIL_VERIFICATION` and `PASSWORD_RESET`;
+  both flows share this table and repository.
 
 ## 4. First-admin bootstrap
 

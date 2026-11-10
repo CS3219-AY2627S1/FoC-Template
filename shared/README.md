@@ -19,12 +19,7 @@ Contents:
 
 ## Usage
 
-Services depend on this package via an editable/relative install. In each
-service's `requirements.txt`:
-
-```text
--e ../shared
-```
-
-In Docker, the shared package is copied into the image build context (see each
-service's Dockerfile).
+Services install this package separately rather than via `requirements.txt`,
+because the path differs between a local venv (`../shared`) and Docker
+(`/shared`). Each service's Dockerfile and `make install` handle the install;
+the service `requirements.txt` only notes this.

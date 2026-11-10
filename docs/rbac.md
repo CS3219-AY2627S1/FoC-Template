@@ -4,8 +4,7 @@
 
 Living reference for **Role-Based Access Control (RBAC)** across the FoC APIs.
 Roles come from `foc_shared.auth.Role`: `admin` and `client`. Every row is
-derived from the code, not from other docs; where a route exists only on the
-unmerged order-service branch it is marked **planned (PR #5)**.
+derived from the code, not from other docs.
 
 ## How enforcement works
 
@@ -62,19 +61,20 @@ reached). `403` = authenticated but wrong role (rejected in the service).
 | `PATCH /api/suppliers/{id}` | 401 | 403 | allowed | `deps.py::require_admin` |
 | `POST /api/suppliers/{id}/deactivate` | 401 | 403 | allowed | `deps.py::require_admin` |
 | `POST /api/suppliers/{id}/reactivate` | 401 | 403 | allowed | `deps.py::require_admin` |
-| `GET /api/orders` *(planned, PR #5)* | 401 | allowed (own) | allowed | order-service (planned) |
-| `POST /api/orders` *(planned, PR #5)* | 401 | allowed | allowed | order-service (planned) |
-| `POST /api/orders/{id}/accept` *(planned, PR #5)* | 401 | allowed (courier) | allowed | order-service (planned) |
-| `POST /api/orders/{id}/cancel` *(planned, PR #5)* | 401 | allowed (own) | allowed | order-service (planned) |
+| `GET /api/orders` | 401 | allowed (own) | allowed | order-service |
+| `POST /api/orders` | 401 | allowed | allowed | order-service |
+| `POST /api/orders/{id}/accept` | 401 | allowed (courier) | allowed | order-service |
+| `POST /api/orders/{id}/cancel` | 401 | allowed (own) | allowed | order-service |
 
 ¹ Admin-only, with additional business guards that return `400` (not `403`):
 an admin cannot suspend or demote **itself**, an admin account cannot be
 suspended via this route, and the **last** non-suspended admin cannot be
 demoted (`app/services/user.py::set_suspended`, `set_role`).
 
-> Order-service rows are **planned (PR #5)**: the routes and their exact role
-> rules live only on `origin/implementation/order-service` and are not yet on
-> `main`; the client/courier/owner semantics shown are indicative.
+> Order-service rows are enforced inside order-service on `main` (merged). This
+> matrix lists the four highest-level order routes; the service exposes the full
+> order lifecycle under `/api/orders/*` (see `api-gateway/app/exposed_routes.py`
+> and [`../order-service/docs/api-contract.md`](../order-service/docs/api-contract.md)).
 
 ## Sequence: authenticated supplier write (admin-only create)
 

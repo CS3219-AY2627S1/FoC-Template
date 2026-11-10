@@ -21,7 +21,7 @@ erDiagram
         datetime updated_at          "not null, onupdate"
     }
     credit_reservations {
-        string   id               PK "uuid4 hex"
+        string   id               PK "uuid4 string (36 chars)"
         string   user_id          FK "not null, indexed, -> credit_accounts.user_id"
         string   order_id            "not null, indexed, UNIQUE (one reservation per order)"
         int      amount              "not null, CHECK > 0"
@@ -30,7 +30,7 @@ erDiagram
         datetime updated_at          "not null, onupdate"
     }
     credit_transactions {
-        string   id                   PK "uuid4 hex"
+        string   id                   PK "uuid4 string (36 chars)"
         string   user_id                 "not null, indexed (account whose balance changed)"
         string   counterparty_user_id    "nullable (other associated user, if any)"
         string   reservation_id          "nullable (value ref, no FK)"

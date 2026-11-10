@@ -14,6 +14,11 @@ the detailed request and response schemas for the routes being proxied.
 | Credit service | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD` | `/api/credits/...` | `/credits/...` | JWT | Forwarded unchanged |
 | Notification service | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD` | `/api/notifications/...` | `/notifications/...` | JWT | Forwarded unchanged |
 
+The per-area method set above is the superset the proxy will accept, not the
+authoritative allowlist. The actual (method, path) pairs the gateway forwards
+are defined in `app/exposed_routes.py` (default deny), which currently defines
+no `PUT` route; any `PUT` request therefore returns `404`.
+
 ## Path forwarding
 
 The gateway removes the public `/api` prefix before forwarding requests:
@@ -39,6 +44,8 @@ The following routes do not require a bearer token:
 | `/api/users/login` | Log in |
 | `/api/users/otp/verify` | Verify email OTP |
 | `/api/users/otp/resend` | Resend email OTP |
+| `/api/users/password/forgot` | Request a password reset |
+| `/api/users/password/reset` | Reset password with token |
 
 ### Protected routes
 
@@ -156,5 +163,5 @@ credentialed cookies.
 | `ORDER_SERVICE_URL` | `http://order-service:8000` | Order-service upstream |
 | `CREDIT_SERVICE_URL` | `http://credit-service:8000` | Credit-service upstream |
 | `NOTIFICATION_SERVICE_URL` | `http://notification-service:8000` | Notification-service upstream |
-| `JWT_SECRET` | Empty | Shared JWT signing secret |
+| `JWT_SECRET` | `change-me-in-dev-only` | Shared JWT signing secret |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | Allowed browser origins |

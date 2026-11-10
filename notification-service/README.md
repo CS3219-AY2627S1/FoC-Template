@@ -40,7 +40,8 @@ app/
 
 ## Configuration
 
-All configuration comes from environment variables (see `.env.example`).
+All configuration comes from environment variables (see `.env.example` and `config.py` for defaults).
+In the full stack, `DATABASE_URL` is supplied by Docker Compose from `NOTIFICATION_DATABASE_URL`.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |

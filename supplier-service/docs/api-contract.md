@@ -175,6 +175,9 @@ List **active** suppliers. Supports filtering, keyword search, and pagination.
   }
   ```
 
+  Each `items` entry is a full `Supplier` object (same shape as §5.2); fields
+  are omitted here for brevity.
+
 - **Notes:** Deactivated suppliers are excluded from discovery results
   (F1.4). Returns an empty `items` array (not `404`) when nothing matches
   (F1.4.1, F2.2.3).
@@ -242,10 +245,12 @@ orders (system-wide N4).
 - **409:** already deactivated.
 - **404:** unknown id.
 
-> Downstream effect (planned, Sprint 3): deactivation is intended to trigger
-> the order-cancellation cascade. The supplier-service is synchronous-only
-> today; the event mechanism is documented in
-> [`event-catalog.md`](../../docs/event-catalog.md) and owned by the Order Service.
+> Downstream effect: on successful deactivation the service writes a
+> SupplierDeactivated fact to a transactional outbox, and an async relay
+> (`app/services/event_worker.py`) publishes it to the `foc.supplier.events`
+> exchange. The Order Service consumes it and cancels affected pre-pickup
+> (OPEN/ACCEPTED) orders - it owns that cancellation cascade. Event contract:
+> [`event-catalog.md`](../../docs/event-catalog.md).
 
 ### 5.6 `POST /suppliers/{id}/reactivate` — reactivate
 

@@ -36,8 +36,8 @@ Full contract in [`docs/api-contract.md`](docs/api-contract.md). Endpoints
 ## Events
 
 Publishes `UserRegistered` (shared schema `foc_shared.events`) to the
-`user_events` fanout exchange on successful registration, via a transactional
-outbox (`app/services/events.py`, `app/models/outbox.py`). The Credit Service
+`foc.user.events` fanout exchange the first time an account's email is
+verified, via a transactional outbox (`app/services/events.py`, `app/models/outbox.py`). The Credit Service
 consumes it to open the user's credit account.
 
 ## Data store

@@ -28,10 +28,10 @@ app/
 ├── api/
 │   ├── deps.py        # RBAC (require_admin) + service DI
 │   └── routes/        # health, suppliers (CRUD)
-├── models/            # Supplier ORM model
-├── schemas/           # Pydantic DTOs (camelCase)
-├── services/          # supplier_service.py + seeder.py
-└── repositories/      # supplier_repo.py (persistence)
+├── models/            # Supplier + SupplierEventOutbox ORM models
+├── schemas/           # Pydantic DTOs (camelCase) + supplier event contract
+├── services/          # supplier_service.py, seeder.py, event_worker.py
+└── repositories/      # supplier_repo.py, supplier_event_outbox.py (persistence)
 ```
 
 The seed CSV is mounted read-only at `/data/csv/supplier-seed-data.csv`

@@ -214,7 +214,7 @@ Protected requests receive these trusted headers from the API gateway:
 
 ```http
 X-User-Id: user-id
-X-User-Role: CLIENT
+X-User-Role: client
 ```
 
 ### Get current profile
@@ -233,7 +233,7 @@ Success response — `200 OK`:
   "email": "alice@u.nus.edu",
   "display_name": "Alice",
   "contact_number": "91234567",
-  "role": "CLIENT",
+  "role": "client",
   "email_verified": true
 }
 ```
@@ -267,7 +267,7 @@ Success response — `200 OK`:
   "email": "alice@u.nus.edu",
   "display_name": "Alice Tan",
   "contact_number": "81234567",
-  "role": "CLIENT",
+  "role": "client",
   "email_verified": true
 }
 ```
@@ -280,7 +280,7 @@ Administrator requests require:
 
 ```http
 X-User-Id: admin-user-id
-X-User-Role: ADMIN
+X-User-Role: admin
 ```
 
 ### Create administrator
@@ -310,7 +310,7 @@ Success response — `201 Created`:
   "email": "admin@u.nus.edu",
   "display_name": "System Admin",
   "contact_number": "91234567",
-  "role": "ADMIN",
+  "role": "admin",
   "email_verified": true,
   "is_suspended": false,
   "created_at": "2026-09-26T09:00:00"
@@ -378,7 +378,7 @@ Request body: none.
 
 Success response: the updated `AdminUserResponse` payload with `is_suspended: false`.
 
-Possible errors: `400` administrator target, `401` missing identity, `403` non-admin identity, `404` user not found.
+Possible errors: `400` self-target or administrator target, `401` missing identity, `403` non-admin identity, `404` user not found.
 
 ### Update user role (promote / demote)
 

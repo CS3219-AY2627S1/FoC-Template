@@ -17,7 +17,7 @@ See [that module's notes](#bootstrap-module) below.
 
 Terraform state contains the AWS account ID, Elastic and private IPs, resource IDs, and other infrastructure detail.
 Never commit a `*.tfstate` file, and never paste state (or its contents) into chat, issues, or PRs.
-The repository `.gitignore` already blocks `*.tfstate`, `*.tfstate.*`, and `.terraform/`.
+`infra/.gitignore` already blocks `*.tfstate`, `*.tfstate.*`, and `.terraform/`.
 
 ## How locking works
 

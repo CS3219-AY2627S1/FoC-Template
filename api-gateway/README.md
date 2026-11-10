@@ -12,7 +12,8 @@ role-based authorization at the edge (backlog: API Gateway).
   directly (only the gateway is published).
 - **F2 Authentication** — validate the caller's session credential on every
   protected route before routing (F2.1); reject missing/malformed/expired
-  (F2.1.1); verify against the User Service (F2.1.2). See `app/auth.py`.
+  (F2.1.1); validate the JWT locally using the shared `JWT_SECRET` (`HS256`),
+  no call to the User Service (F2.1.2). See `app/services/auth.py`.
 - **F3 Authorization (RBAC)** — derive the caller's role from the validated
   credential and forward it via trusted `X-User-Id` / `X-User-Role` headers
   (F3.1). **Client-asserted roles are stripped** (F3.1.1); admin-only routes
@@ -20,9 +21,10 @@ role-based authorization at the edge (backlog: API Gateway).
 
 ## How it works
 
-`app/main.py` exposes a catch-all `/api/{path}` proxy. It resolves the
-upstream from the route table, (auth hook), strips client-supplied trusted
-headers, forwards the request via `httpx`, and returns the upstream response.
+`app/api/routes/proxy.py` exposes a catch-all `/api/{path:path}` proxy. It
+calls `GatewayService`, which resolves the upstream from the route table,
+authorizes the caller, strips client-supplied trusted headers, forwards via
+`httpx`, and returns the upstream response.
 
 ## Route table
 

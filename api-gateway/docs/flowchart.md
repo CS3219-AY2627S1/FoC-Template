@@ -1,9 +1,8 @@
 # api-gateway Request Flow
 
-Companion to `architecture.md`. Where the repo-root `docs/flowchart.md`
-covers the login handshake and the OTP lifecycle (user-service's side), this
-covers what happens **inside api-gateway** for every proxied request, now
-grounded in the layered `services/` module split.
+Companion to `architecture.md`. This covers what happens **inside
+api-gateway** for every proxied request, now grounded in the layered
+`services/` module split.
 
 ## 1. Full proxy request pipeline
 

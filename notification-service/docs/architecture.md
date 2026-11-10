@@ -1,6 +1,6 @@
 # Notification Service architecture
 
-This document describes the **implemented notification-service codebase** on branch `feat/notification-service`.
+This document describes the **implemented notification-service codebase** on `main`.
 It is the primary event-driven consumer in FoC (project M6).
 The service turns order-lifecycle events into per-recipient, user-visible notifications and serves them back over a small read API.
 
