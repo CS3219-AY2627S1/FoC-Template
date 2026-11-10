@@ -1,21 +1,28 @@
-# AI usage log (Order Service + Load test + Admin Service + Supplier Service)
+# AI usage log (Order Service + Load test + Admin Service + Badges + Rating + Frontend)
 
 Shared FoC log. **Order Service** and **Load test** work is owned by
-**Varun Sivakumar**. **Admin Service** and **Supplier Service** work is owned
-by **Sahana Avantika**.
+**Varun Sivakumar**. **Admin Service** work is owned by **Sahana Avantika**.
+**Badges Service**, **Rating Service** and the **Frontend** are owned by
+**Ngooi Jun Sen**.
 
-**Tool:** Cursor (Auto)
+**Tool:** Cursor (Auto) for Order, Load test and Admin. Claude Code (Claude
+Opus 5 until 2026-09-28, Claude Opus 5.5 from 2026-10-01) for Badges, Rating
+and the Frontend.
 
 **Author review:** For Order / Load test entries, Varun Sivakumar generated
 ideas, designed implementation, validated correctness, edited where needed,
-and verified behavior/tests. For Admin / Supplier Service entries, Sahana
-Avantika did the same for those services.
+and verified behavior/tests. For Admin Service entries, Sahana Avantika did
+the same for that service. For Badges, Rating and Frontend entries, Ngooi Jun
+Sen did the same, and per-file headers read "Reviewed by Ngooi Jun Sen".
 
 **Plans:** Cursor plan files under [`plans/`](plans/) are **author design
 notes** reworded for agent execution. They are not AI-originated architecture
 or requirements elicitation. Prohibited phases (requirements prioritization,
 architecture/design decisions, idea generation, decision rationales) were done
-by the owning author before implementation assistance.
+by the owning author before implementation assistance. The Badges, Rating and
+Frontend plans were not written up front: they compile, on 2026-11-10, the
+dated decisions Ngooi Jun Sen gave in Claude Code sessions, each made before
+the work that implemented it.
 
 ---
 
@@ -129,28 +136,109 @@ product requirements.
 
 ---
 
-## 5. Supplier Service build-out
+## 5. Rating Service build-out
 
 | Field | Detail |
 | --- | --- |
-| Owner | Sahana Avantika |
-| Approx. dates | 2026-09 → 2026-11 |
-| Mode | generate / implement / test / docs |
-| Plan | [`plans/supplier_service_plan.md`](plans/supplier_service_plan.md) |
+| Owner | Ngooi Jun Sen |
+| Approx. dates | 2026-10-10 → 2026-11-09 |
+| Mode | generate / implement / test / debug / docs |
+| Plan | [`plans/rating_service_plan.md`](plans/rating_service_plan.md) |
 
-**Already decided by author:** Express + Prisma Supplier Service; public
-approved catalogue for Order; permitted-user create as `pending`; verified-admin
-edit / approve / reject (with reason) / delete; `SupplierAction` audit;
-gateway header rules (401/403); campus seed data.
+**Already decided by author:** Fastify / TypeBox / Drizzle stack mirroring
+Credit; one unified average per user (overriding per-role averages in the
+backlog); Order-issued grants on `foc.rating.commands` with the frontend
+POSTing the score; outbox for `user.rating.updated`; flat message format and
+`{ error, code }` errors; server-side skip; account deletion by anonymising
+given ratings (option A); Kafka DLQ instead of a dead-letter table; Rating in
+CI.
 
-**What Cursor Auto produced:** Routes, gateway helpers, Prisma schema/seed
-content, tests, Docker/compose, config, and docs wording. Prisma migration
-**SQL files were not given in-file headers** (checksum / deploy safety); see
-`supplier-service/prisma/migrations/AI_ASSISTANCE.md`.
+**What Claude Code produced:** Scaffold and implementation of routes,
+services, Kafka consumer, outbox relay, grant handling, skip, account
+deletion, DLQ and replay script, Vitest tests, Helm values and Kafka topic
+config, the CI job, and design docs under `rating-service/docs/` (README,
+sequence diagrams, interfaces, schema). Drizzle migration **SQL files have no
+in-file header**: drizzle-kit generates them from the AI-assisted
+`src/database/schema.ts` and they must not be hand-edited.
 
-**Sample prompt scenario (summarized):** Implement the Supplier Service from
-the author’s plan (catalogue, create, admin moderation, activity log, tests)
-without changing service boundaries or inventing new product requirements.
+**Sample prompt scenario (summarized):** Build the Rating Service from the
+author's decisions (grants from Order, submit only with a grant, unified
+average, outbox to Badges) without changing Order or inventing new product
+requirements; later, add server-side skip, account deletion option A and a
+Kafka DLQ.
+
+---
+
+## 6. Badges Service build-out
+
+| Field | Detail |
+| --- | --- |
+| Owner | Ngooi Jun Sen |
+| Approx. dates | 2026-09-21 (scaffold), 2026-10-30 → 2026-11-09 |
+| Mode | generate / implement / refactor / test / docs |
+| Plan | [`plans/badges_service_plan.md`](plans/badges_service_plan.md) |
+
+**Already decided by author:** separate service and database; revocable
+badges keyed by user ID; owner-only `GET /api/v1/badges/{userId}`; the list
+of counted order statuses; fault-aware dispute counting from
+`admin.case.resolved`; events only (the daily poll and admin manual run
+dropped for coupling and scalability); catalog re-check at startup; badge
+names; account deletion with a tombstone; Kafka DLQ with capped replay.
+
+**What Claude Code produced:** Scaffold and implementation of the event
+handlers (order, rating, admin, user), counting and dispute logic, badge
+evaluator, catalog seeding and re-check, DLQ and replay script, read route,
+Vitest tests, Helm values, and design docs under `badges-service/docs/`
+(README, sequence and state diagrams, interfaces, schema). The removal of the
+earlier poll and admin run was also done by Claude Code at the author's
+instruction. Drizzle migration SQL files have no in-file header, as for
+Rating.
+
+**Sample prompt scenario (summarized):** "If there's a dispute we don't know
+who is at fault, so badges can be wrongly revoked": implement the author's
+rule (requester at fault → courier counts, courier at fault → requester
+counts, no fault → both); "what if you just don't do the polling": remove the
+poll and rely on events only.
+
+---
+
+## 7. Frontend
+
+| Field | Detail |
+| --- | --- |
+| Owner | Ngooi Jun Sen (admin pages handed to a teammate on 2026-11-02) |
+| Approx. dates | 2026-09-22 → 2026-10-15 on `frontend` (D2), 2026-10-20 → 2026-11-10 on `frontend-v2` |
+| Mode | generate / implement / debug / review / docs |
+| Plan | [`plans/frontend_plan.md`](plans/frontend_plan.md) |
+
+**Already decided by author:** React + TypeScript + Vite served by nginx;
+design tokens from the D1 wireframes; comment out anything without an endpoint
+instead of faking it; delivery points, map picker, snapping distance and the
+campus geofence shape; friends and names-once-friended; the alerts bell on
+Order's alerts; dropping photos for requesters (UI FR7.4) and the Account
+status page; visual and layout changes reported during the author's testing.
+
+**What Claude Code produced:** Scaffold, pages, components, the `api.ts`
+client and polled stores, route guards, nginx and Vite proxy config, the
+frontend deploy script, fixes for issues the author found while testing on
+the local cluster, reviews of teammates' PRs against the API contract (for
+the author to raise with owners; other teams' code was not edited), and docs
+under `frontend/docs/` (flows and interfaces). For D2, pages were generated
+from the desktop and mobile mockups against the UI backlog and D2 Part 2.
+Also a draft list of campus delivery points (CSV) and the campus geofence
+coordinates, drawn to the author's boundaries; the list was for the author to
+share with the Order owner, who decides what Order stores.
+
+**Author edits on review (recorded in file headers):** supplier filter chips
+moved to a grid layout; supplier status shown in uppercase; role code and the
+role column removed from the admin users page; medium password strength
+recoloured to `--color-warning`.
+
+**Sample prompt scenario (summarized):** "Comment out sections that don't
+have endpoints, i.e. the photos, names, and remove all sample data"; "show
+the Telegram handle and then the real name when friended"; "suppose the
+pickup is within E3, change the geofence accordingly and cut off the top
+part along the expressway".
 
 ---
 
@@ -167,3 +255,12 @@ without changing service boundaries or inventing new product requirements.
 | `supplier-service/prisma/migrations/*.sql` | `AI_ASSISTANCE.md` only (no SQL edits) |
 | `load-test/k6/load.js`, inference notes | Per-file header |
 | `load-test` Helm + `setup/` | `load-test/AI_ASSISTANCE.md` |
+| `rating-service/src/**`, tests, scripts, config, Docker | Per-file header |
+| `badges-service/src/**`, tests, scripts, config, Docker | Per-file header |
+| `rating-service/drizzle/*.sql`, `badges-service/drizzle/*.sql` | This log only (drizzle-kit output from the headed `schema.ts`; not hand-edited) |
+| `badges-service/README.md` and `docs/` | README "AI assistance" section |
+| `rating-service/README.md` and `docs/` | This log only |
+| `frontend/src/**`, `nginx.conf`, `vite.config.ts`, Docker | Per-file header |
+| `frontend/README.md` and `docs/` | README "AI assistance" section |
+| Rating and Badges entries in shared deploy files: `deploy/values/services/{rating,badges}.yaml` and their `envs/local` overrides, routes in `deploy/charts/foc-gateway/values.yaml`, topics and users in `deploy/charts/foc-kafka/values.yaml`, the databases in `infra/local/aws/variables.tf`, `RATING_SERVICE_URL` in `deploy/values/services/order.yaml`, Rating in `.env.example` | This log only (shared files; no header added) |
+| Rating and Badges jobs in `.github/workflows/ci.yml` | This log only |

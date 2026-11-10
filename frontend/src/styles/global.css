@@ -61,6 +61,22 @@ textarea {
 }
 
 /*
+ * The open list of a native <select>. Chrome on Windows draws it from the
+ * select's own background, and ours are transparent so the field shows
+ * through: the list came out white, with the inherited light text unreadable
+ * on it. Giving the options their own colours fixes every select at once.
+ */
+select option,
+select optgroup {
+  background-color: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+select option:disabled {
+  color: var(--color-text-subtle);
+}
+
+/*
  * Browsers repaint an autofilled field in their own colours, which on a dark
  * theme reads as a bug: Firefox lays a yellow filter over it, Chrome and Safari
  * force a pale blue background. The two need different treatment.
