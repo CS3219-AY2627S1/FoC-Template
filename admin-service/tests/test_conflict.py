@@ -415,6 +415,25 @@ def test_list_filters_and_deadline_order(api):
     assert still_created in ids_for("created", "created")
 
 
+def test_list_and_detail_show_when_the_reminder_fired(api):
+    # Added with Claude Code (Claude Opus 5.5), 2026-11-10: F3.7.1's in-app notice.
+    case_id = create_case(api)["id"]
+
+    def listed_row() -> dict:
+        resp = api.get("/api/v1/admin/conflicts", headers=ADMIN_HEADERS)
+        assert resp.status_code == 200, resp.text
+        return next(row for row in resp.json() if row["id"] == case_id)
+
+    assert listed_row()["reminderSentAt"] is None
+
+    psql(f"UPDATE conflict_cases SET reminder_sent_at = now() WHERE id = '{uuid.UUID(case_id)}'")
+
+    assert listed_row()["reminderSentAt"] is not None
+    detail = api.get(f"/api/v1/admin/conflicts/{case_id}", headers=ADMIN_HEADERS)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["reminderSentAt"] is not None
+
+
 def test_detail_returns_the_report(api):
     photos = ["https://example.com/before.jpg"]
     created = create_case(api, photos=photos)

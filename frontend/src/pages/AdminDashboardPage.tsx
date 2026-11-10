@@ -18,7 +18,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchAdminUser, fetchAdminUsers } from '../lib/adminUsers';
-import { fetchConflicts, isOpen } from '../lib/conflicts';
+import { fetchConflicts, isDueSoon, isOpen } from '../lib/conflicts';
 import { formatElapsed, formatWhen } from '../lib/format';
 import {
   fetchSupplierActivity,
@@ -35,7 +35,7 @@ type PendingState =
 
 type EscalationState =
   | { kind: 'loading' }
-  | { kind: 'ready'; count: number; soonest: Date | null }
+  | { kind: 'ready'; count: number; soonest: Date | null; dueSoon: number }
   | { kind: 'failed' };
 
 type SuspendedState = { kind: 'loading' } | { kind: 'ready'; count: number } | { kind: 'failed' };
@@ -104,6 +104,7 @@ export function AdminDashboardPage() {
           kind: 'ready',
           count: open.length,
           soonest: deadlines.length > 0 ? new Date(Math.min(...deadlines)) : null,
+          dueSoon: rows.filter(isDueSoon).length,
         });
       })
       .catch(() => {
@@ -190,6 +191,13 @@ export function AdminDashboardPage() {
                   ? 'Nothing waiting'
                   : `Next deadline ${formatWhen(escalations.soonest)}`}
               </p>
+              {/* F3.7.1: the reminder job has fired for these. */}
+              {escalations.dueSoon > 0 ? (
+                <p className={styles.cardWarning}>
+                  {/* Not "resolves itself": a case with no usable AI verdict stays open. */}
+                  {`${escalations.dueSoon} due within a day`}
+                </p>
+              ) : null}
             </>
           )}
           <Link to="/admin/escalations" className={styles.secondaryAction}>

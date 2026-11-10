@@ -99,7 +99,8 @@ async def send_deadline_reminder(case_id: str) -> None:
             return
         case.reminder_sent_at = datetime.now(timezone.utc)
         await db.commit()
-        # TODO: push a notification to the admin queue (email, in-app, etc.)
+        # The in-app notice: GET /conflicts returns reminderSentAt, and the admin
+        # menu, dashboard and Escalations list flag the case as due soon. No email.
 
 
 async def auto_resolve_case(case_id: str) -> None:

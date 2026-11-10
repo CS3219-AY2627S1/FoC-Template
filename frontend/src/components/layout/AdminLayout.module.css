@@ -122,6 +122,28 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* F3.7.1: open cases whose deadline reminder has fired. Amber, like the
+   "awaiting a decision" status on the Escalations page. */
+.dueSoon {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* With the due pill in front, the total sits beside it instead of at the far end. */
+.countAfterDue {
+  margin-left: var(--space-1);
+}
+
 .sectionActive .count {
   background: var(--color-accent-contrast);
   color: var(--color-accent);

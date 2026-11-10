@@ -32,6 +32,7 @@ import {
   fetchConflict,
   fetchConflictPhoto,
   fetchConflicts,
+  isDueSoon,
   isOpen,
   reassessConflict,
   resolveConflict,
@@ -140,6 +141,8 @@ export function AdminEscalationsPage() {
                   <p className={styles.itemTitle}>
                     Order #{orderReference(row.orderId)}
                     <span className={styles[row.status]}>{STATUS_LABELS[row.status]}</span>
+                    {/* F3.7.1: the deadline reminder has fired for this case. */}
+                    {isDueSoon(row) ? <span className={styles.dueSoon}>Due soon</span> : null}
                   </p>
                   <p className={styles.itemNote}>{verdictLine(row)}</p>
                   {isOpen(row.status) ? (

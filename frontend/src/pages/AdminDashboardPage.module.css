@@ -79,6 +79,15 @@
   color: var(--color-text-muted);
 }
 
+/* F3.7.1: escalations whose deadline reminder has fired. */
+.cardWarning {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.5;
+  color: var(--color-warning);
+}
+
 .primaryAction,
 .secondaryAction {
   display: inline-flex;

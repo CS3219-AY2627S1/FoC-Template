@@ -15,7 +15,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { useAuth } from '../../auth/AuthProvider';
 import { Icon } from '../ui/Icon';
 import { useAdminCountsVersion } from '../../lib/adminCounts';
-import { fetchConflicts, isOpen } from '../../lib/conflicts';
+import { fetchConflicts, isDueSoon, isOpen } from '../../lib/conflicts';
 import { fetchSuppliersForAdmin } from '../../lib/suppliers';
 import styles from './AdminLayout.module.css';
 
@@ -32,6 +32,8 @@ export function AdminLayout() {
   const { user, signOut } = useAuth();
   const [pendingSuppliers, setPendingSuppliers] = useState<number | null>(null);
   const [openEscalations, setOpenEscalations] = useState<number | null>(null);
+  // Open cases whose deadline reminder has fired (F3.7.1).
+  const [dueSoon, setDueSoon] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
 
@@ -55,10 +57,15 @@ export function AdminLayout() {
       });
     fetchConflicts()
       .then((rows) => {
-        if (!cancelled) setOpenEscalations(rows.filter((row) => isOpen(row.status)).length);
+        if (cancelled) return;
+        setOpenEscalations(rows.filter((row) => isOpen(row.status)).length);
+        setDueSoon(rows.filter(isDueSoon).length);
       })
       .catch(() => {
-        if (!cancelled) setOpenEscalations(null);
+        if (!cancelled) {
+          setOpenEscalations(null);
+          setDueSoon(0);
+        }
       });
     return () => {
       cancelled = true;
@@ -107,8 +114,19 @@ export function AdminLayout() {
                   {section.to === '/admin/suppliers' && pendingSuppliers !== null ? (
                     <span className={styles.count}>{pendingSuppliers}</span>
                   ) : null}
+                  {section.to === '/admin/escalations' && dueSoon > 0 ? (
+                    <span
+                      className={styles.dueSoon}
+                      title={`${dueSoon} due within a day`}
+                      aria-label={`${dueSoon} due within a day`}
+                    >
+                      {dueSoon} due
+                    </span>
+                  ) : null}
                   {section.to === '/admin/escalations' && openEscalations !== null ? (
-                    <span className={styles.count}>{openEscalations}</span>
+                    <span className={dueSoon > 0 ? `${styles.count} ${styles.countAfterDue}` : styles.count}>
+                      {openEscalations}
+                    </span>
                   ) : null}
                 </NavLink>
               </li>
