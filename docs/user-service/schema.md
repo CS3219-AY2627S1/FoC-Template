@@ -1,0 +1,217 @@
+# User Service — Database Choice and Schema
+
+D2 §2. Backlog refs: US-FR1.1.1, US-FR3.1, US-FR4.1.2, US-NFR2.1.1, US-NFR2.1.2, US-NFR4.1.2.
+Ticket: USR-01 (#120).
+
+## 1. Database: PostgreSQL
+
+**Why, for FoC specifically**
+
+- **The data is relational and constraint-heavy.** Email uniqueness, one profile per user, sessions
+  belonging to a user, audit rows referring to both actor and target. Unique indexes and foreign keys
+  enforce these in the database instead of trusting application code.
+- **The hard rules need transactions.** Activation is single-use (consume the token and flip the status
+  atomically). "At least one admin always exists" needs a locked read-check-write. Suspension must revoke
+  refresh sessions and write the audit row together. All of these are single-database ACID operations.
+- **Query patterns are simple and indexed.** By `id` (lookup), by normalized `email` (login/register), by
+  `token_hash` (activation, refresh), and paginated admin listing filtered by status/role. All are B-tree hits.
+- **Scale is small.** One campus's students, on the order of 10⁴ accounts, and a few writes per second at
+  peak. No sharding or document flexibility is needed; a single primary is enough.
+- **Team consistency.** Credit and Order services need ACID for the ledger and saga; one engine means one
+  Compose service (separate logical databases and credentials per service, plan §3.1) and one skill set.
+
+**Considered and rejected:** MongoDB — schema flexibility isn't needed for a fixed identity model and it
+weakens the uniqueness and cross-row invariants above; Redis — session cache only, not a system of record;
+a hosted identity provider — would hide the RBAC and credential storage the course asks us to explain.
+
+## 2. Schema
+
+Forward-only migrations. All ids are UUID; all timestamps are `timestamptz` (UTC).
+`email` is stored already normalized (trimmed, lower-cased) and protected by a unique index on `lower(email)`, so uniqueness holds even if a row is ever written without going through the service.
+
+```mermaid
+erDiagram
+    users ||--|| profiles : has
+    users ||--o{ user_roles : holds
+    users ||--o{ activation_tokens : "receives"
+    users ||--o{ password_reset_tokens : "receives"
+    users ||--o{ refresh_sessions : "owns"
+    users ||--o{ audit_records : "is target of"
+    users ||--o{ role_change_requests : "is target of"
+    users ||--o{ admin_reads : "is read in"
+    users ||--o{ admin_alerts : "raises (as admin)"
+```
+
+### `users`
+| Column              | Type          | Notes                                                                       |
+| ------------------- | ------------- | --------------------------------------------------------------------------- |
+| `id`                | uuid PK       | Never editable. Generated server-side.                                       |
+| `email`             | text NOT NULL, UNIQUE index on `lower(email)` | Normalized. Duplicate → rejected, no row created. |
+| `password_hash`     | text NULL     | Argon2id, encoded string including the per-hash random salt and parameters. NULL while `PENDING_ACTIVATION` (#309): set at activation. Only a pending account may have none; the service enforces it, and the CHECK waits for a release after #309's rollback window (migration 0007). |
+| `status`            | text NOT NULL | `CHECK IN ('PENDING_ACTIVATION','ACTIVE','SUSPENDED')`                       |
+| `is_seeded_admin`   | boolean NOT NULL DEFAULT false | Set only by the boot seed. Never writable through any API. |
+| `must_change_password` | boolean NOT NULL DEFAULT false | Set by the boot seed; cleared by `POST /auth/password` or `POST /auth/password-reset/confirm`. While set, login starts no session (`PASSWORD_CHANGE_REQUIRED`). Migration 004 set it on every existing bootstrap admin. |
+| `activated_at`      | timestamptz NULL | Set once, on first activation. Drives "exactly one `UserActivated`".      |
+| `created_at`, `updated_at` | timestamptz NOT NULL |                                                                    |
+
+### `user_roles`
+| Column       | Type        | Notes                                                    |
+| ------------ | ----------- | -------------------------------------------------------- |
+| `user_id`    | uuid FK → users ON DELETE RESTRICT | PK (`user_id`, `role`)            |
+| `role`       | text        | `CHECK IN ('STUDENT','ADMIN')`                            |
+| `granted_by` | uuid FK → users NULL | Null for seed and for the implicit `STUDENT` role |
+| `granted_at` | timestamptz |                                                           |
+
+Every user has a `STUDENT` row from creation. Promotion adds an `ADMIN` row; demotion deletes it (inside a
+transaction that first checks the remaining admin count under `SELECT … FOR UPDATE`).
+
+### `profiles`
+| Column               | Type         | Notes                                                      |
+| -------------------- | ------------ | ---------------------------------------------------------- |
+| `user_id`            | uuid PK FK → users | 1:1                                                  |
+| `display_name`       | text NOT NULL | 1–50 chars                                                |
+| `faculty`            | text NULL    |                                                            |
+| `avatar_ref`         | text NULL    | Reference (opaque key or URL), not image bytes            |
+| `contact_preference` | text NOT NULL DEFAULT 'IN_APP' | `IN_APP` \| `EMAIL`                    |
+| `preferred_mode`     | text NOT NULL DEFAULT 'REQUESTER' | `REQUESTER` \| `COURIER`. UX only — never read by any authorization decision. |
+
+### `activation_tokens`
+| Column        | Type        | Notes                                                       |
+| ------------- | ----------- | ----------------------------------------------------------- |
+| `id`          | uuid PK     |                                                             |
+| `user_id`     | uuid FK     |                                                             |
+| `token_hash`  | text UNIQUE | Hex SHA-256 of a 256-bit random token; the raw token exists only in the email |
+| `expires_at`  | timestamptz | 30 minutes by default (`ACTIVATION_TOKEN_TTL_MINUTES`)      |
+| `consumed_at` | timestamptz NULL | Set in the same transaction that sets the password and activates the user |
+
+### `password_reset_tokens`
+Built like `activation_tokens` (#309). Issuing one deletes the account's unused ones. Using one, or an
+activation token, deletes the account's other unused activation and reset tokens and revokes every
+refresh session.
+
+| Column        | Type        | Notes                                                       |
+| ------------- | ----------- | ----------------------------------------------------------- |
+| `id`          | uuid PK     |                                                             |
+| `user_id`     | uuid FK     | Index on (`user_id`)                                        |
+| `token_hash`  | text UNIQUE | Hex SHA-256 of a 256-bit random token; the raw token exists only in the email |
+| `expires_at`  | timestamptz | Issue + `PASSWORD_RESET_TOKEN_TTL_MINUTES` (30 by default)  |
+| `consumed_at` | timestamptz NULL | Set in the same transaction that replaces the password |
+
+### `refresh_sessions`
+| Column        | Type        | Notes                                                                 |
+| ------------- | ----------- | --------------------------------------------------------------------- |
+| `id`          | uuid PK     | Also the token's session id (`sid` claim in the access token)          |
+| `family_id`   | uuid        | Shared by every token descended from one login                         |
+| `user_id`     | uuid FK     | Index on (`user_id`)                                                   |
+| `token_hash`  | text UNIQUE | Hex SHA-256 of the opaque refresh token                                |
+| `issued_at`, `expires_at` | timestamptz | `expires_at` = issue + 7 days                          |
+| `rotated_at`  | timestamptz NULL | Set when this token is exchanged for a new one                    |
+| `revoked_at`  | timestamptz NULL | Logout, suspension, password change or reset, or family kill      |
+| `stepped_up_at` | timestamptz NULL | Last password re-entry on this sign-in (`POST /auth/step-up`, ADR 0008). Copied to the new row on refresh |
+
+**Reuse detection:** presenting a token whose `rotated_at` is set revokes every row with the same
+`family_id`.
+
+### `audit_records` (append-only)
+| Column           | Type        | Notes                                                        |
+| ---------------- | ----------- | ------------------------------------------------------------ |
+| `id`             | uuid PK     | Also the "reason reference" carried in `UserSuspended`        |
+| `actor_id`       | uuid NULL   | The administrator who acted; `NULL` exactly when `actor_type = 'SYSTEM'` (CHECK) |
+| `actor_type`     | text        | `USER` \| `SYSTEM`. `SYSTEM` is the boot-time bootstrap (migration 004) |
+| `target_user_id` | uuid        |                                                              |
+| `action`         | text        | `SUSPEND` \| `REACTIVATE` \| `ROLE_GRANT` \| `ROLE_REVOKE` \| `ROLE_CHANGE_REQUESTED` \| `ROLE_CHANGE_REJECTED` \| `ADMIN_BOOTSTRAP` |
+| `reason`         | text        | Required, 1–500 chars                                         |
+| `occurred_at`    | timestamptz |                                                              |
+| `correlation_id` | text        |                                                              |
+| `approval`       | text NULL   | `SECOND_ADMIN` \| `NO_APPROVER`: how a `ROLE_GRANT` / `ROLE_REVOKE` was approved (ADR 0008, migration 0004). Allowed on those two actions only (CHECK); role changes from before the two-person rule have none |
+
+Append-only is enforced twice: the service's DB role has `INSERT, SELECT` only (no `UPDATE`/`DELETE`),
+and a trigger raises on any `UPDATE` or `DELETE`. No API edits or deletes an audit row.
+
+### `role_change_requests` (ADR 0008, migration 0002)
+| Column            | Type        | Notes                                                                 |
+| ----------------- | ----------- | --------------------------------------------------------------------- |
+| `id`              | uuid PK     |                                                                       |
+| `target_user_id`  | uuid FK → users | One `PENDING` row per target (partial unique index)               |
+| `role`            | text        | `STUDENT` \| `ADMIN` — the role asked for                              |
+| `requested_by`    | uuid FK → users | The admin who asked                                               |
+| `reason`          | text        | 1–500 chars                                                           |
+| `status`          | text        | `PENDING` \| `APPROVED` \| `REJECTED` \| `EXPIRED`. A `PENDING` row past `expires_at` is read as `EXPIRED`, and a new request for the same user rewrites it |
+| `created_at`, `expires_at` | timestamptz | `expires_at` = creation + `ROLE_REQUEST_TTL_HOURS` (24)           |
+| `decided_by`, `decided_at`, `decision_reason` | NULL until decided | `decided_by` is set exactly when `status` is `APPROVED` or `REJECTED` (CHECK); the requester, when withdrawn |
+| `correlation_id`  | text        |                                                                       |
+
+A request changes no role. Approving it changes the role in the same transaction, with the approver as
+the audit row's actor. Every request and decision also writes an `audit_records` row, so the history
+survives even though `status` is updated.
+
+### `admin_reads` (append-only, ADR 0008)
+| Column           | Type        | Notes                                                        |
+| ---------------- | ----------- | ------------------------------------------------------------ |
+| `id`             | uuid PK     |                                                              |
+| `actor_id`       | uuid FK → users | The admin who read the account. Indexed                  |
+| `target_user_id` | uuid FK → users | The account read — opened, or returned by the full list. Indexed. An admin's own account, and the directory, are not recorded |
+| `occurred_at`    | timestamptz |                                                              |
+| `correlation_id` | text        |                                                              |
+
+### `admin_alerts` (append-only, ADR 0008)
+| Column        | Type        | Notes                                                           |
+| ------------- | ----------- | --------------------------------------------------------------- |
+| `id`          | uuid PK     |                                                                 |
+| `kind`        | text        | `ROLE_CHANGE` \| `ADMIN_SUSPENDED` \| `ADMIN_REACTIVATED` \| `BULK_SUSPENSIONS` \| `SUSPENSION_LIMIT_REACHED` \| `BULK_READS` |
+| `actor_id`    | uuid FK → users | The admin whose action raised it                            |
+| `details`     | jsonb       | Counts, thresholds and account ids — never an email              |
+| `occurred_at` | timestamptz | Indexed with `kind` and `actor_id`, for "at most once an hour"   |
+
+`admin_reads` and `admin_alerts` are append-only the same way as `audit_records` (migration 0003): a
+trigger rejects `UPDATE` and `DELETE`, and the service role loses those privileges.
+
+### `outbox_events`
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid PK | Also the envelope's `eventId`, on every publish attempt |
+| `seq` | bigint identity | Insertion order, which the relay publishes in (migration 006) |
+| `event_type` | text | A catalogue routing key: `user.activated`, `user.suspended`, `user.reactivated`, `user.role-changed` (legacy names rewritten by migration 005) |
+| `schema_version` | integer | Default 1 |
+| `aggregate_id` | uuid | the user |
+| `payload` | jsonb | Validated against the catalogue's schema on insert |
+| `correlation_id` | text | |
+| `causation_id` | text NULL | Defaults to the correlation id in the envelope |
+| `occurred_at` | timestamptz | |
+| `published_at` | timestamptz NULL | Set by the relay once the broker has confirmed |
+| `attempts` | integer | Publish attempts so far |
+| `last_error` | text NULL | Why the last attempt failed |
+| `next_attempt_at` | timestamptz | Backoff after a failure: 1 s doubling to 60 s |
+
+Events are inserted in the same transaction as the change that caused them, so an activation can never
+commit without its event. The platform's `OutboxRelay` (EVT-02) publishes committed rows whenever
+`RABBITMQ_URL` is set; migration 006 added the relay's columns and kept every existing row. It
+matches `@foc/platform`'s shared `OUTBOX_TABLE_SQL`, except that `aggregate_id` is a uuid.
+
+## 3. How credentials are stored (D2 §2)
+
+| Secret               | Storage                                                                 |
+| -------------------- | ----------------------------------------------------------------------- |
+| Password             | Argon2id, unique salt per hash, tuned parameters in config. Never stored, logged or returned in plaintext. |
+| Activation token     | Only its SHA-256 is stored; single-use, expiring.                       |
+| Refresh token        | Only its SHA-256 is stored; rotated on every use; revocable.            |
+| Access token         | Not stored. Short-lived signed JWT (15 min).                            |
+| JWT signing key      | Environment / secret store, never in the repo or an image.              |
+
+Log redaction: structured logs identify a user by `userId` only, never by email, and any field named
+`password`, `token`, `hash` or `authorization` is redacted at the logger.
+
+## 4. Traceability
+
+| Requirement                                           | Where it lives                                               |
+| ----------------------------------------------------- | ------------------------------------------------------------ |
+| US-FR1.1.1 duplicate/off-domain rejected              | `users.email` UNIQUE + service-level allowlist               |
+| Activation single-use, replay-idempotent              | `activation_tokens.consumed_at`, `users.activated_at`        |
+| Password reset single-use, newest link only (#309)    | `password_reset_tokens.consumed_at`                          |
+| US-FR4.1.2 lookup returns only existence/status/roles/name | Reads `users`, `user_roles`, `profiles.display_name` only |
+| US-NFR2.1.1 Argon2id, no secrets in logs              | `users.password_hash`; logger redaction                      |
+| US-NFR2.1.2 refresh hashed, revoked ≤ 10 s            | `refresh_sessions`                                            |
+| US-NFR4.1.2 append-only audit                         | `audit_records` + privileges + trigger                       |
+| ADR 0008 two people per role change                   | `role_change_requests` + `audit_records`                     |
+| ADR 0008 password re-entry                            | `refresh_sessions.stepped_up_at`                             |
+| ADR 0008 watching the admins                          | `admin_reads`, `admin_alerts` (append-only)                  |

@@ -1,0 +1,94 @@
+# PLT-05 (EI-NFR4.1.2) — what Prometheus alerts an operator to. Evaluated every 15 s; a firing alert
+# shows on the dashboard's "Firing alerts" panel and at http://localhost:9090/alerts. No
+# Alertmanager runs in the local stack, so nothing is sent anywhere: the dashboard is the pager.
+# Unit-tested by alerts.test.yml (`promtool test rules`, run in CI's Compose smoke job).
+groups:
+  - name: foc-operations
+    rules:
+      - alert: CreditLedgerMismatch
+        expr: foc_credit_ledger_audit_mismatches > 0
+        labels:
+          severity: page
+        annotations:
+          summary: 'Credit ledger audit found {{ $value }} mismatch(es)'
+          description: >-
+            Inspect the latest ledger audit in the admin Operations tab and its immutable findings
+            using the runbook. Do not edit balances automatically.
+
+      - alert: CreditLedgerAuditFailed
+        expr: foc_credit_ledger_audit_failed > 0
+        labels:
+          severity: page
+        annotations:
+          summary: 'Credit ledger audit could not complete'
+          description: 'Inspect the credit-service logs and retry the audit; failure is not a clean reconciliation.'
+
+      - alert: CreditLedgerAuditOverdue
+        expr: time() - foc_credit_ledger_audit_last_completed_timestamp_seconds > 90000
+        for: 10m
+        labels:
+          severity: warn
+        annotations:
+          summary: 'Credit ledger audit has not completed within 25 hours'
+          description: 'Check the daily audit scheduler and database. Run an on-demand audit from Operations.'
+
+      # A message failed every retry and is parked for an operator. One is enough: each is an event
+      # the system did not act on, such as a student with no wallet.
+      - alert: DeadLetterWaiting
+        expr: sum by (service, queue) (foc_dead_letters_waiting) > 0
+        labels:
+          severity: page
+        annotations:
+          summary: '{{ $value }} dead letter(s) waiting on {{ $labels.queue }}'
+          description: >-
+            An event failed every retry. Find it in the admin console's Operations tab, fix the
+            cause, then redrive it there.
+
+      # A dead letter is still on its RabbitMQ queue: the service that owns it is not draining it
+      # into its database, most likely because it is down. Nothing can be redriven until it is.
+      - alert: DeadLetterNotParked
+        expr: sum by (queue) (rabbitmq_detailed_queue_messages{queue=~".+\\.dlq"}) > 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: '{{ $value }} dead letter(s) unparked on {{ $labels.queue }}'
+          description: >-
+            The service that consumes this queue has not parked its dead letters for two minutes.
+            Check that it is running.
+
+      # The oldest errand still waiting for Credit to reserve its reward, past the Order Service's
+      # own limit (ORDER_CREDIT_WAIT_TIMEOUT_MS, 5 minutes by default).
+      - alert: ErrandWaitingForCredit
+        expr: max by (service) (foc_orders_pending_credit_oldest_age_seconds) > 300
+        labels:
+          severity: warn
+        annotations:
+          summary: 'An errand has waited {{ $value | humanizeDuration }} for Credit'
+          description: >-
+            Look for a dead letter on the reservation queues, and at the errand's trace in the
+            Operations tab. Reconciliation retries it on its own.
+
+      # A change was saved but its event has not been published for two minutes. A healthy outbox
+      # drains in under a second, so either the broker is unreachable or nobody is listening for
+      # the event yet (EVT-03: its consumer has never declared its queue). The row is retried on
+      # its own, and later events for the same errand or user wait behind it.
+      - alert: OutboxEventStuck
+        expr: max by (service) (foc_outbox_oldest_unpublished_age_seconds) > 120
+        labels:
+          severity: page
+        annotations:
+          summary: 'An event has waited {{ $value | humanizeDuration }} in the outbox of {{ $labels.service }}'
+          description: >-
+            Read last_error on that service's unpublished outbox_events rows. "unroutable" means
+            the service that consumes the event has never declared its queue: start it. Anything
+            else points at RabbitMQ.
+
+      - alert: ServiceDown
+        expr: up{job="services"} == 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: '{{ $labels.instance }} is not answering scrapes'
+          description: Prometheus has not reached its /metrics for a minute.

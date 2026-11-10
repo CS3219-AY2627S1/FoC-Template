@@ -1,0 +1,119 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (Claude Opus 5.5), dates: 2026-10-01 to 2026-11-03
+// Scope: Generated the initial implementation for "surface stale credit waits and expose private
+//   history" (CRD-07, #171, #268); later new features.
+// Author review: Zhang Yuan and Isaac Chua checked the code for correctness against the ticket,
+//   confirmed the tests pass, and made sure it caused no fatal errors or architectural conflicts
+//   before committing.
+
+import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req } from '@nestjs/common';
+import { AdminOnly, CurrentUser, type AuthContext } from '@foc/auth-client';
+import { ApiException, DEAD_LETTERS, type DeadLetters } from '@foc/platform';
+import type { Request } from 'express';
+import { z } from 'zod';
+import { env } from '../config.js';
+import { OperationsRepository } from './operations.repository.js';
+import { OrdersService } from './orders.service.js';
+import {
+  parseAdminOrdersQuery,
+  parseOptionalIdempotencyKey,
+  parseOrderId,
+  parseResolveOrder,
+} from './validation.js';
+
+const orderIdSchema = z.uuid();
+
+/** Administrator-only: operator views, and decisions on disputes referred to the caller. */
+@Controller('admin/orders')
+export class AdminOrdersController {
+  constructor(
+    @Inject(OrdersService) private readonly orders: OrdersService,
+    @Inject(OperationsRepository) private readonly operations: OperationsRepository,
+    @Inject(DEAD_LETTERS) private readonly deadLetters: DeadLetters,
+  ) {}
+
+  /**
+   * ORD-15 and ADM-06 — errands newest first and paged: one account's, as requester
+   * (`requesterId`), as current courier (`courierId`) or both, or every errand when neither is
+   * given; `status` narrows either to some statuses. Public fields only: an administrator reads an
+   * errand's private details only when it is referred to them, through `GET /orders/{orderId}`.
+   */
+  @Get()
+  @AdminOnly()
+  list(@Query() query: unknown) {
+    return this.orders.listForAdmin(parseAdminOrdersQuery(query));
+  }
+
+  /** The most recent reconciliation decisions (CRD-07), newest first. */
+  @Get('reconciliation-attempts')
+  @AdminOnly()
+  reconciliationAttempts() {
+    return this.orders.reconciliationAttempts();
+  }
+
+  /**
+   * Orders that have waited in PENDING_CREDIT longer than CREDIT_WAIT_TIMEOUT_MS. Listing one
+   * does not reject it: it still opens if the reservation arrives.
+   */
+  @Get('pending-credit')
+  @AdminOnly()
+  pendingCredit() {
+    return this.orders.creditWaitExceeded(env.CREDIT_WAIT_TIMEOUT_MS);
+  }
+
+  /** Disputes referred to the caller, and those not yet referred to anyone. */
+  @Get('referred')
+  @AdminOnly()
+  referred(@CurrentUser() caller: AuthContext) {
+    return this.orders.referred(caller);
+  }
+
+  /** The most recent dispute decisions, newest first. */
+  @Get('decisions')
+  @AdminOnly()
+  decisions() {
+    return this.orders.decisions();
+  }
+
+  @Post(':id/resolve')
+  @HttpCode(200)
+  @AdminOnly()
+  resolve(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @CurrentUser() caller: AuthContext,
+    @Req() request: Request & { correlationId?: string },
+  ) {
+    return this.orders.resolve(
+      parseOrderId(id),
+      parseResolveOrder(body),
+      caller,
+      request.correlationId ?? 'unknown',
+      parseOptionalIdempotencyKey(request.header('idempotency-key')),
+    );
+  }
+
+  /** Operator alerts (credit waits and conflicts, unreferred disputes) across every errand, newest first. */
+  @Get('alerts')
+  @AdminOnly()
+  alerts() {
+    return this.operations.alerts();
+  }
+
+  /**
+   * PLT-05 (EI-NFR4.1.1) — one errand, from one identifier: its state changes, every event it
+   * caused and how sending it went, reconciliation, operator alerts, and any dead letter about it.
+   * The Credit Service's half is `GET /admin/orders/{orderId}/credit` there.
+   */
+  @Get(':orderId/timeline')
+  @AdminOnly()
+  async timeline(@Param('orderId') orderId: string) {
+    if (!orderIdSchema.safeParse(orderId).success) {
+      throw new ApiException(400, 'INVALID_ORDER_ID', 'Order ID must be a UUID.');
+    }
+    const timeline = await this.operations.timeline(orderId);
+    if (!timeline) throw new ApiException(404, 'ORDER_NOT_FOUND', 'Order not found.');
+    const { items } = await this.deadLetters.list({ q: orderId, page: 1, pageSize: 100 });
+    return { ...timeline, deadLetters: items };
+  }
+}

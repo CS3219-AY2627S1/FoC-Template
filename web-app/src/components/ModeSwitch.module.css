@@ -1,0 +1,102 @@
+.switch {
+  border: none;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+/* Visually hidden but announced: the options carry their own visible text. */
+.legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/*
+ * Two equal halves with one thumb that slides to the chosen one, so the switch shows which way it
+ * moved. The track is exactly control-tall: each label still fills a 44 px target, with the thumb
+ * drawn inset inside it.
+ */
+.options {
+  position: relative;
+  display: inline-grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  background: var(--color-border);
+  border-radius: var(--radius-pill);
+  isolation: isolate;
+}
+
+.options::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: var(--space-1);
+  width: calc(50% - var(--space-1));
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--color-primary);
+  transition: transform var(--motion-slow) var(--motion-ease-out);
+}
+
+.options:has(.option:last-child .input:checked)::before {
+  transform: translateX(100%);
+}
+
+.option {
+  position: relative;
+  display: flex;
+}
+
+.input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.label {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--size-control);
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color var(--motion-base) var(--motion-ease-out);
+}
+
+.label:hover {
+  color: var(--color-text);
+}
+
+.input:focus-visible + .label {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.switch[aria-busy="true"] .label {
+  cursor: progress;
+}
+
+/* The ring on the thumb tells the chosen option from the track at 3:1; colour alone does not. */
+.input:checked + .label {
+  color: var(--color-primary);
+}
+
+.error {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+}
+
+.error:empty {
+  margin: 0;
+}

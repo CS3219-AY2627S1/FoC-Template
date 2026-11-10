@@ -1,3 +1,6 @@
+# Dependencies
+node_modules/
+
 # Build output
 dist/
 build/
@@ -13,3 +16,18 @@ out/
 # OS
 .DS_Store
 Thumbs.db
+
+# Test output
+coverage/
+.demo-state/
+backups/
+.recovery-results/
+.release-results/
+.lighthouse-results/
+.deploy-history
+.deploy.lock
+__pycache__/
+*.tsbuildinfo
+
+# oh-my-claudecode plugin state (local, per-session)
+.omc/

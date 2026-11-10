@@ -1,0 +1,126 @@
+# Testing
+
+How the test suites are separated and how to run each one (PL-NFR4.1.1, PL-NFR4.1.2). The shared
+fixtures and contract checks live in [`test-harness/`](../test-harness) (`@foc/test-harness`,
+TST-01 #145). Each service fills the suites with its own cases.
+
+## Suites at a glance
+
+| Suite                   | Files                                         | Needs                    | Command                                                 |
+| ----------------------- | --------------------------------------------- | ------------------------ | ------------------------------------------------------- |
+| Unit                    | `*.test.ts` testing pure modules              | nothing                  | `npm test` (or `npm test -w @foc/<service>`)            |
+| Integration (in-memory) | `*.test.ts` booting a Nest module over PGlite | nothing                  | `npm test`                                              |
+| Contract                | `*.contract.test.ts` + compatibility check    | git history              | `npm run test:contract`                                 |
+| Concurrency (real DB)   | `*.postgres.test.ts`                          | `TEST_POSTGRES_URL`      | `TEST_POSTGRES_URL=… npm run test:concurrency`          |
+| Broker integration      | `*.integration.test.ts`                       | `RABBITMQ_URL`           | `RABBITMQ_URL=… npm test -w @foc/platform`              |
+| System (cross-service)  | `system-tests/test/*.test.ts`                 | `TEST_POSTGRES_URL`      | `TEST_POSTGRES_URL=… npm test -w @foc/system-tests`     |
+| Stack checks            | `scripts-*.sh` (see below)                    | Docker (Compose), `.env` | each script, with `--up` for a stack of its own          |
+| End-to-end (browser)    | `web-app/e2e/*.e2e.ts` (Playwright)           | the Compose stack        | `cd web-app && bun run e2e` (CI's browser job; the journeys still to add are in #160) |
+| Load and report         | `system-tests/scripts/conservation-report.ts` | Docker (Compose)         | `npm run report:conservation` (not run in CI)           |
+| Load and latency        | `load/*.js` (k6), `load/live.mjs` (N1.4)      | Docker (Compose)         | `./scripts-load.sh` (not run in CI; `--quick` to check it) |
+| Web vitals (Lighthouse) | `web-app/scripts/lighthouse.mts`              | Docker (Compose), Node 24 | `./scripts-lighthouse.sh` (not run in CI; [report](reports/accessibility-and-web-vitals-2026-11-03.md)) |
+| Coverage                | every package's suites, with `--coverage`     | nothing more             | `npm test -w @foc/<package> -- --coverage` (reported in CI, not gated) |
+
+Suites that need a real server skip themselves when their variable is unset, so `npm test` passes on
+a clean clone with nothing running. CI sets every variable, so nothing is skipped there.
+
+## Isolation: no shared developer database
+
+- **In-memory integration tests** boot each service against its own PGlite instance with the
+  generated migrations applied. Nothing touches a developer database.
+- **Real-PostgreSQL tests** call `createEphemeralPostgres({ adminUrl: TEST_POSTGRES_URL, label,
+  migrationsFolder })`. It creates a uniquely named database, applies the service's generated
+  migrations, and drops the database in `dispose()`. `TEST_POSTGRES_URL` must name a role that
+  can create databases. Point it at the server's `postgres` database, never at a service database.
+- **Broker tests** call `createEphemeralBroker(RABBITMQ_URL, label)`. It gives each run its own
+  queue names and retry namespace and deletes them in `dispose()`. The `foc.events` exchange is the
+  production topology under test and stays shared, so a test must assert on its own aggregate or
+  correlation IDs.
+- **Without a broker**, `createMemoryBroker()` routes as RabbitMQ does, in memory: pass its
+  `connect` to `BrokerConnection`, and the real consumer retries, dead-letters and redrives through
+  it. The service CI jobs have no RabbitMQ, so a service's whole-pipeline test uses it (for example,
+  a dead-lettered `user.activated`, once redriven, issuing exactly one wallet in
+  `credit-service/test/operations.test.ts`). It is not a broker: nothing persists, and prefetch is
+  ignored.
+
+Against the Compose stack:
+
+```bash
+docker compose up -d postgres rabbitmq
+set -a; . ./.env; set +a   # the stack's addresses and logins, from your .env
+export TEST_POSTGRES_URL=$HOST_POSTGRES_URL
+export RABBITMQ_URL=$HOST_RABBITMQ_URL
+npm test
+```
+
+## System tests
+
+[`system-tests/`](../system-tests) runs the real Order and Credit code together. Each service gets
+its own freshly migrated PostgreSQL database, as deployed. Their outbox relays and consumers are
+connected through an in-memory bus that enforces the same producer and catalogue checks as
+RabbitMQ, and that can drop or duplicate any delivery. `Stack.start(TEST_POSTGRES_URL, label)` boots
+the pair; `settle()` relays and delivers until nothing is in flight. CI runs the suite in the
+`Shared packages` job.
+
+## Contract checks (EI-NFR3.1.1)
+
+Contracts are the OpenAPI files in [`contracts/`](../contracts) plus
+`contracts/events.schema.json`, which is generated from the event catalogue.
+
+1. **Compatibility.** `npm run contracts:compat -w @foc/test-harness -- --base <ref>` compares every
+   contract with its version at `<ref>`. It fails on a removed operation or success response, a
+   required response field that was removed or made optional, a request field that became
+   required, a request enum that lost a value, or any field whose type was redefined. Event payloads
+   are checked in both directions. CI runs it against the pull request's merge base, so **an
+   incompatible schema change fails CI before merge**. Additive changes pass, and so does a
+   reviewed breaking change listed in `contracts/approved-breaking-changes.json`
+   ([contracts/README.md](../contracts/README.md)).
+2. **Provider checks.** Each service's `test/provider.contract.test.ts` sends real requests to the
+   running module and validates every response against its OpenAPI document with
+   `ContractValidator.for('<service>').assert(method, pathTemplate, response)`. An undocumented
+   status, or a body that violates the schema, fails the test.
+3. **Consumer checks.** The web app generates its client types from the contracts
+   (`web-app/scripts/generate.ts`). `bun test` fails if they are stale, and `bun run
+   typecheck:contracts` fails if consumer code no longer compiles against them.
+4. **Event schemas.** After changing `platform/src/events/catalogue.ts`, run
+   `npm run contracts:events` and commit `contracts/events.schema.json`. A harness test fails if the
+   file falls behind the catalogue.
+
+## Stack checks
+
+Shell scripts that start the whole Compose stack and check it from outside, as a user or an
+operator would. Each fails with a non-zero exit code and says which check failed. CI runs all of
+them, in this order, whenever a change can affect the stack. `./scripts-init-env.sh` must have
+created `.env` first.
+
+| Script                                     | Checks                                                                                                                                              |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `./scripts-scan-secrets.sh`                | No secret in any tracked file (gitleaks) or in an image the repository builds                                                                       |
+| `./scripts-smoke.sh --up`                  | Health, database isolation, broker topology, metrics and alerts, non-root containers, loopback data stores, hidden internal routes, broker accounts |
+| `./scripts-demo-failures.sh --up`          | A killed consumer, a duplicate, a stale reply, an unsupported version, a forged event; credits conserved                                            |
+| `./scripts-demo-credits.sh --up`           | Reserve, transfer and release through the API, both wallets before and after each; conservation, balanced transactions and backed reservations   |
+| `./scripts-restart-check.sh --up`          | Stop and start, remove and recreate, Postgres stopped under running services                                                                        |
+| `./scripts-demo-journey.sh --up --redrive` | Registration to wallet, an errand end to end, a cancellation, six refusals, a dead letter redriven                                                  |
+
+## Requirements traceability
+
+[`traceability.md`](traceability.md) maps every Must requirement of the D1 backlog to the tests that
+prove it, with the edge cases and the D1 feedback (PL-NFR4.1.1, REL-02 #168). Its source is
+[`traceability.yaml`](traceability.yaml): a test is named there as `path::exact title`, the title of
+an `it(` or `test(`, or the start of a bash script's `pass "` message.
+`test-harness/test/traceability.test.ts` fails CI if a named test no longer exists, or if a
+requirement about roles, errand transitions, reservations, returns, transfers or repeated requests
+has none. Renaming or removing a test it names means updating the YAML; then regenerate the page
+with `npm run traceability -w test-harness`.
+
+## Adding tests
+
+- A new claim about the running stack (who a container runs as, what the broker refuses, what
+  survives a restart): add a check to the script above that covers that area, using its `pass` and
+  `fail` helpers, and end any probe in `|| true` so a failed command is recorded, not fatal.
+
+- A test that proves a requirement: add it under that requirement in
+  [`traceability.yaml`](traceability.yaml), then `npm run traceability -w test-harness`.
+- A new real-database case: name it `*.postgres.test.ts` and use `createEphemeralPostgres`.
+- A new endpoint: document it in the contract and add a `contract.assert(...)` call for each status
+  it returns in that service's `provider.contract.test.ts`.

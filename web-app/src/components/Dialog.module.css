@@ -1,0 +1,42 @@
+.dialog {
+  width: calc(100% - var(--space-6));
+  max-width: var(--size-form);
+  max-height: calc(100% - var(--space-7));
+  margin: auto;
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-lg);
+}
+
+/* It rises slightly as the page dims behind it. It never fades from invisible: focus moves into it
+   at once, and a keyboard user's ring must show from the first frame. */
+.dialog[open] {
+  animation: rise var(--motion-base) var(--motion-ease-out);
+}
+
+.dialog::backdrop {
+  background: var(--color-overlay);
+  animation: backdrop-in var(--motion-base) ease;
+}
+
+/* Defined here: a module's keyframe names are scoped, so globals.css's aren't reachable. */
+@keyframes rise {
+  from {
+    transform: translateY(var(--motion-distance));
+  }
+}
+
+@keyframes backdrop-in {
+  from {
+    background: transparent;
+  }
+}
+
+.title {
+  margin-bottom: var(--space-3);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+}

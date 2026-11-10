@@ -1,0 +1,49 @@
+.bar {
+  height: var(--size-app-bar);
+  flex-shrink: 0;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-3);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.iconBtn {
+  width: var(--size-control);
+  height: var(--size-control);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xl);
+  color: var(--color-on-primary);
+  border-radius: var(--radius-sm);
+}
+
+.iconBtn:focus-visible {
+  outline-color: var(--color-on-primary);
+}
+
+.iconBtn:hover {
+  background: color-mix(in srgb, var(--color-on-primary) 12%, transparent);
+}
+
+.spacer {
+  width: var(--size-control);
+}
+
+/* The screen's name, and on a phone whether it is live (N1.4). */
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.title {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-medium);
+  font-family: var(--font-display);
+}

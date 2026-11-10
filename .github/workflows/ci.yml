@@ -1,0 +1,774 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A new push to the same PR cancels the previous run — nobody reads the results
+# of a superseded commit, and the runner minutes are better spent elsewhere. Any
+# other run (a push to main, a manual run) has a group of its own. GitHub keeps
+# one pending run per group and drops the others, so in a shared group a merged
+# commit's run could be dropped while it waited, and that commit never published.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Work out what actually changed, so a supplier-only edit does not rebuild and
+  # retest all five services. Anything shared (platform/, root config, this
+  # workflow) fans out to every service, because it can break any of them — and
+  # so does any path the filter does not recognise, so it fails closed.
+  # ---------------------------------------------------------------------------
+  detect:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.filter.outputs.services }}
+      web: ${{ steps.filter.outputs.web }}
+      node: ${{ steps.filter.outputs.node }}
+      stack: ${{ steps.filter.outputs.stack }}
+      supplier_stack: ${{ steps.filter.outputs.supplier_stack }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Needed to diff against the base commit rather than a shallow clone.
+          fetch-depth: 0
+
+      # The filter decides which of the jobs below run at all, so prove it first.
+      - name: Self-test the path filter
+        run: ./scripts-ci-detect.sh --self-test
+
+      - id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          elif [[ -n "${{ github.event.before }}" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+          else
+            # First push to a branch, or a force-push that dropped the old tip:
+            # no usable base, so treat everything as changed.
+            BASE=""
+            HEAD="${{ github.sha }}"
+          fi
+
+          if [[ -n "$BASE" ]] && git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            CHANGED=$(git diff --name-only "$BASE" "$HEAD")
+          else
+            echo "No usable base commit — treating every path as changed."
+            CHANGED=$(git ls-files)
+          fi
+
+          echo "Changed files:"
+          printf '%s\n' "$CHANGED" | sed 's/^/  /'
+          echo "--- outputs ---"
+
+          # Always smoke the stack on a push to main, even if only code changed:
+          # main is what everyone branches from.
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            export FORCE_STACK=true
+          fi
+
+          printf '%s\n' "$CHANGED" | ./scripts-ci-detect.sh | tee -a "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # Lint and formatting run once over the whole repository. They are fast enough
+  # that splitting them per service would cost more in scheduling than it saves.
+  # ---------------------------------------------------------------------------
+  quality:
+    name: Lint and format
+    needs: detect
+    if: needs.detect.outputs.node == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The contract check reads contracts/ at the branch's merge base.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - uses: ./.github/actions/trivy-db
+      # NTH-04 (PL-NFR4.1.2): a critical vulnerability with a fix, in a production dependency.
+      - name: Scan the production dependencies for vulnerabilities
+        run: ./scripts-scan-vulnerabilities.sh --lockfile
+      # EI-NFR3.1.1: v1 contracts are additive only. Compare against where this
+      # branch left main, so contract changes merged since are not read as removals.
+      - name: Contract compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE=$(git merge-base "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")
+          elif [[ -n "${{ github.event.before }}" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]] \
+            && git cat-file -e "${{ github.event.before }}^{commit}" 2>/dev/null; then
+            BASE="${{ github.event.before }}"
+          else
+            echo "No usable base commit; nothing to compare against."
+            exit 0
+          fi
+          npm run contracts:compat -w @foc/test-harness -- --base "$BASE"
+
+  # ---------------------------------------------------------------------------
+  # Per service: typecheck, test, and build the image. The image build is what
+  # catches a broken Dockerfile before a human reads the diff.
+  # ---------------------------------------------------------------------------
+  service:
+    name: ${{ matrix.service }}
+    needs: detect
+    if: needs.detect.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.11-alpine3.24@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        env:
+          POSTGRES_USER: postgres
+          # Exists only for this job's container: derived from the run, never written down.
+          POSTGRES_PASSWORD: ${{ github.sha }}
+          POSTGRES_DB: foc_credit_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d foc_credit_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.detect.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Shared packages must be compiled first: the services import their built
+      # output, not their source. Read from the root workspaces in order, which
+      # puts platform/ ahead of the packages that build on it.
+      - name: Build shared packages
+        run: |
+          for pkg in $(jq -r '.workspaces[] | select(endswith("-service") | not)' package.json); do
+            npm run build -w "$pkg" --if-present
+          done
+
+      - name: Typecheck
+        run: npm run typecheck -w @foc/${{ matrix.service }}
+
+      - name: Test
+        env:
+          # Turns on the real-PostgreSQL suites (*.postgres.test.ts). The shared
+          # test harness creates, migrates and drops a fresh database per suite,
+          # so no suite shares data with another (docs/testing.md).
+          TEST_POSTGRES_URL: postgres://postgres:${{ github.sha }}@localhost:5432/postgres
+        # Coverage is reported, not gated (PL-NFR4.1.1): no package has a threshold.
+        run: npm test -w @foc/${{ matrix.service }} -- --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary
+
+      - name: Coverage summary
+        run: ./scripts-coverage-summary.sh ${{ matrix.service }} >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.service }}/Dockerfile
+          push: false
+          # Loaded, so the scan below reads the image this change builds.
+          load: true
+          tags: foc-${{ matrix.service }}:ci
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - uses: ./.github/actions/trivy-db
+      # NTH-04 (PL-NFR4.1.2): a critical vulnerability with a fix, anywhere in the image.
+      - name: Scan the image for vulnerabilities
+        run: ./scripts-scan-vulnerabilities.sh --image foc-${{ matrix.service }}:ci
+
+  # ---------------------------------------------------------------------------
+  # Every shared package, read from the root workspaces: platform/, the test
+  # harness, auth-client, and any package added later without editing this file.
+  # RabbitMQ and PostgreSQL run alongside so the broker and real-database
+  # integration tests run here instead of skipping themselves.
+  # ---------------------------------------------------------------------------
+  packages:
+    name: Shared packages
+    needs: detect
+    if: needs.detect.outputs.node == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.11-alpine3.24@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        env:
+          POSTGRES_USER: postgres
+          # Exists only for this job's container: derived from the run, never written down.
+          POSTGRES_PASSWORD: ${{ github.sha }}
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      rabbitmq:
+        image: rabbitmq:4.3.6-management-alpine@sha256:3ef7f7e89fed709a78f79b8b5f4e30e1312a1d4089da752e23595566d9d61a95
+        env:
+          RABBITMQ_DEFAULT_USER: foc
+          RABBITMQ_DEFAULT_PASS: ${{ github.sha }}
+        ports: ['5672:5672']
+        # The same probe compose.yaml uses: `ping` can pass before the broker
+        # accepts connections.
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q check_running"
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 20
+          --health-start-period 15s
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # Build rather than a separate typecheck: tsc checks types either way, and
+      # a later package may import an earlier one's built output.
+      - name: Build and test each shared package
+        env:
+          RABBITMQ_URL: amqp://foc:${{ github.sha }}@localhost:5672
+          TEST_POSTGRES_URL: postgres://postgres:${{ github.sha }}@localhost:5432/postgres
+        run: |
+          for pkg in $(jq -r '.workspaces[] | select(endswith("-service") | not)' package.json); do
+            echo "::group::$pkg"
+            npm run build -w "$pkg" --if-present
+            npm test -w "$pkg" -- --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary
+            echo "::endgroup::"
+          done
+          # Reported, not gated: no package has a coverage threshold.
+          mapfile -t shared < <(jq -r '.workspaces[] | select(endswith("-service") | not)' package.json)
+          ./scripts-coverage-summary.sh "${shared[@]}" >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  web-app:
+    name: web-app
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      # Unit tests use Bun's built-in runner; test/ is excluded from the Next typecheck. Its
+      # coverage table is in the log (reported, not gated).
+      - run: bun test --coverage
+      - run: bun run typecheck:contracts
+
+      # The image, as compose.yaml builds it, so its build arguments are defined once. Its
+      # `next build` is the app's build check, Next's typecheck included, so the app is built
+      # once, here, not again on the runner. Bake reads compose.yaml, which refuses to load
+      # without its secrets: generated and thrown away.
+      - name: Generate a throwaway .env
+        working-directory: .
+        run: ./scripts-init-env.sh
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the image
+        uses: docker/bake-action@v6
+        with:
+          source: .
+          files: compose.yaml
+          targets: web-app
+          load: true
+          set: |
+            web-app.tags=foc-web-app:ci
+            web-app.cache-from=type=gha,scope=web-app
+            web-app.cache-to=type=gha,mode=max,scope=web-app
+      - uses: ./.github/actions/trivy-db
+      # NTH-04 (PL-NFR4.1.2): a critical vulnerability with a fix, anywhere in the image.
+      - name: Scan the image for vulnerabilities
+        working-directory: .
+        run: ./scripts-scan-vulnerabilities.sh --image foc-web-app:ci
+
+  # ---------------------------------------------------------------------------
+  # The per-service image build proves a Dockerfile compiles. This proves the
+  # containers actually talk to each other — database isolation, CORS, health.
+  # ---------------------------------------------------------------------------
+  stack:
+    name: Compose smoke (${{ matrix.part }})
+    needs: detect
+    if: needs.detect.outputs.stack == 'true'
+    runs-on: ubuntu-latest
+    # Three runners at once, each building the images it starts, so the slowest part sets how long
+    # CI takes rather than all of them in a row. Each runs to its end even when another fails.
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [core, resilience, recovery]
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # compose.yaml refuses to load without its secrets: generated and thrown away, in every part.
+      - name: Generate a throwaway .env
+        run: ./scripts-init-env.sh
+      # PLT-05: the alert rules fire when they should (observability/alerts.test.yml).
+      - name: Test the alert rules
+        if: matrix.part == 'core'
+        run: |
+          docker run --rm -v "$PWD/observability:/rules:ro" --entrypoint promtool \
+            prom/prometheus:v3.13.4@sha256:87861b8cf91579109319ebc300f3f1060e6da9c05d6ae8ad15a20c879e84e32e test rules /rules/alerts.test.yml
+      # On failure the script prints each container's logs itself, before it
+      # tears the stack down. A separate step afterwards would find nothing.
+      # PLT-06: no secret in any file git tracks, and none in an image this repository builds.
+      # First, so that it builds the images the steps below then start from cache.
+      - name: Scan the repository and the images for secrets
+        if: matrix.part == 'core'
+        run: ./scripts-scan-secrets.sh
+      - name: Start the stack and smoke it
+        if: matrix.part == 'core'
+        run: ./scripts-smoke.sh --up
+      # EVT-03: a duplicate, a killed consumer, a stale reply and an unsupported version, on a
+      # stack of its own (the smoke run has removed its copy), ending with credits conserved.
+      - name: Force messaging failures and check the outcome
+        if: matrix.part == 'core'
+        run: ./scripts-demo-failures.sh --up
+      # CRD-09: reserve, transfer and release through the public API, with both wallets before and
+      # after each, ending with the closed-economy invariants checked on the live database.
+      - name: Walk the credits through an errand
+        if: matrix.part == 'core'
+        run: ./scripts-demo-credits.sh --up
+      # PLT-06: stop and start every container, remove and recreate them, and take Postgres away
+      # under the running services. Nothing committed is lost, a waiting message is handled once,
+      # and a service without its database says 503 instead of accepting a write.
+      - name: Restart, recreate and lose a dependency
+        if: matrix.part == 'resilience'
+        run: ./scripts-restart-check.sh --up
+      # PLT-07: the D3 demo's journey through the public API. A student registers and gets a
+      # wallet; an errand is created, accepted, delivered and paid; one is cancelled; six actions
+      # are refused; and a dead letter left by a database outage is redriven by an administrator.
+      - name: The demo journey, end to end
+        if: matrix.part == 'resilience'
+        run: ./scripts-demo-journey.sh --up --redrive
+      # PLT-09: a quiescent five-database dump, fresh volumes, exact row fingerprints, smoke
+      # and CRD-10 financial audit. The drill creates/deletes only its own unique project.
+      - uses: docker/login-action@v3
+        if: matrix.part == 'recovery'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Back up, restore and roll back the stack
+        if: matrix.part == 'recovery'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          rollback_tag=""
+          candidates=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=20" \
+            --jq '.workflow_runs[] | [.id,.head_sha] | @tsv')
+          while IFS=$'\t' read -r run sha; do
+            [[ -n "$run" ]] || continue
+            published=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs?per_page=100" \
+              --jq '.jobs[] | select(.name == "Publish images") | .conclusion')
+            [[ "$published" == success ]] || continue
+            any_published=1
+            # A release from before a service existed has none of its images (chat, #345): roll back
+            # only to one that has every image the stack now runs.
+            images=$(FOC_IMAGE_TAG="sha-$sha" docker compose -f compose.yaml -f compose.images.yaml config --images </dev/null |
+              grep '^ghcr\.io/' | sort -u)
+            missing=$(while read -r image; do
+              docker manifest inspect "$image" </dev/null >/dev/null 2>&1 || echo "$image"
+            done <<<"$images")
+            # None readable is the registry refusing us, not a release from before a service.
+            [[ "$missing" != "$images" ]] || { echo "Cannot read the images of sha-$sha from the registry." >&2; exit 1; }
+            if [[ -z "$missing" ]]; then rollback_tag="sha-$sha"; break; fi
+            # Missing is fine only for a service that release did not have yet; anything else is lost.
+            # Only a 404 says it did not have it: any other error from GitHub says nothing either way.
+            while read -r image; do
+              app="${image##*/foc-}"
+              app="${app%%:*}"
+              if out=$(gh api "repos/$GITHUB_REPOSITORY/contents/$app/Dockerfile?ref=$sha" --silent </dev/null 2>&1); then
+                echo "sha-$sha had $app, but the registry has no $image." >&2
+                exit 1
+              elif [[ "$out" != *"HTTP 404"* ]]; then
+                echo "Could not tell whether sha-$sha had $app: $out" >&2
+                exit 1
+              fi
+            done <<<"$missing"
+            echo "sha-$sha has no ${missing//$'\n'/ }"
+          done <<<"$candidates"
+          [[ -n "${any_published:-}" ]] || { echo 'No successful prior published release set exists; finish NTH-04 first.' >&2; exit 1; }
+          if [[ -n "$rollback_tag" ]]; then
+            # #284 adds no service schema changes. Every later release must preserve the documented
+            # additive-migration rule and review compatibility before exercising this rollback.
+            ./scripts-recovery-drill.sh --rollback-tag "$rollback_tag"
+          else
+            # Every release predates a service that is new: once, until main publishes its first image.
+            echo '::warning::No prior published release has every image the stack runs; the drill skips the rollback.'
+            ./scripts-recovery-drill.sh
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.part == 'recovery'
+        with:
+          name: recovery-drill
+          path: .recovery-results/drill.json
+          include-hidden-files: true
+          retention-days: 14
+      # REL-01: the same named people/errands survive check + repeated seed; no secret is printed.
+      - name: Seed and smoke the named D4 demo twice
+        if: matrix.part == 'resilience'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup_demo() {
+            status=$?
+            if [[ -f .demo-state/foc-d4-demo/ports.sh ]]; then
+              . ./.demo-state/foc-d4-demo/ports.sh
+              docker compose -p foc-d4-demo down -v || true
+            fi
+            exit "$status"
+          }
+          trap cleanup_demo EXIT
+          ./scripts-seed-demo.sh --fresh
+          cp .demo-state/foc-d4-demo/overview.json /tmp/d4-seed-before.json
+          ./scripts-seed-demo.sh --check
+          ./scripts-seed-demo.sh --up
+          python3 - <<'PY'
+          import json,stat
+          from pathlib import Path
+          before=json.loads(Path('/tmp/d4-seed-before.json').read_text())
+          after=json.loads(Path('.demo-state/foc-d4-demo/overview.json').read_text())
+          assert before['personas']==after['personas'], 'seed duplicated or changed identities'
+          assert before['orders']==after['orders'], 'seed duplicated or changed errands'
+          assert len(after['personas'])==5 and len(after['orders'])==3
+          assert all(x['status']=='OPEN' for x in after['orders'].values())
+          assert stat.S_IMODE(Path('.demo-state/foc-d4-demo/credentials.json').stat().st_mode)==0o600
+          print('Named D4 seed is stable; five identities, three OPEN errands, private credentials.')
+          PY
+          python3 scripts-demo-tabs.py --print
+
+  # ---------------------------------------------------------------------------
+  # The supplier page against the real Supplier Service, verifying tokens with
+  # the real User Service: a student browses and is refused a create; an admin
+  # creates, edits and deletes through the page (web-app/README.md). Only the
+  # services it needs come up; the whole stack is the smoke job's.
+  # ---------------------------------------------------------------------------
+  supplier-stack:
+    name: Supplier listing integration
+    needs: detect
+    if: needs.detect.outputs.supplier_stack == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Start the User and Supplier Services
+        run: |
+          ./scripts-init-env.sh
+          docker compose -p foc-it up -d --build user-service supplier-service
+          for port in 3001 3002; do
+            for _ in $(seq 1 60); do
+              curl -fsS "http://localhost:${port}/health" >/dev/null 2>&1 && break
+              sleep 2
+            done
+            curl -fsS "http://localhost:${port}/health" || {
+              echo "::error::Nothing healthy on port ${port}"
+              exit 1
+            }
+            echo
+          done
+      - run: bun install --frozen-lockfile
+        working-directory: web-app
+      - name: Supplier listing integration test
+        working-directory: web-app
+        env:
+          SUPPLIER_SERVICE_URL: http://localhost:3002
+          USER_SERVICE_URL: http://localhost:3001
+        # The seeded admin's bootstrap password is whatever this run's `.env` generated.
+        run: |
+          ADMIN_SEED_PASSWORD="$(grep '^ADMIN_SEED_PASSWORD=' ../.env | cut -d= -f2-)"
+          export ADMIN_SEED_PASSWORD
+          bun test test/suppliers.integration.test.tsx
+      - name: Service logs
+        if: failure()
+        run: docker compose -p foc-it logs --no-color --tail=200 user-service supplier-service
+      - name: Tear down
+        if: always()
+        run: docker compose -p foc-it down -v
+
+  # ---------------------------------------------------------------------------
+  # The browser journeys in a real browser against the real stack, at 360, 768
+  # and 1440 px: the account journey (USR-05), keyboard only with an axe scan of
+  # every screen, and the request journey (WEB-01) through the Supplier, Order and
+  # Credit Services. A copy of the stack of its own, so the smoke job's teardown
+  # cannot race it.
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: Browser journeys (${{ matrix.suite }})
+    needs: detect
+    if: >-
+      needs.detect.outputs.web == 'true' ||
+      needs.detect.outputs.stack == 'true' ||
+      contains(needs.detect.outputs.services, 'user-service') ||
+      contains(needs.detect.outputs.services, 'supplier-service') ||
+      contains(needs.detect.outputs.services, 'order-service') ||
+      contains(needs.detect.outputs.services, 'credit-service') ||
+      contains(needs.detect.outputs.services, 'chat-service')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [smoke, release]
+    # Release proves the complete suite from clean containers: once on a pull request, and twice,
+    # each time after deleting its own test volumes, on a push to main.
+    timeout-minutes: 40
+    env:
+      # The images the bake step below builds and names (compose.images.yaml gives a service and
+      # its migrate container one image), for every docker compose call, the smoke test's included.
+      COMPOSE_FILE: compose.yaml:compose.images.yaml
+      FOC_IMAGE_TAG: ci
+      # GitHub's Ubuntu runners come with Google Chrome and its system libraries; Playwright drives
+      # it, so nothing is downloaded, or installed with apt, while the job runs.
+      E2E_BROWSER_CHANNEL: chrome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      # compose.yaml refuses to load without its secrets: generated and thrown away.
+      - name: Generate a throwaway .env
+        run: ./scripts-init-env.sh
+      # From the layer cache the per-service jobs and the publish job fill, rather than from scratch.
+      - name: Build the stack's images
+        uses: docker/bake-action@v6
+        with:
+          source: .
+          files: |
+            compose.yaml
+            compose.images.yaml
+          targets: |
+            user-service
+            supplier-service
+            order-service
+            credit-service
+            chat-service
+            web-app
+          load: true
+          set: |
+            user-service.cache-from=type=gha,scope=user-service
+            supplier-service.cache-from=type=gha,scope=supplier-service
+            order-service.cache-from=type=gha,scope=order-service
+            credit-service.cache-from=type=gha,scope=credit-service
+            chat-service.cache-from=type=gha,scope=chat-service
+            web-app.cache-from=type=gha,scope=web-app
+      - name: Start the stack
+        if: matrix.suite == 'smoke'
+        run: |
+          docker compose up -d --no-build
+          ./scripts-smoke.sh
+      - run: bun install --frozen-lockfile
+        working-directory: web-app
+      - name: The runner's Chrome
+        run: google-chrome --version
+      - name: Run the browser journeys
+        if: matrix.suite == 'smoke'
+        working-directory: web-app
+        run: bun run e2e
+      - name: Run the full release suite from clean containers
+        if: matrix.suite == 'release'
+        env:
+          E2E_IMAGE_TAG: ci
+        run: ./scripts-e2e-release.sh "${{ github.event_name == 'push' && '--twice' || '--once' }}"
+      - name: Container logs
+        if: failure() && matrix.suite == 'smoke'
+        run: docker compose logs --no-color --tail=100
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-${{ matrix.suite }}
+          path: |
+            web-app/playwright-report
+            web-app/test-results
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.suite == 'release'
+        with:
+          name: release-journeys
+          path: .release-results
+          include-hidden-files: true
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Required status check.
+  #
+  # This exists because a *skipped* job never reports a status, so naming the
+  # jobs above as required would block every PR that legitimately skips one.
+  # This job always runs, and fails if anything it depends on failed. Make this
+  # the only required check on main.
+  # ---------------------------------------------------------------------------
+  ci:
+    name: CI
+    if: always()
+    needs: [detect, quality, service, packages, web-app, stack, supplier-stack, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        shell: bash
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS"
+          failed=$(printf '%s' "$NEEDS" \
+            | jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key')
+          if [[ -n "$failed" ]]; then
+            echo "::error::Failing jobs: $(printf '%s' "$failed" | tr '\n' ' ')"
+            exit 1
+          fi
+          echo "All required jobs passed or were skipped."
+
+  # ---------------------------------------------------------------------------
+  # NTH-04 (#164): publish every application image to the GitHub Container
+  # Registry, for a push to main that passed every check above. Each is tagged
+  # with its commit (`sha-<commit>`), so a merged commit can be started again,
+  # and rolled back to, from compose.images.yaml (PLT-09, #284); `main` names the
+  # newest. Built with `docker buildx bake` from compose.yaml and that override,
+  # so the images get exactly compose.yaml's build arguments, from the layer
+  # cache the per-service job fills. All six are scanned before any is pushed,
+  # changed in this push or not: a critical vulnerability with a fix, disclosed
+  # since an image was last scanned, stops the publish. The only job that may
+  # write to the registry.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish images
+    needs: [ci]
+    # Explicit status function prevents intentionally skipped upstream jobs propagating their
+    # skip through CI into this job. Publishing still requires the aggregate CI to pass.
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.ci.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      FOC_IMAGE_TAG: sha-${{ github.sha }}
+      REGISTRY: ghcr.io/ay2627s1-cs3219-p30
+      APPLICATIONS: user-service supplier-service order-service credit-service chat-service web-app
+    steps:
+      - uses: actions/checkout@v4
+      # compose.yaml refuses to load without its secrets. They are generated here and
+      # thrown away with the runner: no build reads them, so none reaches an image.
+      - name: Generate a throwaway .env
+        run: ./scripts-init-env.sh
+      - uses: docker/setup-buildx-action@v3
+      # Loaded into Docker, not pushed: what reaches the registry is what the scan reads.
+      - name: Build every image
+        uses: docker/bake-action@v6
+        with:
+          # The checkout, not the Git context: bake must read the .env generated above.
+          source: .
+          files: |
+            compose.yaml
+            compose.images.yaml
+          targets: |
+            user-service
+            supplier-service
+            order-service
+            credit-service
+            chat-service
+            web-app
+          load: true
+          # Every line of `set` is an override; a comment there would be text bake cannot parse.
+          # The cache is written back from main, whose cache every later run can read; a pull
+          # request's is its own. The per-service job writes the same scopes, so a PR starts from this.
+          set: |
+            *.labels.org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            *.labels.org.opencontainers.image.revision=${{ github.sha }}
+            web-app.labels.org.opencontainers.image.description=Runs behind the edge: it calls the services at /api/<service> on its own origin. Links the admin console to Grafana on localhost:3005.
+            user-service.cache-from=type=gha,scope=user-service
+            supplier-service.cache-from=type=gha,scope=supplier-service
+            order-service.cache-from=type=gha,scope=order-service
+            credit-service.cache-from=type=gha,scope=credit-service
+            chat-service.cache-from=type=gha,scope=chat-service
+            web-app.cache-from=type=gha,scope=web-app
+            user-service.cache-to=type=gha,mode=max,scope=user-service
+            supplier-service.cache-to=type=gha,mode=max,scope=supplier-service
+            order-service.cache-to=type=gha,mode=max,scope=order-service
+            credit-service.cache-to=type=gha,mode=max,scope=credit-service
+            chat-service.cache-to=type=gha,mode=max,scope=chat-service
+            web-app.cache-to=type=gha,mode=max,scope=web-app
+      - uses: ./.github/actions/trivy-db
+      - name: Scan every image for vulnerabilities
+        run: |
+          images=()
+          for application in $APPLICATIONS; do images+=("$REGISTRY/foc-$application:$FOC_IMAGE_TAG"); done
+          ./scripts-scan-vulnerabilities.sh --image "${images[@]}"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push the scanned images
+        run: |
+          for application in $APPLICATIONS; do docker push "$REGISTRY/foc-$application:$FOC_IMAGE_TAG"; done
+      # Runs on main are never dropped or cancelled (see concurrency above), so two can finish
+      # out of order. A run moves `main` only while its commit is still main's newest; when it is
+      # not, the newer commit's run moves it.
+      - name: Point main at this commit, if it is still the newest
+        run: |
+          newest="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [[ "$newest" != "$GITHUB_SHA" ]]; then
+            echo "main is now at $newest; that commit's run points main at its images."
+            exit 0
+          fi
+          for application in $APPLICATIONS; do
+            docker tag "$REGISTRY/foc-$application:$FOC_IMAGE_TAG" "$REGISTRY/foc-$application:main"
+            docker push "$REGISTRY/foc-$application:main"
+          done
+
+  # ---------------------------------------------------------------------------
+  # PLT-14 (#357): start the images just published on the AWS host, while the
+  # repository variable AWS_AUTO_DEPLOY is `true`. Turn it off to freeze what
+  # the host runs, such as for the D4 demo; .github/workflows/deploy.yml can
+  # still be run by hand. docs/runbooks/aws-deploy.md says how it is set up.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy
+    needs: [publish]
+    # Without a status function, `if` implies success(), which is false when any job upstream of
+    # publish was skipped by change detection. Gate on publish's own result instead, as publish does.
+    if: always() && needs.publish.result == 'success' && vars.AWS_AUTO_DEPLOY == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy.yml
+    with:
+      tag: sha-${{ github.sha }}

@@ -1,0 +1,315 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (Claude Opus 5.5), dates: 2026-10-15 to 2026-11-04
+// Scope: Implementation for "request composer on the Order API" (WEB-01, ADM-05, #268); also bug
+//   fixes.
+// Author review: Jonus Ho, Zhang Yuan and Patrick Thomas verified correctness, tested the change,
+//   and checked for fatal errors and conflicts with our architecture before committing.
+
+/**
+ * The admin console's calls (ADM-02), typed from the contracts: the User Service's administration
+ * and its controls on administrators (ADR 0008), the Order Service's operator views, and the Credit
+ * Service's read-only wallets. Every call carries an administrator's access token, and every service
+ * refuses anyone else on its own — hiding the console from students is presentation only.
+ */
+
+import { bearer, createApiClient, serviceUrl, unwrap, type Send } from "./api-client";
+import type {
+  components as CreditComponents,
+  paths as CreditPaths,
+} from "./generated/credit-service";
+import type { components as OrderComponents, paths as OrderPaths } from "./generated/order-service";
+import type { components as UserComponents, paths as UserPaths } from "./generated/user-service";
+import { CREDIT_SERVICE_URL, ORDER_SERVICE_URL } from "./order-api";
+import { NOT_CONFIGURED_MESSAGE, USER_SERVICE_URL } from "./user-api";
+
+type UserSchemas = UserComponents["schemas"];
+type OrderSchemas = OrderComponents["schemas"];
+type CreditSchemas = CreditComponents["schemas"];
+
+export type AdminUser = UserSchemas["AdminUser"];
+/** An account's standing without its profile; reading the directory is not recorded per account. */
+export type DirectoryEntry = UserSchemas["DirectoryEntry"];
+export type AccountStatus = UserSchemas["AccountStatus"];
+export type Role = UserSchemas["Role"];
+export type AuditRecord = UserSchemas["AuditRecord"];
+export type AuditAction = UserSchemas["AuditAction"];
+export type RoleChangeRequest = UserSchemas["RoleChangeRequest"];
+export type RoleRequestStatus = UserSchemas["RoleRequestStatus"];
+export type AdminRead = UserSchemas["AdminRead"];
+export type AdminAlert = UserSchemas["AdminAlert"];
+export type AdminAlertKind = UserSchemas["AdminAlertKind"];
+export type CreditWait = OrderSchemas["CreditWaitList"]["items"][number];
+/** ORD-15: an errand as an administrator sees it in an account's list (public fields only). */
+export type AccountErrand = OrderSchemas["Order"];
+export type AccountErrandPage = OrderSchemas["AccountOrderPage"];
+export type OrderStatus = AccountErrand["status"];
+/** ORD-11: a dispute referred to the caller (`assignedToMe`, with private details) or to no one yet. */
+export type ReferredDispute = OrderSchemas["ReferredOrders"]["items"][number];
+export type DisputeDecision = OrderSchemas["DisputeDecisions"]["items"][number];
+export type DisputeOutcome = OrderSchemas["ResolveDispute"]["outcome"];
+export type ResolveDispute = OrderSchemas["ResolveDispute"];
+export type ReconciliationAttempt = OrderSchemas["ReconciliationAttempts"]["items"][number];
+export type Wallet = CreditSchemas["Wallet"];
+export type LedgerItem = CreditSchemas["LedgerItem"];
+/** PLT-05. Both services park and redrive dead letters through the same contract. */
+export type DeadLetter = OrderSchemas["DeadLetter"];
+export type DeadLetterDetail = OrderSchemas["DeadLetterDetail"];
+export type DeadLetterPage = OrderSchemas["DeadLetterPage"];
+export type DeadLetterStatus = DeadLetter["status"];
+export type OperatorAlert = OrderSchemas["OperatorAlertList"]["items"][number];
+export type OrderTimeline = OrderSchemas["OrderTimeline"];
+export type CreditAuditAlert = CreditSchemas["CreditAuditAlert"];
+export type OrderCreditTrace = CreditSchemas["OrderCreditTrace"];
+/** ADM-04: the Credit Service's alerts about administrators (BULK_WALLET_READS). */
+export type WalletReadAlert = CreditSchemas["AdminActivityAlert"];
+
+/** The platform dashboard (PLT-04), beside the Compose stack. */
+export const GRAFANA_URL = serviceUrl(process.env.NEXT_PUBLIC_GRAFANA_URL, "http://localhost:3005");
+
+/** The services that consume events, and so keep dead letters. */
+export type DeadLetterService = "order" | "credit";
+export type DeadLetterQuery = Paging & { status?: DeadLetterStatus; q?: string };
+
+/** A role change either applied at once, or waits for a second administrator (ADR 0008). */
+export type RoleChange =
+  | { kind: "applied"; user: AdminUser }
+  | { kind: "pending"; request: RoleChangeRequest };
+
+type Paging = { page?: number; pageSize?: number };
+export type UserQuery = Paging & { q?: string; status?: AccountStatus; role?: Role };
+export type AuditQuery = Paging & {
+  targetUserId?: string;
+  actorId?: string;
+  action?: AuditAction;
+  from?: string;
+  to?: string;
+};
+export type ReadsQuery = Paging & { actorId?: string; targetUserId?: string };
+/**
+ * The Order Service's admin errand list: one account's, those it requested, holds as courier or
+ * both (ORD-15), or every errand when neither is named (ADM-06); `status` narrows either. `before`
+ * is the last errand a page showed, to page on from it.
+ */
+export type ErrandQuery = Paging & {
+  requesterId?: string;
+  courierId?: string;
+  status?: OrderStatus[];
+  before?: string;
+};
+
+/** The ledger page size the console asks for. */
+export const LEDGER_PAGE = 20;
+
+/** Builds the clients. The app uses {@link adminApi}; tests pass their own `fetch`. */
+export function createAdminApi({
+  userUrl,
+  orderUrl,
+  creditUrl,
+  fetch,
+  timeoutMs,
+}: {
+  userUrl: string | null;
+  orderUrl: string | null;
+  creditUrl: string | null;
+  fetch?: Send;
+  timeoutMs?: number;
+}) {
+  const users = createApiClient<UserPaths>(userUrl, {
+    fetch,
+    timeoutMs,
+    notConfiguredMessage: NOT_CONFIGURED_MESSAGE,
+  });
+  const orders = createApiClient<OrderPaths>(orderUrl, {
+    fetch,
+    timeoutMs,
+    notConfiguredMessage:
+      "Errands are unavailable: NEXT_PUBLIC_ORDER_SERVICE_URL is missing from this build.",
+  });
+  const credit = createApiClient<CreditPaths>(creditUrl, {
+    fetch,
+    timeoutMs,
+    notConfiguredMessage:
+      "Wallets are unavailable: NEXT_PUBLIC_CREDIT_SERVICE_URL is missing from this build.",
+  });
+  const user = (userId: string) => ({ path: { userId } });
+  const request = (requestId: string) => ({ path: { requestId } });
+  const order = (orderId: string) => ({ path: { orderId } });
+  const letter = (id: string) => ({ path: { id } });
+
+  return {
+    /** To find accounts. The console uses this, not the full list, which records a read of each. */
+    directory: (token: string, query: UserQuery = {}) =>
+      unwrap(users.GET("/admin/directory", { params: { query }, headers: bearer(token) })),
+    /** Opening another user's account is recorded as an admin read (ADR 0008). */
+    getUser: (token: string, userId: string) =>
+      unwrap(users.GET("/admin/users/{userId}", { params: user(userId), headers: bearer(token) })),
+    suspend: (token: string, userId: string, reason: string) =>
+      unwrap(
+        users.POST("/admin/users/{userId}/suspend", {
+          params: user(userId),
+          body: { reason },
+          headers: bearer(token),
+        }),
+      ),
+    reactivate: (token: string, userId: string, reason: string) =>
+      unwrap(
+        users.POST("/admin/users/{userId}/reactivate", {
+          params: user(userId),
+          body: { reason },
+          headers: bearer(token),
+        }),
+      ),
+    /** `202` means another administrator must approve it; `200`, that it applied (or had nothing to do). */
+    async changeRole(token: string, userId: string, role: Role, reason: string): Promise<RoleChange> {
+      const body = await unwrap(
+        users.PUT("/admin/users/{userId}/role", {
+          params: user(userId),
+          body: { role, reason },
+          headers: bearer(token),
+        }),
+      );
+      return "request" in body
+        ? { kind: "pending", request: body.request }
+        : { kind: "applied", user: body };
+    },
+    roleRequests: (token: string, query: Paging & { status?: RoleRequestStatus } = {}) =>
+      unwrap(users.GET("/admin/role-requests", { params: { query }, headers: bearer(token) })),
+    approve: (token: string, requestId: string, reason: string) =>
+      unwrap(
+        users.POST("/admin/role-requests/{requestId}/approve", {
+          params: request(requestId),
+          body: { reason },
+          headers: bearer(token),
+        }),
+      ),
+    /** Rejects a request, or withdraws one's own. */
+    reject: (token: string, requestId: string, reason: string) =>
+      unwrap(
+        users.POST("/admin/role-requests/{requestId}/reject", {
+          params: request(requestId),
+          body: { reason },
+          headers: bearer(token),
+        }),
+      ),
+    audit: (token: string, query: AuditQuery = {}) =>
+      unwrap(users.GET("/admin/audit-records", { params: { query }, headers: bearer(token) })),
+    reads: (token: string, query: ReadsQuery = {}) =>
+      unwrap(users.GET("/admin/reads", { params: { query }, headers: bearer(token) })),
+    alerts: (token: string, query: Paging & { kind?: AdminAlertKind } = {}) =>
+      unwrap(users.GET("/admin/alerts", { params: { query }, headers: bearer(token) })),
+    /** Re-enters the password on this session, for the actions that need it (ADR 0008). */
+    stepUp: (token: string, password: string) =>
+      unwrap(users.POST("/auth/step-up", { body: { password }, headers: bearer(token) })),
+
+    /** Errands newest first (ORD-15, ADM-06). Students are refused by the Order Service. */
+    errands: (token: string, { status, ...rest }: ErrandQuery) =>
+      unwrap(
+        orders.GET("/admin/orders", {
+          params: { query: { ...rest, ...(status?.length ? { status: status.join(",") } : {}) } },
+          headers: bearer(token),
+        }),
+      ),
+    /** ORD-11: disputes referred to the caller, in full, and those referred to no one yet. */
+    referredDisputes: (token: string) =>
+      unwrap(orders.GET("/admin/orders/referred", { headers: bearer(token) })),
+    /** The most recent dispute decisions, newest first. */
+    disputeDecisions: (token: string) =>
+      unwrap(orders.GET("/admin/orders/decisions", { headers: bearer(token) })),
+    /**
+     * One errand's private view. The Order Service gives it only to the administrator the dispute
+     * is referred to; anyone else gets 403.
+     */
+    errand: (token: string, orderId: string) =>
+      unwrap(
+        orders.GET("/orders/{orderId}", {
+          params: { path: { orderId }, query: { view: "private" } },
+          headers: bearer(token),
+        }),
+      ),
+    /**
+     * The referred administrator decides, with a reason, at the version they read. A retry of one
+     * decision sends its key again, so a decision whose answer was lost is answered, not refused.
+     */
+    resolveDispute: (token: string, orderId: string, decision: ResolveDispute, idempotencyKey: string) =>
+      unwrap(
+        orders.POST("/admin/orders/{orderId}/resolve", {
+          params: { ...order(orderId), header: { "Idempotency-Key": idempotencyKey } },
+          body: decision,
+          headers: bearer(token),
+        }),
+      ),
+    creditWaits: (token: string) =>
+      unwrap(orders.GET("/admin/orders/pending-credit", { headers: bearer(token) })),
+    reconciliation: (token: string) =>
+      unwrap(orders.GET("/admin/orders/reconciliation-attempts", { headers: bearer(token) })),
+
+    /** PLT-05: `CREDIT_WAIT_EXCEEDED`, `CREDIT_STATE_CONFLICT` and `REFERRAL_UNASSIGNED`, newest first. */
+    operatorAlerts: (token: string) =>
+      unwrap(orders.GET("/admin/orders/alerts", { headers: bearer(token) })),
+    /** Everything the Order Service recorded about one errand. */
+    orderTimeline: (token: string, orderId: string) =>
+      unwrap(
+        orders.GET("/admin/orders/{orderId}/timeline", {
+          params: order(orderId),
+          headers: bearer(token),
+        }),
+      ),
+    /** The Credit Service's half of an errand's trace. No balances, so not a recorded wallet read. */
+    orderCredit: (token: string, orderId: string) =>
+      unwrap(
+        credit.GET("/admin/orders/{orderId}/credit", {
+          params: order(orderId),
+          headers: bearer(token),
+        }),
+      ),
+    creditAlerts: (token: string) =>
+      unwrap(credit.GET("/admin/credit-alerts", { headers: bearer(token) })),
+    latestLedgerAudit: (token: string) =>
+      unwrap(credit.GET("/admin/ledger-audits/latest", { headers: bearer(token) })),
+    runLedgerAudit: (token: string) =>
+      unwrap(credit.POST("/admin/ledger-audits/run", { headers: bearer(token) })),
+    /** ADM-04: administrators who read many wallets in an hour, newest first. */
+    walletReadAlerts: (token: string) =>
+      unwrap(credit.GET("/admin/activity-alerts", { headers: bearer(token) })),
+
+    /** One service's dead letters. `q` is a correlation, order, user or event ID, matched exactly. */
+    deadLetters: (token: string, service: DeadLetterService, query: DeadLetterQuery = {}) => {
+      const init = { params: { query }, headers: bearer(token) };
+      return service === "order"
+        ? unwrap(orders.GET("/admin/dead-letters", init))
+        : unwrap(credit.GET("/admin/dead-letters", init));
+    },
+    deadLetter: (token: string, service: DeadLetterService, id: string) => {
+      const init = { params: letter(id), headers: bearer(token) };
+      return service === "order"
+        ? unwrap(orders.GET("/admin/dead-letters/{id}", init))
+        : unwrap(credit.GET("/admin/dead-letters/{id}", init));
+    },
+    /** Sends it again, unchanged, to the queue it failed on. Recorded with the reason. */
+    redrive: (token: string, service: DeadLetterService, id: string, reason: string) => {
+      const init = { params: letter(id), body: { reason }, headers: bearer(token) };
+      return service === "order"
+        ? unwrap(orders.POST("/admin/dead-letters/{id}/redrive", init))
+        : unwrap(credit.POST("/admin/dead-letters/{id}/redrive", init));
+    },
+
+    /** Read-only; the Credit Service records every admin read of a wallet or ledger. */
+    wallet: (token: string, userId: string) =>
+      unwrap(credit.GET("/admin/wallets/{userId}", { params: user(userId), headers: bearer(token) })),
+    ledger: (token: string, userId: string, cursor?: string) =>
+      unwrap(
+        credit.GET("/admin/wallets/{userId}/ledger", {
+          params: { ...user(userId), query: { limit: LEDGER_PAGE, cursor } },
+          headers: bearer(token),
+        }),
+      ),
+  };
+}
+
+export type AdminApi = ReturnType<typeof createAdminApi>;
+
+export const adminApi = createAdminApi({
+  userUrl: USER_SERVICE_URL,
+  orderUrl: ORDER_SERVICE_URL,
+  creditUrl: CREDIT_SERVICE_URL,
+});

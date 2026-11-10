@@ -1,0 +1,209 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (Claude Opus 5.5), date: 2026-10-20
+// Scope: Implementation for "show an account's errands on its admin page" (ADM-05).
+// Author review: Jonus Ho validated correctness and the implementation, and checked for fatal
+//   errors and architectural conflicts, before committing.
+
+import type {
+  AccountStatus,
+  AdminAlert,
+  AdminAlertKind,
+  AuditAction,
+  DisputeOutcome,
+  OrderStatus,
+  ReconciliationAttempt,
+  RoleRequestStatus,
+} from "./admin-api";
+import { isFinal } from "./order-status";
+
+/** How the console names each audit action. */
+export const AUDIT_ACTIONS: Record<AuditAction, string> = {
+  SUSPEND: "Suspended",
+  REACTIVATE: "Reactivated",
+  ROLE_GRANT: "Made an administrator",
+  ROLE_REVOKE: "Administrator role removed",
+  ROLE_CHANGE_REQUESTED: "Role change requested",
+  ROLE_CHANGE_REJECTED: "Role change rejected",
+  ADMIN_BOOTSTRAP: "Bootstrapped as administrator",
+};
+
+export const ALERT_KINDS: Record<AdminAlertKind, string> = {
+  ROLE_CHANGE: "Role change",
+  ADMIN_SUSPENDED: "Administrator suspended",
+  ADMIN_REACTIVATED: "Administrator reactivated",
+  BULK_SUSPENSIONS: "Many suspensions",
+  SUSPENSION_LIMIT_REACHED: "Suspension limit reached",
+  BULK_READS: "Many accounts opened",
+};
+
+export const ACCOUNT_STATUSES: Record<AccountStatus, string> = {
+  PENDING_ACTIVATION: "Not activated",
+  ACTIVE: "Active",
+  SUSPENDED: "Suspended",
+};
+
+export const REQUEST_STATUSES: Record<RoleRequestStatus, string> = {
+  PENDING: "Waiting for approval",
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+  EXPIRED: "Expired",
+};
+
+/** How the console names an errand's status (ORD-01's lifecycle). */
+export const ORDER_STATUSES: Record<OrderStatus, string> = {
+  PENDING_CREDIT: "Waiting on credits",
+  OPEN: "Open",
+  ACCEPTED: "Accepted",
+  PICKED_UP: "Picked up",
+  DELIVERED: "Delivered",
+  DISPUTED: "Disputed",
+  COMPLETION_PENDING_CREDIT: "Paying the courier",
+  RELEASE_PENDING_CREDIT: "Returning credits",
+  REJECTED: "Rejected",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
+  EXPIRED: "Expired",
+};
+
+/** Every status, in lifecycle order. */
+export const ORDER_STATUS_ORDER = Object.keys(ORDER_STATUSES) as OrderStatus[];
+/** The statuses an errand never leaves, in lifecycle order. */
+export const FINISHED_STATUSES = ORDER_STATUS_ORDER.filter(isFinal);
+/** Every status an errand can still move on from. */
+export const LIVE_STATUSES = ORDER_STATUS_ORDER.filter((s) => !isFinal(s));
+
+/** Why an errand was disputed: the action that moved it to DISPUTED (ORD-06, ORD-10). */
+const DISPUTE_CAUSES: Record<string, string> = {
+  REPORT_NON_RECEIPT: "The requester reported it never arrived, after the courier recorded delivery",
+  REPORT_NON_DELIVERY: "The requester reported it was not delivered in time",
+  // The system reports for a requester who can't: it fires only while they are suspended.
+  DELIVERY_PERIOD_PASSED: "The delivery period passed while the requester was suspended",
+  COURIER_SUSPENDED: "The courier was suspended",
+};
+/** A cause this build does not know is shown as its code. */
+export const disputeCause = (action: string) => DISPUTE_CAUSES[action] ?? action;
+
+export const DISPUTE_OUTCOMES: Record<DisputeOutcome, string> = {
+  COURIER: "For the courier: the reward is transferred to them",
+  REQUESTER: "For the requester: the reward is returned and the errand cancelled",
+};
+
+export const RECONCILIATION_ACTIONS: Record<ReconciliationAttempt["action"], string> = {
+  REISSUED: "Request sent again",
+  ALERTED: "Contradiction raised",
+  CREDIT_UNAVAILABLE: "Credit Service unreachable",
+};
+
+/** The colour family a status reads as. Always shown with its words, never by colour alone. */
+export type Tone = "neutral" | "info" | "success" | "warning" | "danger";
+
+export const AUDIT_TONES: Record<AuditAction, Tone> = {
+  SUSPEND: "danger",
+  REACTIVATE: "success",
+  ROLE_GRANT: "info",
+  ROLE_REVOKE: "warning",
+  ROLE_CHANGE_REQUESTED: "neutral",
+  ROLE_CHANGE_REJECTED: "neutral",
+  ADMIN_BOOTSTRAP: "info",
+};
+
+export const STATUS_TONES: Record<AccountStatus, Tone> = {
+  PENDING_ACTIVATION: "neutral",
+  ACTIVE: "success",
+  SUSPENDED: "danger",
+};
+
+export const ORDER_TONES: Record<OrderStatus, Tone> = {
+  PENDING_CREDIT: "neutral",
+  OPEN: "info",
+  ACCEPTED: "info",
+  PICKED_UP: "info",
+  DELIVERED: "info",
+  DISPUTED: "danger",
+  COMPLETION_PENDING_CREDIT: "warning",
+  RELEASE_PENDING_CREDIT: "warning",
+  REJECTED: "neutral",
+  COMPLETED: "success",
+  CANCELLED: "neutral",
+  EXPIRED: "neutral",
+};
+
+export const REQUEST_TONES: Record<RoleRequestStatus, Tone> = {
+  PENDING: "warning",
+  APPROVED: "success",
+  REJECTED: "neutral",
+  EXPIRED: "neutral",
+};
+
+/** Names an account in a sentence; the console passes one that looks it up in its directory. */
+export type Namer = (userId: unknown) => string;
+
+const count = (value: unknown) => (typeof value === "number" ? value : "?");
+
+/** One sentence for an alert, naming accounts through `name`. */
+export function describeAlert(alert: Pick<AdminAlert, "kind" | "actorId" | "details">, name: Namer) {
+  const d = alert.details;
+  const actor = name(alert.actorId);
+  switch (alert.kind) {
+    case "ROLE_CHANGE": {
+      const target = name(d.targetUserId);
+      const change =
+        d.role === "ADMIN" ? `made ${target} an administrator` : `removed ${target}'s administrator role`;
+      return d.approval === "NO_APPROVER" || d.requestedBy === d.approvedBy
+        ? `${actor} ${change} without a second administrator — nobody else held the role.`
+        : `${actor} ${change}, as ${name(d.requestedBy)} asked.`;
+    }
+    case "ADMIN_SUSPENDED":
+      return `${actor} suspended the administrator ${name(d.targetUserId)}.`;
+    case "ADMIN_REACTIVATED":
+      return `${actor} reactivated the administrator ${name(d.targetUserId)}.`;
+    case "BULK_SUSPENSIONS":
+      return `${actor} suspended ${count(d.suspensionsInLastHour)} accounts within an hour (the alert is at ${count(d.threshold)}).`;
+    case "SUSPENSION_LIMIT_REACHED":
+      return `${actor} reached the limit of ${count(d.limit)} suspensions an hour; further suspensions were refused.`;
+    case "BULK_READS":
+      return `${actor} opened ${count(d.readsInLastHour)} accounts within an hour (the alert is at ${count(d.threshold)}).`;
+  }
+}
+
+/**
+ * A day range from two `<input type="date">` values, as the instants the API filters on, in the
+ * browser's time zone. The API takes `from` inclusive and `to` exclusive, so the last day runs to the
+ * start of the day after it. Empty inputs are left out.
+ */
+export function dayRange(from: string, to: string): { from?: string; to?: string } {
+  const day = (value: string, after: boolean) => {
+    const [y, m, d] = value.split("-").map(Number);
+    if (!y || !m || !d) return undefined;
+    return new Date(y, m - 1, after ? d + 1 : d).toISOString();
+  };
+  return { from: from ? day(from, false) : undefined, to: to ? day(to, true) : undefined };
+}
+
+const DATE_TIME: Intl.DateTimeFormatOptions = {
+  day: "numeric",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+};
+
+export const formatWhen = (iso: string) => new Date(iso).toLocaleString([], DATE_TIME);
+
+/** To the second, for a trace where several steps share a minute. */
+export const formatInstant = (iso: string) =>
+  new Date(iso).toLocaleString([], { ...DATE_TIME, second: "2-digit" });
+
+/** "45 s", "12 min", "3 h 5 min". */
+export function formatDuration(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return `${Math.max(0, Math.round(ms / 1000))} s`;
+  if (minutes < 60) return `${minutes} min`;
+  const rest = minutes % 60;
+  return rest ? `${Math.floor(minutes / 60)} h ${rest} min` : `${Math.floor(minutes / 60)} h`;
+}
+
+/** The first block of a UUID: enough to tell records apart on screen. */
+export const shortId = (id: string) => id.slice(0, 8);
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const isUuid = (value: string) => UUID.test(value.trim());

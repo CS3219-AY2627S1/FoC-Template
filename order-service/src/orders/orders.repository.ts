@@ -1,0 +1,1379 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (Claude Opus 5.5), dates: 2026-10-01 to 2026-11-04
+// Scope: Implementation for "add discovery and one-winner atomic acceptance" (CRD-07, #171,
+//   EVT-03); also bug fixes, refactoring and tests.
+// Author review: Zhang Yuan, Isaac Chua, Jonus Ho and Patrick Thomas verified correctness, tested
+//   the change, and checked for fatal errors and conflicts with our architecture before committing.
+
+import { randomUUID } from 'node:crypto';
+import { Inject, Injectable } from '@nestjs/common';
+import { EVENTS, insertOutboxEvent, type Queryable, type Row } from '@foc/platform';
+import { env } from '../config.js';
+import { ORDER_DB, type OrderDatabase } from '../db/db.js';
+import {
+  ORDER_TRANSITIONS,
+  RESOLVE_ACTIONS,
+  SUSPENSION_EFFECTS,
+  decideTransition,
+  type OrderAction,
+  type OrderActor,
+  type TransitionDecision,
+} from './order-state-machine.js';
+import type {
+  OpenOrderSummary,
+  OrderReceipt,
+  OrderRow,
+  OrderStatus,
+  ReleaseReason,
+  SupplierSnapshot,
+  OrderItem,
+} from './types.js';
+import { TERMINAL_ORDER_STATUSES } from './types.js';
+import type {
+  CreateOrderInput,
+  MineCursor,
+  MyOrdersQuery,
+  OpenCursor,
+  OpenOrdersQuery,
+} from './validation.js';
+
+type StoredOrder = Row & {
+  order_id: string;
+  requester_id: string;
+  courier_id: string | null;
+  referred_admin_id: string | null;
+  supplier_snapshot: SupplierSnapshot;
+  items: OrderItem[];
+  delivery_zone: string;
+  delivery_instructions: string;
+  reward: number;
+  status: OrderStatus;
+  release_reason: ReleaseReason | null;
+  rejection_reason: string | null;
+  available_at_rejection: number | null;
+  version: number;
+  acceptance_deadline_at: Date | string | null;
+  accepted_at: Date | string | null;
+  picked_up_at: Date | string | null;
+  delivered_at: Date | string | null;
+  non_delivery_report_at: Date | string | null;
+  auto_confirm_at: Date | string | null;
+  completion_requested_at: Date | string | null;
+  completed_at: Date | string | null;
+  release_requested_at: Date | string | null;
+  released_at: Date | string | null;
+  credit_transaction_id: string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+};
+
+export const ORDER_COLUMNS = `order_id, requester_id, courier_id, referred_admin_id, supplier_snapshot,
+  items, delivery_zone, delivery_instructions, reward, status, release_reason, rejection_reason,
+  available_at_rejection, version, acceptance_deadline_at, accepted_at, picked_up_at, delivered_at,
+  non_delivery_report_at, auto_confirm_at, completion_requested_at, completed_at,
+  release_requested_at, released_at, credit_transaction_id, created_at, updated_at`;
+
+const iso = (value: Date | string): string =>
+  value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+
+const nullableIso = (value: Date | string | null): string | null => (value ? iso(value) : null);
+
+/** A timestamp to the microsecond, as a cursor must hold it to resume exactly after its row. */
+const exactTime = (column: string) =>
+  `to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+
+/**
+ * A contradiction still open, in a query that names a reconciliation attempt `a` and its order `o`:
+ * Credit was found contradicting the order at its current version, so the order has not changed
+ * since. Credit's side of every contradiction is final, so checking the order again before it
+ * changes would only find the same thing.
+ */
+const STILL_CONTRADICTING = `a.action = 'ALERTED' AND a.order_version = o.version`;
+
+const mapOrder = (row: StoredOrder): OrderRow => ({
+  orderId: row.order_id,
+  requesterId: row.requester_id,
+  courierId: row.courier_id,
+  referredAdminId: row.referred_admin_id,
+  supplierSnapshot: row.supplier_snapshot,
+  items: row.items,
+  deliveryZone: row.delivery_zone,
+  deliveryInstructions: row.delivery_instructions,
+  reward: Number(row.reward),
+  status: row.status,
+  releaseReason: row.release_reason,
+  rejectionReason: row.rejection_reason,
+  availableAtRejection:
+    row.available_at_rejection === null ? null : Number(row.available_at_rejection),
+  version: Number(row.version),
+  acceptanceDeadlineAt: nullableIso(row.acceptance_deadline_at),
+  acceptedAt: nullableIso(row.accepted_at),
+  pickedUpAt: nullableIso(row.picked_up_at),
+  deliveredAt: nullableIso(row.delivered_at),
+  nonDeliveryReportAt: nullableIso(row.non_delivery_report_at),
+  autoConfirmAt: nullableIso(row.auto_confirm_at),
+  completionRequestedAt: nullableIso(row.completion_requested_at),
+  completedAt: nullableIso(row.completed_at),
+  releaseRequestedAt: nullableIso(row.release_requested_at),
+  releasedAt: nullableIso(row.released_at),
+  creditTransactionId: row.credit_transaction_id,
+  createdAt: iso(row.created_at),
+  updatedAt: iso(row.updated_at),
+});
+
+export type CreationBoundary =
+  | 'order-written'
+  | 'history-written'
+  | 'idempotency-written'
+  | 'status-outbox-written'
+  | 'reservation-outbox-written';
+
+export interface CreatePendingInput extends CreateOrderInput {
+  requesterId: string;
+  supplierSnapshot: SupplierSnapshot;
+  idempotencyKey: string;
+  requestHash: string;
+  correlationId: string;
+}
+
+export type Acceptance =
+  { accepted: true; order: OrderRow } | { accepted: false; order?: OrderRow };
+
+export class IdempotencyKeyReusedError extends Error {
+  constructor() {
+    super('Idempotency-Key was reused with a different request.');
+    this.name = 'IdempotencyKeyReusedError';
+  }
+}
+
+@Injectable()
+export class OrdersRepository {
+  constructor(@Inject(ORDER_DB) private readonly db: OrderDatabase) {}
+
+  async findById(orderId: string): Promise<OrderRow | undefined> {
+    return this.findByIdUsing(this.db, orderId);
+  }
+
+  /** Reads the order under its row lock, held until `tx` ends. */
+  /** The errand version Credit's reservation produced, if one was ever applied (EVT-03). */
+  async reservationAppliedAt(tx: Queryable, orderId: string): Promise<number | undefined> {
+    const { rows } = await tx.query<{ order_version: number } & Row>(
+      `SELECT order_version FROM order_status_history
+        WHERE order_id = $1 AND action = 'CREDIT_RESERVED'`,
+      [orderId],
+    );
+    return rows[0] ? Number(rows[0].order_version) : undefined;
+  }
+
+  async lockById(tx: Queryable, orderId: string): Promise<OrderRow | undefined> {
+    const result = await tx.query<StoredOrder>(
+      `SELECT ${ORDER_COLUMNS} FROM orders WHERE order_id = $1 FOR UPDATE`,
+      [orderId],
+    );
+    return result.rows[0] ? mapOrder(result.rows[0]) : undefined;
+  }
+
+  private async findByIdUsing(db: Queryable, orderId: string): Promise<OrderRow | undefined> {
+    const result = await db.query<StoredOrder>(
+      `SELECT ${ORDER_COLUMNS}
+         FROM orders
+        WHERE order_id = $1`,
+      [orderId],
+    );
+    return result.rows[0] ? mapOrder(result.rows[0]) : undefined;
+  }
+
+  /**
+   * Unexpired open errands but the caller's own, soonest deadline first, narrowed to a pickup
+   * building (in any case) or a minimum reward when given. `after` resumes past a previous page's
+   * last errand: these keys never change while an errand is open, so a page never repeats or skips
+   * one.
+   */
+  async listOpen(
+    callerId: string,
+    { pickupBuilding, minReward, limit, after }: OpenOrdersQuery,
+    now = new Date(),
+  ): Promise<{ items: OpenOrderSummary[]; next: OpenCursor | null }> {
+    const result = await this.db.query<StoredOrder & { deadline_key: string; created_key: string }>(
+      `SELECT ${ORDER_COLUMNS}, ${exactTime('acceptance_deadline_at')} AS deadline_key,
+              ${exactTime('created_at')} AS created_key
+         FROM orders
+        WHERE status = 'OPEN' AND acceptance_deadline_at > $1 AND requester_id <> $2
+          AND ($3::text IS NULL OR lower(supplier_snapshot->>'building') = lower($3))
+          AND ($4::int IS NULL OR reward >= $4)
+          AND ($5::timestamptz IS NULL
+            OR (acceptance_deadline_at, created_at, order_id) > ($5, $6::timestamptz, $7::uuid))
+        ORDER BY acceptance_deadline_at, created_at, order_id
+        LIMIT $8`,
+      [
+        now.toISOString(),
+        callerId,
+        pickupBuilding ?? null,
+        minReward ?? null,
+        after?.deadline ?? null,
+        after?.createdAt ?? null,
+        after?.orderId ?? null,
+        limit + 1,
+      ],
+    );
+    const rows = result.rows.slice(0, limit);
+    const last = rows.at(-1);
+    return {
+      items: rows.map((stored) => {
+        const order = mapOrder(stored);
+        return {
+          orderId: order.orderId,
+          supplier: order.supplierSnapshot,
+          itemSummary: order.items.map(({ name, quantity }) => ({ name, quantity })),
+          deliveryZone: order.deliveryZone,
+          reward: order.reward,
+          status: 'OPEN',
+          version: order.version,
+          acceptanceDeadlineAt: order.acceptanceDeadlineAt!,
+          timeRemainingSeconds: Math.max(
+            0,
+            Math.ceil((new Date(order.acceptanceDeadlineAt!).getTime() - now.getTime()) / 1000),
+          ),
+          createdAt: order.createdAt,
+        };
+      }),
+      next:
+        result.rows.length > limit && last
+          ? { deadline: last.deadline_key, createdAt: last.created_key, orderId: last.order_id }
+          : null,
+    };
+  }
+
+  /**
+   * The user's errands, most recently changed first, optionally limited to one role or active
+   * states. `after` resumes past a previous page's last errand. A change moves an errand to the
+   * top, ahead of any cursor, so a later page never repeats it; the first page shows it again.
+   */
+  async listMine(
+    userId: string,
+    { role, active, limit, after }: MyOrdersQuery,
+  ): Promise<{ rows: OrderRow[]; next: MineCursor | null }> {
+    const result = await this.db.query<StoredOrder & { updated_key: string }>(
+      `SELECT ${ORDER_COLUMNS}, ${exactTime('updated_at')} AS updated_key
+         FROM orders
+        WHERE (($3::text = 'REQUESTER' AND requester_id = $1)
+            OR ($3::text = 'COURIER' AND courier_id = $1)
+            OR ($3::text IS NULL AND (requester_id = $1 OR courier_id = $1)))
+          AND ($4::boolean IS NULL OR (status <> ALL($5::text[])) = $4)
+          AND ($6::timestamptz IS NULL
+            OR updated_at < $6 OR (updated_at = $6 AND order_id > $7::uuid))
+        ORDER BY updated_at DESC, order_id
+        LIMIT $2`,
+      [
+        userId,
+        limit + 1,
+        role ?? null,
+        active ?? null,
+        [...TERMINAL_ORDER_STATUSES],
+        after?.updatedAt ?? null,
+        after?.orderId ?? null,
+      ],
+    );
+    const rows = result.rows.slice(0, limit);
+    const last = rows.at(-1);
+    return {
+      rows: rows.map(mapOrder),
+      next:
+        result.rows.length > limit && last
+          ? { updatedAt: last.updated_key, orderId: last.order_id }
+          : null,
+    };
+  }
+
+  /**
+   * Errands newest first: one account's, as requester, current courier or both filters at once, or
+   * every errand when neither is given; `status` narrows either to those statuses. `before` keeps
+   * only the errands after that one in this order, wherever it now is: a keyset, so errands posted
+   * since, or ones that leave the filter, move nothing on the next page. An unknown one lists none.
+   */
+  async listForAdmin(
+    filter: { requesterId?: string; courierId?: string; status?: OrderStatus[]; before?: string },
+    page: number,
+    pageSize: number,
+  ): Promise<{ rows: OrderRow[]; total: number }> {
+    const where = `($1::text IS NULL OR requester_id = $1) AND ($2::text IS NULL OR courier_id = $2)
+      AND ($3::text[] IS NULL OR status = ANY($3::text[]))
+      AND ($4::uuid IS NULL
+        OR (created_at, order_id) < (SELECT created_at, order_id FROM orders WHERE order_id = $4))`;
+    const params = [
+      filter.requesterId ?? null,
+      filter.courierId ?? null,
+      filter.status ?? null,
+      filter.before ?? null,
+    ];
+    const [count, rows] = await Promise.all([
+      this.db.query<{ total: number } & Row>(
+        `SELECT count(*)::int AS total FROM orders WHERE ${where}`,
+        params,
+      ),
+      this.db.query<StoredOrder>(
+        `SELECT ${ORDER_COLUMNS} FROM orders WHERE ${where}
+          ORDER BY created_at DESC, order_id DESC
+          LIMIT $5 OFFSET $6`,
+        [...params, pageSize, (page - 1) * pageSize],
+      ),
+    ]);
+    return { rows: rows.rows.map(mapOrder), total: count.rows[0]!.total };
+  }
+
+  async findIdempotent(
+    requesterId: string,
+    idempotencyKey: string,
+  ): Promise<{ requestHash: string; order: OrderRow } | undefined> {
+    const result = await this.db.query<{ request_hash: string; order_id: string } & Row>(
+      `SELECT request_hash, order_id
+         FROM order_idempotency_keys
+        WHERE requester_id = $1 AND idempotency_key = $2`,
+      [requesterId, idempotencyKey],
+    );
+    if (!result.rows[0]) return undefined;
+    const order = await this.findById(result.rows[0].order_id);
+    return order ? { requestHash: result.rows[0].request_hash, order } : undefined;
+  }
+
+  /** The database clock, so timers and the acceptance check compare against the same time. */
+  async databaseNow(): Promise<Date> {
+    return clockOf(this.db);
+  }
+
+  /** OPEN orders whose acceptance deadline has passed (OS-FR6.1.2). */
+  async findOverdueOpen(now: Date, limit = 100): Promise<string[]> {
+    const result = await this.db.query<{ order_id: string } & Row>(
+      `SELECT order_id FROM orders
+        WHERE status = 'OPEN' AND acceptance_deadline_at <= $1
+        ORDER BY acceptance_deadline_at, order_id
+        LIMIT $2`,
+      [now.toISOString(), limit],
+    );
+    return result.rows.map((row) => row.order_id);
+  }
+
+  /** ACCEPTED orders with no pickup recorded within the pickup timeout (OS-FR6.1.3). */
+  async findPickupOverdue(cutoff: Date, limit = 100): Promise<string[]> {
+    const result = await this.db.query<{ order_id: string } & Row>(
+      `SELECT order_id FROM orders
+        WHERE status = 'ACCEPTED' AND accepted_at <= $1
+        ORDER BY accepted_at, order_id
+        LIMIT $2`,
+      [cutoff.toISOString(), limit],
+    );
+    return result.rows.map((row) => row.order_id);
+  }
+
+  /**
+   * PICKED_UP orders past their delivery period whose requester's suspension arrived within it
+   * (OS-FR8.2.2). Each is asked about once: it is then referred, or its mark is cleared.
+   */
+  async findDeliveryOverdue(
+    now: Date,
+    limit = 100,
+  ): Promise<Array<{ orderId: string; requesterId: string }>> {
+    const result = await this.db.query<{ order_id: string; requester_id: string } & Row>(
+      `SELECT order_id, requester_id FROM orders
+        WHERE status = 'PICKED_UP' AND requester_suspended_at IS NOT NULL
+          AND non_delivery_report_at <= $1
+        ORDER BY non_delivery_report_at, order_id
+        LIMIT $2`,
+      [now.toISOString(), limit],
+    );
+    return result.rows.map((row) => ({ orderId: row.order_id, requesterId: row.requester_id }));
+  }
+
+  /** Marks a picked-up errand whose requester was suspended within its delivery period. */
+  async noteRequesterSuspended(tx: Queryable, orderId: string): Promise<void> {
+    await tx.query(`UPDATE orders SET requester_suspended_at = now() WHERE order_id = $1`, [
+      orderId,
+    ]);
+  }
+
+  /** Clears the mark once the requester is active again: the errand is theirs to settle. */
+  async clearRequesterSuspended(orderId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE orders SET requester_suspended_at = NULL
+        WHERE order_id = $1 AND status = 'PICKED_UP'`,
+      [orderId],
+    );
+  }
+
+  /** DELIVERED orders neither confirmed nor reported by their auto-confirmation time (OS-FR4.1.4). */
+  async findAutoConfirmDue(now: Date, limit = 100): Promise<string[]> {
+    const result = await this.db.query<{ order_id: string } & Row>(
+      `SELECT order_id FROM orders
+        WHERE status = 'DELIVERED' AND auto_confirm_at <= $1
+        ORDER BY auto_confirm_at, order_id
+        LIMIT $2`,
+      [now.toISOString(), limit],
+    );
+    return result.rows.map((row) => row.order_id);
+  }
+
+  /**
+   * Raises the CREDIT_WAIT_EXCEEDED operator alert for every order that has waited in
+   * PENDING_CREDIT since before `cutoff` and has none yet (OS-FR1.1.3). Returns only the alerts
+   * raised by this call, so each order is surfaced once. The order itself is never changed:
+   * the reservation may still arrive.
+   */
+  async raiseCreditWaitAlerts(
+    cutoff: Date,
+    limit = 100,
+  ): Promise<Array<{ orderId: string; createdAt: string; raisedAt: string }>> {
+    const result = await this.db.query<
+      { order_id: string; created_at: Date | string; raised_at: Date | string } & Row
+    >(
+      `INSERT INTO order_operator_alerts (order_id, kind, raised_at, detail)
+       SELECT order_id, 'CREDIT_WAIT_EXCEEDED', now(),
+              jsonb_build_object('createdAt', created_at, 'requesterId', requester_id)
+         FROM orders
+        WHERE status = 'PENDING_CREDIT' AND created_at <= $1
+          AND NOT EXISTS (
+            SELECT 1 FROM order_operator_alerts a
+             WHERE a.order_id = orders.order_id AND a.kind = 'CREDIT_WAIT_EXCEEDED')
+        ORDER BY created_at, order_id
+        LIMIT $2
+       ON CONFLICT (order_id, kind) DO NOTHING
+       RETURNING order_id, (detail->>'createdAt')::timestamptz AS created_at, raised_at`,
+      [cutoff.toISOString(), limit],
+    );
+    return result.rows.map((row) => ({
+      orderId: row.order_id,
+      createdAt: iso(row.created_at),
+      raisedAt: iso(row.raised_at),
+    }));
+  }
+
+  /** Orders still waiting for Credit since before `cutoff`, for the operator view. */
+  async listCreditWaitExceeded(cutoff: Date, limit = 100) {
+    const result = await this.db.query<
+      {
+        order_id: string;
+        requester_id: string;
+        reward: number;
+        created_at: Date | string;
+        raised_at: Date | string | null;
+      } & Row
+    >(
+      `SELECT o.order_id, o.requester_id, o.reward, o.created_at, a.raised_at
+         FROM orders o
+         LEFT JOIN order_operator_alerts a
+           ON a.order_id = o.order_id AND a.kind = 'CREDIT_WAIT_EXCEEDED'
+        WHERE o.status = 'PENDING_CREDIT' AND o.created_at <= $1
+        ORDER BY o.created_at, o.order_id
+        LIMIT $2`,
+      [cutoff.toISOString(), limit],
+    );
+    return result.rows.map((row) => ({
+      orderId: row.order_id,
+      requesterId: row.requester_id,
+      reward: Number(row.reward),
+      createdAt: iso(row.created_at),
+      alertRaisedAt: row.raised_at ? iso(row.raised_at) : null,
+    }));
+  }
+
+  /**
+   * What the Chat Service decides access from (ADR 0012): the current courier, and when the errand
+   * reached a final status, read from its history, which is never rewritten.
+   */
+  async findForChat(orderId: string) {
+    const { rows } = await this.db.query<
+      {
+        status: OrderStatus;
+        version: number;
+        requester_id: string;
+        courier_id: string | null;
+        ended_at: Date | string | null;
+      } & Row
+    >(
+      `SELECT o.status, o.version, o.requester_id, o.courier_id,
+              (SELECT h.occurred_at FROM order_status_history h
+                WHERE h.order_id = o.order_id AND h.new_status = ANY($2)
+                ORDER BY h.order_version LIMIT 1) AS ended_at
+         FROM orders o
+        WHERE o.order_id = $1`,
+      [orderId, [...TERMINAL_ORDER_STATUSES]],
+    );
+    const row = rows[0];
+    return row
+      ? {
+          status: row.status,
+          version: Number(row.version),
+          requesterId: row.requester_id,
+          courierId: row.courier_id,
+          endedAt: nullableIso(row.ended_at),
+        }
+      : undefined;
+  }
+
+  async findHistory(orderId: string) {
+    const result = await this.db.query<
+      {
+        previous_status: OrderStatus | null;
+        new_status: OrderStatus;
+        action: string;
+        actor_type: string;
+        actor_id: string | null;
+        reason: string | null;
+        order_version: number;
+        occurred_at: Date | string;
+      } & Row
+    >(
+      `SELECT previous_status, new_status, action, actor_type, actor_id, reason, order_version,
+              occurred_at
+         FROM order_status_history
+        WHERE order_id = $1
+        ORDER BY order_version`,
+      [orderId],
+    );
+    return result.rows.map((row) => ({
+      previousStatus: row.previous_status,
+      newStatus: row.new_status,
+      action: row.action,
+      actorType: row.actor_type,
+      actorId: row.actor_id,
+      reason: row.reason,
+      version: Number(row.order_version),
+      occurredAt: iso(row.occurred_at),
+    }));
+  }
+
+  /**
+   * Orders waiting on Credit since before `staleBefore` that no run has attempted since
+   * `retryAfter`, and whose original request has already left the outbox (otherwise the relay,
+   * not reconciliation, is what they are waiting for). An order still contradicting Credit is left
+   * out until it changes.
+   */
+  async findReconciliationCandidates(staleAfterMs: number, retryAfterMs: number, limit = 100) {
+    const result = await this.db.query<
+      { order_id: string; status: PendingCreditStatus; version: number } & Row
+    >(
+      `SELECT o.order_id, o.status, o.version
+         FROM orders o
+        WHERE ((o.status = 'PENDING_CREDIT' AND o.created_at <= now() - $1 * interval '1 millisecond')
+            OR (o.status = 'COMPLETION_PENDING_CREDIT'
+                AND o.completion_requested_at <= now() - $1 * interval '1 millisecond')
+            OR (o.status = 'RELEASE_PENDING_CREDIT'
+                AND o.release_requested_at <= now() - $1 * interval '1 millisecond'))
+          AND NOT EXISTS (
+            SELECT 1 FROM order_reconciliation_attempts a
+             WHERE a.order_id = o.order_id
+               AND (a.attempted_at > now() - $2 * interval '1 millisecond' OR ${STILL_CONTRADICTING}))
+          AND NOT EXISTS (
+            SELECT 1 FROM outbox_events e
+             WHERE e.aggregate_id = o.order_id::text AND e.published_at IS NULL
+               AND e.event_type IN ($4, $5, $6))
+        ORDER BY o.updated_at, o.order_id
+        LIMIT $3`,
+      [
+        staleAfterMs,
+        retryAfterMs,
+        limit,
+        EVENTS.CREDIT_RESERVATION_REQUESTED,
+        EVENTS.ORDER_COMPLETION_REQUESTED,
+        EVENTS.CREDIT_RELEASE_REQUESTED,
+      ],
+    );
+    return result.rows.map((row) => ({
+      orderId: row.order_id,
+      status: row.status,
+      version: Number(row.version),
+    }));
+  }
+
+  /**
+   * Records one reconciliation decision under the order's row lock. Returns null — and changes
+   * nothing — if another run holds the order, the order moved on since it was read, another run
+   * already attempted it within the retry window, or it is still contradicting Credit; so
+   * overlapping runs repair an order once and find a contradiction once.
+   */
+  async recordReconciliation(input: {
+    orderId: string;
+    observed: { status: PendingCreditStatus; version: number };
+    runId: string;
+    retryAfterMs: number;
+    credit: { status: string; detail: string | null } | null;
+    action: 'REISSUE' | 'ALERT' | 'CREDIT_UNAVAILABLE';
+    correlationId: string;
+  }): Promise<{
+    action: 'REISSUED' | 'ALERTED' | 'CREDIT_UNAVAILABLE';
+    eventId: string | null;
+    alertRaised: boolean;
+  } | null> {
+    return this.db.transaction(async (tx) => {
+      const locked = await tx.query<StoredOrder>(
+        `SELECT ${ORDER_COLUMNS} FROM orders WHERE order_id = $1 FOR UPDATE SKIP LOCKED`,
+        [input.orderId],
+      );
+      const stored = locked.rows[0];
+      if (!stored) return null;
+      const order = mapOrder(stored);
+      if (order.status !== input.observed.status || order.version !== input.observed.version) {
+        return null;
+      }
+      const recent = await tx.query(
+        `SELECT 1 FROM order_reconciliation_attempts a JOIN orders o ON o.order_id = a.order_id
+          WHERE a.order_id = $1
+            AND (a.attempted_at > now() - $2 * interval '1 millisecond' OR ${STILL_CONTRADICTING})`,
+        [input.orderId, input.retryAfterMs],
+      );
+      if (recent.rows.length > 0) return null;
+
+      let eventId: string | null = null;
+      let alertRaised = false;
+      if (input.action === 'REISSUE') {
+        eventId = await insertOutboxEvent(tx, {
+          ...creditRequest(order),
+          aggregateId: order.orderId,
+          correlationId: input.correlationId,
+        } as Parameters<typeof insertOutboxEvent>[1]);
+      } else if (input.action === 'ALERT') {
+        alertRaised = await this.raiseAlert(
+          order.orderId,
+          'CREDIT_STATE_CONFLICT',
+          { orderStatus: order.status, creditStatus: input.credit?.status ?? null },
+          tx,
+        );
+      }
+      const action =
+        input.action === 'REISSUE'
+          ? 'REISSUED'
+          : input.action === 'ALERT'
+            ? 'ALERTED'
+            : 'CREDIT_UNAVAILABLE';
+      await tx.query(
+        `INSERT INTO order_reconciliation_attempts
+           (attempt_id, run_id, order_id, order_status, order_version, credit_status, credit_detail,
+            action, reissued_event_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          randomUUID(),
+          input.runId,
+          order.orderId,
+          order.status,
+          order.version,
+          input.credit?.status ?? null,
+          input.credit?.detail ?? null,
+          action,
+          eventId,
+        ],
+      );
+      return { action, eventId, alertRaised };
+    });
+  }
+
+  async listReconciliationAttempts(limit = 100) {
+    const result = await this.db.query<
+      {
+        attempt_id: string;
+        run_id: string;
+        order_id: string;
+        order_status: string;
+        order_version: number;
+        credit_status: string | null;
+        credit_detail: string | null;
+        action: string;
+        reissued_event_id: string | null;
+        attempted_at: Date | string;
+      } & Row
+    >(
+      `SELECT * FROM order_reconciliation_attempts ORDER BY attempted_at DESC, attempt_id LIMIT $1`,
+      [limit],
+    );
+    return result.rows.map((row) => ({
+      attemptId: row.attempt_id,
+      runId: row.run_id,
+      orderId: row.order_id,
+      orderStatus: row.order_status,
+      orderVersion: Number(row.order_version),
+      creditStatus: row.credit_status,
+      creditDetail: row.credit_detail,
+      action: row.action,
+      reissuedEventId: row.reissued_event_id,
+      attemptedAt: iso(row.attempted_at),
+    }));
+  }
+
+  /** Errands found contradicting Credit that have not changed since. */
+  async countOpenContradictions(): Promise<number> {
+    const result = await this.db.query<{ n: number } & Row>(
+      `SELECT count(DISTINCT a.order_id)::int AS n
+         FROM order_reconciliation_attempts a JOIN orders o ON o.order_id = a.order_id
+        WHERE ${STILL_CONTRADICTING}`,
+    );
+    return Number(result.rows[0]?.n ?? 0);
+  }
+
+  /** Durable discovery boundary for #150; it never changes or rejects the order itself. */
+  async findStalePendingCredit(
+    cutoff: Date,
+    limit = 100,
+  ): Promise<Array<{ orderId: string; createdAt: string }>> {
+    const result = await this.db.query<{ order_id: string; created_at: Date | string } & Row>(
+      `SELECT order_id, created_at
+         FROM orders
+        WHERE status = 'PENDING_CREDIT' AND created_at <= $1
+        ORDER BY created_at, order_id
+        LIMIT $2`,
+      [cutoff.toISOString(), limit],
+    );
+    return result.rows.map((row) => ({ orderId: row.order_id, createdAt: iso(row.created_at) }));
+  }
+
+  async createPending(
+    input: CreatePendingInput,
+    fault?: (boundary: CreationBoundary) => void | Promise<void>,
+  ): Promise<{ order: OrderRow; replayed: boolean }> {
+    return this.db.transaction(async (tx) => {
+      await tx.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `${input.requesterId}:${input.idempotencyKey}`,
+      ]);
+      const existing = await tx.query<{ request_hash: string; order_id: string } & Row>(
+        `SELECT request_hash, order_id
+           FROM order_idempotency_keys
+          WHERE requester_id = $1 AND idempotency_key = $2`,
+        [input.requesterId, input.idempotencyKey],
+      );
+      if (existing.rows[0]) {
+        if (existing.rows[0].request_hash !== input.requestHash) {
+          throw new IdempotencyKeyReusedError();
+        }
+        const order = await this.findByIdUsing(tx, existing.rows[0].order_id);
+        if (!order) throw new Error('Idempotency record references a missing order.');
+        return { order, replayed: true };
+      }
+
+      const orderId = randomUUID();
+      const historyId = randomUUID();
+      const occurredAt = new Date().toISOString();
+      await tx.query(
+        `INSERT INTO orders
+           (order_id, requester_id, supplier_snapshot, items, delivery_zone,
+            delivery_instructions, reward, status, version, created_at, updated_at)
+         VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, 'PENDING_CREDIT', 1, $8, $8)`,
+        [
+          orderId,
+          input.requesterId,
+          JSON.stringify(input.supplierSnapshot),
+          JSON.stringify(input.items),
+          input.deliveryZone,
+          input.deliveryInstructions,
+          input.reward,
+          occurredAt,
+        ],
+      );
+      await fault?.('order-written');
+      await tx.query(
+        `INSERT INTO order_status_history
+           (history_id, order_id, previous_status, new_status, action, actor_type, actor_id,
+            order_version, occurred_at)
+         VALUES ($1, $2, NULL, 'PENDING_CREDIT', 'CREATE', 'REQUESTER', $3, 1, $4)`,
+        [historyId, orderId, input.requesterId, occurredAt],
+      );
+      await fault?.('history-written');
+      await tx.query(
+        `INSERT INTO order_idempotency_keys
+           (requester_id, idempotency_key, order_id, request_hash)
+         VALUES ($1, $2, $3, $4)`,
+        [input.requesterId, input.idempotencyKey, orderId, input.requestHash],
+      );
+      await fault?.('idempotency-written');
+      await insertOutboxEvent(tx, {
+        eventType: EVENTS.ORDER_STATUS_CHANGED,
+        aggregateId: orderId,
+        correlationId: input.correlationId,
+        payload: {
+          orderId,
+          previousStatus: null,
+          newStatus: 'PENDING_CREDIT',
+          occurredAt,
+          orderVersion: 1,
+        },
+      });
+      await fault?.('status-outbox-written');
+      await insertOutboxEvent(tx, {
+        eventType: EVENTS.CREDIT_RESERVATION_REQUESTED,
+        aggregateId: orderId,
+        correlationId: input.correlationId,
+        payload: { orderId, requesterId: input.requesterId, amount: input.reward },
+      });
+      await fault?.('reservation-outbox-written');
+
+      const order = await this.findByIdUsing(tx, orderId);
+      if (!order) throw new Error('Newly inserted order could not be read.');
+      return { order, replayed: false };
+    });
+  }
+
+  /**
+   * Runs one caller's order command on `orderId` under their Idempotency-Key, one send of a key at
+   * a time. A key already recorded returns the order it was recorded for, as it is now, or throws
+   * IdempotencyKeyReusedError if it was recorded for a different request. `run` refuses by
+   * throwing, which records nothing, so only an applied command's key is kept, in the same
+   * transaction as its transition. Keys never expire, and are apart from the keys on POST /orders.
+   */
+  async withCommandKey<T>(
+    key: { callerId: string; idempotencyKey: string; requestHash: string; orderId: string },
+    run: (tx: Queryable) => Promise<T>,
+  ): Promise<{ applied: T } | { replayed: OrderRow }> {
+    return this.db.transaction(async (tx) => {
+      await tx.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        `order-command:${key.callerId}:${key.idempotencyKey}`,
+      ]);
+      const existing = await tx.query<{ request_hash: string; order_id: string } & Row>(
+        `SELECT request_hash, order_id
+           FROM order_command_idempotency_keys
+          WHERE caller_id = $1 AND idempotency_key = $2`,
+        [key.callerId, key.idempotencyKey],
+      );
+      if (existing.rows[0]) {
+        if (existing.rows[0].request_hash !== key.requestHash) {
+          throw new IdempotencyKeyReusedError();
+        }
+        const order = await this.findByIdUsing(tx, existing.rows[0].order_id);
+        if (!order) throw new Error('Idempotency record references a missing order.');
+        return { replayed: order };
+      }
+      const applied = await run(tx);
+      await tx.query(
+        `INSERT INTO order_command_idempotency_keys
+           (caller_id, idempotency_key, order_id, request_hash)
+         VALUES ($1, $2, $3, $4)`,
+        [key.callerId, key.idempotencyKey, key.orderId, key.requestHash],
+      );
+      return { applied };
+    });
+  }
+
+  async accept(
+    orderId: string,
+    courierId: string,
+    expectedVersion: number,
+    correlationId: string,
+    tx?: Queryable,
+  ): Promise<Acceptance> {
+    if (tx) return this.acceptUsing(tx, orderId, courierId, expectedVersion, correlationId);
+    return this.db.transaction((inner) =>
+      this.acceptUsing(inner, orderId, courierId, expectedVersion, correlationId),
+    );
+  }
+
+  private async acceptUsing(
+    tx: Queryable,
+    orderId: string,
+    courierId: string,
+    expectedVersion: number,
+    correlationId: string,
+  ): Promise<Acceptance> {
+    const updated = await tx.query<StoredOrder>(
+      `UPDATE orders
+          SET courier_id = $2, status = 'ACCEPTED', version = version + 1,
+              accepted_at = now(), updated_at = now()
+        WHERE order_id = $1
+          AND status = 'OPEN'
+          AND version = $3
+          AND requester_id <> $2
+          AND acceptance_deadline_at > now()
+      RETURNING ${ORDER_COLUMNS}`,
+      [orderId, courierId, expectedVersion],
+    );
+    if (!updated.rows[0]) {
+      return { accepted: false, order: await this.findByIdUsing(tx, orderId) };
+    }
+
+    const order = mapOrder(updated.rows[0]);
+    const occurredAt = order.updatedAt;
+    await tx.query(
+      `INSERT INTO order_status_history
+         (history_id, order_id, previous_status, new_status, action, actor_type, actor_id,
+          order_version, occurred_at)
+       VALUES ($1, $2, 'OPEN', 'ACCEPTED', 'ACCEPT', 'STUDENT', $3, $4, $5)`,
+      [randomUUID(), orderId, courierId, order.version, occurredAt],
+    );
+    await insertOutboxEvent(tx, {
+      eventType: EVENTS.ORDER_STATUS_CHANGED,
+      aggregateId: orderId,
+      correlationId,
+      payload: {
+        orderId,
+        previousStatus: 'OPEN',
+        newStatus: 'ACCEPTED',
+        occurredAt,
+        orderVersion: order.version,
+      },
+    });
+    return { accepted: true, order };
+  }
+
+  /**
+   * Locks every errand a suspension can change, as requester or as courier, in the statuses
+   * `SUSPENSION_EFFECTS` lists. Locked in `order_id` order, so two suspensions handled at once (the
+   * requester and the courier of one errand) wait for each other rather than deadlock.
+   *
+   * A requester's errand still in PENDING_CREDIT is locked too, though no suspension rule moves
+   * it: the reservation reply holds the same lock while it asks the User Service, so whichever of
+   * the two runs second sees what the first did, and a suspension cannot slip between the reply's
+   * question and its answer.
+   */
+  async lockActiveErrandsOf(tx: Queryable, userId: string): Promise<OrderRow[]> {
+    const result = await tx.query<StoredOrder>(
+      `SELECT ${ORDER_COLUMNS} FROM orders
+        WHERE (requester_id = $1 AND status = ANY($2::text[]))
+           OR (courier_id = $1 AND status = ANY($3::text[]))
+        ORDER BY order_id
+        FOR UPDATE`,
+      [
+        userId,
+        ['PENDING_CREDIT', ...Object.keys(SUSPENSION_EFFECTS.REQUESTER.actions)],
+        Object.keys(SUSPENSION_EFFECTS.COURIER.actions),
+      ],
+    );
+    return result.rows.map(mapOrder);
+  }
+
+  /** Whether any errand is in dispute, so a run with none never asks the User Service. */
+  async anyDisputed(): Promise<boolean> {
+    const result = await this.db.query(`SELECT 1 FROM orders WHERE status = 'DISPUTED' LIMIT 1`);
+    return result.rows.length > 0;
+  }
+
+  /**
+   * Disputes that need a referral, oldest first: those referred to no one, and those referred to
+   * someone not among `adminIds` (with that administrator, so it can be cleared). Disputes waiting
+   * on an administrator who may act are left out, so however many there are, they never crowd a
+   * newer dispute out of the batch. A dispute that no listed administrator may take (each took part
+   * in the errand) stays referred to no one and keeps its place at the head of every batch, so
+   * `limit` of those at once would hold newer disputes back. Each one has its REFERRAL_UNASSIGNED
+   * alert and a warning on every run.
+   */
+  async listDisputesToRefer(
+    adminIds: string[],
+    limit = 100,
+  ): Promise<Array<{ orderId: string; adminId: string | null }>> {
+    const result = await this.db.query<
+      { order_id: string; referred_admin_id: string | null } & Row
+    >(
+      `SELECT order_id, referred_admin_id FROM orders
+        WHERE status = 'DISPUTED'
+          AND (referred_admin_id IS NULL OR referred_admin_id <> ALL($1::text[]))
+        ORDER BY updated_at, order_id
+        LIMIT $2`,
+      [adminIds, limit],
+    );
+    return result.rows.map((row) => ({ orderId: row.order_id, adminId: row.referred_admin_id }));
+  }
+
+  /** Everyone who was ever the errand's requester or courier, including couriers who left it. */
+  async participants(orderId: string): Promise<string[]> {
+    const result = await this.db.query<{ user_id: string } & Row>(
+      `SELECT requester_id AS user_id FROM orders WHERE order_id = $1
+       UNION SELECT courier_id FROM orders WHERE order_id = $1 AND courier_id IS NOT NULL
+       UNION SELECT actor_id FROM order_status_history
+              WHERE order_id = $1 AND action = 'ACCEPT' AND actor_id IS NOT NULL`,
+      [orderId],
+    );
+    return result.rows.map((row) => row.user_id);
+  }
+
+  /**
+   * Of the given administrators, the one with the fewest undecided disputes; ties go to the fewest
+   * referrals ever kept, then the lowest user ID. A referral cleared because its admin lost the role
+   * is not kept, so it stops counting; that only matters once the admin is reinstated.
+   */
+  async leastReferred(adminIds: string[]): Promise<string> {
+    const result = await this.db.query<{ admin_id: string } & Row>(
+      `SELECT a.admin_id
+         FROM unnest($1::text[]) AS a(admin_id)
+         LEFT JOIN orders o ON o.referred_admin_id = a.admin_id
+        GROUP BY a.admin_id
+        ORDER BY count(o.order_id) FILTER (WHERE o.status = 'DISPUTED'), count(o.order_id),
+                 a.admin_id
+        LIMIT 1`,
+      [adminIds],
+    );
+    return result.rows[0]!.admin_id;
+  }
+
+  /** Raises an operator alert for the order; true only the first time (one per order and kind). */
+  async raiseAlert(
+    orderId: string,
+    kind: 'CREDIT_STATE_CONFLICT' | 'REFERRAL_UNASSIGNED',
+    detail: Record<string, unknown>,
+    db: Queryable = this.db,
+  ): Promise<boolean> {
+    const raised = await db.query(
+      `INSERT INTO order_operator_alerts (order_id, kind, detail)
+       VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT (order_id, kind) DO NOTHING
+       RETURNING order_id`,
+      [orderId, kind, JSON.stringify(detail)],
+    );
+    return raised.rows.length > 0;
+  }
+
+  /**
+   * Disputes referred to the administrator or to no one yet, each with the action that disputed it.
+   */
+  async listReferred(adminId: string, limit = 100) {
+    const result = await this.db.query<StoredOrder & { referred_by: string }>(
+      `SELECT ${ORDER_COLUMNS},
+              (SELECT h.action FROM order_status_history h
+                WHERE h.order_id = orders.order_id AND h.new_status = 'DISPUTED'
+                  AND h.previous_status IS DISTINCT FROM 'DISPUTED'
+                ORDER BY h.order_version DESC LIMIT 1) AS referred_by
+         FROM orders
+        WHERE status = 'DISPUTED' AND (referred_admin_id = $1 OR referred_admin_id IS NULL)
+        ORDER BY updated_at, order_id
+        LIMIT $2`,
+      [adminId, limit],
+    );
+    return result.rows.map((row) => ({ order: mapOrder(row), referredBy: row.referred_by }));
+  }
+
+  /** The most recent administrator decisions, newest first. */
+  async listDecisions(limit = 100) {
+    const result = await this.db.query<
+      {
+        order_id: string;
+        action: string;
+        actor_id: string;
+        reason: string;
+        occurred_at: Date | string;
+      } & Row
+    >(
+      `SELECT order_id, action, actor_id, reason, occurred_at FROM order_status_history
+        WHERE action = ANY($1::text[])
+        ORDER BY occurred_at DESC, history_id
+        LIMIT $2`,
+      [Object.values(RESOLVE_ACTIONS), limit],
+    );
+    return result.rows.map((row) => ({
+      orderId: row.order_id,
+      adminId: row.actor_id,
+      outcome: row.action === RESOLVE_ACTIONS.COURIER ? 'COURIER' : 'REQUESTER',
+      reason: row.reason,
+      decidedAt: iso(row.occurred_at),
+    }));
+  }
+
+  /**
+   * The single path for every lifecycle command after acceptance. It locks the row, resolves the
+   * caller's role relative to the order, asks the executable transition table for a decision and,
+   * only if one exists, applies it with a version-checked update, an immutable history row and
+   * every emitted event in the same transaction. A refused command changes nothing.
+   */
+  async transition(command: TransitionCommand, tx?: Queryable): Promise<TransitionResult> {
+    if (tx) return this.transitionUsing(tx, command);
+    return this.db.transaction((inner) => this.transitionUsing(inner, command));
+  }
+
+  private async transitionUsing(
+    tx: Queryable,
+    command: TransitionCommand,
+  ): Promise<TransitionResult> {
+    const locked = await tx.query<StoredOrder>(
+      `SELECT ${ORDER_COLUMNS} FROM orders WHERE order_id = $1 FOR UPDATE`,
+      [command.orderId],
+    );
+    if (!locked.rows[0]) return { kind: 'rejected', reason: 'NOT_FOUND' };
+    const order = mapOrder(locked.rows[0]);
+    const actor = resolveActor(order, command.actor);
+    // The database clock, which the scheduler and acceptance also use, so a participant and a timer
+    // agree on whether a deadline has passed.
+    const now = command.now ?? (await clockOf(tx));
+    const context = {
+      acceptanceDeadlinePassed:
+        order.acceptanceDeadlineAt !== null && new Date(order.acceptanceDeadlineAt) <= now,
+      deliveryPeriodPassed:
+        order.nonDeliveryReportAt !== null && new Date(order.nonDeliveryReportAt) <= now,
+      autoConfirmationPeriodPassed:
+        order.autoConfirmAt !== null && new Date(order.autoConfirmAt) <= now,
+      releaseReason: order.releaseReason ?? undefined,
+      reasonProvided: (command.reason?.trim() ?? '') !== '',
+      requesterSuspended: command.requesterSuspended,
+    };
+
+    const decision = decideTransition(order.status, command.action, actor, context);
+    if (!decision) {
+      const allowedSomewhere = ORDER_TRANSITIONS.some(
+        (rule) => rule.action === command.action && rule.actors.includes(actor),
+      );
+      return {
+        kind: 'rejected',
+        reason: allowedSomewhere ? 'INVALID_STATE' : 'FORBIDDEN',
+        order,
+      };
+    }
+    if (command.expectedVersion !== undefined && command.expectedVersion !== order.version) {
+      return { kind: 'rejected', reason: 'VERSION_CONFLICT', order };
+    }
+    command.verify?.(order);
+
+    const occurredAt = now.toISOString();
+    const patch: Record<string, unknown> = {
+      status: decision.to,
+      version: order.version + 1,
+      updated_at: occurredAt,
+      ...(decision.releaseReason ? { release_reason: decision.releaseReason } : {}),
+      ...timestampPatch(command.action, decision, occurredAt, order),
+      ...(command.patch ?? {}),
+    };
+    const columns = Object.keys(patch);
+    const updated = await tx.query<StoredOrder>(
+      `UPDATE orders
+          SET ${columns.map((column, index) => `${column} = $${index + 3}`).join(', ')}
+        WHERE order_id = $1 AND version = $2
+        RETURNING ${ORDER_COLUMNS}`,
+      [order.orderId, order.version, ...columns.map((column) => patch[column])],
+    );
+    const next = updated.rows[0] ? mapOrder(updated.rows[0]) : undefined;
+    if (!next) return { kind: 'rejected', reason: 'VERSION_CONFLICT', order };
+
+    await tx.query(
+      `INSERT INTO order_status_history
+         (history_id, order_id, previous_status, new_status, action, actor_type, actor_id,
+          reason, order_version, occurred_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        randomUUID(),
+        order.orderId,
+        order.status,
+        next.status,
+        command.action,
+        HISTORY_ACTOR[actor],
+        command.actor.id,
+        command.reason?.trim() ?? null,
+        next.version,
+        occurredAt,
+      ],
+    );
+    await command.afterApply?.(tx, next);
+    for (const eventType of decision.emitted) {
+      await insertOutboxEvent(tx, {
+        ...emittedEvent(eventType, order, next, occurredAt),
+        aggregateId: order.orderId,
+        correlationId: command.correlationId,
+        ...(command.causationId ? { causationId: command.causationId } : {}),
+      } as Parameters<typeof insertOutboxEvent>[1]);
+    }
+    return { kind: 'applied', order: next, decision };
+  }
+
+  async insertReceipt(tx: Queryable, order: OrderRow): Promise<void> {
+    await tx.query(
+      `INSERT INTO order_receipts
+         (order_id, requester_id, courier_id, supplier_snapshot, items, reward, credit_transaction_id,
+          created_at, accepted_at, picked_up_at, delivered_at, completion_requested_at, completed_at)
+       VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      [
+        order.orderId,
+        order.requesterId,
+        order.courierId,
+        JSON.stringify(order.supplierSnapshot),
+        JSON.stringify(order.items),
+        order.reward,
+        order.creditTransactionId,
+        order.createdAt,
+        order.acceptedAt,
+        order.pickedUpAt,
+        order.deliveredAt,
+        order.completionRequestedAt,
+        order.completedAt,
+      ],
+    );
+  }
+
+  async findReceipt(orderId: string): Promise<OrderReceipt | undefined> {
+    const result = await this.db.query<
+      Row & {
+        order_id: string;
+        requester_id: string;
+        courier_id: string;
+        supplier_snapshot: SupplierSnapshot;
+        items: OrderItem[];
+        reward: number;
+        credit_transaction_id: string;
+        created_at: Date | string;
+        accepted_at: Date | string;
+        picked_up_at: Date | string;
+        delivered_at: Date | string | null;
+        completion_requested_at: Date | string;
+        completed_at: Date | string;
+      }
+    >(`SELECT * FROM order_receipts WHERE order_id = $1`, [orderId]);
+    const row = result.rows[0];
+    if (!row) return undefined;
+    return {
+      orderId: row.order_id,
+      requesterId: row.requester_id,
+      courierId: row.courier_id,
+      supplier: row.supplier_snapshot,
+      items: row.items,
+      reward: Number(row.reward),
+      creditTransactionId: row.credit_transaction_id,
+      timestamps: {
+        createdAt: iso(row.created_at),
+        acceptedAt: iso(row.accepted_at),
+        pickedUpAt: iso(row.picked_up_at),
+        deliveredAt: nullableIso(row.delivered_at),
+        completionRequestedAt: iso(row.completion_requested_at),
+        completedAt: iso(row.completed_at),
+      },
+    };
+  }
+}
+
+/** Who is asking: a person (resolved against the order) or a system actor. */
+export type CommandActor =
+  | { kind: 'USER'; id: string; isAdmin: boolean }
+  | { kind: 'SYSTEM'; id: string | null }
+  | { kind: 'CREDIT_SERVICE'; id: 'credit-service' };
+
+export interface TransitionCommand {
+  orderId: string;
+  action: OrderAction;
+  actor: CommandActor;
+  /** Participant commands must state the version they observed; system commands omit it. */
+  expectedVersion?: number;
+  correlationId: string;
+  causationId?: string;
+  now?: Date;
+  /** Throws to refuse the command after the transition is known to be legal (e.g. reply facts). */
+  verify?: (order: OrderRow) => void;
+  /** Extra column values written with the transition. */
+  patch?: Record<string, unknown>;
+  /** Why, recorded on the history row; an administrator's decision requires one. */
+  reason?: string;
+  /** What the User Service said about the requester, for the rules that depend on it. */
+  requesterSuspended?: boolean;
+  /** Extra writes in the same transaction, after the history row. */
+  afterApply?: (tx: Queryable, order: OrderRow) => Promise<void>;
+}
+
+export type TransitionResult =
+  | { kind: 'applied'; order: OrderRow; decision: TransitionDecision }
+  | {
+      kind: 'rejected';
+      reason: 'NOT_FOUND' | 'FORBIDDEN' | 'INVALID_STATE' | 'VERSION_CONFLICT';
+      order?: OrderRow;
+    };
+
+const HISTORY_ACTOR: Record<OrderActor, string> = {
+  REQUESTER: 'REQUESTER',
+  ASSIGNED_COURIER: 'COURIER',
+  OTHER_STUDENT: 'STUDENT',
+  ADMIN: 'ADMIN',
+  CREDIT_SERVICE: 'CREDIT_SERVICE',
+  SYSTEM: 'SYSTEM',
+};
+
+/** A requester or courier acts as that participant even if they are also an administrator. */
+function resolveActor(order: OrderRow, actor: CommandActor): OrderActor {
+  if (actor.kind === 'SYSTEM') return 'SYSTEM';
+  if (actor.kind === 'CREDIT_SERVICE') return 'CREDIT_SERVICE';
+  if (actor.id === order.requesterId) return 'REQUESTER';
+  if (order.courierId !== null && actor.id === order.courierId) return 'ASSIGNED_COURIER';
+  return actor.isAdmin ? 'ADMIN' : 'OTHER_STUDENT';
+}
+
+async function clockOf(db: Queryable): Promise<Date> {
+  const result = await db.query<{ now: Date | string } & Row>(`SELECT now() AS now`);
+  return new Date(result.rows[0]!.now);
+}
+
+const later = (at: string, ms: number) => new Date(Date.parse(at) + ms).toISOString();
+
+function timestampPatch(
+  action: OrderAction,
+  decision: TransitionDecision,
+  at: string,
+  order: OrderRow,
+): Record<string, unknown> {
+  // A withdrawing or timed-out courier loses the errand (and with it, private access to it).
+  const noCourier = { courier_id: null, accepted_at: null };
+  const courierRemoved = action === 'WITHDRAW' || action === 'PICKUP_TIMEOUT' ? noCourier : {};
+  // So does a suspended one, and the requester gets back the time that courier held the errand.
+  if (action === 'COURIER_SUSPENDED' && decision.to === 'OPEN') {
+    return {
+      ...noCourier,
+      acceptance_deadline_at: later(
+        order.acceptanceDeadlineAt!,
+        Date.parse(at) - Date.parse(order.acceptedAt!),
+      ),
+    };
+  }
+  // Each deadline is saved when its period starts, so a later change to the period cannot move it.
+  if (action === 'RECORD_PICKUP') {
+    return { picked_up_at: at, non_delivery_report_at: later(at, env.DELIVERY_PERIOD_MS) };
+  }
+  if (action === 'CREDIT_RESERVED' && decision.to === 'OPEN') {
+    return { acceptance_deadline_at: later(at, env.ACCEPTANCE_WINDOW_MS) };
+  }
+  if (action === 'RECORD_DELIVERY') {
+    return { delivered_at: at, auto_confirm_at: later(at, env.AUTO_CONFIRM_MS) };
+  }
+  if (decision.to === 'COMPLETION_PENDING_CREDIT') return { completion_requested_at: at };
+  if (decision.to === 'COMPLETED') return { completed_at: at };
+  if (decision.to === 'RELEASE_PENDING_CREDIT') {
+    return { ...courierRemoved, release_requested_at: at };
+  }
+  if (decision.to === 'CANCELLED' || decision.to === 'EXPIRED') return { released_at: at };
+  return courierRemoved;
+}
+
+function emittedEvent(eventType: string, before: OrderRow, after: OrderRow, occurredAt: string) {
+  if (eventType === EVENTS.ORDER_STATUS_CHANGED) {
+    return {
+      eventType: EVENTS.ORDER_STATUS_CHANGED,
+      payload: {
+        orderId: after.orderId,
+        previousStatus: before.status,
+        newStatus: after.status,
+        occurredAt,
+        orderVersion: after.version,
+      },
+    };
+  }
+  if (eventType === EVENTS.ORDER_COMPLETION_REQUESTED) {
+    if (!after.courierId) throw new Error('completion requested without an assigned courier');
+    return {
+      eventType: EVENTS.ORDER_COMPLETION_REQUESTED,
+      payload: {
+        orderId: after.orderId,
+        requesterId: after.requesterId,
+        courierId: after.courierId,
+        amount: after.reward,
+      },
+    };
+  }
+  if (eventType === EVENTS.CREDIT_RELEASE_REQUESTED) {
+    return {
+      eventType: EVENTS.CREDIT_RELEASE_REQUESTED,
+      payload: { orderId: after.orderId, requesterId: after.requesterId, amount: after.reward },
+    };
+  }
+  throw new Error(`transition emits an uncatalogued event: ${eventType}`);
+}
+
+export type PendingCreditStatus =
+  'PENDING_CREDIT' | 'COMPLETION_PENDING_CREDIT' | 'RELEASE_PENDING_CREDIT';
+
+/** The exact request an order in a *_PENDING_CREDIT state is waiting on, for re-issue. */
+function creditRequest(order: OrderRow) {
+  if (order.status === 'PENDING_CREDIT') {
+    return {
+      eventType: EVENTS.CREDIT_RESERVATION_REQUESTED,
+      payload: { orderId: order.orderId, requesterId: order.requesterId, amount: order.reward },
+    };
+  }
+  if (order.status === 'COMPLETION_PENDING_CREDIT') {
+    return emittedEvent(EVENTS.ORDER_COMPLETION_REQUESTED, order, order, order.updatedAt);
+  }
+  if (order.status === 'RELEASE_PENDING_CREDIT') {
+    return emittedEvent(EVENTS.CREDIT_RELEASE_REQUESTED, order, order, order.updatedAt);
+  }
+  throw new Error(`order in ${order.status} is not waiting on a Credit request`);
+}

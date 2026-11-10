@@ -1,0 +1,117 @@
+/* Tokens live in src/styles/tokens.ts; the variables come from the generated tokens.css. */
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html {
+  height: 100%;
+}
+
+html,
+body {
+  max-width: 100vw;
+}
+
+body {
+  min-height: 100%;
+  color: var(--color-text);
+  background: var(--color-page);
+  font-family: var(--font-content);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* A visible focus ring for keyboard users on every interactive element. */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.field-label {
+  display: block;
+  margin-bottom: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-muted);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+::selection {
+  background: var(--color-info-surface);
+  color: var(--color-primary);
+}
+
+/* Reduced motion keeps the fades that say something changed and drops the travel. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-distance: 0px;
+  }
+}
+
+/* Something new arriving: it firms up from slightly below. It starts partly visible, never at 0,
+   so an alert that takes focus as it arrives shows its ring from the first frame. */
+@keyframes rise-in {
+  from {
+    opacity: 0.35;
+    transform: translateY(var(--motion-distance));
+  }
+}
+
+/*
+ * A list that is being replaced (a mode switch, a new filter) stays up dimmed rather than flashing a
+ * skeleton. The dimming waits a beat, so a quick answer swaps the list with no dip at all.
+ */
+.settle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  transition: opacity var(--motion-base) var(--motion-ease-in-out) 150ms;
+}
+
+/* The page also makes it inert, so neither a click nor the keyboard reaches a card being replaced. */
+.settle[aria-busy="true"] {
+  opacity: 0.55;
+}
+
+/* A screen's content once it has loaded: it arrives together, not item by item. */
+.arrive {
+  animation: rise-in var(--motion-slow) var(--motion-ease-out) both;
+}

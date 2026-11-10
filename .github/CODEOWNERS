@@ -1,0 +1,55 @@
+# The owner of each part of the repository (NTH-04, #164). The last matching line wins, so the
+# more specific lines come after the folders they sit in.
+
+# Anything no line below names, a new root file included
+*                    @jonushzw
+
+# The five services, each by its owner (chat by N1.2's three)
+/user-service/       @anselmlong
+/supplier-service/   @pastchum
+/order-service/      @volleyballkickedme
+/credit-service/     @isaacchua0309
+/chat-service/       @pastchum @volleyballkickedme @anselmlong
+
+# The web app, and the admin console inside it
+/web-app/                      @pastchum
+/web-app/src/app/(app)/admin/  @jonushzw
+
+# Contracts: each service's by its owner, the events by the platform and the credit owner
+/contracts/                               @jonushzw
+/contracts/user-service.openapi.yaml      @anselmlong
+/contracts/supplier-service.openapi.yaml  @pastchum
+/contracts/order-service.openapi.yaml     @volleyballkickedme
+/contracts/credit-service.openapi.yaml    @isaacchua0309
+/contracts/chat-service.openapi.yaml      @pastchum @volleyballkickedme @anselmlong
+/contracts/events.schema.json             @jonushzw @isaacchua0309
+
+# Shared code and tests
+/platform/       @jonushzw
+/auth-client/    @jonushzw @anselmlong
+/test-harness/   @jonushzw
+/system-tests/   @isaacchua0309 @volleyballkickedme
+
+# The pipeline and the stack
+/.github/                @jonushzw
+/compose.yaml            @jonushzw
+/compose.dev.yaml        @jonushzw
+/observability/          @jonushzw
+/postgres-init.sh        @jonushzw
+/rabbitmq-init.sh        @jonushzw
+/scripts-*.sh            @jonushzw
+/.env.example            @jonushzw
+/.gitleaks.toml          @jonushzw
+/compose.images.yaml     @jonushzw
+
+# Root configuration every package builds, lints or installs from
+/package.json            @jonushzw
+/package-lock.json       @jonushzw
+/tsconfig.base.json      @jonushzw
+/eslint.config.mjs       @jonushzw
+/.prettierrc             @jonushzw
+/.prettierignore         @jonushzw
+/.nvmrc                  @jonushzw
+
+# The supplier seed data, read by the Supplier Service
+/data/                   @pastchum

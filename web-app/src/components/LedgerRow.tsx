@@ -1,0 +1,73 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (Claude Opus 5.5), dates: 2026-09-30 to 2026-10-22
+// Scope: Implementation for "show real order history, receipts and wallet" (WEB-00, WEB-03).
+// Author review: Patrick Thomas reviewed the implementation for correctness, ran it against the
+//   test suite, and checked that it fits our service boundaries without fatal errors before
+//   committing.
+
+import Link from "next/link";
+import { formatWhen } from "@/lib/admin-labels";
+import { cx } from "@/lib/cx";
+import { creditLabel } from "@/lib/credit-label";
+import type { LedgerItem } from "@/lib/order-api";
+import { vars } from "@/styles/tokens";
+import styles from "./LedgerRow.module.css";
+
+function describe({ type, amount, totalChange }: LedgerItem): { label: string; color: string } {
+  switch (type) {
+    case "ISSUE":
+      return { label: "Starting credits", color: vars.color.success };
+    case "RESERVE":
+      return {
+        label: `${creditLabel(amount)} reserved for your errand`,
+        color: vars.color.warning,
+      };
+    case "RELEASE":
+      return { label: `${creditLabel(amount)} released back to you`, color: vars.color.info };
+    case "TRANSFER":
+      return totalChange < 0
+        ? { label: "Paid your courier", color: vars.color.danger }
+        : { label: "Earned for a delivery", color: vars.color.success };
+  }
+}
+
+export const ledgerAnchor = (transactionId: string) => `tx-${transactionId}`;
+
+/** Where an entry's errand is read: a transfer's receipt, or the errand itself. */
+function errandHref({ type, orderId }: LedgerItem) {
+  if (!orderId) return null;
+  return type === "TRANSFER" ? `/request/${orderId}/receipt` : `/request/${orderId}`;
+}
+
+/** One ledger entry. `current` marks the one a link pointed to; it takes focus from the page. */
+export function LedgerRow({ entry, current = false }: { entry: LedgerItem; current?: boolean }) {
+  const { label, color } = describe(entry);
+  const href = errandHref(entry);
+  const change = entry.totalChange;
+  return (
+    <div
+      id={ledgerAnchor(entry.transactionId)}
+      className={cx(styles.row, current && styles.current)}
+      aria-current={current || undefined}
+      tabIndex={current ? -1 : undefined}
+    >
+      <span className={styles.dot} style={{ background: color }} />
+      <div className={styles.info}>
+        <p className={styles.label}>{href ? <Link href={href}>{label}</Link> : label}</p>
+        <p className={styles.detail}>
+          Total after: {entry.resultingTotal} · {formatWhen(entry.occurredAt)}
+        </p>
+      </div>
+      <span
+        className={cx(
+          styles.amount,
+          change > 0 && styles.positive,
+          change < 0 && styles.negative,
+          change === 0 && styles.neutral,
+        )}
+      >
+        {change === 0 ? "—" : `${change > 0 ? "+" : ""}${change}`}
+      </span>
+    </div>
+  );
+}

@@ -1,0 +1,307 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (Claude Opus 5.5, Claude Sonnet 5, Claude Opus 4.8), dates: 2026-09-20 to
+//   2026-11-05
+// Scope: Generated the initial implementation for "login, refresh-token rotation and logout"
+//   (USR-02, USR-03, #189); later new features and bug fixes.
+// Author review: Anselm Long, Jonus Ho and Patrick Thomas reviewed the implementation for
+//   correctness, ran it against the test suite, and checked that it fits our service boundaries
+//   without fatal errors before committing.
+
+import { Inject, Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { ApiException } from '@foc/platform';
+import { DB, type Database } from '../db/db.js';
+import { normalizeEmail } from '../users/email.js';
+import { validationFailed } from '../users/validation.js';
+import {
+  usersRepository as users,
+  type AccountStatus,
+  type Role,
+} from '../users/users.repository.js';
+import { setPasswordFromEmailedLink } from './emailed-link.js';
+import { hashPassword, verifyPassword } from './passwords.js';
+import { ACCESS_TOKEN_TTL_SECONDS, JWT, type JwtService } from './jwt.service.js';
+import { REFRESH_TTL_DAYS } from './cookies.js';
+import { sessionsRepository as sessions } from './sessions.repository.js';
+import { newOpaqueToken, sha256Hex } from './tokens.js';
+
+export interface IssuedSession {
+  accessToken: string;
+  refreshToken: string;
+  tokenType: 'Bearer';
+  expiresIn: number;
+  user: { id: string; displayName: string; roles: Role[]; status: AccountStatus };
+}
+
+export const SESSION_SETTINGS = Symbol('SESSION_SETTINGS');
+
+export interface SessionSettings {
+  /** `ADMIN_SEED_PASSWORD`, if configured: a bootstrap admin may not choose it as their own. */
+  bootstrapPassword?: string;
+}
+
+const codeForStatus = (status: AccountStatus) =>
+  status === 'SUSPENDED'
+    ? new ApiException(403, 'ACCOUNT_SUSPENDED', 'This account is suspended.')
+    : new ApiException(
+        403,
+        'ACCOUNT_NOT_ACTIVATED',
+        'Activate your account from the email we sent.',
+      );
+
+const invalidCredentials = () =>
+  new ApiException(401, 'INVALID_CREDENTIALS', 'Email or password is incorrect.');
+
+const passwordChangeRequired = () =>
+  new ApiException(403, 'PASSWORD_CHANGE_REQUIRED', 'Choose a new password before signing in.');
+
+const passwordUnchanged = (message: string, field = 'newPassword') =>
+  validationFailed([{ field, code: 'PASSWORD_UNCHANGED', message }]);
+
+/** Why a reset token was refused: unknown or already used, or expired (the activation pattern). */
+const resetTokenRefusal = (token: { consumed: boolean; expired: boolean } | null) =>
+  !token || token.consumed
+    ? new ApiException(
+        404,
+        'PASSWORD_RESET_TOKEN_INVALID',
+        'This password reset link is not valid.',
+      )
+    : new ApiException(
+        410,
+        'PASSWORD_RESET_TOKEN_EXPIRED',
+        'This password reset link has expired.',
+      );
+
+@Injectable()
+export class SessionsService {
+  /** Hashed once, so an unknown email costs the same Argon2 work as a wrong password. */
+  private dummyHash?: Promise<string>;
+
+  constructor(
+    @Inject(DB) private readonly db: Database,
+    @Inject(JWT) private readonly jwt: JwtService,
+    @Inject(SESSION_SETTINGS) private readonly settings: SessionSettings,
+  ) {}
+
+  /** US-FR1.1.2 — only valid credentials on an ACTIVE account get tokens. */
+  async login(rawEmail: string, password: string): Promise<IssuedSession> {
+    const user = await this.verifyCredentials(rawEmail, password);
+    // A bootstrap password is shared deployment configuration, not a credential: it only lets
+    // the account replace it (US-FR3.1.3.2). No session is started with it.
+    if (user.mustChangePassword) throw passwordChangeRequired();
+
+    const sessionId = randomUUID();
+    const refreshToken = newOpaqueToken();
+    const started = await sessions.insertIfLoginable(
+      this.db,
+      {
+        id: sessionId,
+        familyId: randomUUID(),
+        userId: user.id,
+        tokenHash: sha256Hex(refreshToken),
+        ttlDays: REFRESH_TTL_DAYS,
+      },
+      user.passwordHash,
+    );
+    // The password was changed, or the account suspended, while Argon2 ran: what we verified is stale.
+    if (!started) throw invalidCredentials();
+    return this.respond(user.id, sessionId, refreshToken, {
+      id: user.id,
+      displayName: user.displayName,
+      roles: user.roles,
+      status: user.status,
+    });
+  }
+
+  /**
+   * Rotates the refresh token. Each use invalidates the presented token and
+   * issues a new one in the same family. Presenting a token that was already
+   * rotated means it was copied: the whole family is revoked.
+   */
+  async refresh(refreshToken: string | undefined): Promise<IssuedSession> {
+    if (!refreshToken) throw invalid();
+    const hash = sha256Hex(refreshToken);
+    const nextToken = newOpaqueToken();
+    const nextId = randomUUID();
+
+    // Outcomes are returned, not thrown, from inside the transaction: a throw would
+    // roll back the family revocation that reuse detection exists to perform.
+    const outcome = await this.db.transaction(async (tx) => {
+      const row = await sessions.lockByHash(tx, hash);
+      if (!row) return { kind: 'invalid' as const };
+      if (row.rotated) {
+        await sessions.revokeFamily(tx, row.familyId);
+        return { kind: 'reused' as const };
+      }
+      if (row.revoked || row.expired) return { kind: 'invalid' as const };
+      if (row.userStatus !== 'ACTIVE') {
+        await sessions.revokeFamily(tx, row.familyId);
+        return { kind: 'inactive' as const, status: row.userStatus };
+      }
+      // Login never starts a session for a flagged account; one that predates migration 004, or
+      // came from an instance still on older code, ends here.
+      if (row.mustChangePassword) {
+        await sessions.revokeFamily(tx, row.familyId);
+        return { kind: 'passwordChangeRequired' as const };
+      }
+      await sessions.markRotated(tx, row.id);
+      await sessions.rotate(tx, { id: nextId, tokenHash: sha256Hex(nextToken), continues: row.id });
+      return { kind: 'ok' as const, userId: row.userId };
+    });
+
+    switch (outcome.kind) {
+      case 'invalid':
+        throw invalid();
+      case 'reused':
+        throw new ApiException(401, 'REFRESH_TOKEN_REUSED', 'Session revoked. Log in again.');
+      case 'inactive':
+        throw codeForStatus(outcome.status);
+      case 'passwordChangeRequired':
+        throw passwordChangeRequired();
+      case 'ok': {
+        const identity = await users.findIdentity(this.db, outcome.userId);
+        if (!identity) throw invalid();
+        return this.respond(outcome.userId, nextId, nextToken, {
+          id: outcome.userId,
+          displayName: identity.displayName,
+          roles: identity.roles,
+          status: identity.status,
+        });
+      }
+    }
+  }
+
+  /**
+   * Replaces a password after proving the current one. Proof is the password itself rather than
+   * an access token, so the same call serves a bootstrap admin who has no session yet (their login
+   * is refused with `PASSWORD_CHANGE_REQUIRED`) and any active user changing theirs.
+   *
+   * Every session of the account is revoked, and its unused password reset links deleted, in the
+   * same transaction: whoever knew the old password may already hold a session or a link. Failure responses match login's, so this is no better an oracle than it.
+   */
+  async changePassword(rawEmail: string, currentPassword: string, newPassword: string) {
+    const user = await this.verifyCredentials(rawEmail, currentPassword);
+    if (newPassword === currentPassword) {
+      throw passwordUnchanged('Choose a password different from the current one.');
+    }
+    // Choosing the bootstrap secret would hand the account back to everyone who knows it. Checked
+    // only for a seeded admin, who knows it already: for anyone else it would confirm a guess.
+    if (user.isSeededAdmin && newPassword === this.settings.bootstrapPassword) {
+      throw passwordUnchanged('Choose a password different from the bootstrap password.');
+    }
+
+    // Hashed before the transaction: Argon2id is deliberately slow and must not hold a connection.
+    const newHash = await hashPassword(newPassword);
+    const replaced = await this.db.transaction(async (tx) => {
+      if (!(await users.replacePassword(tx, user.id, user.passwordHash, newHash))) return false;
+      await sessions.revokeAllForUser(tx, user.id);
+      // A reset link mailed before this change would otherwise set the password again.
+      await users.deleteUnconsumedPasswordResetTokens(tx, user.id);
+      return true;
+    });
+    // Lost a race with another change: the password we verified is no longer the current one.
+    if (!replaced) throw invalidCredentials();
+  }
+
+  /**
+   * #309 — sets the password chosen through an emailed reset link. The link proves the inbox, so it
+   * does what activation does ({@link setPasswordFromEmailedLink}): a pending account is activated
+   * too, and every session is revoked and every unused link deleted, so nobody who knew the old
+   * password, or holds a link sent before, keeps a way in.
+   *
+   * Does not sign in, as activation does not: the student signs in with the new password. A
+   * suspended account is refused and its token left unused. The token is checked before Argon2
+   * runs, so a made-up token costs one indexed read, not a hash.
+   */
+  async confirmPasswordReset(
+    token: string,
+    password: string,
+    correlationId: string,
+  ): Promise<void> {
+    const tokenHash = sha256Hex(token);
+    const found = await users.findPasswordResetToken(this.db, tokenHash);
+    if (!found || found.consumed || found.expired) throw resetTokenRefusal(found);
+    // As for a password change: the bootstrap secret would hand the account to everyone who knows it.
+    if (found.isSeededAdmin && password === this.settings.bootstrapPassword) {
+      throw passwordUnchanged(
+        'Choose a password different from the bootstrap password.',
+        'password',
+      );
+    }
+
+    // Hashed before the transaction: Argon2id is deliberately slow and must not hold a connection.
+    const passwordHash = await hashPassword(password);
+    await this.db.transaction(async (tx) => {
+      const status = await users.lockUserOfPasswordResetToken(tx, tokenHash);
+      const userId = await users.consumePasswordResetToken(tx, tokenHash);
+      // Used or expired while Argon2 ran. Nothing was written, so throwing loses nothing.
+      if (!userId || !status) {
+        throw resetTokenRefusal(await users.findPasswordResetToken(tx, tokenHash));
+      }
+      // Suspended after the link was sent. Throwing rolls back, so the token is not left consumed.
+      if (status === 'SUSPENDED') throw resetTokenRefusal(null);
+
+      await setPasswordFromEmailedLink(tx, { userId, status, passwordHash, correlationId });
+    });
+  }
+
+  /**
+   * Password re-entry (ADR 0008): proves the person at the keyboard still knows the password before
+   * the riskiest admin actions. Recorded on the caller's own session — a token refresh keeps it, but
+   * another sign-in or device does not. A wrong password fails exactly as login does.
+   */
+  async stepUp(userId: string, sessionId: string, password: string): Promise<void> {
+    const hash = await users.findPasswordHash(this.db, userId);
+    this.dummyHash ??= hashPassword('not-a-real-password');
+    const valid = await verifyPassword(hash ?? (await this.dummyHash), password);
+    if (!hash || !valid) throw invalidCredentials();
+    if (!(await sessions.markSteppedUp(this.db, sessionId, userId))) {
+      // The session ended between the guard and here (logout or suspension in another tab).
+      throw new ApiException(401, 'UNAUTHENTICATED', 'Authentication required.');
+    }
+  }
+
+  /** Revokes the caller's whole session family. Idempotent: an unknown or absent token is a no-op. */
+  async logout(refreshToken: string | undefined): Promise<void> {
+    if (!refreshToken) return;
+    await sessions.revokeFamilyByTokenHash(this.db, sha256Hex(refreshToken));
+  }
+
+  /**
+   * The credential check login and password change share. An unknown email costs the same Argon2
+   * work as a wrong password and gets the same answer; the account's status is revealed only after
+   * the password proves the caller owns it.
+   */
+  private async verifyCredentials(rawEmail: string, password: string) {
+    const user = await users.findCredentials(this.db, normalizeEmail(rawEmail));
+
+    const passwordHash = user?.passwordHash ?? null;
+
+    this.dummyHash ??= hashPassword('not-a-real-password');
+    // Verify against a dummy hash when the email is unknown, or its account has no password yet
+    // (pending, #309), so response time does not reveal it. Matching the dummy proves nothing.
+    const valid = await verifyPassword(passwordHash ?? (await this.dummyHash), password);
+    if (!user || !passwordHash || !valid) throw invalidCredentials();
+    if (user.status !== 'ACTIVE') throw codeForStatus(user.status);
+    return { ...user, passwordHash };
+  }
+
+  private async respond(
+    userId: string,
+    sessionId: string,
+    refreshToken: string,
+    user: IssuedSession['user'],
+  ): Promise<IssuedSession> {
+    return {
+      accessToken: await this.jwt.sign({ sub: userId, sid: sessionId }),
+      refreshToken,
+      tokenType: 'Bearer',
+      expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+      user,
+    };
+  }
+}
+
+function invalid(): ApiException {
+  return new ApiException(401, 'REFRESH_TOKEN_INVALID', 'Session expired. Log in again.');
+}

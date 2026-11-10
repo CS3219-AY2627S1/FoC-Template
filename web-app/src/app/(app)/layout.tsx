@@ -1,0 +1,71 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (Claude Opus 5.5), dates: 2026-09-30 to 2026-10-29
+// Scope: Implementation for "account screens on the real User Service" (USR-05, #193, WEB-00); also
+//   bug fixes.
+// Author review: Jonus Ho, Patrick Thomas and Anselm Long validated the behaviour and the
+//   implementation, checked for fatal errors, and confirmed it does not conflict with the
+//   architecture before committing.
+
+"use client";
+
+import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { Menu } from "@/components/Menu";
+import { ErrorState, LoadingState } from "@/components/States";
+import { useAuth } from "@/lib/auth";
+import { CreditsProvider } from "@/lib/credits";
+import { LiveProvider } from "@/lib/live/live";
+import styles from "./layout.module.css";
+
+/**
+ * Every screen in this group needs a session. While the cold-load refresh is in flight a status is
+ * shown (never a blank flash). A signed-out visitor, or one whose session just ended, goes to sign in
+ * and comes back here afterwards; someone who signed out on purpose just goes to sign in. This is the
+ * only place that navigates on sign-out, so logging out is a single navigation.
+ *
+ * If the service could not be asked at all (offline, down, misconfigured), that is not a sign-out:
+ * the problem is shown with a retry.
+ */
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const { status, endedBy, problem, retry } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    if (status !== "signedOut") return;
+    // The query string is part of where they were (`/request/new/details?…`).
+    const here = `${pathname}${window.location.search}`;
+    router.replace(endedBy === "loggedOut" ? "/login" : `/login?next=${encodeURIComponent(here)}`);
+  }, [status, endedBy, pathname, router]);
+
+  if (status === "unavailable") {
+    return (
+      <div className={styles.pending}>
+        <ErrorState title="Can't reach your account" onRetry={() => void retry()}>
+          {problem}
+        </ErrorState>
+      </div>
+    );
+  }
+
+  if (status !== "signedIn") {
+    return (
+      <div className={styles.pending}>
+        <LoadingState
+          label={status === "loading" ? "Loading your account…" : "Redirecting to sign in…"}
+        />
+      </div>
+    );
+  }
+
+  const showCredits = pathname !== "/suppliers" && !pathname.startsWith("/admin");
+  // N1.4: one live-update stream per tab, on the student's pages; the console polls.
+  return (
+    <LiveProvider enabled={showCredits}>
+      <CreditsProvider enabled={showCredits}>
+        {children}
+        <Menu />
+      </CreditsProvider>
+    </LiveProvider>
+  );
+}

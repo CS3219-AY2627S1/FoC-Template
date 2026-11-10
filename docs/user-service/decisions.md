@@ -1,0 +1,842 @@
+# User Service — Decision Log and Trade-offs
+
+A record of what was decided while building the User Service (contract, USR-01, USR-02, USR-03, USR-06), why, what
+was given up, and what is still open. It exists so that in the D2 "why?" questions, and in the final
+presentation, every answer is one someone already thought through — including the parts that went
+wrong.
+
+**Status legend** — ✅ built and verified · 🟡 built, one caveat · 📝 designed, not built yet · ❓ needs a teammate or mentor to confirm
+
+Related docs: [roles.md](roles.md) (role design and authorization matrix) ·
+[schema.md](schema.md) (database and tables) · `contracts/user-service.openapi.yaml` (the API) ·
+`user-service/README.md` (running it).
+
+---
+
+## 1. How the work was organised
+
+### P1. Closed DOC-01a (#111) instead of redoing it — ✅
+The User Service FR/NFR rows were already in the submitted D1 document (US-FR1–4, US-NFR1–4, three
+levels each, with priority and iteration), and the Canvas deadline (17 Sep) had passed.
+- **Chosen:** close the ticket, and record three small gaps in its comment (activation single-use,
+  login rate limiting / refresh rotation, log-privacy iteration) rather than edit the submitted docx.
+- **Trade-off:** the docx and the tickets can now drift. The tickets are the more current source
+  ("updated against the final backlog"), so they win; the docx is the frozen record.
+
+### P2. Design artifacts before the API — ✅
+Order of work: role matrix and schema first, then the OpenAPI, then code.
+- **Why:** D2 explicitly grades role design and schema (§1, §2). The API cannot be specified without
+  knowing which profile fields are editable and what the identity lookup returns. The docs also
+  survive if the session ends.
+- **Trade-off:** more writing before any running code, in a sprint where the demo window was opening.
+
+### P3. Three stacked pull requests — ✅
+`main` ← #176 (contract, docs) ← #177 (USR-01) ← #178 (USR-02).
+- **Why:** the plan (§8.2) wants PRs under ~400 lines, shared-contract review is a different audience
+  (Jonus, Patrick) from implementation review, and auth changes need two approvals.
+- **Trade-off:** they must merge in order, each retargets to `main` as its parent lands, and a change
+  requested on #176 means rebasing the two above it. `Closes #…` keywords only fire when a PR reaches `main`.
+
+### P4. Tests run on PGlite; correctness is confirmed on real Postgres — ✅
+The suite runs the service's real SQL on PGlite (PostgreSQL compiled to WASM), so it needs no server
+in CI. The service itself uses `pg` against the Compose Postgres 17.
+- **Trade-off:** PGlite is a single connection, so it cannot exercise real concurrency or row locking.
+  That gap was closed by hand on the Compose stack (see §6), not by an automated test.
+- **Still open:** those concurrency checks are not repeatable in CI. A Postgres service container in
+  the pipeline (PLT-03) would fix that.
+
+---
+
+## 2. Roles and authorization
+
+### R1. Two roles, `STUDENT` and `ADMIN`; requester and courier are capabilities — ✅
+Every active student may both request and fulfil errands.
+- **Why:** one person alternates between asking and delivering. Making them roles would force a role
+  change or a second account for a routine action, and a permission check on something with no
+  privilege difference.
+- **Trade-off:** the requester↔courier switch is just a preference, so it cannot be used to gate
+  anything. If the product later needs "courier verification", that would be a new capability, not a role flip.
+
+### R2. `preferredMode` on the profile persists the toggle server-side — ❓
+It is UX only and is never read by an authorization decision.
+- **Alternative:** keep the toggle client-side (`localStorage`). Simpler, and removes a column.
+- **Chosen:** persist it, so the choice follows the user across devices and USR-05 can show the right
+  navigation on first load.
+- **Open:** confirm with Patrick that he wants it on the profile.
+
+### R3. Admin lifecycle rules — ✅ (designed in roles.md, built and verified in USR-03)
+- Admins are **seeded** from configuration, never self-registered; there is no endpoint that creates the first admin.
+- Any admin may appoint an admin; **only a seeded admin may downgrade** an admin (US-FR3.1.3.1).
+- **No admin may demote or suspend themselves**; the last admin can never be removed (row-locked check).
+- **No account-deletion endpoint in v1** — accounts are suspended, so old orders and ledger entries always resolve to a user.
+- **Why forbid self-demotion?** D2 asks what happens when an admin revokes their own privileges and no
+  ticket covered it. Forbidding it removes a footgun and makes the last-admin rule trivial.
+- **Trade-off:** a lone seeded admin cannot step down without first appointing and seeding a successor.
+- ❓ Suspending *another* admin is restricted to seeded admins here; the backlog only says "an administrator".
+- **Since D3:** these rules limit who may act *on* an admin. What limits an admin's *own* powers — two people
+  for every role change, password re-entry, read records, alerts, a suspension limit — is ADR 0008 and §15.
+
+### R4. Administrators may act on other people's errands — ✅ decided (product owner)
+Previously left open in roles.md ("deferred to the admin console"). Decision: **yes** — an administrator may
+act on other people's errands through the transitions the Order Service assigns to *Administrator* (today:
+resolving a dispute), with a reason, and the Order Service enforces it server-side. Which transitions those
+are is the Order Service's call (`order-service/README.md`).
+- **Why:** disputes need an administrator decision; `order-service/README.md`'s `DISPUTED → … (Administrator)`
+  transitions depend on it.
+- **Limits:** only the transitions the Order Service lists with *Administrator* as actor; never a wallet edit
+  (credits still move only through reservation, transfer and release). The console that drives it is NTH-01.
+
+---
+
+## 3. API contract
+
+### C1. Contract lives in `contracts/`, not `packages/contracts` — ✅ (settled 22 Oct)
+The FND-03 ticket text says `packages/contracts`; the execution plan (§3.1, §8.1) and the root README use a flat layout.
+- **Chosen:** follow the plan. **Trade-off:** it contradicts a ticket body, so Jonus should confirm; it is a `git mv` if not.
+- **Settled:** Jonus confirmed it: `contracts/` stays at the root (§8).
+
+### C2. The contract is a proposal until the consumers sign off — ✅ (settled 22 Oct)
+FND-03 asked for a workshop with Patrick. There is no evidence it happened, so the cross-service
+conventions (error envelope, pagination, auth header, IDs, timestamps, event envelope) are written as a
+proposal in `contracts/README.md` for review in #176.
+- **Trade-off:** faster to review than a meeting, but nothing is frozen until Jonus and Patrick approve.
+- **Settled:** every contract is implemented and checked: each service has a provider test, and CI
+  fails a change that breaks a contract against the branch's merge base (`contracts/README.md`).
+
+### C3. Events follow the submitted backlog — 🟡
+`UserActivated`, `UserSuspended`, `UserReactivated` — not the plan's `UserActivated` + `UserStatusChanged` (§3.2).
+- **Why:** the backlog is the frozen document and USR-03 cites it. The plan looks stale on this point.
+- ❓ `aggregateVersion` is in the plan's envelope but not in FND-03's scope list; left optional.
+
+### C4. Error codes are domain codes, so the shared error filter was extended — ✅
+The platform filter derived `code` from the HTTP status only (409 → `CONFLICT`). The contract promises
+`EMAIL_ALREADY_REGISTERED`, `LAST_ADMIN`, `VALIDATION_FAILED` with per-field details.
+- **Chosen:** add `ApiException(status, code, message, details)`; anything else still gets the status-derived code.
+- **Trade-off:** it changes a package every service uses. It is additive, but Jonus should review it.
+
+### C5. Duplicate registration returns `409 EMAIL_ALREADY_REGISTERED` — 🟡
+- **Trade-off:** it tells an attacker that an address is registered (account enumeration). Accepted
+  because the ticket requires rejecting duplicates, the population is one campus's `@u.nus.edu`
+  addresses, and registration is rate limited. A "check your email either way" flow would hide it but
+  worsens the user experience.
+
+---
+
+## 4. Data and storage
+
+### S1. PostgreSQL — ✅
+- **Why:** relational, constraint-heavy data (email uniqueness, one profile per user, FKs); rules that
+  need transactions (single-use activation, last-admin check, suspend + revoke + audit together); simple
+  indexed queries; campus scale (~10⁴ users); one engine for the whole team, one Compose service.
+- **Rejected:** MongoDB (flexibility not needed, weaker cross-row invariants), Redis (cache, not a
+  system of record), a hosted identity provider (would hide the RBAC and credential storage the course asks us to explain).
+
+### S3. `text` email with a unique index on `lower(email)`, not `citext` — ✅
+- **Why:** no dependency on an extension being available to the service's role; the service normalises
+  before insert anyway, and the index still enforces uniqueness if a row is ever written another way.
+- **Verified:** `ON CONFLICT ((lower(email)))` only skips a duplicate email — a wrong expression errors,
+  and an unrelated primary-key collision still surfaces (a test pins this).
+
+### S4. Token hashes are hex SHA-256 in `text` columns — ✅
+- **Why SHA-256 and not Argon2:** activation and refresh tokens are 256 bits of randomness, so there is
+  nothing to brute-force and a slow hash would only add latency. Passwords are different and use Argon2id.
+- **Why `text`, not `bytea`:** `pg` returns `Buffer` and PGlite returns `Uint8Array`; hex strings behave the same on both.
+
+### S5. Argon2id via `@node-rs/argon2`, OWASP-minimum parameters — ✅
+m = 19 MiB, t = 2, p = 1, fresh salt per hash.
+- **Why this package:** ships prebuilt binaries for Alpine/musl, so the Docker image builds without a compiler.
+- **Trade-off:** minimum, not maximum, cost — chosen so login stays fast on a laptop during the demo.
+  The encoded hash carries its parameters, so they can be raised later without invalidating old hashes.
+
+### S6. Events go to an outbox table in the same transaction — ✅
+`user.activated` is inserted into `outbox_events` in the activation transaction, so an account can never
+activate without its event; suspensions and reactivations do the same.
+- **Drained by EVT-02:** the platform's `OutboxRelay` publishes committed rows (it runs whenever
+  `RABBITMQ_URL` is set). Migration 006 added its columns (`seq`, `attempts`, `last_error`, …) to the
+  existing table; rows written before it are relayed like new ones, in the order they happened.
+
+### S7. Password policy: 12–128 characters, no composition rules — ✅
+Length over complexity (current NIST guidance). The 128 cap bounds Argon2 cost per request.
+
+---
+
+## 5. Authentication and sessions
+
+### A1. Access token is a JWT with `sub` and `sid` only — no role, no status — ✅
+Claims: `sub`, `sid`, `iss`, `jti`, `iat`, `exp`. Services learn role and status from
+`GET /internal/users/{id}`.
+- **Why:** if the role were in the token, a suspended or demoted user would keep it for up to 15 minutes.
+  This also guarantees that no client-visible value is an authorization input (US-NFR1.1.2).
+- **Trade-off:** the User Service is on every request's critical path. Consumers may cache a lookup
+  for ≤ 5 s and must fail closed on `503`. Suspension therefore takes effect in seconds, not at token expiry.
+
+### A2. Ed25519 signing with a public JWKS, not a shared HS256 secret — ✅
+- **Why:** other services verify with the public key and hold no secret that could mint tokens.
+- **Trade-off:** more moving parts (key generation, JWKS caching, key rotation) than one shared string.
+  `kid` support is in, but rotation is not automated.
+- **Dev convenience:** outside production, if `JWT_PRIVATE_KEY` is unset a throwaway key is generated,
+  so no key is ever committed. Every restart then invalidates access tokens; refresh sessions survive.
+  In production the key is required. ~~❓ JWKS caching and key distribution to other services is an open question~~ — settled:
+  see [auth-client: Key rotation](../../auth-client/README.md#key-rotation).
+
+### A3. Access token lives in memory; refresh token lives in an `HttpOnly` cookie — ✅
+Cookie: `foc_refresh; HttpOnly; SameSite=Strict; Path=/auth` (`Secure` in production).
+- **Why not `localStorage` for both:** simpler and immune to CSRF, but one XSS bug would hand an
+  attacker a 7-day credential. `HttpOnly` keeps the long-lived token out of JavaScript.
+- **Costs to carry:**
+  1. Web and API must be the same *site* (`localhost:3000` and `:3001` are; ports don't count).
+  2. A page reload loses the in-memory token, so **every cold load calls `/auth/refresh`**.
+  3. `Secure` is on in production, which is how Compose runs (#285), over plain http. Chrome sends
+     it to `http://localhost`; Safari may drop it, signing the user out on reload. It stays off
+     outside production.
+
+### A4. CSRF: `SameSite=Strict` + `Origin` allowlist + JSON content type — ✅ (after a fix)
+Applied to **login, refresh and logout** — every endpoint that sets or reads the cookie.
+- **Why login is included:** it sets the refresh cookie. Without a check, a hostile page could post the
+  attacker's own credentials and silently sign the victim in as the attacker (login CSRF / session
+  fixation). *This was missed at first and caught in review — see §7.*
+- **Caveats:** a request with no `Origin` is allowed (only a non-browser client omits it, and it has no
+  victim cookie); the content-type rule is the backstop. `CORS_ORIGINS` doubles as the CSRF allowlist, so
+  widening CORS (previews, dashboards) silently widens who can drive login/refresh/logout — flagged in code.
+
+### A5. Refresh rotation with reuse detection, under a row lock — ✅
+Each refresh issues a new token and marks the old one rotated. Presenting a rotated token revokes the
+whole family. The lookup uses `SELECT … FOR UPDATE`, so simultaneous use of one token is serialised.
+- **Trade-off — the two-tab problem:** two tabs refreshing at the same instant look like a replay and
+  end the session. Because reloads always refresh (A3.2), restoring two tabs together is common.
+  **USR-05 must make refresh single-flight across tabs** (a shared lock or `BroadcastChannel`).
+- **Lifetime — fixed at login (USR-10, #275):** a session ends 7 days after login, however often it
+  refreshes (US-FR1.1.2). Each rotation copies the family's `expires_at` instead of granting a fresh 7 days,
+  so a refresh after it is refused and clears the cookie. *First built as a sliding 7 days with no absolute
+  cap, which let a session that refreshed weekly live for ever.* There is no separate idle limit: at 7 days it
+  could never end a session earlier than the absolute one.
+- The ticket marks reuse detection as "cut order #4". It is built; it is the first thing to drop under time pressure.
+
+### A6. The access-token guard checks the session in the database on every request — ✅
+- **Why:** so logout is immediate rather than "within 15 minutes". Verified: the same access token goes 200 → 401 straight after logout.
+- **Trade-off:** one small indexed query per protected request; the JWT is no longer fully stateless.
+- **Consequence for other services:** trusting only the JWT would leave logout delayed by up to 15 minutes
+  there. The shared middleware (USR-06) must check session state, not just verify the signature.
+
+### A7. Login gives away nothing about which accounts exist — ✅
+- Unknown email and wrong password return an identical response, and an unknown email still pays for an
+  Argon2 verification against a dummy hash, so timing does not reveal it.
+- Account status (`ACCOUNT_NOT_ACTIVATED`, `ACCOUNT_SUSPENDED`) is only revealed **after** the password is proven.
+- **Trade-off:** the dummy verification means bad-email attempts cost as much CPU as real ones. Rate limits bound it.
+
+### A8. Rate limiting is in memory, per instance — 🟡
+Login 10 per email and 50 per IP per 15 min; registration 20 per IP per hour; `429` with `Retry-After`.
+- **Trade-off:** correct for one replica, resets on restart, and would not be shared across replicas.
+- **Known risk — client IP:** no `trust proxy` is configured. Behind a gateway every request would appear
+  to come from the gateway's address, turning the per-IP limit into one **global** cap of 50 logins per
+  15 minutes. Fix when the gateway is added: set Express `trust proxy` for it and read `X-Forwarded-For`, or move limiting to the gateway.
+
+### A9. Activation is replay-idempotent and single-use — ✅
+- First success → `200 alreadyActivated:false` and exactly one `UserActivated`. Replay → `200 alreadyActivated:true`, no second event.
+- **Why 200 and not 409 on replay:** a user who double-clicks the email link should not see an error.
+- A **suspended** account cannot activate; the request fails and the token is left unconsumed (the failed transaction rolls back).
+
+---
+
+## 6. Service-to-service and operations
+
+### O1. `/internal/**` uses per-caller API keys in `X-Service-Key` — 🟡
+Compared in constant time against digests; a user access token is never accepted there.
+- **Rejected:** mutual TLS and service-issued JWTs — more machinery than a five-person, two-week project needs.
+- **Trade-off:** static shared secrets, no rotation story. `compose.yaml` carries a **dev-only default key**
+  so `up` works on a clean clone — a committed credential PLT-06 (secrets hardening) should remove.
+
+### O2. Activation email goes over SMTP; no route returns a token — ✅ (USR-09, #274; reset and password at activation #309)
+*Was:* a dev mailbox, `GET /dev/mailbox?to=…`, returned any address's token unauthenticated on the
+published port, and production refused to boot because no other adapter existed.
+- **Now:** an SMTP adapter (`SmtpMailer`, nodemailer). Compose runs Mailpit as the SMTP server, its inbox
+  on `127.0.0.1:8025` only, so the demo email lands in a real inbox on the laptop with no credential.
+  Production refuses to boot without `SMTP_HOST`. The dev mailbox route is deleted, not flagged off.
+  The in-memory mailbox is kept for tests and for a by-hand run without SMTP, with no route.
+- **Resend:** `POST /auth/activation/resend` answers `202` the same for every address and does the work
+  after answering, so neither the body nor the timing shows whether an account exists. It is limited
+  per address (3 an hour, which stops inbox flooding) and per IP, counting every request.
+- **Re-register:** an address that never activated, and whose every link has expired, can be
+  registered again, keeping its id. A re-register locks the pending account before it looks for a
+  live link, so of two at once only the first revives it. Re-registering sets only the display name:
+  no registrant chooses a password (below).
+- **Password at activation (#309, closes the pre-registration hijack).** *Was:* the password was chosen
+  at sign-up, before the inbox was proven. Someone could register a student's address with their own
+  password and keep it pending by resending before each link expired, so the student's own sign-up got
+  `409`; clicking the emailed link then activated the other person's password. Password reset (below)
+  let the student take it back, but only a student who tried.
+  - **Now:** `POST /auth/register` takes no password, and `POST /auth/activate` takes `{token, password}`.
+    Only the inbox's owner ever sees the token, so only their choice becomes the account's. Activation
+    makes the same writes as a reset confirm, through one helper (`setPasswordFromEmailedLink`): set the
+    password, activate with one `user.activated`, delete every other unused activation and reset link,
+    revoke every session. The token is looked up before Argon2 runs; a replay of a used link on an active
+    account still answers `200 alreadyActivated` and ignores the password it carries.
+  - **Schema:** `users.password_hash` is nullable, and only a pending account may have none. The
+    service enforces that. Migration 0007 is rollback-safe, as the rollback runbook requires: it adds no
+    CHECK and rewrites no account. An image from before #309 activates without setting a password, and
+    `CHECK (password_hash IS NOT NULL OR status = 'PENDING_ACTIVATION')` would refuse it, so that CHECK
+    waits for a release after the rollback window. On such a rollback, an account registered under #309
+    activates with no password, cannot sign in (a NULL hash never matches, there either), and its owner
+    sets one through password reset. A pending account keeps a password set before #309: activation
+    always replaces it, and a pending account cannot sign in. A NULL hash never authenticates: login verifies the
+    password against the dummy hash, as for an unknown address, and answers `401 INVALID_CREDENTIALS`
+    whatever the password, so the timing and answer match an unknown address. Step-up, password change and
+    the login session check all require a stored hash.
+  - **Activation links last 30 minutes** (`ACTIVATION_TOKEN_TTL_MINUTES`, 5–1440, replacing
+    `ACTIVATION_TOKEN_TTL_HOURS`): whoever holds one now chooses the password, so it is as sensitive as a
+    reset link. The email says the link expires soon; resend gives a new one.
+  - **The web app** asks for no password at sign-up. Opening the link activates nothing: the activation
+    page shows a password form (the reset page's rules), and only its submit calls `POST /auth/activate`.
+    The activation and reset pages set `Referrer-Policy: no-referrer`; the token stays in the address bar,
+    as it does on the reset page.
+  - **Contract:** an approved-pending breaking change, listed in `contracts/approved-breaking-changes.json`.
+    The web app is the only client and changes with it.
+  - **Activation tokens** were already stored only as a SHA-256 hash, as reset tokens are; nothing changed.
+  - **What stays open:** whoever registers an address still chooses its display name until the student
+    edits it, and sign-up's `409` still says an address is taken (out of scope here).
+- **Password reset (#309):** kept as the way back into an account whatever its password.
+  - **Chosen first** (before the password moved to activation): password reset by email.
+    `POST /auth/password-reset` mails a link to an `ACTIVE` **or `PENDING_ACTIVATION`** account,
+    answering the same `202` for every address after the work is queued, like resend.
+    `POST /auth/password-reset/confirm` sets the password the inbox owner chose and, in one
+    transaction, **activates a pending account** (with its one `user.activated`, so the wallet still
+    arrives), revokes every refresh session, and deletes the unused activation link. So whatever the
+    other person did, the student ends with an active account and a password only they chose, and the
+    other person's password, link and sessions are dead. Sign-up's `409` now points at the reset.
+  - **Tokens** follow activation's: 256 random bits, only the SHA-256 stored
+    (`password_reset_tokens`), single use by a conditional `UPDATE`, issuing one deletes the account's
+    unused others. 30 minutes by default (`PASSWORD_RESET_TOKEN_TTL_MINUTES`, 5–1440): whoever holds a
+    reset link can take the account, so it is short-lived, and activation links now match it. An unknown or
+    used token is `404 PASSWORD_RESET_TOKEN_INVALID`, an expired one `410 PASSWORD_RESET_TOKEN_EXPIRED`.
+    No idempotent replay, unlike activation: a replay could carry a different password. The token is
+    looked up before Argon2 runs, so a made-up one costs a read, not a hash.
+  - **Confirm does not sign in**, as activation does not; the web app leads to sign-in. Suspended
+    accounts get no email, and a link whose account was suspended after it was sent is refused and left
+    unused. A bootstrap administrator may reset (the flag clears), but not to the bootstrap password.
+  - **Limits:** 3 requests an hour per address and 20 per IP, counting every request, as resend. They
+    are **separate counters** from resend's: shared, the attacker's resends would use up the budget the
+    student needs to take the address back.
+  - **No new event for the reset itself.** As with `POST /auth/password`, nothing the other services
+    cache changes: status and roles are the same, and `authStatusEvents` covers only those. What a
+    reset ends is sessions, and other services learn that from introspection, whose answer is cached
+    at most 5 s (`cacheTtlMs`), inside US-NFR2.1.2's 10 s. An access token is checked against its
+    session on every introspection, so revoking the sessions is enough. A pending account activated
+    by a reset publishes `user.activated`, exactly as activation would.
+  - **Residual risks:** someone can spend an address's three resets an hour; each still lands in the
+    student's inbox, and only the newest works, so it delays the student rather than locking them out.
+    The display name chosen by whoever registered the address survives the reset until the student
+    edits their profile. *Was not closed by reset:* a student who clicked the other person's activation
+    link activated the other person's password. Choosing the password at activation (above) closes it,
+    so the activation success screen no longer asks "Didn't choose a password yourself?". A reset link does not outlive a later
+    ordinary password change: `POST /auth/password` deletes the account's unused reset links in its
+    transaction, so that gap is closed. The token stays in the reset page's
+    address bar and history for that time.
+- **Trade-off:** the per-address resend limit counts every request, so a stranger can use up an
+  address's three resends for an hour. Keying it on address and IP would let a single address be
+  flooded from many clients; the inbox is the thing protected.
+- **Trade-off:** a mail failure after the account is committed is logged, not returned: the student
+  sees "check your email" and recovers with resend, rather than a 500 for an account that exists.
+
+### O3. Shared `platform` package changes — ✅ (needs Jonus's review)
+Three additive changes, all in code every service imports:
+1. `ApiException` (see C4).
+2. The error filter now reports the **real** correlation id. It read `req.id` while the middleware sets
+   `req.correlationId`, so every error envelope said `"unknown"`.
+3. An optional log destination, so a test can assert what reaches the log.
+
+### O4. Verification on the real stack — ✅
+Run on `docker compose` (Postgres 17, the built image), not just PGlite:
+- Full HTTP flow: register, duplicate, off-domain, pre-activation login, activate, replay, login, `/users/me`, foreign-origin login, rotate, replay a rotated cookie, logout, internal lookup, JWKS.
+- 10 parallel registrations of one email → one `201`, nine `409`.
+- 10 parallel activations of one token → one event, nine replays.
+- 10 parallel refreshes of one cookie → one `200`, nine `401`, zero live sessions left.
+- Stored: every password `$argon2id$`, every token hash 64-hex, no plaintext; the container log holds no password, token, hash, cookie or service key.
+
+---
+
+## 7. Mistakes found and fixed
+
+Recorded because they are the honest answer to "what went wrong?" and each has a regression test.
+
+| # | What was wrong | How it was found | Fix |
+|---|---|---|---|
+| 1 | An email with a stray space (`"  E0123456@U.NUS.EDU "`) was rejected with 422: validation ran before normalisation. | A test for case/whitespace duplicates failed. | Trim before the email-format check. |
+| 2 | **Login had no CSRF check** while setting the refresh cookie (login CSRF / session fixation). | Advisor review of the finished USR-02 code. | Same origin and content-type check as refresh/logout; three tests. |
+| 3 | The shared error filter always reported `correlationId: "unknown"`. | Noticed while wiring the contract's error envelope. | Read `req.correlationId`. |
+| 4 | My "expired token" test only proved a token signed by a *different key* is rejected — it never tested expiry. | Re-reading passing tests with suspicion. | Advance the clock: 14 minutes accepted, 16 rejected. |
+| 5 | The new registration rate limit made the test suite fail (one IP, dozens of registrations). | Test run. | Test app defaults to generous limiters; dedicated tests use strict ones. |
+| 6 | The docs said `citext` and port `8081`; the merged scaffold uses plain `text` and port `3001`. | Reading the merged scaffold. | Docs and contract corrected. |
+| 7 | The docs claimed suspension revokes refresh sessions. Nothing calls that yet. | Advisor review. | Docs now say USR-03 wires it; the guard already blocks a suspended user on the next request. |
+| 9 | An oh-my-claudecode state file (`user-service/.omc/…`) was committed into #177 by a broad `git add`. | `git status` after a test run showed it as modified. | Untracked it, and gitignored `.omc/`. It only held a throttle timestamp; it stays in #177's history. |
+| 10 | The roles doc said seeded admins "activate and set a password through the normal flow". Nothing like that was built. | Writing the seed code. | Doc rewritten to what exists, including the no-change-password limitation. |
+| 11 | My first mutation test of the self-demotion rule "passed" — the mutation never applied because Prettier had reformatted the line. | The mutation script did not print a failure and the output showed a clean 153. | Re-ran against the real text; the test then failed as it should. Lesson: a mutation that changes nothing proves nothing. |
+| 12 | My first race check said "exactly one demotion wins" both with and without the lock, which made the lock look pointless. | Suspicion that a mutation changed nothing. | The metric counted only successes, so a Postgres deadlock looked the same as a clean refusal. Breaking losers down by reason showed the lock converts 39/40 deadlocks into clean 403s (M2). |
+| 13 | My first mutation of "roles read from a client header" changed a global nobody sets, so it could never fail — a vacuous "pass". | Reading the mutation list critically: nine of ten failed, one did not. | Redone so an `x-role: ADMIN` header really grants admin; the test then failed as it should. Same lesson as #11. |
+| 8 | The `ON CONFLICT` clause could have been a bare `DO NOTHING`, hiding any constraint failure. | Advisor question, then checked directly. | Verified the inference is real; a test pins that a primary-key collision still errors. |
+
+---
+
+## 8. Open questions and known limitations
+
+**Needs a teammate or mentor**
+- ~~❓ Jonus: review the `platform` changes (O3) and the `compose.yaml` additions; confirm `contracts/` vs `packages/contracts`; decide whether `aggregateVersion` is in the envelope~~ — settled: merged; `contracts/` at the root; no `aggregateVersion` in the envelope, and an event that needs one carries its own (`orderVersion`, ADR 0009).
+- ~~❓ Patrick: is `preferredMode` on the profile the right home for the toggle? Will the gateway or dev proxy keep web and API on one site?~~ — settled: see [contracts/README.md, questions 1 and 2](../../contracts/README.md#questions-settled-during-the-build).
+- ~~❓ Everyone: how do other services get and cache the JWKS, and who owns key rotation?~~ — settled: see [auth-client: Key rotation](../../auth-client/README.md#key-rotation).
+
+**Deferred, with an owner**
+- ~~Bootstrap secret stays valid; bootstrap unaudited~~ — fixed in §11 (D1 feedback on USR-03).
+- ~~USR-03~~ — built: admin endpoints, suspension revoking sessions, audit table, seeded admins, profile edits (see §9).
+- ~~USR-05 — single-flight refresh across tabs~~ — built (§14).
+- ~~USR-06~~ — built (see §10). Consuming services must still add the dependency, the two env vars and the Dockerfile lines.
+- ~~PLT-06 — remove the dev default `INTERNAL_SERVICE_KEYS`~~ — done in PLT-06 (#240): Compose has no default for it, and `./scripts-init-env.sh` generates one.
+- ~~EVT-02 — drain `outbox_events`~~ — the platform relay publishes it (S6).
+- Gateway work — configure `trust proxy` so per-IP limits mean per client (now the edge proxy, PLT-10 #285).
+
+**Not yet automated**
+- The real-Postgres concurrency checks (O4, and the demotion race in M2) were run by hand.
+- ~~The full `docker compose up` (all services and web-app) has not been run; only Postgres and the User Service~~ — done: CI's Compose smoke job runs the whole stack.
+
+---
+
+## 9. Administration and profile (USR-03)
+
+### M1. Admin authority is read from the database on every request — ✅
+`AdminGuard` looks up the caller's roles and status live. Nothing in the token, a header, or the body is consulted.
+- **Consequence:** a demoted admin loses access on their very next request, with the same token. A test pins this.
+- **Trade-off:** one extra indexed read per admin request.
+
+### M2. Concurrency: lock the admin rows first, then the target, then re-check the actor — ✅
+Anything that could reduce the number of admins first locks every `ADMIN` role row, so simultaneous
+demotions queue. After the lock the actor's own authority is checked *again*: a demotion that landed a
+moment earlier must not let its victim demote someone else.
+- **Verified on real Postgres, with real parallel connections** (service method called directly, so the HTTP guard cannot help): 40 rounds of two seeded admins demoting each other at once → never both, never zero admins, and **all 40 losers received a clean `FORBIDDEN`** from the post-lock re-check.
+- **The lock is doing real work.** With the `FOR UPDATE` removed, 39 of 40 losers instead died with a Postgres **deadlock (`40P01`)** — the invariant still held, but only because the database's deadlock detector stepped in via the audit table's foreign-key locks, and the caller would have seen a `500`. The lock turns an accident into a deliberate refusal.
+- **Limit:** PGlite is single-connection, so this is not an automated test; it was run by hand (script not committed).
+- **Why the order matters:** a fixed lock order (admin rows, then the target) is what prevents two such transactions from deadlocking.
+
+### M3. `LAST_ADMIN` is a safety net, and it is structurally unreachable — 🟡
+A demoter must themselves be a *different* admin, so at least two admins always exist at that moment.
+The real guarantees are (a) self-demotion is forbidden, and (b) demotions are serialised (M2). The
+`adminIds.length <= 1` check is kept as an explicit invariant, but no test can reach the branch — the
+tests prove the invariant (mutual demotion, self-demotion) rather than that line.
+- **Trade-off:** a branch that reads as dead code. Kept because it fails loudly if a future change (a bulk
+  endpoint, a new role source) ever breaks the reasoning above.
+- Suspended admins are counted as admins for this purpose.
+
+### M4. Only an `ACTIVE` account can be suspended — ✅
+So reactivation always restores a state the account already had, and can never skip email activation.
+- **Trade-off:** an admin cannot pre-emptively block an account that has registered but not yet activated;
+  it can still activate later. Acceptable for v1; it can be suspended straight after.
+
+### M5. Suspension is one transaction: status, all refresh sessions, audit row, event — ✅
+The audit row's id is the `reasonRef` carried in `UserSuspended`, so a consumer can trace an event back to who did it and why.
+Suspending an already-suspended account is idempotent and adds no second audit row or event.
+
+### M6. Seeded admins come from configuration with a bootstrap password — ✅ (hardened in §11)
+See roles.md. **Never promotes** an existing account; **fails loudly** on bad config; idempotent; emits `UserActivated`.
+- ~~No change-password endpoint, so the bootstrap password is the admin's password~~ — fixed: see B1.
+- **Limit:** `compose.yaml` carries a dev-only default (`admin@u.nus.edu`) — a committed credential for PLT-06 to remove.
+  It no longer starts a session; it only sets a real password — for whoever uses it first (see B1).
+- **Rejected:** a first-registered-user-becomes-admin rule (racy, and a takeover risk), and a setup endpoint (an unauthenticated privilege grant).
+
+### M7. Profile edits use a closed schema and are all-or-nothing — ✅
+`PATCH /users/me` accepts five fields. `id`, `email`, `roles`, `role`, `status` or any unknown key → `422 FIELD_NOT_EDITABLE`
+with **nothing changed** (not even the valid fields sent alongside). The target is always the token's subject; no route takes another user's id.
+- **Why reject rather than ignore:** silently dropping `role: "ADMIN"` would hide an attack and make the client think it worked.
+
+### M8. The audit trail is append-only by trigger *and* by revoked privilege — 🟡
+A `BEFORE UPDATE OR DELETE` trigger raises, and the service's own role has `UPDATE, DELETE, TRUNCATE` revoked. No API route writes it, and it is read-only over HTTP.
+- **Honest limit:** the service role *owns* the table, so it could re-grant itself or drop the trigger. True
+  immutability needs a separate owner role that the service does not hold (PLT-06). Today it stops bugs and
+  API abuse, not a compromised service.
+
+### M9. Non-admins get `403`, not `404`, for a user id that may not exist — ✅
+An admin route is refused before the id is looked up, so a student learns nothing about which accounts exist. A test pins it.
+
+### M10. Deny-by-default is enforced by tests, not just by convention — ✅
+- An actor–resource–action matrix runs every protected endpoint as four actors (unauthenticated, active student, suspended student, administrator) and fails on any unauthorised success.
+- A **route-coverage meta-test** enumerates the live routes and fails if any is neither in the matrix nor on an explicit public list — so a new endpoint cannot ship without a matrix row.
+- I deliberately broke seven rules (drop the admin guard, allow any admin to downgrade, allow self-demotion, skip session revocation, loosen the profile schema, remove the audit trigger, drop the seeded-only suspend rule) and confirmed a test fails for each.
+- **Limit:** mutation testing was done by hand, once; it is not a CI job.
+
+### M11. List endpoints use offset pagination and prefix search — ✅
+`page`/`pageSize` (default 20, max 101 rejected), status/role filters, and a case-insensitive **prefix** match on email or display name with `LIKE` wildcards escaped (searching `%` matches the text, not everything).
+- **Trade-off:** offset pagination drifts if rows change between pages and slows on deep pages — fine at ~10⁴ users.
+
+---
+
+## 10. Shared auth middleware (USR-06)
+
+### K1. A separate workspace, `auth-client/`, not part of `platform` — ✅
+`platform` is imported by *every* service for logging, health and the error envelope. Auth is opt-in and pulls in `jose` and a
+network client; the User Service (the issuer) has no use for it. A separate package keeps `platform` small and lets each service
+opt in.
+- **Trade-off:** one more workspace, and every consuming service's Dockerfile must copy it (documented in the README).
+
+### K2. Verify the signature locally, then ask the User Service about the session — ✅
+Two steps: (1) check signature, issuer and expiry against the cached public JWKS — no network, no secret; (2) `GET /internal/introspect` for session
+liveness, roles and status.
+- **Why not trust the JWT alone:** it would keep a suspended or logged-out user working for up to 15 minutes (A1, A6).
+- **Why not call the User Service to verify everything:** it would put a network round-trip on every request's signature check for no gain.
+
+### K3. One new endpoint, `GET /internal/introspect?sid&sub` — ✅ (contract change)
+"Revoked" must be a distinct failure, and only the User Service knows whether a session ended. The existing lookups answer *who* a user is, not *whether a
+session is live*, so a second call would have been needed. One call returns both.
+- **Privacy:** an ended, unknown or mismatched session returns just `{active:false}` — a caller cannot use it to learn whether a user exists.
+- **Trade-off:** the User Service now has a fourth internal endpoint, and it is on the critical path of every other service (K4).
+
+### K4. A bounded, documented staleness window: 5 s default — ✅
+Identity answers are cached per session for at most `cacheTtlMs` (default 5 000 ms; `0` = every request).
+- **What it costs:** for up to 5 s after a suspension, logout or role change, another service may still honour the old token. That is inside
+  USR-07's 10 s requirement, and it is tested at the edges (4 999 ms stale, 5 001 ms enforced).
+- **Also:** concurrent requests for one session share one call (single-flight); an "ended" answer is cached too; **failures are never cached**, so a recovered
+  User Service is used at once; the cache is bounded (oldest evicted).
+- USR-07 added event-driven invalidation (§13).
+
+### K5. Fail closed, and as 503 rather than 401 — ✅
+Timeout, network error, non-200, or a malformed reply → `IDENTITY_UNAVAILABLE`. A wrong service key or unreachable JWKS does the same.
+- **Why 503:** a healthy user with a good token must not be told "your token is bad" during a User Service blip; the client should retry, not sign out.
+- **Trade-off:** a User Service outage makes every protected route in every service unavailable. That is the correct direction for an auth failure, but it makes
+  the User Service a single point of failure for the platform — worth stating in the D2 discussion.
+- The introspection reply's *shape* is validated before use; a body that is not an introspection at all is refused, not trusted.
+- **New statuses and roles are an authorization outcome, not an outage.** Additive change is expected in v1, so an unknown status is denied as
+  `ACCOUNT_NOT_ACTIVATED` (403) and an unknown role is ignored. (First draft rejected them as `503`, which would have made every consumer report an outage
+  the day the User Service added a status — caught in review.)
+
+### K6. Nine distinct, typed failure codes — ✅
+`TOKEN_MISSING`, `TOKEN_MALFORMED`, `TOKEN_INVALID`, `TOKEN_EXPIRED`, `TOKEN_REVOKED`, `ACCOUNT_SUSPENDED`, `ACCOUNT_NOT_ACTIVATED`, `FORBIDDEN`, `IDENTITY_UNAVAILABLE`.
+"Malformed" is decided structurally *before* any cryptography, so it can never be confused with a bad signature. A test asserts all six of the
+token-side outcomes are pairwise distinct.
+- **Why `TOKEN_EXPIRED` is separate:** it is the one failure where the client should silently refresh and retry (A3), so it must be recognisable.
+
+### K7. The User Service keeps its own guard — ❓ (accepted inconsistency)
+The User Service verifies tokens with `JwtService` and checks the session in its own database, using the error code `UNAUTHENTICATED`; consuming services use
+this package and the `TOKEN_*` codes. So there are **two verification paths and two vocabularies**.
+- **Why:** the issuer holds the private key and the database — a direct check is stronger and needs no network hop, and the ticket's "no service needs its own
+  token-parsing code" is about the *consuming* services.
+- **Trade-off:** a client sees `UNAUTHENTICATED` from the User Service but `TOKEN_EXPIRED` from Supplier for the same condition.
+  **Open:** map the User Service's guard onto the same codes so the web app has one vocabulary (small change, but it alters USR-02/03's contract, so it needs a reviewer's say).
+
+### K8. Wired into Supplier; Order and Credit next — ✅ (Supplier)
+SUP-01 wired Supplier to the package (`@Authenticated` reads, `@AdminOnly` writes). `supplier-service/test/auth-integration.test.ts`
+now drives Supplier's **real** routes through the **real** authenticator against the wire-level fake User Service: a student token is
+refused on create/update/deactivate (and nothing is written) and an admin token accepted; expired and malformed tokens return distinct
+codes in the shared envelope; a forged signature or a foreign issuer is `TOKEN_INVALID`; a suspended admin and a revoked session are
+refused, including an admin suspended, demoted or logged out after a successful write (with `cacheTtlMs: 0`; production allows the
+5 s staleness window); client role headers and body fields change nothing. Supplier's other tests keep the lightweight stand-in
+authenticator, so they stay focused on catalogue logic.
+- Order and Credit adopt it with their first mutating endpoints (USR-07).
+
+### K9. The integration test imports the User Service's test helpers by relative path — 🟡
+It lets `auth-client` boot the real service in-process without publishing or duplicating it.
+- **Trade-off:** `auth-client`'s tests are coupled to `user-service`'s test layout, and the vitest env for `auth-client` carries the User Service's config variables.
+  Acceptable for a test; not something production code should do.
+- **Same pattern one level down:** `supplier-service/test/auth-integration.test.ts` imports `auth-client/test/helpers/fake-user-service.ts` by relative
+  path (K8), so Supplier's tests are coupled to `auth-client`'s test layout too. That helper signs tokens with `jose`, so `supplier-service` declares
+  `jose` as a devDependency rather than relying on it being hoisted.
+
+### K10. Verification — ✅
+48 tests; ten deliberate breakages, each caught (revoked treated as active, suspended allowed, admin guard open, expired reported as invalid, issuer unchecked,
+cache that never expires, no single-flight, a failure treated as "session ended", an `x-role` header granting admin, key-fetch failure reported as a bad token).
+
+---
+
+## 11. D1 feedback on the admin lifecycle (USR-03 follow-up, #122)
+
+### B1. The bootstrap secret is retired at first sign-in — ✅
+The teaching team's resource: *"temporary secrets are invalidated after use."* Before this, `ADMIN_SEED_PASSWORD` became the
+bootstrap admin's permanent password.
+- **Chosen:** a `must_change_password` flag, set by the seed. While it is set, login verifies the password and then refuses with
+  `403 PASSWORD_CHANGE_REQUIRED` — **no session, no cookie**. `POST /auth/password` (email + current + new password) replaces it
+  and clears the flag.
+- **Why a credential-proven endpoint rather than a restricted session:** a "change-password-only" access token would need every
+  guard in every service to understand a new token state. Refusing the session outright means the bootstrap secret can never
+  reach any other endpoint, and the same endpoint doubles as the general change-password the service was missing.
+- **Order of checks** mirrors login (A7): the flag is revealed only *after* the password is proven, so it tells an attacker nothing.
+- **Revokes every session** of the account in the same transaction (anyone who knew the old password may hold one).
+- **Compare-and-swap** on the stored hash, so two simultaneous changes cannot both win. ❗ PGlite is single-connection, so this
+  race is not exercised by an automated test (same limit as P4); the SQL is a single conditional `UPDATE`.
+- **Rate limited** with login's per-IP and per-email limiters, and the same Origin/JSON CSRF checks: it is as much a password oracle as login.
+- **Migration 004** flags every *existing* bootstrap admin, since none could have changed their password before,
+  and revokes their live sessions. ❗ Found in review: the first version only set the flag, which only login read, so an
+  admin already signed in kept working. Refresh, the access-token guard and introspection now also treat a flagged
+  account's session as ended — the backstop for a session an instance still on older code starts during a rolling deploy.
+- **A login in flight cannot outlive a change.** Its session is inserted only if the account still has the hash it
+  verified, is `ACTIVE` and is not flagged (`INSERT … SELECT … WHERE EXISTS … FOR SHARE`); otherwise `401`. A test
+  replays the stale read; the lock ordering itself, like the compare-and-swap, needs two connections PGlite lacks.
+- **A seeded admin cannot choose the configured secret** as their new password (`422 PASSWORD_UNCHANGED`). Only a
+  seeded admin is checked: for anyone else the answer would confirm a guess of the secret.
+- **Limit — the secret is shared and proves no mailbox.** One `ADMIN_SEED_PASSWORD` covers every seeded address, and
+  `POST /auth/password` proves the password, not the mailbox, so until a seeded account is claimed, anyone who knows
+  the secret can claim it. Operating rule (roles.md §4): claim each seeded account as soon as it exists, and rotate the
+  secret whenever `ADMIN_SEED_EMAILS` changes.
+- **Trade-off:** one extra step at first sign-in (the web app must handle `PASSWORD_CHANGE_REQUIRED` — USR-05).
+
+### B2. The bootstrap is audited, with the SYSTEM as actor — ✅
+`audit_records.actor_id` was a non-null FK to `users`, and the bootstrap has no human actor.
+- **Chosen:** `actor_id` becomes nullable and a new `actor_type` (`USER` | `SYSTEM`) is added, with a CHECK that `actor_id IS NULL`
+  exactly when `actor_type = 'SYSTEM'`. New action `ADMIN_BOOTSTRAP`. The row is written in the account's own transaction.
+- **Rejected:** a sentinel "system" user row (it would be a real account someone could try to log in as, and would appear in user
+  lists), and a sentinel UUID without an FK (loses referential integrity for every other row).
+- **Not audited:** a restart that creates nothing, and a skipped address (nothing was granted). The secret is never recorded.
+- **Backfilled:** migration 004 writes the row for every bootstrap admin created before it (actor `SYSTEM`, dated at the
+  account's creation, correlation id `migration-004`), so every seeded admin has one.
+- The API exposes `actorType`; `actorId` is `null` for SYSTEM rows (a contract change — additive for readers that ignore unknown fields,
+  but `actorId` is now nullable).
+
+### B3. Keep the seeded-vs-appointed tier (US-FR3.1.3.1) — ✅ decided
+The feedback's worry: once the bootstrap admin graduates, a misbehaving appointed admin can never be removed.
+- **Chosen:** keep it. The recovery path is to add a new address to `ADMIN_SEED_EMAILS`, rotate `ADMIN_SEED_PASSWORD` and redeploy;
+  that bootstraps a fresh seeded admin who can demote the appointed one. A test walks through it. Recovery requires deployment
+  access — the same authority that created the first admin — and no database edit.
+- **Limit:** the address must be a dedicated mailbox that has **never been registered**. The seed skips any existing row,
+  `PENDING_ACTIVATION` included, and registering an NUS address needs no access to its mailbox. If the boot log reports the
+  address as skipped, it was squatted: use another never-registered address and redeploy.
+- **Rejected:** dropping the tier. Then any appointed admin could demote every other admin but one, including the operators; the
+  last-admin rule does not prevent that takeover.
+- **Trade-off:** if no seeded admin is reachable, removing an admin takes a redeploy rather than a click.
+- Matches the DOC-02 (#186) draft of US-FR3.1.3.1, which keeps the tier.
+
+### B4. "What if the only admin deletes their account?" — ✅ answered
+There is no delete, for anyone (US-FR3.1.2.2 in the DOC-02 draft): accounts are suspended, because errands, ledger entries and audit
+rows must keep resolving to an account. Written up in roles.md §4, together with the system-wide matrix D2 §1 asks for (Supplier,
+Order, Credit and the web app, not just the User Service).
+
+---
+
+## 12. Log privacy verification (USR-08, #156 — log half)
+
+### L1. The scan now covers login, refresh, profile and admin paths — ✅
+`test/log-privacy.test.ts` walks registration (incl. duplicate and off-domain), activation (incl. replay and a bad token), login
+(success, wrong password, unknown email, suspended), refresh (rotation, reuse detection, garbage cookie), logout, `/users/me`, a
+refused profile edit, every admin route, an email in a query string and in a URL path, and two forced `500`s, at `trace`. Every
+test checks the **whole capture**, not only its own lines, for an email address (plain or URL-encoded); the walk also asserts no
+password (set or attempted), Argon2 hash, activation, access or refresh token, service key or display name appears, and that
+every request line carries a `correlationId`.
+
+### L2. Leaks found and fixed — ✅
+| What | Fix |
+|---|---|
+| `main.ts` logged every bootstrap admin's email at boot (`Seeded administrators: a@…`). | `reportSeed`: counts, and skipped entries by position (`address(es) 2, 4 of 5`). Who was bootstrapped is in the audit trail. |
+| A misconfigured `ADMIN_SEED_EMAILS` entry was echoed in the boot error printed with `console.error`. | The error names the entry by position and gives its domain, which is the actual mistake. Positions count addresses (blank entries are dropped when the variable is parsed). |
+| pino's default `err` serializer copies every field of an error before redaction runs: PostgreSQL's `detail` and `where` quote the row (`Key (lower(email))=(…)`, `Failing row contains (…, $argon2id$…)`), a mailer's message names the recipient, and pino copies `err.message` into `msg`. | `createLogger` serializes `err` itself: type, message and stack with email addresses and password hashes masked, plus code, constraint, table and socket fields. `detail`, `where` and everything else are dropped; the copied `msg` is masked too. Platform-wide. |
+| Only the query string was stripped from the request line, so `GET /admin/users/alice@…` (or any mistyped route) logged the address. | The path is masked, raw or `%40`-encoded. |
+| `to` (a mail recipient) and `displayName` were not redaction keys. | Added. No other service logs a field with either name. |
+
+### L3. The first scan could not see service logs — ✅ (test harness bug)
+The test app never routed Nest's `Logger` into the captured pino stream, so only request lines were scanned: a deliberate
+`new Logger().log({ user: email })` in login **passed** the old test. A suite that captures logs now gets `main.ts`'s wiring
+(`PinoLoggerService` as the app's logger), and the suite first proves the capture works: a canary logged through Nest's `Logger`
+must arrive, and the email pattern must match an address deliberately logged, so the scans cannot pass vacuously. Nest installs
+an app's logger process-wide, so suites that do not capture keep Nest's console logger and an unexpected `500` still prints.
+
+### L4. Residual risk — 🟡
+Masking reaches `err` and the request path only, and works by pattern (email addresses, Argon2 and bcrypt hashes). An address,
+display name or token a developer writes into any other message or field is caught by key redaction or by the scan, and the
+scan only covers the paths it walks. The event consumer (`platform/src/events/consumer.ts`) logs a failed handler's
+`err.message` as a plain `reason` field, which the `err` serializer does not see.
+
+### L5. Still open in USR-08
+The admin console's errand list (needs the Order Service's endpoints) and read-only wallet inspection (needs CRD-05) are blocked
+on other tickets. The user-management and audit halves of the console already exist server-side (`/admin/users`, `/admin/audit-records`),
+every console action (suspend, reactivate, role change) is audited, and the matrix test proves a student gets `403` on each.
+
+---
+
+## 13. Cross-service status enforcement (USR-07, #144)
+
+### X1. Invalidate on events, decide from the User Service — ✅
+`@foc/auth-client` subscribes to `user.suspended`, `user.reactivated` and `user.role-changed` and drops every cached identity
+for that user. It **does not** take the new status or roles from the event.
+- **Why only forget:** the User Service stays the single source of status and role; a forged, stale, duplicated or reordered
+  event can cost one lookup and nothing else. Taking the status from the event would make the broker an authorization input.
+- **In-flight race:** a lookup started before the event could return the old answer after it and re-cache it. The event
+  detaches every in-flight lookup for the user, and only the current lookup for a session may write to the cache; a test
+  holds the reply on the wire to prove it, including after a flood of other invalidations.
+- **Replicas:** each *instance* has its own exclusive, auto-delete queue (`foc.<service>.auth-status.<random>`), because each
+  holds its own cache — a shared queue would hand each event to one replica. Its `x-message-ttl` is the cache window, so an
+  instance never replays invalidations older than anything it could still have cached, and it is length-bounded.
+- **Delivery:** events are published by the outbox relay (EVT-02). Wherever no relay is running, the 5 s cache window (K4) is
+  the only bound — still inside the 10 s requirement.
+
+### X2. Supplier, Order and Credit are wired — ✅ (mechanism) / 📝 (endpoints)
+All three import `AuthModule` and the subscription (when a broker is configured, like every other consumer), and
+Compose/`.env.example` give them `USER_SERVICE_URL` and their own `INTERNAL_SERVICE_KEY`; Compose starts them after RabbitMQ is
+healthy. Supplier's admin endpoints (`@AdminOnly()`) are covered now; Order and Credit have no mutating endpoint yet (ORD-02+,
+CRD-05+), and those tickets add `@Authenticated()`. A wiring test in each service fails if the subscription or its handler is
+dropped. The acceptance test "suspension blocks the next order/credit mutation within 10 s" can only run against those endpoints.
+
+### X3. User Service events now match the catalogue — ✅ (bug fix)
+The outbox held `UserSuspended` / `UserReactivated` / `UserActivated` with payloads missing `occurredAt` / `activatedAt`,
+while consumers subscribe to `user.suspended` etc. with schemas that require them. Once EVT-02 drains the outbox, every one
+would have been dead-lettered as unparseable. `insertOutboxEvent` is now typed on the catalogue's `PAYLOAD_SCHEMAS` and
+validates the payload before writing, so the mismatch cannot recur silently. Migration `005_outbox_catalogue_events` rewrites
+unpublished rows written before the change (type to the catalogue key; `activatedAt` from the account, `occurredAt` from the
+row).
+
+### X4. Role changes are events too — ✅
+Granting or revoking `ADMIN` writes `user.role-changed` (the roles after the change, the audit id as `reasonRef`) in the same
+transaction as the change and its audit row. Without it a demoted administrator kept `isAdmin` in other services until their
+cache expired.
+
+### X5. Events carry the stored user id — ✅ (bug fix)
+A UUID is case-insensitive, so `/admin/users/<UPPER-CASE-ID>/suspend` found the account — but the event named the user as typed,
+and every cache is keyed on the token's lower-case `sub`, so the invalidation missed. Admin actions now use the locked row's id for
+everything they write. The same fix closed a self-check bypass: an admin could suspend or demote *themselves* by changing the
+case of their own id in the URL. `invalidateUser` also lower-cases defensively.
+
+### X6. The broker plumbing had to hold up — ✅ (bug fix, platform)
+Two gaps in `@foc/platform`'s events layer surfaced once a second service bound the same routing key:
+- **Retries went to every queue bound to the key.** A retry dead-lettered back onto the topic exchange with the original
+  routing key, so one service's retry was redelivered to every other service's queue. It now goes back to the failing queue
+  only, through the default exchange. The delay queues were renamed (`foc.<service>.delay.N`) because a queue's
+  dead-letter arguments cannot change in place.
+- **A reconnect lost every consumer.** The connection re-declared the topology but never re-registered consumers, and a
+  channel the server closed on its own was not noticed at all. Consumers are now remembered and re-registered on every new
+  channel, and losing the channel alone reconnects too.
+
+---
+
+## 14. Account screens (USR-05, #123)
+
+### W1. The session lives in a React context; the access token never leaves memory — ✅
+`web-app/src/lib/session.ts` (plain TypeScript, unit-tested with a fake `fetch` and fake locks) holds the access token in memory
+and exposes `authed(fn)`, which retries once through `/auth/refresh` on a `401`; `web-app/src/lib/auth.tsx` wraps it in a React
+context and loads `/users/me`. No credential is written to `localStorage` (A3). The one thing that is: a non-secret
+`foc-logout-pending` flag, set when a sign-out could not reach the service, so the next load revokes the still-live cookie instead
+of refreshing it (otherwise the next person at a shared computer is signed in).
+- Only a refused refresh (`401`/`403`) signs the user out. A network error, a timeout (10 s per call) or a `5xx` is shown with a
+  retry: a blip must not end a session.
+
+### W2. Refresh is single-flight across tabs with the Web Locks API — ✅ (the A5 follow-up)
+Rotation plus reuse detection means two tabs refreshing with the same cookie end the session for both. Verified in Chromium against
+the real User Service with each refresh response held on the wire: **without** the lock, tab B presented the same cookie as tab A,
+got `401`, and both tabs were signed out; **with** it, B waited, presented A's new cookie, and both stayed signed in.
+- **Rejected:** a `BroadcastChannel` "leader" tab (more code, and a closing leader loses the refresh) and `localStorage` mutexes (racy).
+- **Fallback:** a browser without `navigator.locks` still gets the in-tab single-flight; only simultaneous multi-tab restore is exposed.
+
+### W3. One responsive tree for every screen — ✅
+A screen renders one tree, and CSS changes its layout by width. Two copies would duplicate ids, split typed input between hidden
+and visible copies, confuse assistive technology, and leave a page with two `<main>` and two `<h1>` (#367). `AuthCard` is full-bleed
+at 360 px and a centred card from 768 px. Screens in the app frame use `ResponsiveShell`, whose app bar, top bar and sidebar CSS shows
+or hides by width. A page that is one panel uses `ResponsivePanel`, the whole screen on a phone and a card from 768 px. The
+accessibility spec fails if a scanned screen has more than one `<main>` or `<h1>`.
+
+### W4. Errors stay beside the field; input is never cleared — ✅
+Controlled inputs, `aria-invalid` + `aria-describedby`, and a `role="alert"` summary that stays mounted (empty until needed), so
+a message is announced when it arrives. The server's `details[]` map onto fields, so `EMAIL_DOMAIN_NOT_ALLOWED` and
+`EMAIL_ALREADY_REGISTERED` appear on the email field. Client checks mirror the server's rules
+(12–128 characters, no composition rules) but the server stays authoritative.
+
+### W5. Bootstrap admins land on "Choose your password" — ✅
+`PASSWORD_CHANGE_REQUIRED` at login routes to `/change-password?email=…&required=1`; success signs in with the new password.
+
+### W6. Verification — ✅ (browser run by hand, not in CI)
+26 checks in Chromium against the real User Service code (on PGlite, since this environment has no Docker daemon): signed-out
+redirect with `next`, register with client and server errors and input preserved, activation via the dev mailbox link (since replaced by real email, USR-09),
+**keyboard-only** login with a visible focus outline, wrong-password alert, profile edit, the mode switch persisting across a
+reload, two-tab restore, logout propagating to another tab, the bootstrap-admin flow, and **axe: 0 critical and 0 serious** on
+login, register, activate, change-password and profile at 360, 768 and 1440 px.
+- **Limit:** that browser suite is not committed. The project has no browser-test harness yet (TST-01/TST-02), and adding
+  Playwright to the web app's Bun lockfile is a decision for that ticket. The `bun test` unit tests do run in CI.
+- **Not verified:** the full `docker compose` stack (no Docker daemon here).
+- ~~The admin page (`/admin`) is outside the `(app)` group and still unprotected mock UI~~ — replaced by the admin
+  console (ADM-02), inside the `(app)` group and on the real endpoints (§15).
+
+## 15. Controls on administrators (ADM-03 #220, ADM-04 #221)
+
+D3 feedback: _"think about how to control admins"_. The policy is
+[ADR 0008](../adr/0008-controlling-administrators.md); this section records how it was built and what it
+cost.
+
+### G1. A role change is a request that a second admin approves — ✅
+`PUT /admin/users/{id}/role` now writes a `role_change_requests` row and answers `202`; only
+`POST /admin/role-requests/{id}/approve` changes the role. Approval takes the same locks in the same order as
+before (every admin row, then the request, then the target) and re-runs every US-FR3.1.3 rule for the
+*requester*, so anything that changed in between — the requester demoted, the target suspended — stops it.
+- **Why a row, not a flag on the user:** it carries both people, both reasons and a deadline, and it is what
+  the console lists.
+- **Trade-off:** a role change now takes a second admin and up to 24 hours.
+
+### G2. With no eligible approver, the change applies at once — 🟡 accepted risk
+An eligible approver is an *active* admin who is neither the requester nor the target. With one admin, or two
+where one is the target, there is none. Blocking would make the first appointment impossible and would
+deadlock the break-glass recovery, so the change applies, is logged as a warning, and raises `ROLE_CHANGE`
+like every other role change.
+- **Accepted:** with exactly two admins, a seeded admin can demote the other alone. The seeded tier bounds who
+  can do it, and it is alerted and audited without a `ROLE_CHANGE_REQUESTED` before it.
+- **Fixed in review:** the shortcut first skipped the one-open-request check, so a request whose only approver
+  had since been suspended could stay open beside a change made without it, and be approved later for nothing.
+  An open request is now decided or withdrawn first; a test covers it.
+
+### G3. Password re-entry is recorded on the session, not in the token — ✅
+`POST /auth/step-up` sets `refresh_sessions.stepped_up_at`; a role request, an approval and suspending an admin
+check it in the same transaction as the action. A refresh copies it to the new row (same sign-in); another
+login or device does not have it.
+- **Rejected:** an `auth_time` claim in the JWT. The token deliberately carries only `sub` and `sid` (A1), and
+  a claim would need a token re-issue just to step up.
+- **Order:** the permission rules are checked first, so nobody is asked for a password they could not use.
+- Limited per account (10 per 15 minutes) as well as by login's per-IP limit, because it answers whether a
+  password is right.
+
+### G4. A suspended requester's request is stale — ✅ (found while writing the tests)
+The first version checked that the requester still *held* the `ADMIN` role at approval. A suspended admin
+does, so their pending requests could still be approved. Now the requester must be an *active* admin, or the
+approval is `409 ROLE_REQUEST_STALE`.
+
+### G5. Expiry is computed, not swept — ✅
+A pending request past `expires_at` reads as `EXPIRED` everywhere (one SQL expression), and the next request
+for the same user rewrites it before the one-pending-per-target index sees it. No scheduler.
+- **Fixed on the way:** the first version also marked a request `EXPIRED` inside the transaction that then
+  refused the approval, so the refusal rolled the mark back. Removed; it was never needed.
+
+### G6. Opening an account is recorded; the user list is not — 🟡
+`GET /admin/users/{id}` writes an `admin_reads` row unless it is the admin's own account. The list returns the
+same fields but is not recorded per row: recording every listed account would raise `BULK_READS` on ordinary
+paging. Listed as a gap in ADR 0008.
+
+### G7. Alerts are rows plus a warning log; bulk alerts once an hour — ✅
+`admin_alerts` is what the console shows; the structured warn log (ids only) is what a log pipeline can page
+on later. The suspension count comes from the audit trail, so the limit holds across restarts and instances,
+unlike the in-memory login limiter (A8). The actor's own row is locked first, so one admin's simultaneous
+suspensions are counted one after the other.
+- **Accepted:** the once-an-hour check is not locked, so two simultaneous requests could raise one bulk alert
+  twice. A duplicate alert is harmless; a missed one would not be.
+
+### G8. Reads and alerts are append-only, like the audit trail — ✅
+Migration 0003: a trigger rejects `UPDATE` and `DELETE`, and the service role loses those privileges and
+`TRUNCATE`. `role_change_requests` is updated when decided, but every request and decision also writes an
+`audit_records` row.
+
+### G9. Verification — ✅
+- `test/admin-controls.test.ts` (24 tests), plus the two-person flow in `admin.test.ts`, the break-glass walk in
+  `seed.test.ts`, every new route in the four-actor matrix, the provider contract test, and the log-privacy
+  scan (step-up and an alerting role change added). User Service: 241 tests pass; auth-client: 60.
+- **Mutation check:** 20 controls broken one at a time — each password re-entry, both conflict-of-interest
+  rules, the stale-requester and re-check rules, the pending and expiry rules, the suspension limit, every
+  alert, the read record, the refresh carry-over and the append-only trigger. A test failed for every one.
+- `contracts:compat` against `main`: no breaking change (the `202`, the new routes and the new enum values are
+  additive).
+- **Not verified here:** the console against the full Compose stack (ADM-02 has its own check).
+
+### G10. Review fixes (PR #226, Anselm) — ✅
+- **Suspending the approvers no longer lets one admin act alone.** Every holder of the role counts,
+  suspended or not; only with nobody else holding it does a change apply at once. A request whose only
+  possible approvers are suspended waits for a reactivation, or for a second seeded admin. Break-glass
+  therefore seeds two addresses.
+- **Reactivating an admin has the controls of suspending one:** seeded admin only, the password
+  re-entered, an `ADMIN_REACTIVATED` alert. Before, any admin, or a stolen token, could undo a
+  break-glass suspension at once.
+- **Full records are recorded however they are read.** `GET /admin/users` now records every account it
+  returns; the console finds and names accounts through the new `GET /admin/directory` (email, name,
+  roles, status, no profile), which is not recorded.
+- **The audit row says how a role change was approved:** `approval` is `SECOND_ADMIN` or `NO_APPROVER`
+  (migration 0004).
+- **Locks and re-checks:** actor and target rows are locked together in id order, so two admins
+  suspending each other queue instead of deadlocking, and the second finds itself suspended. Approval
+  re-checks the approver as well as the requester under the lock, and refuses an approval that would
+  change nothing (`ROLE_REQUEST_STALE`) rather than mark it approved with no audit row.
+- **Smaller:** rejecting someone else's request needs the password; a bulk alert is raised under an
+  advisory lock; a revoked session's re-entry counts for nothing; `from` after `to` is refused; the ADR
+  notes that a refresh carries a recent re-entry.
+

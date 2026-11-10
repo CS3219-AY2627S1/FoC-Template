@@ -1,0 +1,139 @@
+/* Phone first: a phone-wide column under the app bar. */
+.shell {
+  max-width: var(--size-phone);
+  margin: 0 auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--color-surface);
+  box-shadow: 0 0 0 1px var(--color-border);
+  display: flex;
+  flex-direction: column;
+}
+
+.appBar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.topBar,
+.sidebar {
+  display: none;
+}
+
+.body {
+  flex: 1;
+  display: flex;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* On a phone the app bar holds the title and the back arrow. */
+.header {
+  display: contents;
+}
+
+.back,
+.actions {
+  display: none;
+}
+
+/* The app bar already names the screen on a phone, so the heading is for assistive technology only. */
+.heading {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* From 768 px: the same frame as DesktopShell. */
+@media (min-width: 768px) {
+  .shell {
+    max-width: none;
+    margin: 0;
+    background: none;
+    box-shadow: none;
+  }
+
+  .appBar {
+    display: none;
+  }
+
+  .topBar {
+    display: block;
+  }
+
+  /* A flex wrapper, so the sidebar still stretches to the full height. */
+  .sidebar {
+    display: flex;
+  }
+
+  /* The column's gap spaces whatever a page puts here, so no screen relies on its own margins. */
+  .main {
+    padding: var(--space-5);
+    max-width: var(--size-content);
+    gap: var(--space-4);
+  }
+
+  /* A lone button keeps its own width beside the page's text, as it did in block flow. */
+  .main > :where(button, a),
+  .main :global(.settle) > :where(button, a) {
+    align-self: flex-start;
+  }
+
+  /* As tall as a control whether or not it holds one, so the heading sits level with the
+     sidebar's first item on every screen, with or without a primary action. */
+  .header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: var(--size-control);
+  }
+
+  /* The negative margins keep the 44 px target from making the row taller than the heading. */
+  .back {
+    width: var(--size-control);
+    height: var(--size-control);
+    margin-block: calc(var(--size-control) / -2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xl);
+  }
+
+  .back:hover {
+    background: var(--color-surface);
+  }
+
+  .actions {
+    display: block;
+    margin-left: auto;
+  }
+
+  .heading {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+    font-size: var(--text-2xl);
+    font-weight: var(--weight-bold);
+  }
+}
+
+@media (min-width: 1440px) {
+  .main {
+    padding: var(--space-5) var(--space-7);
+  }
+}

@@ -1,0 +1,73 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (Claude Opus 5.5), date: 2026-10-20
+// Scope: Implementation for "make the initial allocation configuration" (CRD-09).
+// Author review: Isaac Chua checked the code for correctness against the ticket, confirmed the
+//   tests pass, and made sure it caused no fatal errors or architectural conflicts before
+//   committing.
+
+import { Module, type DynamicModule } from '@nestjs/common';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { LOGGER, PgDb, provideDeadLetters, type PgDbOptions } from '@foc/platform';
+import { env } from './config.js';
+import { SERVICE_KEYS, ServiceKeyGuard } from './auth/service-key.guard.js';
+import { AdminActivity, WALLET_READS_ALERT_PER_HOUR } from './credits/admin-activity.js';
+import { CreditRepository, INITIAL_ALLOCATION } from './credits/credit.repository.js';
+import { AdminCreditController, DeadLettersController } from './credits/operations.controller.js';
+import { CreditOperationsRepository } from './credits/operations.repository.js';
+import { LedgerAuditService } from './credits/ledger-audit.service.js';
+import { LedgerAuditController } from './credits/ledger-audit.controller.js';
+import { CreditStatusController } from './credits/status.controller.js';
+import { CreditStatusService } from './credits/status.service.js';
+import { AdminWalletsController, WalletsController } from './credits/wallets.controller.js';
+import { WalletsService } from './credits/wallets.service.js';
+import { DB, RAW_DB } from './db/db.js';
+import * as schema from './db/schema.js';
+
+@Module({})
+export class CreditModule {
+  static forRoot(): DynamicModule {
+    return {
+      module: CreditModule,
+      controllers: [
+        WalletsController,
+        AdminWalletsController,
+        CreditStatusController,
+        AdminCreditController,
+        DeadLettersController,
+        LedgerAuditController,
+      ],
+      providers: [
+        CreditRepository,
+        LedgerAuditService,
+        WalletsService,
+        CreditStatusService,
+        CreditOperationsRepository,
+        AdminActivity,
+        { provide: WALLET_READS_ALERT_PER_HOUR, useValue: env.ADMIN_WALLET_READS_ALERT_PER_HOUR },
+        { provide: INITIAL_ALLOCATION, useValue: env.INITIAL_CREDIT_ALLOCATION },
+        // PLT-05: parks this service's dead letters once the broker connects, and redrives them.
+        provideDeadLetters({ db: RAW_DB }),
+        ServiceKeyGuard,
+        { provide: SERVICE_KEYS, useValue: env.INTERNAL_SERVICE_KEYS },
+        {
+          provide: RAW_DB,
+          useFactory: (logger: PgDbOptions['logger']) => new PgDb(env.DATABASE_URL, { logger }),
+          inject: [LOGGER],
+        },
+        {
+          provide: DB,
+          useFactory: (raw: PgDb) => drizzle(raw.pool, { schema }),
+          inject: [RAW_DB],
+        },
+      ],
+      exports: [
+        DB,
+        RAW_DB,
+        CreditRepository,
+        WalletsService,
+        CreditStatusService,
+        LedgerAuditService,
+      ],
+    };
+  }
+}

@@ -1,0 +1,114 @@
+import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import { activationLink } from "./mailpit";
+
+// Through the edge, as the page calls them: a sign-in here sets the refresh cookie for
+// /api/user/auth, where the page refreshes, so the page picks up the session (PLT-10).
+const EDGE = process.env.E2E_BASE_URL ?? "http://localhost:3000";
+export const USER = process.env.E2E_USER_SERVICE_URL ?? `${EDGE}/api/user`;
+const SUPPLIER = process.env.E2E_SUPPLIER_SERVICE_URL ?? `${EDGE}/api/supplier`;
+export const ORDER = process.env.E2E_ORDER_SERVICE_URL ?? `${EDGE}/api/order`;
+const CREDIT = process.env.E2E_CREDIT_SERVICE_URL ?? `${EDGE}/api/credit`;
+const PASSWORD = "a long enough passphrase";
+export const ORDER_URL = /\/request\/[0-9a-f-]{36}(\?.*)?$/;
+
+/** Picks the pickup point, fills one item and the delivery details, and opens the review. */
+export async function compose(
+  page: Page,
+  { supplier, item, reward }: { supplier: string; item: string; reward: number },
+) {
+  await page.goto("/request/new");
+  await page.getByRole("button", { name: supplier }).click();
+  await expect(page).toHaveURL(/\/request\/new\/details\?supplierId=/);
+  await page.getByRole("textbox", { name: "Name", exact: true }).fill(item);
+  await page.getByRole("textbox", { name: "Delivery zone" }).fill("PGP House 7");
+  await page.getByRole("textbox", { name: "Delivery instructions" }).fill("Leave it at the lobby counter.");
+  await page.getByRole("slider").fill(String(reward));
+  await page.getByRole("button", { name: "Review request" }).click();
+  await expect(page).toHaveURL(/\/request\/new\/review\?supplierId=/);
+}
+
+/** The order page renders a phone and a desktop tree; CSS shows one. */
+export const visible = (page: Page, text: string | RegExp) => page.getByText(text).filter({ visible: true });
+
+export const row = (page: Page, label: string) =>
+  page.locator("div", { has: page.getByText(label, { exact: true }) }).last();
+
+/**
+ * Registers, then activates with the emailed token and {@link PASSWORD}, chosen at activation (#309).
+ * Every call counts against the sign-up limit.
+ */
+export async function register(request: APIRequestContext, email: string, displayName = "E2E Requester") {
+  const registered = await request.post(`${USER}/auth/register`, { data: { email, displayName } });
+  expect(registered.ok(), await registered.text()).toBe(true);
+  const token = new URL(await activationLink(request, email)).searchParams.get("token");
+  const activated = await request.post(`${USER}/auth/activate`, { data: { token, password: PASSWORD } });
+  expect(activated.ok(), await activated.text()).toBe(true);
+}
+
+/**
+ * Signs in and waits for the wallet to be issued. Given a page's `request`, it signs that page in
+ * too: they share the refresh cookie, so the page's first load picks up the session.
+ */
+export async function signIn(request: APIRequestContext, email: string): Promise<string> {
+  const login = await request.post(`${USER}/auth/login`, { data: { email, password: PASSWORD } });
+  expect(login.ok(), await login.text()).toBe(true);
+  const { accessToken } = await login.json();
+  await expect
+    .poll(
+      async () =>
+        (await request.get(`${CREDIT}/wallets/me`, { headers: { authorization: `Bearer ${accessToken}` } }))
+          .status(),
+      { timeout: 30_000 },
+    )
+    .toBe(200);
+  return accessToken;
+}
+
+/** A new student, signed in. */
+export async function activeStudent(request: APIRequestContext, email: string): Promise<string> {
+  await register(request, email);
+  return signIn(request, email);
+}
+
+/** The errand journey's students, registered once per run by `global-setup.ts`. */
+export const ERRAND_STUDENTS = { requester: "E2E Requester", winner: "E2E Winner", loser: "E2E Loser" };
+
+export const errandEmail = (who: keyof typeof ERRAND_STUDENTS) =>
+  `e2e-errand-${who}-${process.env.E2E_RUN}@u.nus.edu`;
+
+/**
+ * Release actors are shared across widths; suspension tests must restore their account. The
+ * accessibility and keyboard journeys complete an errand each per width, so they pay from a
+ * requester of their own and leave the release requester's credits to the release journeys.
+ */
+export const RELEASE_STUDENTS = {
+  requester: "Release Requester",
+  courier: "Release Courier",
+  replacement: "Release Replacement",
+  a11y: "Keyboard Requester",
+};
+export const releaseEmail = (who: keyof typeof RELEASE_STUDENTS) =>
+  `e2e-release-${who}-${process.env.E2E_RUN}@u.nus.edu`;
+
+/** The signed-in student's wallet as the Credit Service reports it. */
+export async function wallet(
+  request: APIRequestContext,
+  token: string,
+): Promise<{ available: number; reserved: number }> {
+  const response = await request.get(`${CREDIT}/wallets/me`, { headers: { authorization: `Bearer ${token}` } });
+  expect(response.status()).toBe(200);
+  const { available, reserved } = await response.json();
+  return { available, reserved };
+}
+
+/** The first pickup point the picker lists, since both read the same default order. */
+export async function firstSupplier(
+  request: APIRequestContext,
+  token: string,
+): Promise<{ supplierId: string; name: string }> {
+  const page = await request.get(`${SUPPLIER}/suppliers`, {
+    headers: { authorization: `Bearer ${token}` },
+    params: { pageSize: 1 },
+  });
+  return (await page.json()).items[0];
+}

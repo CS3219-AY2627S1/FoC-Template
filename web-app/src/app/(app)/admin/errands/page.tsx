@@ -1,0 +1,142 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (Claude Opus 5.5), date: 2026-10-20
+// Scope: Implementation for "show an account's errands on its admin page" (ADM-05).
+// Author review: Jonus Ho reviewed the implementation for correctness, ran it against the test
+//   suite, and checked that it fits our service boundaries without fatal errors before committing.
+
+"use client";
+
+import { Button } from "@/components/Button";
+import { adminApi } from "@/lib/admin-api";
+import { formatDuration, formatWhen, RECONCILIATION_ACTIONS } from "@/lib/admin-labels";
+import { AdminShell, Loaded, Section, Tag, TraceLink, UserLink } from "../_components/ui";
+import { useAdminData } from "../_components/use-admin-data";
+import styles from "../_components/admin.module.css";
+import { AllErrands } from "./AllErrands";
+import { Disputes, RecentDecisions } from "./Disputes";
+
+export default function ErrandsPage() {
+  const waits = useAdminData("errands:waits", (t) => adminApi.creditWaits(t));
+  const attempts = useAdminData("errands:reconciliation", (t) => adminApi.reconciliation(t));
+
+  return (
+    <AdminShell active="/admin/errands" heading="Errands">
+      <Disputes />
+
+      <Section
+        title="Waiting on credits too long"
+        description="Errands still waiting for the Credit Service to reserve the reward after the limit (5 minutes by default), oldest first. Listing one does not reject it: it still opens if the reservation arrives."
+        actions={
+          <Button variant="outline" onClick={waits.reload}>
+            Refresh
+          </Button>
+        }
+      >
+        <Loaded
+          state={waits}
+          label="waiting errands"
+          isEmpty={(d) => d.items.length === 0}
+          emptyTitle="Nothing is stuck"
+          emptyText="Every errand has its credits, or is still within the limit."
+        >
+          {(d) => (
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <caption className="srOnly">Errands waiting on credits, oldest first</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Errand</th>
+                    <th scope="col">Requester</th>
+                    <th scope="col" className={styles.number}>
+                      Reward
+                    </th>
+                    <th scope="col">Created</th>
+                    <th scope="col">Waiting</th>
+                    <th scope="col">Operator alert</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.items.map((w) => (
+                    <tr key={w.orderId}>
+                      <td>
+                        <TraceLink orderId={w.orderId} />
+                      </td>
+                      <td>
+                        <UserLink id={w.requesterId} />
+                      </td>
+                      <td className={styles.number}>{w.reward}</td>
+                      <td className={styles.nowrap}>{formatWhen(w.createdAt)}</td>
+                      <td className={styles.nowrap}>{formatDuration(w.waitingMs)}</td>
+                      <td className={styles.nowrap}>
+                        {w.alertRaisedAt ? formatWhen(w.alertRaisedAt) : "Not yet"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Loaded>
+      </Section>
+
+      <Section
+        title="Credit reconciliation"
+        description="The latest decisions of the job that compares what the Order and Credit services each hold for an errand. “Contradiction raised” needs a person."
+        actions={
+          <Button variant="outline" onClick={attempts.reload}>
+            Refresh
+          </Button>
+        }
+      >
+        <Loaded
+          state={attempts}
+          label="reconciliation attempts"
+          isEmpty={(d) => d.items.length === 0}
+          emptyTitle="Nothing to reconcile"
+          emptyText="The Order and Credit services agree about every errand they have checked."
+        >
+          {(d) => (
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <caption className="srOnly">Reconciliation attempts, newest first</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">When</th>
+                    <th scope="col">Errand</th>
+                    <th scope="col">Order says</th>
+                    <th scope="col">Credit says</th>
+                    <th scope="col">What the job did</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.items.map((a) => (
+                    <tr key={a.attemptId}>
+                      <td className={styles.nowrap}>{formatWhen(a.attemptedAt)}</td>
+                      <td>
+                        <TraceLink orderId={a.orderId} />
+                      </td>
+                      <td>{a.orderStatus}</td>
+                      <td>
+                        {a.creditStatus ?? "Unknown"}
+                        {a.creditDetail && <span className={styles.secondary}>{a.creditDetail}</span>}
+                      </td>
+                      <td>
+                        <Tag tone={a.action === "ALERTED" ? "danger" : a.action === "REISSUED" ? "info" : "warning"}>
+                          {RECONCILIATION_ACTIONS[a.action]}
+                        </Tag>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Loaded>
+      </Section>
+
+      <RecentDecisions />
+
+      <AllErrands />
+    </AdminShell>
+  );
+}

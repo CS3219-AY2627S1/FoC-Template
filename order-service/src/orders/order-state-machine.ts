@@ -1,0 +1,318 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (Claude Opus 5.5), dates: 2026-10-12 to 2026-10-21
+// Scope: Implementation for "requester reports and auto-confirmation" (#171, #170, ORD-06); also
+//   refactoring and bug fixes.
+// Author review: Zhang Yuan and Patrick Thomas validated correctness and the implementation, and
+//   checked for fatal errors and architectural conflicts, before committing.
+
+import type { OrderStatus, ReleaseReason } from './types.js';
+
+export const ORDER_ACTIONS = [
+  'CREDIT_RESERVED',
+  'CREDIT_REJECTED',
+  'ACCEPT',
+  'CANCEL',
+  'REQUESTER_SUSPENDED',
+  'ACCEPTANCE_DEADLINE_PASSED',
+  'RECORD_PICKUP',
+  'WITHDRAW',
+  'PICKUP_TIMEOUT',
+  'COURIER_SUSPENDED',
+  'RECORD_DELIVERY',
+  'REPORT_NON_DELIVERY',
+  'DELIVERY_PERIOD_PASSED',
+  'CONFIRM_RECEIPT',
+  'AUTO_CONFIRM',
+  'REPORT_NON_RECEIPT',
+  'RESOLVE_FOR_COURIER',
+  'RESOLVE_FOR_REQUESTER',
+  'ADMIN_ASSIGNED',
+  'ADMIN_UNASSIGNED',
+  'TRANSFER_CONFIRMED',
+  'RELEASE_CONFIRMED',
+] as const;
+
+export type OrderAction = (typeof ORDER_ACTIONS)[number];
+
+/**
+ * What a participant's suspension does to an errand, by their part in it: the action tried from
+ * each status it can change (the rules below decide the result) and the reason recorded with it.
+ * A requester's picked-up errand is referred only once the delivery period has passed.
+ */
+export const SUSPENSION_EFFECTS: Record<
+  'REQUESTER' | 'COURIER',
+  { reason: string; actions: Partial<Record<OrderStatus, OrderAction>> }
+> = {
+  REQUESTER: {
+    reason: 'requester suspended',
+    actions: {
+      OPEN: 'REQUESTER_SUSPENDED',
+      ACCEPTED: 'REQUESTER_SUSPENDED',
+      PICKED_UP: 'DELIVERY_PERIOD_PASSED',
+    },
+  },
+  COURIER: {
+    reason: 'courier suspended',
+    actions: { ACCEPTED: 'COURIER_SUSPENDED', PICKED_UP: 'COURIER_SUSPENDED' },
+  },
+};
+
+/** The action that carries out each outcome an administrator can decide a dispute for. */
+export const RESOLVE_ACTIONS = {
+  COURIER: 'RESOLVE_FOR_COURIER',
+  REQUESTER: 'RESOLVE_FOR_REQUESTER',
+} as const satisfies Record<string, OrderAction>;
+
+export const ORDER_ACTORS = [
+  'REQUESTER',
+  'ASSIGNED_COURIER',
+  'OTHER_STUDENT',
+  'ADMIN',
+  'CREDIT_SERVICE',
+  'SYSTEM',
+] as const;
+
+export type OrderActor = (typeof ORDER_ACTORS)[number];
+
+export interface TransitionContext {
+  acceptanceDeadlinePassed?: boolean;
+  deliveryPeriodPassed?: boolean;
+  autoConfirmationPeriodPassed?: boolean;
+  requesterSuspended?: boolean;
+  reasonProvided?: boolean;
+  releaseReason?: ReleaseReason;
+}
+
+export interface TransitionDecision {
+  to: OrderStatus;
+  releaseReason?: ReleaseReason;
+  emitted: readonly string[];
+}
+
+interface TransitionRule {
+  from: OrderStatus;
+  action: OrderAction;
+  actors: readonly OrderActor[];
+  guard?: (context: TransitionContext) => boolean;
+  decide: (context: TransitionContext) => TransitionDecision;
+}
+
+const statusChanged = ['order.status-changed'] as const;
+const completion = ['order.completion-requested', 'order.status-changed'] as const;
+const release = ['order.release-requested', 'order.status-changed'] as const;
+
+/**
+ * Executable counterpart of the README transition table. Runtime commands and
+ * the generated authorization matrix use this same definition so they cannot
+ * silently drift apart.
+ */
+export const ORDER_TRANSITIONS: readonly TransitionRule[] = [
+  {
+    from: 'PENDING_CREDIT',
+    action: 'CREDIT_RESERVED',
+    actors: ['CREDIT_SERVICE'],
+    guard: (c) => !c.requesterSuspended,
+    decide: () => ({ to: 'OPEN', emitted: statusChanged }),
+  },
+  {
+    from: 'PENDING_CREDIT',
+    action: 'CREDIT_RESERVED',
+    actors: ['CREDIT_SERVICE'],
+    guard: (c) => c.requesterSuspended === true,
+    decide: () => ({ to: 'RELEASE_PENDING_CREDIT', releaseReason: 'CANCELLED', emitted: release }),
+  },
+  {
+    from: 'PENDING_CREDIT',
+    action: 'CREDIT_REJECTED',
+    actors: ['CREDIT_SERVICE'],
+    decide: () => ({ to: 'REJECTED', emitted: statusChanged }),
+  },
+  {
+    from: 'OPEN',
+    action: 'ACCEPT',
+    actors: ['OTHER_STUDENT'],
+    guard: (c) => !c.acceptanceDeadlinePassed,
+    decide: () => ({ to: 'ACCEPTED', emitted: statusChanged }),
+  },
+  {
+    from: 'OPEN',
+    action: 'CANCEL',
+    actors: ['REQUESTER'],
+    decide: () => ({ to: 'RELEASE_PENDING_CREDIT', releaseReason: 'CANCELLED', emitted: release }),
+  },
+  {
+    from: 'OPEN',
+    action: 'REQUESTER_SUSPENDED',
+    actors: ['SYSTEM'],
+    decide: () => ({ to: 'RELEASE_PENDING_CREDIT', releaseReason: 'CANCELLED', emitted: release }),
+  },
+  {
+    from: 'OPEN',
+    action: 'ACCEPTANCE_DEADLINE_PASSED',
+    actors: ['SYSTEM'],
+    decide: () => ({ to: 'RELEASE_PENDING_CREDIT', releaseReason: 'EXPIRED', emitted: release }),
+  },
+  {
+    from: 'ACCEPTED',
+    action: 'RECORD_PICKUP',
+    actors: ['ASSIGNED_COURIER'],
+    decide: () => ({ to: 'PICKED_UP', emitted: statusChanged }),
+  },
+  {
+    from: 'ACCEPTED',
+    action: 'CANCEL',
+    actors: ['REQUESTER'],
+    decide: () => ({ to: 'RELEASE_PENDING_CREDIT', releaseReason: 'CANCELLED', emitted: release }),
+  },
+  {
+    from: 'ACCEPTED',
+    action: 'REQUESTER_SUSPENDED',
+    actors: ['SYSTEM'],
+    decide: () => ({ to: 'RELEASE_PENDING_CREDIT', releaseReason: 'CANCELLED', emitted: release }),
+  },
+  {
+    from: 'ACCEPTED',
+    action: 'WITHDRAW',
+    actors: ['ASSIGNED_COURIER'],
+    guard: (c) => !c.acceptanceDeadlinePassed,
+    decide: () => ({ to: 'OPEN', emitted: statusChanged }),
+  },
+  {
+    from: 'ACCEPTED',
+    action: 'WITHDRAW',
+    actors: ['ASSIGNED_COURIER'],
+    guard: (c) => c.acceptanceDeadlinePassed === true,
+    decide: () => ({ to: 'RELEASE_PENDING_CREDIT', releaseReason: 'EXPIRED', emitted: release }),
+  },
+  {
+    from: 'ACCEPTED',
+    action: 'PICKUP_TIMEOUT',
+    actors: ['SYSTEM'],
+    guard: (c) => !c.acceptanceDeadlinePassed,
+    decide: () => ({ to: 'OPEN', emitted: statusChanged }),
+  },
+  {
+    from: 'ACCEPTED',
+    action: 'PICKUP_TIMEOUT',
+    actors: ['SYSTEM'],
+    guard: (c) => c.acceptanceDeadlinePassed === true,
+    decide: () => ({ to: 'RELEASE_PENDING_CREDIT', releaseReason: 'EXPIRED', emitted: release }),
+  },
+  {
+    from: 'ACCEPTED',
+    action: 'COURIER_SUSPENDED',
+    actors: ['SYSTEM'],
+    decide: () => ({ to: 'OPEN', emitted: statusChanged }),
+  },
+  {
+    from: 'PICKED_UP',
+    action: 'RECORD_DELIVERY',
+    actors: ['ASSIGNED_COURIER'],
+    decide: () => ({ to: 'DELIVERED', emitted: statusChanged }),
+  },
+  {
+    from: 'PICKED_UP',
+    action: 'REPORT_NON_DELIVERY',
+    actors: ['REQUESTER'],
+    guard: (c) => c.deliveryPeriodPassed === true,
+    decide: () => ({ to: 'DISPUTED', emitted: statusChanged }),
+  },
+  {
+    from: 'PICKED_UP',
+    action: 'DELIVERY_PERIOD_PASSED',
+    actors: ['SYSTEM'],
+    guard: (c) => c.requesterSuspended === true && c.deliveryPeriodPassed === true,
+    decide: () => ({ to: 'DISPUTED', emitted: statusChanged }),
+  },
+  {
+    from: 'PICKED_UP',
+    action: 'COURIER_SUSPENDED',
+    actors: ['SYSTEM'],
+    decide: () => ({ to: 'DISPUTED', emitted: statusChanged }),
+  },
+  {
+    from: 'DELIVERED',
+    action: 'CONFIRM_RECEIPT',
+    actors: ['REQUESTER'],
+    decide: () => ({ to: 'COMPLETION_PENDING_CREDIT', emitted: completion }),
+  },
+  {
+    from: 'DELIVERED',
+    action: 'AUTO_CONFIRM',
+    actors: ['SYSTEM'],
+    decide: () => ({ to: 'COMPLETION_PENDING_CREDIT', emitted: completion }),
+  },
+  {
+    from: 'DELIVERED',
+    action: 'REPORT_NON_RECEIPT',
+    actors: ['REQUESTER'],
+    // Once the period has passed the errand is confirmed, even before the scheduler records it.
+    guard: (c) => !c.autoConfirmationPeriodPassed,
+    decide: () => ({ to: 'DISPUTED', emitted: statusChanged }),
+  },
+  {
+    from: 'DISPUTED',
+    action: 'RESOLVE_FOR_COURIER',
+    actors: ['ADMIN'],
+    guard: (c) => c.reasonProvided === true,
+    decide: () => ({ to: 'COMPLETION_PENDING_CREDIT', emitted: completion }),
+  },
+  {
+    from: 'DISPUTED',
+    action: 'RESOLVE_FOR_REQUESTER',
+    actors: ['ADMIN'],
+    guard: (c) => c.reasonProvided === true,
+    decide: () => ({ to: 'RELEASE_PENDING_CREDIT', releaseReason: 'CANCELLED', emitted: release }),
+  },
+  // The scheduler names, or stops naming, the one administrator who may decide a dispute. The
+  // status stays DISPUTED and nothing is announced, but the version moves, so a replaced
+  // administrator's decision is stale.
+  {
+    from: 'DISPUTED',
+    action: 'ADMIN_ASSIGNED',
+    actors: ['SYSTEM'],
+    decide: () => ({ to: 'DISPUTED', emitted: [] }),
+  },
+  {
+    from: 'DISPUTED',
+    action: 'ADMIN_UNASSIGNED',
+    actors: ['SYSTEM'],
+    decide: () => ({ to: 'DISPUTED', emitted: [] }),
+  },
+  {
+    from: 'COMPLETION_PENDING_CREDIT',
+    action: 'TRANSFER_CONFIRMED',
+    actors: ['CREDIT_SERVICE'],
+    decide: () => ({ to: 'COMPLETED', emitted: statusChanged }),
+  },
+  {
+    from: 'RELEASE_PENDING_CREDIT',
+    action: 'RELEASE_CONFIRMED',
+    actors: ['CREDIT_SERVICE'],
+    guard: (c) => c.releaseReason === 'CANCELLED',
+    decide: () => ({ to: 'CANCELLED', emitted: statusChanged }),
+  },
+  {
+    from: 'RELEASE_PENDING_CREDIT',
+    action: 'RELEASE_CONFIRMED',
+    actors: ['CREDIT_SERVICE'],
+    guard: (c) => c.releaseReason === 'EXPIRED',
+    decide: () => ({ to: 'EXPIRED', emitted: statusChanged }),
+  },
+];
+
+export function decideTransition(
+  from: OrderStatus,
+  action: OrderAction,
+  actor: OrderActor,
+  context: TransitionContext = {},
+): TransitionDecision | null {
+  const rule = ORDER_TRANSITIONS.find(
+    (candidate) =>
+      candidate.from === from &&
+      candidate.action === action &&
+      candidate.actors.includes(actor) &&
+      (!candidate.guard || candidate.guard(context)),
+  );
+  return rule?.decide(context) ?? null;
+}

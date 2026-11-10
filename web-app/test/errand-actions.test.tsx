@@ -1,0 +1,1368 @@
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, setSystemTime } from 'bun:test';
+import { Window } from 'happy-dom';
+import type { OpenOrder, Order } from '../src/lib/order-api';
+
+const window = new Window();
+Object.assign(globalThis, { window, document: window.document, IS_REACT_ACT_ENVIRONMENT: true });
+const { act } = await import('react');
+const { createRoot } = await import('react-dom/client');
+
+const auth = {
+  authed: <T,>(call: (token: string) => Promise<T>) => call('test-token'),
+  user: { id: 'me', profile: { displayName: 'Me', preferredMode: 'REQUESTER' } },
+};
+const router = { push: mock((href: string) => void href), back: mock(() => {}) };
+mock.module('../src/lib/auth', () => ({ useAuth: () => auth }));
+mock.module('next/navigation', () => ({
+  useRouter: () => router,
+  useSearchParams: () => new URLSearchParams(),
+}));
+/** What the page asked the shell for; `responsive-shell.test.tsx` tests what the shell does with it. */
+let shell: { title?: string; barTitle?: string; primaryAction?: { label: string; onClick: () => void } } = {};
+mock.module('../src/components/ResponsiveShell', () => ({
+  ResponsiveShell: ({ children, ...props }: { children: React.ReactNode; title: string }) => {
+    shell = props;
+    return (
+      <>
+        <h1>{props.title}</h1>
+        {children}
+      </>
+    );
+  },
+}));
+const { default: FeedPage } = await import('../src/app/(app)/feed/page');
+const { default: OrderHistoryPage } = await import('../src/app/(app)/order-history/page');
+const { OrderDetail } = await import('../src/app/(app)/request/[id]/OrderDetail');
+const { useOrder } = await import('../src/lib/use-order');
+const { StoreProvider } = await import('../src/lib/store');
+const { CreditsProvider } = await import('../src/lib/credits');
+const { TopBar } = await import('../src/components/TopBar');
+const { LiveProvider } = await import('../src/lib/live/live');
+
+afterAll(() => {
+  for (const key of ['window', 'document', 'IS_REACT_ACT_ENVIRONMENT'])
+    delete (globalThis as Record<string, unknown>)[key];
+});
+
+// Now, not a fixed date: tests without the fake clock compare deadlines with the real one.
+const START = Date.now();
+const ORDER_ID = '11111111-0000-4000-8000-000000000001';
+const OTHER_ID = '11111111-0000-4000-8000-000000000002';
+const supplier = (name: string) => ({
+  supplierId: '00000000-0000-4000-8000-000000000001',
+  name,
+  type: 'CAFE',
+  building: 'COM2',
+  floor: '1',
+  locationDescription: 'By the stairs',
+});
+
+const order = (changes: Partial<Order> = {}): Order => ({
+  orderId: ORDER_ID,
+  supplier: supplier('Kopi Corner'),
+  items: [{ name: 'Kopi O', quantity: 2 }],
+  deliveryZone: 'PGP House 7',
+  reward: 3,
+  status: 'OPEN',
+  version: 3,
+  acceptanceDeadlineAt: new Date(START + 3_600_000).toISOString(),
+  createdAt: new Date(START).toISOString(),
+  updatedAt: new Date(START).toISOString(),
+  serverTime: new Date(START).toISOString(),
+  requesterId: 'me',
+  deliveryInstructions: 'Lobby counter',
+  ...changes,
+});
+
+const listing = (orderId: string, name: string, timeRemainingSeconds = 1800): OpenOrder => ({
+  orderId,
+  supplier: supplier(name),
+  itemSummary: [{ name: 'Kopi O', quantity: 2 }],
+  deliveryZone: 'PGP House 7',
+  reward: 3,
+  status: 'OPEN',
+  version: 1,
+  acceptanceDeadlineAt: new Date(START + timeRemainingSeconds * 1000).toISOString(),
+  timeRemainingSeconds,
+  createdAt: new Date(START).toISOString(),
+});
+
+const json = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+const failure = (status: number, code: string) =>
+  json(status, { error: { code, message: `${code} from the server.`, correlationId: 'test' } });
+/** A send whose answer never arrives, so the app cannot tell whether it went through. */
+const lostAnswer = (): Response => {
+  throw new TypeError('Failed to fetch');
+};
+
+type Command = { path: string; body: unknown };
+
+/** `serverAhead` is how far the server's clock runs ahead of this device's. */
+function fakeOrderService() {
+  const service = {
+    open: [] as OpenOrder[],
+    reads: [] as Order[],
+    current: order(),
+    commands: [] as Command[],
+    /** The Idempotency-Key each command was sent with, in order. */
+    keys: [] as (string | null)[],
+    serverAhead: 0,
+    wallet: (): Response => json(200, { available: 5 }),
+    walletReads: 0,
+    queries: [] as string[],
+    feed: (): Response =>
+      json(
+        200,
+        service.open
+          .map((o) => ({ ...o, timeRemainingSeconds: (Date.parse(o.acceptanceDeadlineAt) - Date.now()) / 1000 }))
+          .filter((o) => o.timeRemainingSeconds > 0),
+      ),
+    history: (): Response => json(200, { items: [], truncated: false }),
+    stamp: (o: Order): Order => ({ ...o, serverTime: new Date(Date.now() + service.serverAhead).toISOString() }),
+    answer: (): Response => json(200, service.stamp({ ...service.current, version: 4 })),
+    read: (): Response | Promise<Response> => json(200, service.stamp(service.reads.shift() ?? service.current)),
+    async fetch(request: Request): Promise<Response> {
+      const { pathname, search } = new URL(request.url);
+      if (pathname === `/orders/${ORDER_ID}/history`) return json(200, { orderId: ORDER_ID, entries: [] });
+      if (request.method === 'GET') service.queries.push(`${pathname}${search}`);
+      if (request.method === 'POST') {
+        const command = { path: pathname, body: await request.json() };
+        service.commands.push(command);
+        service.keys.push(request.headers.get('Idempotency-Key'));
+        return service.answer();
+      }
+      if (pathname === '/orders') return service.feed();
+      if (pathname === '/orders/mine') return service.history();
+      if (pathname === '/wallets/me') {
+        service.walletReads++;
+        return service.wallet();
+      }
+      if (pathname.startsWith('/orders/')) return service.read();
+      return failure(404, 'NOT_FOUND');
+    },
+  };
+  return service;
+}
+
+/** Timers of a second or more wait for `advance`, which keeps the ones still in the future. */
+function fakeClock() {
+  let now = START;
+  let next = 1;
+  let timers: { id: number; at: number; run: () => void; every?: number }[] = [];
+  setSystemTime(new Date(now));
+  const schedule = (run: () => void, ms: number, every?: number) => {
+    timers.push({ id: next, at: now + ms, run, every });
+    return next++;
+  };
+  const cancel = (id: number) => {
+    timers = timers.filter((t) => t.id !== id);
+  };
+  Object.assign(globalThis, {
+    setTimeout: (run: () => void, ms = 0) => (ms < 1000 ? realTimers.setTimeout(run, ms) : schedule(run, ms)),
+    clearTimeout: (id: number) => (typeof id === 'number' && id < 1e6 ? cancel(id) : realTimers.clearTimeout(id)),
+    setInterval: (run: () => void, ms: number) => schedule(run, ms, ms),
+    clearInterval: cancel,
+  });
+  return {
+    async advance(ms: number) {
+      now += ms;
+      setSystemTime(new Date(now));
+      const due = timers.filter((t) => t.at <= now);
+      timers = timers.filter((t) => t.at > now);
+      for (const t of due) {
+        if (t.every) timers.push({ ...t, at: now + t.every });
+        await act(async () => t.run());
+      }
+      await flush();
+    },
+  };
+}
+
+const realFetch = globalThis.fetch;
+const realTimers = {
+  setTimeout: globalThis.setTimeout,
+  clearTimeout: globalThis.clearTimeout,
+  setInterval: globalThis.setInterval,
+  clearInterval: globalThis.clearInterval,
+};
+let mounted: { unmount: () => void } | null = null;
+
+beforeEach(() => {
+  router.push.mockClear();
+  auth.user.profile.preferredMode = 'REQUESTER';
+});
+
+afterEach(async () => {
+  if (mounted) await act(() => mounted!.unmount());
+  mounted = null;
+  globalThis.fetch = realFetch;
+  Object.assign(globalThis, realTimers);
+  setSystemTime();
+});
+
+const flush = async () => {
+  for (let i = 0; i < 6; i++) await act(() => new Promise((resolve) => realTimers.setTimeout(resolve, 0)));
+};
+
+async function render(
+  element: React.ReactElement,
+  service: ReturnType<typeof fakeOrderService>,
+  creditsEnabled = true,
+) {
+  globalThis.fetch = ((request: Request) => service.fetch(request)) as typeof fetch;
+  const container = window.document.createElement('div');
+  window.document.body.replaceChildren(container);
+  const root = createRoot(container as unknown as Element);
+  mounted = root;
+  await act(() =>
+    root.render(
+      <StoreProvider>
+        <CreditsProvider enabled={creditsEnabled}>{element}</CreditsProvider>
+      </StoreProvider>,
+    ),
+  );
+  await flush();
+  return container as unknown as HTMLElement;
+}
+
+const buttons = (scope: ParentNode, text: string) =>
+  Array.from(scope.querySelectorAll('button')).filter((b) => b.textContent === text);
+const button = (scope: ParentNode, text: string) => {
+  const [found] = buttons(scope, text);
+  if (!found) throw new Error(`No "${text}" button`);
+  return found;
+};
+const dialog = (container: HTMLElement) => container.ownerDocument.querySelector('dialog')!;
+
+/** Clicks an action, then the confirm button in its dialog. */
+async function confirmAction(container: HTMLElement, label: string, confirmLabel: string) {
+  await act(async () => button(container, label).click());
+  await act(async () => button(dialog(container), confirmLabel).click());
+  await flush();
+}
+
+describe('feed', () => {
+  beforeEach(() => {
+    auth.user.profile.preferredMode = 'COURIER';
+  });
+
+  it('announces a failed background refresh in the existing alert', async () => {
+    const service = fakeOrderService();
+    const container = await render(<FeedPage />, service);
+    const alert = container.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toBe('');
+    expect(service.queries).toContain('/orders');
+    expect(service.queries.some((query) => query.startsWith('/orders/mine'))).toBe(false);
+
+    service.feed = () => failure(503, 'INTERNAL');
+    await act(async () => window.dispatchEvent(new window.Event('online')));
+    await flush();
+    expect(container.querySelector('[role="alert"]')).toBe(alert);
+    expect(alert.textContent).toContain('Could not refresh the list.');
+  });
+
+  it('shows a failed first load with a retry, then keeps the errands through a failed refresh', async () => {
+    const service = fakeOrderService();
+    service.open = [listing(OTHER_ID, 'Their cafe')];
+    const working = service.feed;
+    service.feed = () => failure(503, 'INTERNAL');
+    const container = await render(<FeedPage />, service);
+    expect(container.textContent).toContain('Could not load open errands');
+
+    service.feed = working;
+    await act(async () => button(container, 'Try again').click());
+    await flush();
+    expect(container.textContent).toContain('Their cafe');
+
+    service.feed = () => failure(503, 'INTERNAL');
+    await act(async () => window.dispatchEvent(new window.Event('online')));
+    await flush();
+    expect(container.textContent).toContain('Could not refresh the list.');
+    expect(container.textContent).toContain('Their cafe');
+  });
+
+  it('reads every 30 seconds, and again after a failed read', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    await render(<FeedPage />, service, false);
+    const reads = () => service.queries.filter((query) => query === '/orders').length;
+    expect(reads()).toBe(1);
+
+    service.feed = () => failure(503, 'INTERNAL');
+    await clock.advance(29_000);
+    expect(reads()).toBe(1);
+    await clock.advance(1_000);
+    expect(reads()).toBe(2);
+    await clock.advance(30_000);
+    expect(reads()).toBe(3);
+  });
+
+  describe('a Load more still in flight', () => {
+    /** A feed with a next page, whose requests for that page wait until they are cancelled. */
+    async function loadingMore() {
+      const service = fakeOrderService();
+      service.feed = () =>
+        new Response(JSON.stringify([listing(OTHER_ID, 'First cafe')]), {
+          status: 200,
+          headers: { 'content-type': 'application/json', 'Next-Cursor': 'older' },
+        });
+      const answer = service.fetch.bind(service);
+      const more: Request[] = [];
+      service.fetch = (request: Request) => {
+        if (!new URL(request.url).searchParams.has('cursor')) return answer(request);
+        more.push(request);
+        return new Promise<Response>((_, reject) =>
+          request.signal.addEventListener('abort', () =>
+            reject(new window.DOMException('Aborted', 'AbortError')),
+          ),
+        );
+      };
+      const container = await render(<FeedPage />, service);
+      await act(async () => button(container, 'Load more').click());
+      await flush();
+      expect(more).toHaveLength(1);
+      expect(more[0]!.signal.aborted).toBe(false);
+      return { container, more };
+    }
+
+    const typeBuilding = async (container: HTMLElement, value: string) => {
+      const building = container.querySelector('input[placeholder="e.g. COM2"]') as HTMLInputElement;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(Object.getPrototypeOf(building), 'value')!.set!.call(building, value);
+        building.dispatchEvent(new window.Event('input', { bubbles: true }));
+      });
+      await flush();
+    };
+
+    it('is cancelled when the page goes away', async () => {
+      const { more } = await loadingMore();
+      await act(() => mounted!.unmount());
+      mounted = null;
+      expect(more[0]!.signal.aborted).toBe(true);
+    });
+
+    it('is cancelled when the filters change, and leaves no error behind', async () => {
+      const { container, more } = await loadingMore();
+      await typeBuilding(container, 'COM2');
+      expect(more[0]!.signal.aborted).toBe(true);
+
+      await typeBuilding(container, '');
+      expect(container.querySelector('[role="alert"]')?.textContent ?? '').toBe('');
+      expect(container.textContent).not.toContain('Something went wrong');
+      await act(async () => button(container, 'Load more').click());
+      await flush();
+      expect(more).toHaveLength(2);
+    });
+  });
+
+  it('loads more, keeps loaded errands on refresh, and resets paging when filters change', async () => {
+    const service = fakeOrderService();
+    const first = listing(OTHER_ID, 'First cafe');
+    const older = listing('11111111-0000-4000-8000-000000000003', 'Older cafe');
+    const filtered = listing('11111111-0000-4000-8000-000000000004', 'Filtered cafe');
+    service.feed = () => {
+      const query = new URL(`http://example.test${service.queries.at(-1)}`).searchParams;
+      const selected = query.has('pickupBuilding') || query.has('minReward');
+      const items = selected ? [filtered] : query.has('cursor') ? [older, first] : [first];
+      return new Response(JSON.stringify(items), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          ...(selected || query.has('cursor') ? {} : { 'Next-Cursor': 'older' }),
+        },
+      });
+    };
+    const container = await render(<FeedPage />, service);
+    expect(button(container, 'Load more')).toBeTruthy();
+    await act(async () => button(container, 'Load more').click());
+    await flush();
+    const feed = () => container.textContent!;
+    expect(feed()).toContain('Older cafe');
+    expect(feed().match(/First cafe/g)).toHaveLength(1);
+
+    await act(async () => window.dispatchEvent(new window.Event('online')));
+    await flush();
+    expect(feed()).toContain('Older cafe');
+
+    const workingFeed = service.feed;
+    service.feed = () => failure(503, 'INTERNAL');
+    await act(async () => window.dispatchEvent(new window.Event('online')));
+    await flush();
+    expect(feed()).toContain('Older cafe');
+    service.feed = workingFeed;
+
+    const building = container.querySelector('input[placeholder="e.g. COM2"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(Object.getPrototypeOf(building), 'value')!.set!.call(building, 'COM2');
+      building.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+    await flush();
+    expect(service.queries.filter((query) => query.startsWith('/orders')).at(-1)).toContain('pickupBuilding=COM2');
+    expect(feed()).toContain('Filtered cafe');
+    expect(feed()).not.toContain('Older cafe');
+    expect(buttons(container, 'Load more')).toEqual([]);
+
+    const reward = container.querySelector('input[type="number"]') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(Object.getPrototypeOf(reward), 'value')!.set!.call(reward, '4');
+      reward.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+    await flush();
+    expect(service.queries.filter((query) => query.startsWith('/orders')).at(-1)).toContain('minReward=4');
+  });
+
+  it('says when no errand matches the filters, and clears them back to the first one', async () => {
+    const service = fakeOrderService();
+    service.open = [listing(OTHER_ID, 'First cafe')];
+    service.feed = () => {
+      const query = new URL(`http://example.test${service.queries.at(-1)}`).searchParams;
+      return json(200, query.has('pickupBuilding') || query.has('minReward') ? [] : service.open);
+    };
+    const container = await render(<FeedPage />, service);
+    const building = container.querySelector('input[placeholder="e.g. COM2"]') as HTMLInputElement;
+    const reward = container.querySelector('input[type="number"]') as HTMLInputElement;
+    const type = async (input: HTMLInputElement, value: string) => {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')!.set!.call(input, value);
+        input.dispatchEvent(new window.Event('input', { bubbles: true }));
+      });
+      await flush();
+    };
+    await type(building, 'UTown');
+    await type(reward, '9');
+    expect(container.textContent).toContain('No open errands match these filters');
+    expect(container.textContent).not.toContain('No open errands right now');
+
+    await act(async () => button(container, 'Clear filters').click());
+    await flush();
+    expect(building.value).toBe('');
+    expect(reward.value).toBe('');
+    expect(window.document.activeElement).toBe(building as unknown as typeof window.document.activeElement);
+    expect(container.textContent).toContain('First cafe');
+    expect(container.textContent).not.toContain('No open errands match these filters');
+  });
+
+  it('names the page the same at every width, with nothing to post, in courier mode', async () => {
+    await render(<FeedPage />, fakeOrderService());
+    expect(shell.title).toBe('Open errands');
+    expect(shell.barTitle).toBeUndefined();
+    expect(shell.primaryAction).toBeUndefined();
+  });
+
+  it('counts down from the time the server gave and removes the card at zero', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    service.open = [listing(OTHER_ID, 'Their cafe', 90)];
+    const container = await render(<FeedPage />, service);
+    expect(container.textContent).toContain('2 min left');
+
+    await clock.advance(60_000);
+    expect(container.textContent).toContain('Under a minute left');
+    await clock.advance(30_000);
+    expect(container.textContent).not.toContain('Their cafe');
+    expect(container.textContent).toContain('No open errands right now');
+  });
+
+  it('asks before accepting, sends the version it showed, then opens the errand', async () => {
+    const service = fakeOrderService();
+    service.open = [listing(OTHER_ID, 'Their cafe')];
+    service.answer = () => json(201, order({ orderId: OTHER_ID, status: 'ACCEPTED' }));
+    const container = await render(<FeedPage />, service);
+
+    expect(button(container, 'Accept').getAttribute('aria-label')).toBe('Accept errand from Their cafe');
+    await act(async () => button(container, 'Accept').click());
+    expect(dialog(container).textContent).toContain('Accept this errand?');
+    expect(container.ownerDocument.activeElement).toBe(button(dialog(container), 'Accept'));
+    expect(service.commands).toEqual([]);
+
+    await act(async () => button(dialog(container), 'Accept').click());
+    await flush();
+    expect(service.commands).toEqual([{ path: `/orders/${OTHER_ID}/accept`, body: { expectedVersion: 1 } }]);
+    expect(router.push).toHaveBeenCalledWith(`/request/${OTHER_ID}`);
+  });
+
+  it('replaces the card after losing the race instead of leaving a dead button', async () => {
+    const service = fakeOrderService();
+    service.open = [listing(OTHER_ID, 'Their cafe')];
+    service.answer = () => {
+      service.open = [];
+      return failure(409, 'ORDER_NOT_OPEN');
+    };
+    const container = await render(<FeedPage />, service);
+
+    await confirmAction(container, 'Accept', 'Accept');
+    expect(container.textContent).toContain('Another courier accepted this errand first');
+    expect(container.textContent).not.toContain('Their cafe');
+    expect(buttons(container, 'Accept')).toEqual([]);
+    const focused = container.ownerDocument.activeElement;
+    expect(focused?.getAttribute('role')).toBe('status');
+    expect(focused?.textContent).toContain('Another courier accepted');
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('retries an accept whose answer was lost with the same key, and opens the errand it replays', async () => {
+    const service = fakeOrderService();
+    service.open = [listing(OTHER_ID, 'Their cafe')];
+    service.answer = lostAnswer;
+    const container = await render(<FeedPage />, service);
+
+    await confirmAction(container, 'Accept', 'Accept');
+    expect(dialog(container).open).toBe(true);
+    expect(dialog(container).textContent).toContain("Can't reach the server.");
+
+    service.answer = () =>
+      json(201, order({ orderId: OTHER_ID, status: 'ACCEPTED', requesterId: 'them', courierId: 'me', version: 2 }));
+    await act(async () => button(dialog(container), 'Accept').click());
+    await flush();
+    expect(service.commands.map((c) => c.body)).toEqual([{ expectedVersion: 1 }, { expectedVersion: 1 }]);
+    expect(service.keys[0]).toBeTruthy();
+    expect(service.keys).toEqual([service.keys[0]!, service.keys[0]!]);
+    expect(router.push).toHaveBeenCalledWith(`/request/${OTHER_ID}`);
+  });
+
+  it('resends the same key when a lost accept is closed and confirmed again, and opens the errand', async () => {
+    const service = fakeOrderService();
+    service.open = [listing(OTHER_ID, 'Their cafe')];
+    service.answer = lostAnswer;
+    const container = await render(<FeedPage />, service);
+    await confirmAction(container, 'Accept', 'Accept');
+    await act(async () => button(dialog(container), 'Go back').click());
+    expect(dialog(container).open).toBe(false);
+
+    service.answer = () =>
+      json(201, order({ orderId: OTHER_ID, status: 'ACCEPTED', requesterId: 'them', courierId: 'me', version: 2 }));
+    await confirmAction(container, 'Accept', 'Accept');
+    expect(service.commands.map((c) => c.body)).toEqual([{ expectedVersion: 1 }, { expectedVersion: 1 }]);
+    expect(service.keys[0]).toBeTruthy();
+    expect(service.keys).toEqual([service.keys[0]!, service.keys[0]!]);
+    expect(container.textContent).not.toContain('Another courier');
+    expect(router.push).toHaveBeenCalledWith(`/request/${OTHER_ID}`);
+  });
+
+  it('still reports losing the race when the retry of a lost accept is refused because another courier took it', async () => {
+    const service = fakeOrderService();
+    service.open = [listing(OTHER_ID, 'Their cafe')];
+    service.answer = lostAnswer;
+    const container = await render(<FeedPage />, service);
+    await confirmAction(container, 'Accept', 'Accept');
+
+    service.open = [];
+    service.current = order({ orderId: OTHER_ID, status: 'ACCEPTED', requesterId: 'them', courierId: 'other' });
+    service.answer = () => failure(409, 'ORDER_NOT_OPEN');
+    await act(async () => button(dialog(container), 'Accept').click());
+    await flush();
+    expect(service.keys[0]).toBeTruthy();
+    expect(service.keys).toEqual([service.keys[0]!, service.keys[0]!]);
+    expect(container.textContent).toContain('Another courier accepted this errand first');
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('says so after a withdrawal', async () => {
+    window.happyDOM.setURL('http://localhost/feed?withdrawn=1');
+    const container = await render(<FeedPage />, fakeOrderService());
+    window.happyDOM.setURL('http://localhost/');
+    expect(container.textContent).toContain('You withdrew from the errand.');
+  });
+});
+
+describe('requester open requests', () => {
+  it('shows only the requester’s active orders and never offers Accept', async () => {
+    const service = fakeOrderService();
+    service.open = [listing(OTHER_ID, 'Their cafe')];
+    service.history = () => json(200, {
+      items: [{ ...order(), myRole: 'REQUESTER' }],
+      truncated: false,
+    });
+
+    const container = await render(<FeedPage />, service);
+    expect(container.textContent).toContain('Active requests');
+    expect(container.textContent).toContain('Kopi Corner');
+    expect(container.textContent).not.toContain('Their cafe');
+    expect(service.queries).toContain('/orders/mine?role=REQUESTER&active=true');
+    expect(service.queries).not.toContain('/orders');
+    expect(container.querySelector('a[href="/request/past"]')).toBeNull();
+    expect(buttons(container, 'Accept')).toEqual([]);
+    expect(shell.title).toBe('Active requests');
+    expect(shell.primaryAction?.label).toBe('New request');
+    shell.primaryAction!.onClick();
+    expect(router.push).toHaveBeenCalledWith('/request/new');
+  });
+
+  it('reads every 5 seconds while credits move, then every 30', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    let status: Order['status'] = 'PENDING_CREDIT';
+    service.history = () => json(200, { items: [{ ...order({ status }), myRole: 'REQUESTER' }], truncated: false });
+    await render(<FeedPage />, service, false);
+    const reads = () => service.queries.filter((query) => query.startsWith('/orders/mine')).length;
+    expect(reads()).toBe(1);
+
+    status = 'OPEN';
+    await clock.advance(5_000);
+    expect(reads()).toBe(2);
+    await clock.advance(25_000);
+    expect(reads()).toBe(2);
+    await clock.advance(5_000);
+    expect(reads()).toBe(3);
+  });
+
+  it('shows a withdrawal notice immediately in requester mode', async () => {
+    window.happyDOM.setURL('http://localhost/feed?withdrawn=1');
+    const container = await render(<FeedPage />, fakeOrderService());
+    window.happyDOM.setURL('http://localhost/');
+    expect(container.textContent).toContain('You withdrew from the errand.');
+  });
+});
+
+describe('history', () => {
+  it('shows a failed refresh alongside the last loaded list', async () => {
+    const service = fakeOrderService();
+    const container = await render(<OrderHistoryPage />, service);
+    expect(container.textContent).toContain('No errands yet');
+
+    service.history = () => failure(503, 'INTERNAL');
+    await act(async () => window.dispatchEvent(new window.Event('online')));
+    await flush();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Could not refresh your errands');
+    expect(container.textContent).toContain('No errands yet');
+  });
+});
+
+describe('courier', () => {
+  const assigned = { requesterId: 'them', courierId: 'me' };
+
+  it('records pickup after confirming, then offers delivery', async () => {
+    const service = fakeOrderService();
+    service.current = order({ ...assigned, status: 'ACCEPTED' });
+    service.answer = () => {
+      service.current = order({ ...assigned, status: 'PICKED_UP', version: 4 });
+      return json(200, service.current);
+    };
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    expect(container.textContent).toContain('Lobby counter');
+    expect(buttons(container, 'Withdraw').length).toBeGreaterThan(0);
+
+    await confirmAction(container, "I've picked it up", 'Record pickup');
+    expect(service.commands).toEqual([{ path: `/orders/${ORDER_ID}/pickup`, body: { expectedVersion: 3 } }]);
+    expect(buttons(container, 'Mark as delivered').length).toBeGreaterThan(0);
+    expect(buttons(container, "I've picked it up")).toEqual([]);
+    expect(container.ownerDocument.activeElement?.getAttribute('role')).toBe('status');
+  });
+
+  it('retries a pickup whose answer was lost with the same key, and shows the replayed answer as done', async () => {
+    const service = fakeOrderService();
+    service.current = order({ ...assigned, status: 'ACCEPTED' });
+    service.answer = () => {
+      service.current = order({ ...assigned, status: 'PICKED_UP', version: 4 });
+      return lostAnswer();
+    };
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    await confirmAction(container, "I've picked it up", 'Record pickup');
+    expect(dialog(container).open).toBe(true);
+
+    service.answer = () => json(200, service.current);
+    await act(async () => button(dialog(container), 'Record pickup').click());
+    await flush();
+    expect(service.keys[0]).toBeTruthy();
+    expect(service.keys).toEqual([service.keys[0]!, service.keys[0]!]);
+    expect(dialog(container).open).toBe(false);
+    expect(container.textContent).not.toContain('changed before your request arrived');
+    expect(buttons(container, 'Mark as delivered').length).toBeGreaterThan(0);
+  });
+
+  it('sends a new key with the next confirmation after a success', async () => {
+    const service = fakeOrderService();
+    service.current = order({ ...assigned, status: 'ACCEPTED' });
+    service.answer = () => {
+      service.current = order({ ...assigned, status: 'PICKED_UP', version: 4 });
+      return json(200, service.current);
+    };
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    await confirmAction(container, "I've picked it up", 'Record pickup');
+
+    service.answer = () => json(200, order({ ...assigned, status: 'DELIVERED', version: 5 }));
+    await confirmAction(container, 'Mark as delivered', 'Record delivery');
+    expect(service.keys).toHaveLength(2);
+    expect(service.keys).not.toContain(null);
+    expect(service.keys[1]).not.toBe(service.keys[0]!);
+  });
+
+  it('withdraws after confirming, then goes back to the feed', async () => {
+    const service = fakeOrderService();
+    service.current = order({ ...assigned, status: 'ACCEPTED' });
+    // A withdrawal answers with the public projection: the errand no longer names them.
+    service.answer = () => json(200, order({ requesterId: undefined, deliveryInstructions: undefined, version: 4 }));
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+
+    await confirmAction(container, 'Withdraw', 'Withdraw');
+    expect(service.commands).toEqual([{ path: `/orders/${ORDER_ID}/withdraw`, body: { expectedVersion: 3 } }]);
+    expect(router.push).toHaveBeenCalledWith('/feed?withdrawn=1');
+  });
+
+  it('records delivery after confirming, then leaves the next step to the requester', async () => {
+    const service = fakeOrderService();
+    service.current = order({ ...assigned, status: 'PICKED_UP' });
+    service.answer = () => {
+      service.current = order({ ...assigned, status: 'DELIVERED', version: 4 });
+      return json(200, service.current);
+    };
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+
+    await confirmAction(container, 'Mark as delivered', 'Record delivery');
+    expect(service.commands).toEqual([{ path: `/orders/${ORDER_ID}/deliver`, body: { expectedVersion: 3 } }]);
+    expect(container.querySelectorAll('button:not([aria-label="Back"])').length).toBe(0);
+  });
+
+  it('reads about a delivery as the courier, not as the requester', async () => {
+    const service = fakeOrderService();
+    service.current = order({ ...assigned, status: 'DELIVERED' });
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    expect(container.textContent).toContain("You've recorded delivery.");
+    expect(container.textContent).not.toContain('confirm receipt');
+  });
+
+  it('shows no delivery instructions before the errand is theirs', async () => {
+    const service = fakeOrderService();
+    service.current = order({ requesterId: undefined, deliveryInstructions: undefined });
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    expect(container.textContent).not.toContain('Delivery instructions');
+    expect(buttons(container, 'Accept errand').length).toBeGreaterThan(0);
+    // A reopened errand may still have a channel; only its participants may see or ask for it.
+    expect(service.queries.some((q) => q.startsWith('/channels/'))).toBe(false);
+  });
+});
+
+describe('requester', () => {
+  it('cancels an open errand, and re-reads it when the version was stale', async () => {
+    const service = fakeOrderService();
+    service.answer = () => {
+      service.current = order({ status: 'ACCEPTED', courierId: 'them', version: 4 });
+      return failure(409, 'ORDER_CHANGED');
+    };
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+
+    await confirmAction(container, 'Cancel errand', 'Cancel errand');
+    expect(container.textContent).toContain('This errand changed before your request arrived');
+    expect(container.textContent).toContain('Accepted');
+
+    service.answer = () => {
+      service.current = order({ status: 'RELEASE_PENDING_CREDIT', releaseReason: 'CANCELLED', version: 5 });
+      return json(200, service.current);
+    };
+    await confirmAction(container, 'Cancel errand', 'Cancel errand');
+    expect(service.commands.map((c) => c.body)).toEqual([{ expectedVersion: 3 }, { expectedVersion: 4 }]);
+    expect(container.textContent).toContain('Cancelling');
+    expect(container.textContent).toContain('The errand is being cancelled. The Credit Service is returning the reward to you.');
+  });
+
+  it('shows a lost cancel as moved on, not done, when its retry is refused because the courier picked up', async () => {
+    const service = fakeOrderService();
+    service.current = order({ status: 'ACCEPTED', courierId: 'them' });
+    service.answer = lostAnswer;
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    await confirmAction(container, 'Cancel errand', 'Cancel errand');
+    expect(dialog(container).open).toBe(true);
+
+    service.current = order({ status: 'PICKED_UP', courierId: 'them', version: 4 });
+    service.answer = () => failure(409, 'ORDER_CHANGED');
+    await act(async () => button(dialog(container), 'Cancel errand').click());
+    await flush();
+    expect(service.keys[0]).toBeTruthy();
+    expect(service.keys).toEqual([service.keys[0]!, service.keys[0]!]);
+    expect(dialog(container).open).toBe(false);
+    expect(container.textContent).toContain('This errand changed before your request arrived');
+    expect(container.textContent).toContain('In transit');
+    expect(container.textContent).not.toContain('Cancelling');
+  });
+
+  it("starts a dialog that can't be undone on Go back, and reads out what it does", async () => {
+    const service = fakeOrderService();
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+
+    await act(async () => button(container, 'Cancel errand').click());
+    const document = container.ownerDocument;
+    expect(document.activeElement).toBe(button(dialog(container), 'Go back'));
+    const description = document.getElementById(dialog(container).getAttribute('aria-describedby')!);
+    expect(description?.textContent).toContain("This can't be undone.");
+  });
+
+  it('keeps a failed send in the dialog to try again', async () => {
+    const service = fakeOrderService();
+    service.answer = () => failure(503, 'INTERNAL');
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+
+    await confirmAction(container, 'Cancel errand', 'Cancel errand');
+    expect(dialog(container).open).toBe(true);
+    expect(dialog(container).textContent).toContain('INTERNAL from the server.');
+  });
+
+  it('shows an errand that has gone as gone, with no action left on it', async () => {
+    const service = fakeOrderService();
+    service.answer = () => {
+      service.read = () => failure(404, 'NOT_FOUND');
+      return failure(404, 'NOT_FOUND');
+    };
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+
+    await confirmAction(container, 'Cancel errand', 'Cancel errand');
+    expect(container.textContent).toContain('This request no longer exists.');
+    expect(buttons(container, 'Cancel errand')).toEqual([]);
+  });
+
+  it('confirms receipt after asking, and offers nothing more', async () => {
+    const service = fakeOrderService();
+    service.current = order({
+      status: 'DELIVERED',
+      courierId: 'them',
+      autoConfirmAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    service.answer = () => {
+      service.current = order({ status: 'COMPLETION_PENDING_CREDIT', courierId: 'them', version: 4 });
+      return json(200, service.current);
+    };
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+
+    await confirmAction(container, 'Confirm receipt', 'Confirm receipt');
+    expect(service.commands).toEqual([{ path: `/orders/${ORDER_ID}/confirm-receipt`, body: { expectedVersion: 3 } }]);
+    expect(buttons(container, 'Confirm receipt')).toEqual([]);
+    expect(buttons(container, "I didn't receive it")).toEqual([]);
+  });
+
+  it('offers to refer an undelivered errand at 2 hours after pickup, and not before', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    service.current = order({
+      status: 'PICKED_UP',
+      courierId: 'them',
+      nonDeliveryReportAt: new Date(START + 2 * 3_600_000).toISOString(),
+    });
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    expect(buttons(container, 'Report not delivered')).toEqual([]);
+
+    await clock.advance(2 * 3_600_000 - 1000);
+    expect(buttons(container, 'Report not delivered')).toEqual([]);
+
+    await clock.advance(1000);
+    expect(buttons(container, 'Report not delivered').length).toBeGreaterThan(0);
+  });
+
+  it("measures the deadline on the server's clock when this device's is behind", async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    service.serverAhead = 10 * 60_000;
+    service.current = order({
+      status: 'PICKED_UP',
+      courierId: 'them',
+      nonDeliveryReportAt: new Date(START + service.serverAhead + 3_600_000).toISOString(),
+    });
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+
+    await clock.advance(3_600_000 - 1000);
+    expect(buttons(container, 'Report not delivered')).toEqual([]);
+
+    await clock.advance(1000);
+    expect(buttons(container, 'Report not delivered').length).toBeGreaterThan(0);
+  });
+
+  for (const [clockOff, serverAhead] of [
+    ['fast', -10 * 60_000],
+    ['slow', 10 * 60_000],
+  ] as const) {
+    it(`says a credit wait is slow after 30 seconds on the server's clock when this device's is ${clockOff}`, async () => {
+      const clock = fakeClock();
+      const service = fakeOrderService();
+      service.serverAhead = serverAhead;
+      const changed = new Date(START + serverAhead).toISOString();
+      service.current = order({ status: 'PENDING_CREDIT', updatedAt: changed });
+      const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+      expect(container.textContent).not.toContain('taking longer than usual');
+
+      for (let waited = 1_000; waited < 30_000; waited += 1_000) await clock.advance(1_000);
+      expect(container.textContent).not.toContain('taking longer than usual');
+
+      await clock.advance(1_000);
+      expect(container.textContent).toContain('taking longer than usual');
+    });
+  }
+
+  it('sends the same key when asked again at the same version after a refusal, which kept nothing', async () => {
+    const service = fakeOrderService();
+    service.current = order({
+      status: 'PICKED_UP',
+      courierId: 'them',
+      nonDeliveryReportAt: new Date(Date.now() - 1000).toISOString(),
+    });
+    service.answer = () => failure(409, 'DELIVERY_PERIOD_NOT_PASSED');
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    await confirmAction(container, 'Report not delivered', 'Report');
+
+    service.answer = () => json(200, order({ status: 'DISPUTED', courierId: 'them', version: 4 }));
+    await confirmAction(container, 'Report not delivered', 'Report');
+    expect(service.commands.map((c) => c.body)).toEqual([{ expectedVersion: 3 }, { expectedVersion: 3 }]);
+    expect(service.keys[0]).toBeTruthy();
+    expect(service.keys).toEqual([service.keys[0]!, service.keys[0]!]);
+  });
+
+  it('explains a report sent before the server agrees the period has passed', async () => {
+    const service = fakeOrderService();
+    service.current = order({
+      status: 'PICKED_UP',
+      courierId: 'them',
+      nonDeliveryReportAt: new Date(Date.now() - 1000).toISOString(),
+    });
+    service.answer = () => failure(409, 'DELIVERY_PERIOD_NOT_PASSED');
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+
+    await confirmAction(container, 'Report not delivered', 'Report');
+    expect(container.textContent).toContain("It's too early to report this errand.");
+  });
+
+  it('confirms or reports a delivered errand until it auto-confirms', async () => {
+    const service = fakeOrderService();
+    service.current = order({
+      status: 'DELIVERED',
+      courierId: 'them',
+      autoConfirmAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    expect(buttons(container, 'Confirm receipt').length).toBeGreaterThan(0);
+    expect(buttons(container, "I didn't receive it").length).toBeGreaterThan(0);
+    expect(container.textContent).toContain("it's confirmed automatically");
+  });
+
+  it('shows a referred errand as held, with no action', async () => {
+    const service = fakeOrderService();
+    service.current = order({ status: 'DISPUTED', courierId: 'them' });
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    expect(container.textContent).toContain('With an administrator');
+    expect(container.textContent).toContain("There's nothing for you to do while they decide.");
+    expect(container.querySelectorAll('button:not([aria-label="Back"])').length).toBe(0);
+  });
+});
+
+describe('updates on a visible tab', () => {
+  const reads = (service: ReturnType<typeof fakeOrderService>) =>
+    service.queries.filter((query) => query === `/orders/${ORDER_ID}`).length;
+  /** Ten minutes of settled polling, read by read, without the tab ever waking it. */
+  const goIdle = async (clock: ReturnType<typeof fakeClock>) => {
+    for (let i = 0; i < 20; i++) await clock.advance(30_000);
+  };
+
+  function Probe() {
+    const { order, problem, paused, refresh } = useOrder(ORDER_ID);
+    return (
+      <>
+        <p>{`${order?.status}: ${paused ? 'paused' : 'live'}${problem ? ` (${problem.code})` : ''}`}</p>
+        <button onClick={() => refresh()}>Refresh</button>
+      </>
+    );
+  }
+
+  for (const status of ['OPEN', 'DELIVERED', 'DISPUTED'] as const) {
+    it(`pauses settled polling on a ${status} errand after ten minutes, and says so`, async () => {
+      const clock = fakeClock();
+      const service = fakeOrderService();
+      service.current = order({ status, courierId: status === 'OPEN' ? undefined : 'them' });
+      const container = await render(<Probe />, service);
+      expect(container.textContent).toContain(`${status}: live`);
+
+      for (let i = 0; i < 19; i++) await clock.advance(30_000);
+      expect(reads(service)).toBe(20);
+      expect(container.textContent).toContain(`${status}: live`);
+
+      await clock.advance(30_000);
+      expect(reads(service)).toBe(21);
+      expect(container.textContent).toContain(`${status}: paused`);
+
+      await clock.advance(30 * 60_000);
+      expect(reads(service)).toBe(21);
+    });
+  }
+
+  it('reads once on refresh, then polls again for another ten minutes', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    const container = await render(<Probe />, service);
+    await goIdle(clock);
+    await clock.advance(5 * 60_000);
+    expect(container.textContent).toContain('paused');
+    const before = reads(service);
+
+    service.current = order({ status: 'ACCEPTED', courierId: 'them', version: 4 });
+    await act(async () => button(container, 'Refresh').click());
+    await flush();
+    expect(reads(service)).toBe(before + 1);
+    expect(container.textContent).toContain('ACCEPTED: live');
+
+    await clock.advance(29_000);
+    expect(reads(service)).toBe(before + 1);
+    await clock.advance(1_000);
+    expect(reads(service)).toBe(before + 2);
+    await goIdle(clock);
+    expect(container.textContent).toContain('ACCEPTED: paused');
+  });
+
+  /** The tab's live-update stream (N1.4), driven by the test. */
+  function fakeStream() {
+    let handlers: { onEvent(e: { event: string; data: string }): void; onStatus(s: string): void };
+    return {
+      connect: (h: typeof handlers) => {
+        handlers = h;
+        return { start() {}, stop() {}, retryNow() {} };
+      },
+      status: async (status: 'live' | 'reconnecting' | 'polling') =>
+        act(async () => handlers.onStatus(status)),
+      emit: async (event: string, data = '{}') => {
+        await act(async () => handlers.onEvent({ event, data }));
+        await flush();
+      },
+    };
+  }
+
+  it('is not paused while its live-update stream is open, since a change still reaches it at once', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    const stream = fakeStream();
+    const container = await render(
+      <LiveProvider connect={stream.connect as never}>
+        <Probe />
+      </LiveProvider>,
+      service,
+    );
+    await stream.status('live');
+    await goIdle(clock);
+    expect(container.textContent).toContain('OPEN: live');
+
+    // The stream is lost: settled polling has gone idle, so the page says so again.
+    await stream.status('reconnecting');
+    expect(container.textContent).toContain('OPEN: paused');
+  });
+
+  it("a nudge's read wakes settled polling, like a refresh", async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    const stream = fakeStream();
+    const container = await render(
+      <LiveProvider connect={stream.connect as never}>
+        <Probe />
+      </LiveProvider>,
+      service,
+    );
+    await stream.status('polling');
+    await goIdle(clock);
+    expect(container.textContent).toContain('OPEN: paused');
+    const before = reads(service);
+
+    // A newer version in the same status (its deadline was extended, say): no status change to wake it.
+    service.current = order({ version: 4 });
+    await stream.emit('errand', JSON.stringify({ orderId: ORDER_ID, version: 4 }));
+    expect(reads(service)).toBe(before + 1);
+    expect(container.textContent).toContain('OPEN: live');
+    await clock.advance(30_000);
+    expect(reads(service)).toBe(before + 2);
+  });
+
+  it('resumes when the tab comes back', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    const container = await render(<Probe />, service);
+    await goIdle(clock);
+    const before = reads(service);
+
+    await act(async () => window.document.dispatchEvent(new window.Event('visibilitychange')));
+    await flush();
+    expect(reads(service)).toBe(before + 1);
+    expect(container.textContent).toContain('OPEN: live');
+    await clock.advance(30_000);
+    expect(reads(service)).toBe(before + 2);
+  });
+
+  it('never reports a final errand as paused', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    service.current = order({ status: 'COMPLETED', courierId: 'them' });
+    const container = await render(<Probe />, service);
+    await goIdle(clock);
+    await clock.advance(30 * 60_000);
+    expect(reads(service)).toBe(1);
+    expect(container.textContent).toContain('COMPLETED: live');
+  });
+
+  for (const [code, shown] of [
+    [403, 'OPEN'],
+    [404, 'undefined'],
+  ] as const) {
+    it(`does not count a ${code} on an errand already paused as paused, and stops`, async () => {
+      const clock = fakeClock();
+      const service = fakeOrderService();
+      service.current = order({ acceptanceDeadlineAt: new Date(START + 30 * 60_000).toISOString() });
+      const container = await render(<Probe />, service);
+      await goIdle(clock);
+      expect(container.textContent).toContain('OPEN: paused');
+      const before = reads(service);
+
+      service.read = () => failure(code, code === 403 ? 'FORBIDDEN' : 'NOT_FOUND');
+      await clock.advance(20 * 60_000 + 1_000);
+      expect(reads(service)).toBe(before + 1);
+      expect(container.textContent).toContain(`${shown}: live (${code === 403 ? 'FORBIDDEN' : 'NOT_FOUND'})`);
+      await clock.advance(60 * 60_000);
+      expect(reads(service)).toBe(before + 1);
+    });
+  }
+
+  it('reports a failed idle read as a problem, not paused, and stops until asked', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    service.current = order({ status: 'DISPUTED', courierId: 'them' });
+    const container = await render(<Probe />, service);
+    for (let i = 0; i < 19; i++) await clock.advance(30_000);
+
+    service.read = () => failure(503, 'INTERNAL');
+    await clock.advance(30_000);
+    expect(reads(service)).toBe(21);
+    expect(container.textContent).toContain('DISPUTED: live (INTERNAL)');
+    await clock.advance(60 * 60_000);
+    expect(reads(service)).toBe(21);
+
+    service.read = () => json(200, service.stamp(service.current));
+    await act(async () => button(container, 'Refresh').click());
+    await flush();
+    expect(reads(service)).toBe(22);
+    expect(container.textContent).toContain('DISPUTED: live');
+    expect(container.textContent).not.toContain('INTERNAL');
+  });
+
+  it("reads again at a deadline the server acts on, on the server's clock, while paused", async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    service.serverAhead = 10 * 60_000;
+    const autoConfirmAt = new Date(START + service.serverAhead + 25 * 60_000).toISOString();
+    service.current = order({ status: 'DELIVERED', courierId: 'them', autoConfirmAt });
+    const container = await render(<Probe />, service);
+    await goIdle(clock);
+    expect(container.textContent).toContain('DELIVERED: paused');
+    const before = reads(service);
+
+    service.current = order({ status: 'COMPLETION_PENDING_CREDIT', courierId: 'them', version: 4 });
+    await clock.advance(15 * 60_000);
+    expect(reads(service)).toBe(before);
+    expect(container.textContent).toContain('DELIVERED: paused');
+
+    await clock.advance(1_000);
+    expect(reads(service)).toBe(before + 1);
+    expect(container.textContent).toContain('COMPLETION_PENDING_CREDIT: live');
+  });
+
+  it('polls again after a deadline until the server has acted on it', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    service.current = order({ acceptanceDeadlineAt: new Date(START + 30 * 60_000).toISOString() });
+    const container = await render(<Probe />, service);
+    await goIdle(clock);
+    const before = reads(service);
+
+    // The server's sweep has not run yet, so the first read still finds it open.
+    await clock.advance(20 * 60_000 + 1_000);
+    expect(reads(service)).toBe(before + 1);
+    expect(container.textContent).toContain('OPEN: live');
+
+    service.current = order({ status: 'EXPIRED', version: 5 });
+    await clock.advance(30_000);
+    expect(reads(service)).toBe(before + 2);
+    expect(container.textContent).toContain('EXPIRED: live');
+    await clock.advance(60 * 60_000);
+    expect(reads(service)).toBe(before + 2);
+  });
+
+  it('shows the pause on the errand, with a refresh that restarts updates', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    expect(container.textContent).not.toContain('Updates paused');
+
+    await goIdle(clock);
+    const status = container.querySelector('[role="status"]')!;
+    expect(status.textContent).toContain('Updates paused. Refresh to see the latest.');
+    // A live region announces its text, so the button stays out of it.
+    expect(buttons(status, 'Refresh')).toEqual([]);
+    expect(container.querySelectorAll('[role="status"] button, [role="alert"] button').length).toBe(0);
+    const before = reads(service);
+
+    const refresh = button(container, 'Refresh');
+    refresh.focus();
+    await act(async () => refresh.click());
+    await flush();
+    expect(reads(service)).toBe(before + 1);
+    expect(container.textContent).not.toContain('Updates paused');
+    expect(buttons(container, 'Refresh')).toEqual([]);
+    // The button is gone, so focus goes to the status rather than the page.
+    expect(container.ownerDocument.activeElement?.getAttribute('role')).toBe('status');
+    await clock.advance(30_000);
+    expect(reads(service)).toBe(before + 2);
+  });
+
+  it('keeps the pause shown until the refresh read answers', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    await goIdle(clock);
+    const ok = service.read;
+    let answer: () => void = () => {};
+    service.read = () => new Promise((resolve) => (answer = () => resolve(ok())));
+
+    await act(async () => button(container, 'Refresh').click());
+    await flush();
+    expect(container.textContent).toContain('Updates paused');
+    expect(buttons(container, 'Refresh').length).toBeGreaterThan(0);
+
+    await act(async () => answer());
+    await flush();
+    expect(container.textContent).not.toContain('Updates paused');
+  });
+
+  it('moves focus to the status when trying again clears the problem', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    const ok = service.read;
+    service.read = () => failure(503, 'INTERNAL');
+    await clock.advance(30_000);
+    expect(container.textContent).toContain('Could not refresh this request.');
+    expect(container.querySelectorAll('[role="status"] button, [role="alert"] button').length).toBe(0);
+
+    service.read = ok;
+    const retry = button(container, 'Try again');
+    retry.focus();
+    await act(async () => retry.click());
+    await flush();
+    expect(buttons(container, 'Try again')).toEqual([]);
+    expect(container.ownerDocument.activeElement?.getAttribute('role')).toBe('status');
+  });
+
+  it('leaves focus alone when a later read clears a problem that trying again did not', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    const ok = service.read;
+    service.read = () => failure(503, 'INTERNAL');
+    await clock.advance(30_000);
+    await act(async () => button(container, 'Try again').click());
+    await flush();
+    expect(container.textContent).toContain('Could not refresh this request.');
+
+    service.read = ok;
+    await clock.advance(30_000);
+    expect(buttons(container, 'Try again')).toEqual([]);
+    expect(container.ownerDocument.activeElement?.getAttribute('role')).not.toBe('status');
+  });
+
+  it('offers only the retry when a read fails as updates pause, and stops reading', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    service.current = order({ status: 'DISPUTED', courierId: 'them' });
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    for (let i = 0; i < 19; i++) await clock.advance(30_000);
+
+    service.read = () => failure(503, 'INTERNAL');
+    await clock.advance(30_000);
+    expect(container.textContent).toContain('Could not refresh this request.');
+    expect(container.textContent).not.toContain('Updates paused');
+    expect(buttons(container, 'Refresh')).toEqual([]);
+    expect(buttons(container, 'Try again').length).toBeGreaterThan(0);
+    const after = reads(service);
+    await clock.advance(60 * 60_000);
+    expect(reads(service)).toBe(after);
+  });
+
+  it('ties its retry button to the line it acts on, so a screen reader hears them together', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    service.current = order({ status: 'DISPUTED', courierId: 'them' });
+    const container = await render(<OrderDetail orderId={ORDER_ID} />, service);
+    const describing = (b: Element) =>
+      container.ownerDocument.getElementById(b.getAttribute('aria-describedby') ?? '')?.textContent;
+
+    await goIdle(clock);
+    expect(buttons(container, 'Refresh').length).toBeGreaterThan(0);
+    for (const refresh of buttons(container, 'Refresh'))
+      expect(describing(refresh)).toBe('Updates paused. Refresh to see the latest.');
+
+    service.read = () => failure(503, 'INTERNAL');
+    await act(async () => button(container, 'Refresh').click());
+    await flush();
+    expect(buttons(container, 'Try again').length).toBeGreaterThan(0);
+    for (const retry of buttons(container, 'Try again'))
+      expect(describing(retry)).toContain('Could not refresh this request.');
+  });
+});
+
+describe('credits', () => {
+  const pills = (container: HTMLElement) => container.textContent?.match(/\d+ credits/g);
+
+  it('does not read the wallet on a screen without a credit pill', async () => {
+    const service = fakeOrderService();
+    await render(<TopBar showCreditPill={false} />, service, false);
+    expect(service.walletReads).toBe(0);
+  });
+
+  it('refreshes the balance when the first order read is already open', async () => {
+    const service = fakeOrderService();
+    service.wallet = () => json(200, { available: service.walletReads === 1 ? 5 : 2 });
+    const container = await render(
+      <>
+        <TopBar />
+        <OrderDetail orderId={ORDER_ID} />
+      </>,
+      service,
+    );
+    expect(service.walletReads).toBe(2);
+    expect(pills(container)).toContain('2 credits');
+  });
+
+  it('reads the balance once for every top bar, and keeps it when a read fails', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    const container = await render(
+      <>
+        <TopBar />
+        <TopBar />
+      </>,
+      service,
+    );
+    expect(pills(container)).toEqual(['5 credits', '5 credits']);
+    expect(service.walletReads).toBe(1);
+
+    service.wallet = () => failure(503, 'INTERNAL');
+    await clock.advance(30_000);
+    expect(service.walletReads).toBe(2);
+    expect(pills(container)).toEqual(['5 credits', '5 credits']);
+  });
+
+  it('reads the balance again after the errand leaves a credit-waiting state', async () => {
+    const clock = fakeClock();
+    const service = fakeOrderService();
+    service.answer = () => {
+      service.current = order({ status: 'RELEASE_PENDING_CREDIT', releaseReason: 'CANCELLED', version: 4 });
+      return json(200, service.current);
+    };
+    const container = await render(
+      <>
+        <TopBar />
+        <OrderDetail orderId={ORDER_ID} />
+      </>,
+      service,
+    );
+    expect(container.textContent).toContain('5 credits');
+
+    service.wallet = () => json(200, { available: 8 });
+    await confirmAction(container, 'Cancel errand', 'Cancel errand');
+    expect(container.textContent).toContain('5 credits');
+    expect(service.walletReads).toBe(2);
+
+    service.current = order({ status: 'CANCELLED', releaseReason: 'CANCELLED', version: 5 });
+    await clock.advance(1_000);
+    expect(container.textContent).toContain('8 credits');
+    expect(service.walletReads).toBe(3);
+  });
+});

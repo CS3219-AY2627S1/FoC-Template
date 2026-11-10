@@ -1,0 +1,196 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (Claude Opus 5.5, Claude Sonnet 5, Claude Opus 4.8), dates: 2026-09-20 to
+//   2026-10-27
+// Scope: Generated the initial implementation for "login, refresh-token rotation and logout"
+//   (USR-02, #189); later bug fixes and new features.
+// Author review: Anselm Long, Patrick Thomas and Jonus Ho reviewed the implementation for
+//   correctness, ran it against the test suite, and checked that it fits our service boundaries
+//   without fatal errors before committing.
+
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import { execute, type Database } from '../db/db.js';
+import { refreshSessions, users } from '../db/schema.js';
+import type { AccountStatus } from '../users/users.repository.js';
+
+export interface LockedSession {
+  id: string;
+  familyId: string;
+  userId: string;
+  expired: boolean;
+  rotated: boolean;
+  revoked: boolean;
+  userStatus: AccountStatus;
+  mustChangePassword: boolean;
+}
+
+/** All SQL for refresh sessions. Every function takes a {@link Database} so callers control the transaction. */
+export const sessionsRepository = {
+  /**
+   * Starts the session a refresh hands out in place of `continues`. It is the same sign-in, so it
+   * keeps the family, the expiry fixed at login (US-FR1.1.2: seven days however often it refreshes)
+   * and a recent password re-entry (ADR 0008).
+   */
+  async rotate(
+    db: Database,
+    s: { id: string; tokenHash: string; continues: string },
+  ): Promise<void> {
+    await execute(
+      db,
+      sql`
+      INSERT INTO ${refreshSessions} (id, family_id, user_id, token_hash, expires_at, stepped_up_at)
+      SELECT ${s.id}, family_id, user_id, ${s.tokenHash}, expires_at, stepped_up_at
+      FROM ${refreshSessions} WHERE id = ${s.continues}`,
+    );
+  },
+
+  /**
+   * Starts a login's session only if the account is still what the caller verified: the same
+   * password hash, `ACTIVE`, and not flagged. Returns false otherwise. `FOR SHARE` waits out a
+   * password change or suspension in flight and then re-reads the row, so a login that verified the
+   * old password cannot add a session after that change revoked the account's others.
+   */
+  async insertIfLoginable(
+    db: Database,
+    s: { id: string; familyId: string; userId: string; tokenHash: string; ttlDays: number },
+    verifiedPasswordHash: string,
+  ): Promise<boolean> {
+    // One statement; Drizzle's insert-select would have to list every column.
+    const inserted = await execute(
+      db,
+      sql`
+      INSERT INTO ${refreshSessions} (id, family_id, user_id, token_hash, expires_at)
+      SELECT ${s.id}, ${s.familyId}, ${s.userId}, ${s.tokenHash},
+             now() + make_interval(days => ${s.ttlDays})
+      WHERE EXISTS (
+        SELECT 1 FROM ${users}
+        WHERE id = ${s.userId} AND password_hash = ${verifiedPasswordHash}
+          AND status = 'ACTIVE' AND NOT must_change_password
+        FOR SHARE)
+      RETURNING id`,
+    );
+    return inserted.length > 0;
+  },
+
+  /**
+   * Reads a session by token hash and locks its row for the transaction, so two
+   * simultaneous refreshes with the same token are serialised: the second sees
+   * the first's rotation and is treated as reuse.
+   */
+  async lockByHash(db: Database, tokenHash: string): Promise<LockedSession | null> {
+    const rows = await db
+      .select({
+        id: refreshSessions.id,
+        familyId: refreshSessions.familyId,
+        userId: refreshSessions.userId,
+        expired: sql<boolean>`${refreshSessions.expiresAt} <= now()`,
+        rotated: sql<boolean>`${refreshSessions.rotatedAt} IS NOT NULL`,
+        revoked: sql<boolean>`${refreshSessions.revokedAt} IS NOT NULL`,
+        status: users.status,
+        mustChangePassword: users.mustChangePassword,
+      })
+      .from(refreshSessions)
+      .innerJoin(users, eq(users.id, refreshSessions.userId))
+      .where(eq(refreshSessions.tokenHash, tokenHash))
+      .for('update', { of: refreshSessions });
+    const r = rows[0];
+    return r
+      ? {
+          id: r.id,
+          familyId: r.familyId,
+          userId: r.userId,
+          expired: r.expired,
+          rotated: r.rotated,
+          revoked: r.revoked,
+          userStatus: r.status,
+          mustChangePassword: r.mustChangePassword,
+        }
+      : null;
+  },
+
+  async markRotated(db: Database, id: string): Promise<void> {
+    await db
+      .update(refreshSessions)
+      .set({ rotatedAt: sql`now()` })
+      .where(eq(refreshSessions.id, id));
+  },
+
+  async revokeFamily(db: Database, familyId: string): Promise<void> {
+    await db
+      .update(refreshSessions)
+      .set({ revokedAt: sql`now()` })
+      .where(and(eq(refreshSessions.familyId, familyId), isNull(refreshSessions.revokedAt)));
+  },
+
+  /** Revokes the whole family the given token belongs to. Idempotent; unknown tokens do nothing. */
+  async revokeFamilyByTokenHash(db: Database, tokenHash: string): Promise<void> {
+    await db
+      .update(refreshSessions)
+      .set({ revokedAt: sql`now()` })
+      .where(
+        and(
+          isNull(refreshSessions.revokedAt),
+          eq(
+            refreshSessions.familyId,
+            sql`(SELECT family_id FROM refresh_sessions WHERE token_hash = ${tokenHash})`,
+          ),
+        ),
+      );
+  },
+
+  /** Used when an account is suspended: every session it owns dies at once. */
+  async revokeAllForUser(db: Database, userId: string): Promise<void> {
+    await db
+      .update(refreshSessions)
+      .set({ revokedAt: sql`now()` })
+      .where(and(eq(refreshSessions.userId, userId), isNull(refreshSessions.revokedAt)));
+  },
+
+  /** Records a password re-entry on a live session of this user (`POST /auth/step-up`). */
+  async markSteppedUp(db: Database, sessionId: string, userId: string): Promise<boolean> {
+    const rows = await db
+      .update(refreshSessions)
+      .set({ steppedUpAt: sql`now()` })
+      .where(
+        and(
+          eq(refreshSessions.id, sessionId),
+          eq(refreshSessions.userId, userId),
+          isNull(refreshSessions.revokedAt),
+        ),
+      )
+      .returning({ id: refreshSessions.id });
+    return rows.length > 0;
+  },
+
+  /** Whether the password was re-entered on this session within the last `seconds` (ADR 0008). */
+  async steppedUpWithin(db: Database, sessionId: string, seconds: number): Promise<boolean> {
+    const rows = await db
+      .select({
+        fresh: sql<boolean>`coalesce(${refreshSessions.steppedUpAt} > now() - make_interval(secs => ${seconds}), false)`,
+      })
+      .from(refreshSessions)
+      // A revoked session's re-entry counts for nothing, whatever reached here with its id.
+      .where(and(eq(refreshSessions.id, sessionId), isNull(refreshSessions.revokedAt)));
+    return rows[0]?.fresh === true;
+  },
+
+  /**
+   * For the access-token guard and introspection: is this session still usable, and what state is
+   * its account in? An account that must replace a bootstrap password has no live session: login
+   * never starts one, so any it has predates migration 004 or came from an instance on older code.
+   */
+  async liveness(
+    db: Database,
+    sessionId: string,
+    userId: string,
+  ): Promise<{ live: boolean; status: AccountStatus } | null> {
+    const rows = await db
+      .select({
+        live: sql<boolean>`(${refreshSessions.revokedAt} IS NULL AND ${refreshSessions.expiresAt} > now() AND NOT ${users.mustChangePassword})`,
+        status: users.status,
+      })
+      .from(refreshSessions)
+      .innerJoin(users, eq(users.id, refreshSessions.userId))
+      .where(and(eq(refreshSessions.id, sessionId), eq(refreshSessions.userId, userId)));
+    return rows[0] ?? null;
+  },
+};

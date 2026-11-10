@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# AI Assistance Disclosure:
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
+# Scope: Implementation for "wire the fifth service into the stack" (NTH-11, #345).
+# Author review: Zhang Yuan verified correctness, tested the change, and checked for fatal errors
+#   and conflicts with our architecture before committing.
+
+# Shared by the backup and restore entry points. Sourced after scripts-env.sh.
+
+RECOVERY_APPS=(edge web-app user-service supplier-service order-service credit-service chat-service)
+
+recovery_error() { echo "Recovery failed: $*" >&2; return 1; }
+
+# Check both normal/retry/DLQ broker queues and durable unpublished outboxes. Published rows may
+# already have been pruned, so outbox replay alone is not a substitute for this quiet boundary.
+recovery_drained() {
+  local queues pending db
+  queues=$(docker compose exec -T rabbitmq rabbitmqctl -q list_queues name messages --formatter=json) || return 1
+  if ! python3 -c 'import json,sys; q=json.load(sys.stdin); sys.exit(0 if all(x["messages"] == 0 for x in q) else 1)' <<<"$queues"; then
+    return 1
+  fi
+  # Supplier and Chat publish no events and have no outbox table.
+  for db in foc_user foc_order foc_credit; do
+    pending=$(docker compose exec -T postgres psql -XqAt -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-postgres}" -d "$db" \
+      -c 'SELECT count(*) FROM outbox_events WHERE published_at IS NULL') || return 1
+    [[ "$pending" == 0 ]] || return 1
+  done
+}
+
+recovery_broker_empty() {
+  local queues
+  queues=$(docker compose exec -T rabbitmq rabbitmqctl -q list_queues name messages --formatter=json) || return 1
+  python3 -c 'import json,sys; sys.exit(0 if all(x["messages"] == 0 for x in json.load(sys.stdin)) else 1)' <<<"$queues"
+}
+
+recovery_apps_stopped() {
+  local running
+  running=$(docker compose ps --status running --services) || return 1
+  if printf '%s\n' "$running" | grep -qE '^(edge|web-app|(user|supplier|order|credit|chat)-service(-migrate)?)$'; then
+    recovery_error 'Application or migration containers are running; stop them before restoring.'
+    return 1
+  fi
+}

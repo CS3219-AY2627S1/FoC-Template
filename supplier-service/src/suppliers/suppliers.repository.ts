@@ -1,0 +1,259 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (Claude Opus 4.8, Claude Opus 5.5), dates: 2026-09-28 to 2026-10-01
+// Scope: Generated the initial implementation for "SUP-01: supplier schema, admin CRUD, and
+//   idempotent seed" (SUP-01, #187, SUP-02); later new features and bug fixes.
+// Author review: Patrick Thomas checked the code for correctness against the ticket, confirmed the
+//   tests pass, and made sure it caused no fatal errors or architectural conflicts before
+//   committing.
+
+import { escapeLike } from '@foc/platform';
+import { and, eq, sql } from 'drizzle-orm';
+import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
+import type { Database } from '../db/db.js';
+import { suppliers, supplierIdempotencyKeys } from '../db/schema.js';
+import type { SupplierInput, SupplierListRow, SupplierRow } from './types.js';
+import type { SupplierListQuery, SupplierSort } from './validation.js';
+
+/** Postgres error code for a unique-constraint violation, shared by `pg` and PGlite. */
+export const UNIQUE_VIOLATION = '23505';
+
+/**
+ * Drizzle wraps a failed query in a `DrizzleQueryError`, carrying the original
+ * driver error (with its `code` and `constraint`) on `.cause`; older/raw paths
+ * may throw the driver error directly. Check both so a unique violation is
+ * recognised either way.
+ */
+export const isUniqueViolation = (err: unknown, constraint?: string): boolean => {
+  const driver = (err as { cause?: unknown })?.cause ?? err;
+  const e = driver as { code?: string; constraint?: string } | null;
+  if (!e || e.code !== UNIQUE_VIOLATION) return false;
+  return constraint ? e.constraint === constraint : true;
+};
+
+/** A record ready to store: the validated input plus its stable primary key. */
+export interface NewSupplier extends SupplierInput {
+  supplierId: string;
+}
+
+/** Columns an update may set. Keys come from this fixed list, never from input keys. */
+const UPDATABLE_KEYS = [
+  'name',
+  'type',
+  'building',
+  'floor',
+  'locationDescription',
+  'openingHours',
+  'latitude',
+  'longitude',
+  'imageUrl',
+  'tags',
+] as const satisfies readonly (keyof SupplierInput)[];
+
+/** Maps a validated input to the row Drizzle inserts (jsonb columns are serialized for us). */
+const insertValues = (s: NewSupplier): typeof suppliers.$inferInsert => ({
+  supplierId: s.supplierId,
+  name: s.name,
+  type: s.type,
+  building: s.building,
+  floor: s.floor,
+  locationDescription: s.locationDescription,
+  openingHours: s.openingHours ?? null,
+  latitude: s.latitude ?? null,
+  longitude: s.longitude ?? null,
+  imageUrl: s.imageUrl ?? null,
+  tags: s.tags ?? null,
+});
+
+/**
+ * Sort field → sort key. The key set is closed (validated), so the expression is
+ * never caller-derived. Text keys are lower-cased so casing never decides order
+ * under a byte-order collation.
+ */
+const SORT_KEY: Record<SupplierSort, string> = {
+  name: 'lower(name)',
+  type: 'type',
+  building: 'lower(building)',
+  updatedAt: 'updated_at',
+};
+
+/** Tie-breaks after the requested sort key, always ascending, so equal keys keep a stable A→Z order. */
+const TIE_BREAKS = ['lower(name)', 'supplier_id'];
+
+/**
+ * All SQL for the suppliers tables, expressed through Drizzle. Every function
+ * takes a {@link Database} — the top-level instance or a transaction handle — so
+ * the service can run several of them in one transaction.
+ */
+export const suppliersRepository = {
+  /** Inserts a supplier. Throws the unique violation on an active name+building clash. */
+  async insert(db: Database, s: NewSupplier): Promise<SupplierRow> {
+    const rows = await db.insert(suppliers).values(insertValues(s)).returning();
+    return rows[0]!;
+  },
+
+  /** Insert-if-absent, keyed on the stable primary key. Returns the row only when it was created. */
+  async insertIfAbsent(db: Database, s: NewSupplier): Promise<SupplierRow | null> {
+    const rows = await db
+      .insert(suppliers)
+      .values(insertValues(s))
+      .onConflictDoNothing({ target: suppliers.supplierId })
+      .returning();
+    return rows[0] ?? null;
+  },
+
+  /** A single supplier by id, active or not — a deactivated supplier stays resolvable. */
+  async findById(db: Database, id: string): Promise<SupplierRow | null> {
+    const rows = await db.select().from(suppliers).where(eq(suppliers.supplierId, id));
+    return rows[0] ?? null;
+  },
+
+  /** The distinct buildings of the active suppliers, unordered. */
+  async activeBuildings(db: Database): Promise<string[]> {
+    const rows = await db
+      .selectDistinct({ building: suppliers.building })
+      .from(suppliers)
+      .where(eq(suppliers.active, true));
+    return rows.map((r) => r.building);
+  },
+
+  /**
+   * A page of active suppliers, filtered, searched and sorted (SUP-02), with
+   * the unpaged `total`. One statement, so both come from one snapshot, and an
+   * out-of-range page still reports the total.
+   */
+  async list(
+    db: Database,
+    f: SupplierListQuery,
+  ): Promise<{ rows: SupplierListRow[]; total: number }> {
+    const where = [sql`active`];
+    if (f.type) where.push(sql`type = ${f.type}`);
+    if (f.building) where.push(sql`lower(building) = lower(${f.building})`);
+    if (f.q) {
+      const term = `%${escapeLike(f.q)}%`;
+      where.push(
+        sql`(name ILIKE ${term} ESCAPE '\\'
+          OR building ILIKE ${term} ESCAPE '\\'
+          OR location_description ILIKE ${term} ESCAPE '\\'
+          OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(tags) AS tag
+                     WHERE tag ILIKE ${term} ESCAPE '\\'))`,
+      );
+    }
+
+    // `order` is validated to asc|desc and every key comes from a fixed map, so
+    // neither reaches SQL from raw input. Only the primary key takes `order`.
+    const primary = SORT_KEY[f.sort];
+    const orderBy = sql.join(
+      [
+        sql.raw(`${primary} ${f.order === 'desc' ? 'DESC' : 'ASC'}`),
+        ...TIE_BREAKS.filter((k) => k !== primary).map((key) => sql.raw(key)),
+      ],
+      sql`, `,
+    );
+
+    // The count is the driving row, so an empty page still yields one row
+    // carrying the total (with null supplier columns). The join does not promise
+    // to keep the page's order, so the outer query restates it.
+    const result = await db.execute(
+      sql`WITH matched AS (SELECT * FROM suppliers WHERE ${sql.join(where, sql` AND `)})
+       SELECT counted.total, page.supplier_id AS "supplierId", page.name,
+              page.type, page.building, page.image_url AS "imageUrl"
+       FROM (SELECT count(*)::int AS total FROM matched) AS counted
+       LEFT JOIN (
+         SELECT * FROM matched ORDER BY ${orderBy}
+         LIMIT ${f.pageSize} OFFSET ${(f.page - 1) * f.pageSize}
+       ) AS page ON true
+       ORDER BY ${orderBy}`,
+    );
+    type PageRow = Omit<SupplierListRow, 'supplierId'> & {
+      supplierId: string | null;
+      total: number;
+    };
+    const rows = (result as { rows: PageRow[] }).rows;
+    return {
+      total: rows[0]!.total,
+      rows: rows.filter((r): r is PageRow & SupplierListRow => r.supplierId !== null),
+    };
+  },
+
+  /**
+   * Applies only the fields present, bumping the version and `updated_at`, but
+   * only if the row is still at `expectedVersion`. Returns the new row, or null
+   * if the version did not match (a stale edit) or the row does not exist.
+   */
+  async update(
+    db: Database,
+    id: string,
+    expectedVersion: number,
+    changes: Partial<SupplierInput>,
+  ): Promise<SupplierRow | null> {
+    const set: PgUpdateSetSource<typeof suppliers> = {
+      version: sql`${suppliers.version} + 1`,
+      updatedAt: sql`now()`,
+    };
+    for (const key of UPDATABLE_KEYS) {
+      // `in` (not a truthiness check) so an explicit null still clears a column.
+      if (key in changes) (set as Record<string, unknown>)[key] = changes[key] ?? null;
+    }
+    const rows = await db
+      .update(suppliers)
+      .set(set)
+      .where(and(eq(suppliers.supplierId, id), eq(suppliers.version, expectedVersion)))
+      .returning();
+    return rows[0] ?? null;
+  },
+
+  /**
+   * Soft-deactivates an active supplier at `expectedVersion`, bumping the
+   * version. Returns the row, or null if it did not match — i.e. the row is
+   * missing, already inactive, or at a different version. The service reads the
+   * row back to tell those cases apart (idempotent no-op vs. 404 vs. 412).
+   */
+  async deactivate(db: Database, id: string, expectedVersion: number): Promise<SupplierRow | null> {
+    const rows = await db
+      .update(suppliers)
+      .set({ active: false, version: sql`${suppliers.version} + 1`, updatedAt: sql`now()` })
+      .where(
+        and(
+          eq(suppliers.supplierId, id),
+          eq(suppliers.version, expectedVersion),
+          eq(suppliers.active, true),
+        ),
+      )
+      .returning();
+    return rows[0] ?? null;
+  },
+
+  /**
+   * The prior result for an Idempotency-Key: the supplier it produced and the
+   * hash of the request body that claimed it, so the service can replay a
+   * matching request but reject a reused key carrying a different body.
+   */
+  async findIdempotent(
+    db: Database,
+    key: string,
+  ): Promise<{ supplierId: string; requestHash: string } | null> {
+    const rows = await db
+      .select({
+        supplierId: supplierIdempotencyKeys.supplierId,
+        requestHash: supplierIdempotencyKeys.requestHash,
+      })
+      .from(supplierIdempotencyKeys)
+      .where(eq(supplierIdempotencyKeys.idempotencyKey, key));
+    return rows[0] ?? null;
+  },
+
+  /** Claims a key for a supplier, storing the request hash. Returns false if another request already claimed it. */
+  async claimIdempotencyKey(
+    db: Database,
+    key: string,
+    supplierId: string,
+    requestHash: string,
+  ): Promise<boolean> {
+    const rows = await db
+      .insert(supplierIdempotencyKeys)
+      .values({ idempotencyKey: key, supplierId, requestHash })
+      .onConflictDoNothing({ target: supplierIdempotencyKeys.idempotencyKey })
+      .returning({ idempotencyKey: supplierIdempotencyKeys.idempotencyKey });
+    return rows.length > 0;
+  },
+};

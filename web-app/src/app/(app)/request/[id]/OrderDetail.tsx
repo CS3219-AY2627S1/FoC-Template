@@ -1,0 +1,307 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (Claude Opus 5.5, Claude Fable 5.1), dates: 2026-10-20 to 2026-11-05
+// Scope: Generated the initial implementation for "request composer on the Order API" (WEB-01,
+//   WEB-04, WEB-02); later bug fixes, new features and refactoring.
+// Author review: Patrick Thomas and Jonus Ho validated the behaviour and the implementation,
+//   checked for fatal errors, and confirmed it does not conflict with the architecture before
+//   committing.
+
+"use client";
+
+import { useEffect, useId, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ActionDialog } from "@/components/ActionDialog";
+import { Badge } from "@/components/Badge";
+import { Button, buttonClass } from "@/components/Button";
+import { ChatPanel } from "@/components/ChatPanel";
+import styles from "./order-detail.module.css";
+import { FormAlert } from "@/components/FormField";
+import { NavRow } from "@/components/NavRow";
+import { ScreenHeader } from "@/components/ScreenHeader";
+import { ErrorState, LoadingState } from "@/components/States";
+import { ErrandHistory } from "@/components/ErrandHistory";
+import { ErrandProgress } from "@/components/ErrandProgress";
+import type { ApiError } from "@/lib/api-client";
+import { useAuth } from "@/lib/auth";
+import { draftFrom, itemsLabel, saveDraft } from "@/lib/composer";
+import { useCredits } from "@/lib/credits";
+import type { Order } from "@/lib/order-api";
+import { actionDeadline, actionsFor, roleIn, type OrderAction, type Role } from "@/lib/order-actions";
+import { isFinal, rejectionMessage, statusWording, waitsOnCredit } from "@/lib/order-status";
+import { useNowAfter } from "@/lib/use-now";
+import { useOrder } from "@/lib/use-order";
+import { useOrderHistory } from "@/lib/use-order-history";
+import { useOrderAction } from "@/lib/use-order-action";
+import { useUrlFlag } from "@/lib/use-query-param";
+import { vars } from "@/styles/tokens";
+
+/** `at` on the server's clock, shown as this device's clock will read then. */
+function when(at: string, skew: number) {
+  const date = new Date(Date.parse(at) + skew);
+  const today = date.toDateString() === new Date().toDateString();
+  return date.toLocaleString([], {
+    ...(today ? {} : { weekday: "short" }),
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** What this errand's details mean for this role now, such as its deadline. */
+function statusNote(order: Order, role: Role, passed: boolean, skew: number): string | null {
+  if (order.status === "OPEN" && order.acceptanceDeadlineAt)
+    return `Open until ${when(order.acceptanceDeadlineAt, skew)}`;
+  if (order.status === "DISPUTED" && role) return "There's nothing for you to do while they decide.";
+  if (role !== "REQUESTER") return null;
+  if (order.status === "PICKED_UP" && order.nonDeliveryReportAt)
+    return passed
+      ? "If it still hasn't arrived, you can report it to an administrator."
+      : `If it hasn't arrived by ${when(order.nonDeliveryReportAt, skew)}, you can report it to an administrator.`;
+  if (order.status === "DELIVERED" && order.autoConfirmAt)
+    return passed
+      ? "It's too late to report it now. If you don't confirm it, it's confirmed automatically."
+      : `If you don't answer by ${when(order.autoConfirmAt, skew)}, it's confirmed automatically.`;
+  return null;
+}
+
+const ROLE_LABEL: Record<Exclude<Role, null>, string> = {
+  REQUESTER: "You requested this errand",
+  COURIER: "You're the courier",
+};
+
+function StatusBody({
+  order,
+  replayed,
+  role,
+  actions,
+  passed,
+  skew,
+  stillWaiting,
+  paused,
+  problem,
+  notice,
+  acted,
+  onAct,
+  onRetry,
+}: {
+  order: Order;
+  replayed: boolean;
+  role: Role;
+  actions: OrderAction[];
+  passed: boolean;
+  skew: number;
+  stillWaiting: boolean;
+  /** Updates have stopped until the student refreshes, which `onRetry` does. */
+  paused: boolean;
+  problem: ApiError | null;
+  notice: string | null;
+  /** Counts commands that went through. The button that sent one may be gone, so focus comes here. */
+  acted: number;
+  onAct: (action: OrderAction) => void;
+  onRetry: () => void;
+}) {
+  const router = useRouter();
+  const { user } = useAuth();
+  const status = useRef<HTMLDivElement>(null);
+  const muted = { fontSize: vars.text.md, color: vars.color.textMuted };
+  const { explanation, slow } = statusWording(order, role);
+  const note = statusNote(order, role, passed, skew);
+  const { supplier } = order;
+
+  useEffect(() => {
+    if (acted) status.current?.focus();
+  }, [acted]);
+
+  // The retry button goes once its read succeeds, so focus comes to the status if it went with it.
+  const retried = useRef(false);
+  const stale = paused || !!problem;
+  // The button names the line it acts on, the pause hint or the problem, for a screen reader.
+  const hint = useId();
+  const failed = useId();
+  useEffect(() => {
+    if (paused || !retried.current) return;
+    retried.current = false;
+    if (!problem && document.activeElement === document.body) status.current?.focus();
+  }, [paused, problem]);
+
+  return (
+    <>
+      <div>
+        <Badge order={order} role={role} />
+      </div>
+      {role && <ErrandProgress status={order.status} reward={order.reward} role={role} />}
+      <div
+        ref={status}
+        role="status"
+        tabIndex={-1}
+        style={{ display: "flex", flexDirection: "column", gap: vars.space[2] }}
+      >
+        {replayed && (
+          <p style={{ ...muted, fontWeight: vars.weight.semibold }}>
+            This request was already posted, so it wasn&apos;t posted again.
+          </p>
+        )}
+        <p style={muted}>{explanation}</p>
+        {stillWaiting && slow && <p style={muted}>{slow}</p>}
+        {note && <p style={{ ...muted, fontWeight: vars.weight.semibold }}>{note}</p>}
+        {order.status === "REJECTED" && <p style={muted}>{rejectionMessage(order)}</p>}
+        {paused && (
+          <p id={hint} style={muted}>
+            Updates paused. Refresh to see the latest.
+          </p>
+        )}
+      </div>
+      {/* Straight after the status, so no notice comes between the hint and its button. */}
+      {stale && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: vars.space[2] }}>
+          {problem && (
+            <p id={failed} role="alert" style={{ fontSize: vars.text.sm, color: vars.color.danger }}>
+              Could not refresh this request. {problem.message}
+            </p>
+          )}
+          <Button
+            variant="outline"
+            aria-describedby={problem ? failed : hint}
+            onClick={() => {
+              retried.current = true;
+              onRetry();
+            }}
+          >
+            {problem ? "Try again" : "Refresh"}
+          </Button>
+        </div>
+      )}
+      <FormAlert tone="info" takeFocus>{notice}</FormAlert>
+      {role && <NavRow label="Your part" value={ROLE_LABEL[role]} />}
+      <NavRow
+        label="Pickup"
+        value={`${supplier.building}, floor ${supplier.floor}. ${supplier.locationDescription}`}
+      />
+      <NavRow label="Items" value={itemsLabel(order.items)} />
+      <NavRow label="Delivery zone" value={order.deliveryZone} />
+      {order.deliveryInstructions && (
+        <NavRow label="Delivery instructions" value={order.deliveryInstructions} />
+      )}
+      <NavRow label="Reward" value={`${order.reward} credits`} />
+      {actions.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: vars.space[2] }}>
+          {actions.map((action) => (
+            <Button key={action.command} variant={action.variant} onClick={() => onAct(action)}>
+              {action.label}
+            </Button>
+          ))}
+        </div>
+      )}
+      {role && order.status === "COMPLETED" && (
+        <Link
+          href={`/request/${order.orderId}/receipt`}
+          className={buttonClass({ variant: "outline", full: true })}
+        >
+          View receipt
+        </Link>
+      )}
+      {role === "REQUESTER" && (order.status === "REJECTED" || order.status === "EXPIRED") && (
+        <Button
+          full
+          onClick={() => {
+            if (user) saveDraft(user.id, draftFrom(order));
+            router.push(`/request/new/details?supplierId=${order.supplier.supplierId}`);
+          }}
+        >
+          Post a new request
+        </Button>
+      )}
+    </>
+  );
+}
+
+/** One errand, with the next steps the signed-in student may take on it. */
+export function OrderDetail({ orderId }: { orderId: string }) {
+  const router = useRouter();
+  const { user } = useAuth();
+  const { order, skew, problem, stillWaiting, paused, refresh } = useOrder(orderId);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [acted, setActed] = useState(0);
+  const { refresh: refreshCredits } = useCredits();
+  const wasWaitingForCredits = useRef<boolean | null>(null);
+  const orderStatus = order?.status;
+  const role = order ? roleIn(order, user?.id) : null;
+  const history = useOrderHistory(orderId, order?.version, role !== null);
+  const deadline = order ? actionDeadline(order, role) : null;
+  // `now` is on the server's clock, like the deadlines: this device's may be wrong.
+  const now = useNowAfter(() => (deadline === null ? null : deadline + skew)) - skew;
+  const act = useOrderAction({
+    onDone: (next) => {
+      // Only a withdrawal takes the courier off the errand, leaving nothing here for them.
+      if (role === "COURIER" && !roleIn(next, user?.id)) {
+        router.push("/feed?withdrawn=1");
+        return;
+      }
+      setNotice(null);
+      setActed((n) => n + 1);
+      refresh(next);
+    },
+    onStale: (message) => {
+      setNotice(message);
+      refresh();
+    },
+  });
+  const title = order?.supplier.name ?? "Request";
+  const [replayed, setReplayed] = useState(false);
+  useEffect(() => {
+    if (!orderStatus) return;
+    const waiting = waitsOnCredit(orderStatus);
+    const firstSettledRead = wasWaitingForCredits.current === null && !isFinal(orderStatus);
+    if (!waiting && (wasWaitingForCredits.current === true || firstSettledRead)) refreshCredits();
+    wasWaitingForCredits.current = waiting;
+  }, [orderStatus, refreshCredits]);
+  useUrlFlag("replayed", () => setReplayed(true));
+
+  const body = order ? (
+    <div className={styles.details}>
+      <StatusBody
+        order={order}
+        replayed={replayed}
+        role={role}
+        actions={actionsFor(order, role, now)}
+        passed={deadline !== null && now >= deadline}
+        skew={skew}
+        stillWaiting={stillWaiting}
+        paused={paused}
+        problem={problem}
+        notice={notice}
+        acted={acted}
+        onAct={(action) => {
+          setNotice(null);
+          act.ask(order, action);
+        }}
+        onRetry={() => refresh()}
+      />
+      {role && <ErrandHistory {...history} />}
+    </div>
+  ) : problem ? (
+    <ErrorState
+      title={problem.status === 404 ? "This request no longer exists." : "Could not load this request"}
+      onRetry={problem.status === 404 ? undefined : () => refresh()}
+    >
+      {problem.status !== 404 && problem.message}
+    </ErrorState>
+  ) : (
+    <LoadingState label="Loading your request…" rows={2} />
+  );
+
+  return (
+    <>
+      <main className={styles.page}>
+        <div className={styles.panel}>
+          <ScreenHeader title={title} />
+          <div className={styles.body}>
+            {body}
+            {order && role && <ChatPanel orderId={orderId} version={order.version} final={isFinal(order.status)} />}
+          </div>
+        </div>
+      </main>
+      <ActionDialog state={act} />
+    </>
+  );
+}

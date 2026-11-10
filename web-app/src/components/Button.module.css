@@ -1,0 +1,64 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--size-control);
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-md);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  transition:
+    filter var(--motion-fast) ease,
+    transform var(--motion-fast) var(--motion-ease-out),
+    background-color var(--motion-base) ease,
+    border-color var(--motion-base) ease;
+}
+
+.button:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+/* A press you can feel, so a tap registers before the server answers. */
+.button:active:not(:disabled) {
+  filter: brightness(0.9);
+  transform: scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.accent {
+  background: var(--color-accent);
+  color: var(--color-text);
+}
+
+/* The control border, drawn at 3:1 like a text field's, so the button's edge reads as one. */
+.outline {
+  border: 1px solid var(--color-control-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.subtle {
+  background: var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.full {
+  width: 100%;
+}

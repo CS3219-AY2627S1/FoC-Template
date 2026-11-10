@@ -1,0 +1,886 @@
+import { EventEmitter } from 'node:events';
+import { Logger } from '@nestjs/common';
+import type { ChannelModel, ConsumeMessage, Options } from 'amqplib';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Metrics } from '../metrics.js';
+import { userActivatedPayload } from './catalogue.js';
+import { BrokerConnection } from './connection.js';
+import { EventConsumer, UnparseableMessageError, type SubscribeOptions } from './consumer.js';
+import { PredecessorMissingError, StaleEventError, createEnvelope } from './envelope.js';
+import {
+  DLX,
+  HEADER_ATTEMPT,
+  HEADER_FAILURE,
+  HEADER_ORIGINAL_QUEUE,
+  deadLetterQueueName,
+  retryExchangeName,
+  retryQueueName,
+  type SubscriptionSpec,
+} from './topology.js';
+
+/**
+ * The broker's failure modes, without a broker: a fake channel and connection
+ * that record what was declared, consumed, published and settled, and can be
+ * closed the ways a real one is.
+ */
+type Delivery = (message: ConsumeMessage | null) => void;
+let deliveryTag = 0;
+
+class FakeChannel extends EventEmitter {
+  /** The next consume() fails the way a server-side refusal does: the channel is closed. */
+  static failNextConsume = false;
+  open = true;
+  readonly queues = new Map<string, Options.AssertQueue>();
+  readonly consumers = new Map<string, Delivery>();
+  readonly published: Array<{
+    exchange: string;
+    routingKey: string;
+    headers: Record<string, unknown>;
+  }> = [];
+  /** The body of each publish, in the same order as `published`. */
+  readonly publishedBodies: Buffer[] = [];
+  /** The properties of each publish, in the same order as `published`. */
+  readonly publishedOptions: Options.Publish[] = [];
+  readonly acked: ConsumeMessage[] = [];
+  readonly nacked: Array<{ message: ConsumeMessage; requeue: boolean }> = [];
+
+  async assertExchange() {
+    this.check();
+    return {};
+  }
+  async assertQueue(queue: string, options: Options.AssertQueue = {}) {
+    this.check();
+    this.queues.set(queue, options);
+    return { queue, messageCount: 0, consumerCount: 0 };
+  }
+  async bindQueue() {
+    this.check();
+    return {};
+  }
+  async prefetch() {
+    this.check();
+  }
+  async consume(queue: string, onMessage: Delivery) {
+    this.check();
+    if (FakeChannel.failNextConsume) {
+      FakeChannel.failNextConsume = false;
+      this.kill();
+      throw new Error('Channel closed by server: 404 (NOT-FOUND)');
+    }
+    this.consumers.set(queue, onMessage);
+    return { consumerTag: `ctag-${queue}` };
+  }
+  publish(
+    exchange: string,
+    routingKey: string,
+    content: Buffer,
+    options: Options.Publish,
+    done?: (err: unknown) => void,
+  ) {
+    this.check();
+    this.published.push({ exchange, routingKey, headers: options.headers ?? {} });
+    this.publishedBodies.push(content);
+    this.publishedOptions.push(options);
+    done?.(null);
+    return true;
+  }
+  ack(message: ConsumeMessage) {
+    this.check();
+    this.acked.push(message);
+  }
+  nack(message: ConsumeMessage, _allUpTo = false, requeue = true) {
+    this.check();
+    this.nacked.push({ message, requeue });
+  }
+  async close() {
+    this.shut();
+  }
+  /** The server closes the channel on its own, as after a PRECONDITION_FAILED. */
+  kill() {
+    this.emit('error', new Error('Channel closed by server: 406 (PRECONDITION-FAILED)'));
+    this.shut();
+  }
+  shut() {
+    if (!this.open) return;
+    this.open = false;
+    this.emit('close');
+  }
+  deliver(
+    queue: string,
+    body: unknown,
+    headers: Record<string, unknown> = {},
+    properties: Record<string, unknown> = {},
+  ): ConsumeMessage {
+    const message = {
+      content: Buffer.from(typeof body === 'string' ? body : JSON.stringify(body)),
+      fields: { routingKey: 'user.activated', deliveryTag: ++deliveryTag, redelivered: false },
+      properties: { ...properties, headers },
+    } as unknown as ConsumeMessage;
+    this.consumers.get(queue)!(message);
+    return message;
+  }
+  private check() {
+    if (!this.open) throw new Error('Channel closed');
+  }
+}
+
+class FakeConnection extends EventEmitter {
+  open = true;
+  readonly channels: FakeChannel[] = [];
+  async createConfirmChannel() {
+    const channel = new FakeChannel();
+    this.channels.push(channel);
+    return channel;
+  }
+  async close() {
+    this.drop();
+  }
+  /** The broker goes away: every channel closes, then the connection. */
+  drop() {
+    if (!this.open) return;
+    this.open = false;
+    for (const channel of this.channels) channel.shut();
+    this.emit('close');
+  }
+}
+
+const WORK: SubscriptionSpec = { queue: 'foc.test.work', routingKeys: ['user.activated'] };
+
+function setup(
+  subscriptions: SubscriptionSpec[] = [WORK],
+  metrics?: Metrics,
+  url = 'amqp://broker.test',
+) {
+  const connections: FakeConnection[] = [];
+  const outage = { failures: 0 };
+  const broker = new BrokerConnection(url, 'test', subscriptions, [100, 200], {
+    connect: async () => {
+      if (outage.failures > 0) {
+        outage.failures--;
+        throw new Error('ECONNREFUSED');
+      }
+      const connection = new FakeConnection();
+      connections.push(connection);
+      return connection as unknown as ChannelModel;
+    },
+  });
+  const consumer = new EventConsumer(broker, metrics);
+  /** The channel of the n-th connection (default: the latest). */
+  const channel = (n = connections.length - 1) => connections[n]!.channels[0]!;
+  return { broker, consumer, connections, channel, outage };
+}
+
+const activation = (userId = 'user-1') =>
+  createEnvelope({
+    eventType: 'user.activated',
+    schemaVersion: 1,
+    aggregateId: userId,
+    producer: 'user-service',
+    correlationId: 'trace-1',
+    payload: { userId, activatedAt: new Date().toISOString() },
+  });
+
+function subscription(
+  queue: string,
+  handler: SubscribeOptions<{ userId: string }>['handler'],
+): SubscribeOptions<{ userId: string }> {
+  return {
+    queue,
+    eventType: 'user.activated',
+    expectedProducer: 'user-service',
+    payloadSchema: userActivatedPayload,
+    handler,
+  };
+}
+
+/** Lets every pending promise chain run to completion. */
+const settle = () => new Promise((r) => setImmediate(r));
+/** Past the first reconnect delay (1 s), then settled. */
+const afterReconnectDelay = async (ms = 1_000) => {
+  await vi.advanceTimersByTimeAsync(ms);
+  await settle();
+};
+
+beforeAll(() => Logger.overrideLogger(false));
+beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
+afterEach(() => vi.useRealTimers());
+
+describe('reconnecting (the consumer survives the broker)', () => {
+  it('declares the topology again and re-subscribes after the connection drops', async () => {
+    const { broker, consumer, connections, channel } = setup();
+    await broker.connect();
+    const seen: string[] = [];
+    await consumer.subscribe(subscription(WORK.queue, (e) => void seen.push(e.payload.userId)));
+    expect(channel(0).consumers.has(WORK.queue)).toBe(true);
+
+    connections[0]!.drop();
+    expect(broker.isConnected()).toBe(false);
+    await afterReconnectDelay();
+
+    expect(connections).toHaveLength(2);
+    const fresh = channel(1);
+    expect(fresh.queues.has(WORK.queue)).toBe(true);
+    expect(fresh.consumers.has(WORK.queue)).toBe(true);
+
+    const message = fresh.deliver(WORK.queue, activation('user-42'));
+    await settle();
+    expect(seen).toEqual(['user-42']);
+    // Settled on the channel it arrived on: a delivery tag means nothing on another.
+    expect(fresh.acked).toEqual([message]);
+  });
+
+  it('recovers when the server closes only the channel, without throwing on its error', async () => {
+    const { broker, consumer, connections, channel } = setup();
+    await broker.connect();
+    await consumer.subscribe(subscription(WORK.queue, () => undefined));
+
+    expect(() => channel(0).kill()).not.toThrow();
+    // The connection is dropped too, so everything is rebuilt from one place.
+    expect(connections[0]!.open).toBe(false);
+    await afterReconnectDelay();
+
+    expect(connections).toHaveLength(2);
+    expect(channel(1).consumers.has(WORK.queue)).toBe(true);
+    expect(broker.isConnected()).toBe(true);
+  });
+
+  it('reconnects once per loss, and ignores anything the old connection says afterwards', async () => {
+    const { broker, connections } = setup();
+    await broker.connect();
+
+    connections[0]!.drop(); // reports twice: channel close, then connection close
+    await afterReconnectDelay(10_000);
+    expect(connections).toHaveLength(2);
+
+    connections[0]!.emit('close');
+    connections[0]!.channels[0]!.emit('close');
+    await afterReconnectDelay(10_000);
+    expect(connections).toHaveLength(2);
+    expect(broker.isConnected()).toBe(true);
+  });
+
+  it('keeps trying, backing off, until the broker is back', async () => {
+    const { broker, consumer, connections, channel, outage } = setup();
+    await broker.connect();
+    await consumer.subscribe(subscription(WORK.queue, () => undefined));
+
+    outage.failures = 2;
+    connections[0]!.drop();
+    await afterReconnectDelay(1_000); // attempt 1 fails
+    await afterReconnectDelay(2_000); // attempt 2 fails
+    expect(connections).toHaveLength(1);
+    await afterReconnectDelay(4_000); // attempt 3 succeeds
+
+    expect(connections).toHaveLength(2);
+    expect(channel(1).consumers.has(WORK.queue)).toBe(true);
+  });
+
+  it('starts over, backing off, rather than run half-subscribed when re-subscribing fails', async () => {
+    const { broker, consumer, connections, channel } = setup();
+    await broker.connect();
+    await consumer.subscribe(subscription(WORK.queue, () => undefined));
+
+    FakeChannel.failNextConsume = true;
+    connections[0]!.drop();
+    await afterReconnectDelay(1_000); // reconnects, but the consume is refused
+    expect(connections).toHaveLength(2);
+    expect(connections[1]!.open).toBe(false);
+    await afterReconnectDelay(1_000);
+    expect(connections).toHaveLength(2); // the backoff grew instead of resetting
+    await afterReconnectDelay(1_000);
+
+    expect(connections).toHaveLength(3);
+    expect(channel(2).consumers.has(WORK.queue)).toBe(true);
+  });
+
+  it('starts a subscription made while disconnected as soon as it connects', async () => {
+    const { broker, consumer, channel } = setup();
+    await expect(
+      consumer.subscribe(subscription(WORK.queue, () => undefined)),
+    ).resolves.toBeUndefined();
+
+    await broker.connect();
+    expect(channel(0).consumers.has(WORK.queue)).toBe(true);
+  });
+
+  it('resubscribes when the broker cancels the consumer', async () => {
+    const { broker, consumer, connections, channel } = setup();
+    await broker.connect();
+    await consumer.subscribe(subscription(WORK.queue, () => undefined));
+
+    channel(0).consumers.get(WORK.queue)!(null); // what amqplib delivers on a server cancel
+    await settle();
+    expect(channel(0).open).toBe(false);
+    await afterReconnectDelay();
+
+    expect(connections).toHaveLength(2);
+    expect(channel(1).consumers.has(WORK.queue)).toBe(true);
+  });
+});
+
+describe('retry routing', () => {
+  it('sends a failed message back to its own queue only, never to every queue bound to its type', async () => {
+    const { broker, consumer, channel } = setup();
+    await broker.connect();
+    await consumer.subscribe(
+      subscription(WORK.queue, () => {
+        throw new Error('dependency not ready');
+      }),
+    );
+
+    const message = channel().deliver(WORK.queue, activation());
+    await settle();
+
+    // Keyed by the queue, not by the event type ...
+    expect(channel().published).toEqual([
+      {
+        exchange: retryExchangeName('test', 1),
+        routingKey: WORK.queue,
+        headers: expect.objectContaining({
+          [HEADER_ATTEMPT]: 2,
+          [HEADER_ORIGINAL_QUEUE]: WORK.queue,
+        }),
+      },
+    ]);
+    expect(channel().acked).toEqual([message]);
+    // ... and the delay queue dead-letters onto the service's requeue exchange, which delivers by
+    // queue name. Not the default exchange: no service account may write to that (PLT-06).
+    expect(channel().queues.get(retryQueueName('test', 1))).toMatchObject({
+      deadLetterExchange: 'foc.test.requeue',
+    });
+  });
+
+  it('sets a message aside once its attempts are spent', async () => {
+    const { broker, consumer, channel } = setup();
+    await broker.connect();
+    await consumer.subscribe(
+      subscription(WORK.queue, () => {
+        throw new Error('still broken');
+      }),
+    );
+
+    channel().deliver(WORK.queue, activation(), { [HEADER_ATTEMPT]: broker.maxAttempts });
+    await settle();
+
+    expect(channel().published).toEqual([
+      { exchange: DLX, routingKey: WORK.queue, headers: expect.any(Object) },
+    ]);
+  });
+
+  it('leaves an ordinary queue declared exactly as before (no new arguments)', async () => {
+    const { broker, channel } = setup();
+    await broker.connect();
+    expect(channel().queues.get(WORK.queue)).toEqual({
+      durable: true,
+      deadLetterExchange: DLX,
+      deadLetterRoutingKey: WORK.queue,
+    });
+    expect(channel().queues.has(deadLetterQueueName(WORK.queue))).toBe(true);
+  });
+});
+
+describe('subscription trust boundary', () => {
+  it('dead-letters an envelope whose event type does not match the handler', async () => {
+    const { broker, consumer, channel } = setup();
+    await broker.connect();
+    const handler = vi.fn();
+    await consumer.subscribe(subscription(WORK.queue, handler));
+
+    const wrongType = { ...activation(), eventType: 'user.suspended' };
+    const message = channel().deliver(WORK.queue, wrongType);
+    await settle();
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(channel().published).toEqual([
+      { exchange: DLX, routingKey: WORK.queue, headers: expect.any(Object) },
+    ]);
+    expect(channel().acked).toEqual([message]);
+  });
+
+  it('dead-letters an event from a producer the subscription does not trust', async () => {
+    const { broker, consumer, channel } = setup();
+    await broker.connect();
+    const handler = vi.fn();
+    await consumer.subscribe(subscription(WORK.queue, handler));
+
+    const forged = { ...activation(), producer: 'order-service' };
+    const message = channel().deliver(WORK.queue, forged);
+    await settle();
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(channel().published).toEqual([
+      { exchange: DLX, routingKey: WORK.queue, headers: expect.any(Object) },
+    ]);
+    expect(channel().acked).toEqual([message]);
+  });
+
+  it('dead-letters a handler-discovered permanent contract violation without retrying', async () => {
+    const { broker, consumer, channel } = setup();
+    await broker.connect();
+    await consumer.subscribe(
+      subscription(WORK.queue, () => {
+        throw new UnparseableMessageError('aggregate does not match payload');
+      }),
+    );
+
+    const message = channel().deliver(WORK.queue, activation());
+    await settle();
+
+    expect(channel().published).toEqual([
+      { exchange: DLX, routingKey: WORK.queue, headers: expect.any(Object) },
+    ]);
+    expect(channel().acked).toEqual([message]);
+  });
+});
+
+describe('repeated, late and out-of-order steps (EI-NFR2.1)', () => {
+  const onWork = { queue: WORK.queue, event_type: 'user.activated' };
+  const count = async (
+    metric: { get(): Promise<{ values: { labels: object; value: number }[] }> },
+    labels: Record<string, string> = onWork,
+  ) =>
+    (await metric.get()).values.find((v) =>
+      Object.entries(labels).every(([k, want]) => (v.labels as Record<string, string>)[k] === want),
+    )?.value ?? 0;
+
+  it('reports the three outcomes at zero from the moment it subscribes', async () => {
+    const metrics = new Metrics('test-service');
+    const { broker, consumer } = setup([WORK], metrics);
+    await broker.connect();
+    await consumer.subscribe(subscription(WORK.queue, () => undefined));
+
+    for (const metric of [metrics.eventsStale, metrics.eventsDeferred, metrics.eventsDuplicate]) {
+      expect((await metric.get()).values.map((v) => [v.labels, v.value])).toEqual([[onWork, 0]]);
+    }
+  });
+
+  it('acknowledges and counts a stale step without retrying or dead-lettering it', async () => {
+    const metrics = new Metrics('test-service');
+    const { broker, consumer, channel } = setup([WORK], metrics);
+    await broker.connect();
+    await consumer.subscribe(
+      subscription(WORK.queue, () => {
+        throw new StaleEventError('already applied at version 2; the errand is at version 5');
+      }),
+    );
+
+    const delivered = channel().deliver(WORK.queue, activation());
+    await settle();
+
+    expect(channel().acked).toEqual([delivered]);
+    expect(channel().published).toEqual([]); // neither a retry nor a dead letter
+    expect(await count(metrics.eventsStale)).toBe(1);
+    expect(await count(metrics.eventRetries)).toBe(0);
+    expect(await count(metrics.eventsHandled)).toBe(0);
+  });
+
+  it('counts a step that waits on an earlier one, and retries it', async () => {
+    const metrics = new Metrics('test-service');
+    const { broker, consumer, channel } = setup([WORK], metrics);
+    await broker.connect();
+    await consumer.subscribe(
+      subscription(WORK.queue, () => {
+        throw new PredecessorMissingError('Reservation for order-1 is not ready yet.');
+      }),
+    );
+
+    channel().deliver(WORK.queue, activation());
+    await settle();
+
+    expect(channel().published).toEqual([
+      expect.objectContaining({
+        exchange: retryExchangeName('test', 1),
+        routingKey: WORK.queue,
+        headers: expect.objectContaining({ [HEADER_ATTEMPT]: 2 }),
+      }),
+    ]);
+    expect(await count(metrics.eventsDeferred)).toBe(1);
+    expect(await count(metrics.eventRetries)).toBe(1);
+  });
+
+  it('still dead-letters a waiting step once its attempts are spent, with its reason', async () => {
+    const metrics = new Metrics('test-service');
+    const { broker, consumer, channel } = setup([WORK], metrics);
+    await broker.connect();
+    await consumer.subscribe(
+      subscription(WORK.queue, () => {
+        throw new PredecessorMissingError('Reservation for order-1 is not ready yet.');
+      }),
+    );
+
+    channel().deliver(WORK.queue, activation(), { [HEADER_ATTEMPT]: broker.maxAttempts });
+    await settle();
+
+    expect(channel().published).toEqual([
+      expect.objectContaining({
+        exchange: DLX,
+        routingKey: WORK.queue,
+        headers: expect.objectContaining({
+          'x-foc-failure-reason': 'Reservation for order-1 is not ready yet.',
+        }),
+      }),
+    ]);
+    expect(await count(metrics.eventsDeferred)).toBe(1);
+    expect(
+      await count(metrics.eventsDeadLettered, { queue: WORK.queue, reason: 'exhausted' }),
+    ).toBe(1);
+  });
+
+  it('counts a duplicate the inbox skipped', async () => {
+    const metrics = new Metrics('test-service');
+    const { broker, consumer, channel } = setup([WORK], metrics);
+    await broker.connect();
+    // What `withInbox` does when the event id is already recorded.
+    await consumer.subscribe(subscription(WORK.queue, (_e, ctx) => ctx.onDuplicate?.()));
+
+    const delivered = channel().deliver(WORK.queue, activation());
+    await settle();
+
+    expect(channel().acked).toEqual([delivered]);
+    expect(await count(metrics.eventsDuplicate)).toBe(1);
+  });
+});
+
+describe('schema versions (EI-NFR3.1.2)', () => {
+  it('sets an unsupported major version aside whole, without running the handler', async () => {
+    const metrics = new Metrics('test-service');
+    const { broker, consumer, channel } = setup([WORK], metrics);
+    await broker.connect();
+    const handler = vi.fn();
+    await consumer.subscribe(subscription(WORK.queue, handler));
+
+    // A version 2 message whose payload would pass the version 1 schema.
+    const delivered = channel().deliver(WORK.queue, { ...activation(), schemaVersion: 2 });
+    await settle();
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(channel().published).toHaveLength(1);
+    const [dead] = channel().published;
+    expect(dead).toMatchObject({ exchange: DLX, routingKey: WORK.queue });
+    expect(channel().publishedBodies[0]!.equals(delivered.content)).toBe(true);
+    expect(String(dead!.headers['x-foc-failure-reason'])).toContain(
+      'unsupported schema version 2 for user.activated',
+    );
+    expect(channel().acked).toEqual([delivered]);
+    const { values } = await metrics.eventsDeadLettered.get();
+    expect(values.find((v) => v.labels.reason === 'unsupported_version')?.value).toBe(1);
+    expect(values.find((v) => v.labels.reason === 'unparseable')?.value).toBe(0);
+  });
+
+  it('handles a version the subscription says it supports', async () => {
+    const { broker, consumer, channel } = setup();
+    await broker.connect();
+    const handler = vi.fn();
+    await consumer.subscribe({ ...subscription(WORK.queue, handler), supportedVersions: [1, 2] });
+
+    channel().deliver(WORK.queue, { ...activation(), schemaVersion: 2 });
+    await settle();
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(channel().published).toEqual([]);
+  });
+});
+
+describe('a transient (per-instance) queue', () => {
+  const CACHE: SubscriptionSpec = {
+    queue: 'foc.test.cache.instance-1',
+    routingKeys: ['user.suspended'],
+    exclusive: true,
+    autoDelete: true,
+    messageTtlMs: 5_000,
+    maxLength: 1_000,
+  };
+
+  it('is private, bounded, and has no dead-letter or retry topology of its own', async () => {
+    const { broker, channel } = setup([CACHE]);
+    await broker.connect();
+    expect(channel().queues.get(CACHE.queue)).toEqual({
+      durable: false,
+      exclusive: true,
+      autoDelete: true,
+      messageTtl: 5_000,
+      maxLength: 1_000,
+    });
+    expect(channel().queues.has(deadLetterQueueName(CACHE.queue))).toBe(false);
+  });
+
+  it('drops a message its handler fails on, and an unparseable one, instead of retrying', async () => {
+    const { broker, consumer, channel } = setup([CACHE]);
+    await broker.connect();
+    await consumer.subscribe(
+      subscription(CACHE.queue, () => {
+        throw new Error('boom');
+      }),
+    );
+
+    const failed = channel().deliver(CACHE.queue, activation());
+    const garbage = channel().deliver(CACHE.queue, 'not json');
+    await settle();
+
+    expect(channel().published).toEqual([]);
+    expect(channel().nacked).toEqual([
+      { message: failed, requeue: false },
+      { message: garbage, requeue: false },
+    ]);
+  });
+
+  it('is declared again, and consumed again, after a reconnect', async () => {
+    const { broker, consumer, connections, channel } = setup([CACHE]);
+    await broker.connect();
+    await consumer.subscribe(subscription(CACHE.queue, () => undefined));
+
+    connections[0]!.drop(); // the broker deletes an exclusive queue with its connection
+    await afterReconnectDelay();
+
+    expect(channel(1).queues.get(CACHE.queue)).toMatchObject({ exclusive: true });
+    expect(channel(1).consumers.has(CACHE.queue)).toBe(true);
+  });
+});
+
+describe('metrics (PLT-04)', () => {
+  /** A counter's or histogram's value for one queue, from the registry the consumer reports to. */
+  async function value(
+    metric: {
+      get(): Promise<{ values: { labels: object; value: number; metricName?: string }[] }>;
+    },
+    labels: Record<string, string>,
+    metricName?: string,
+  ): Promise<number> {
+    const { values } = await metric.get();
+    const series = values.find(
+      (v) =>
+        (metricName === undefined || v.metricName === metricName) &&
+        Object.entries(labels).every(
+          ([k, want]) => String((v.labels as Record<string, unknown>)[k]) === want,
+        ),
+    );
+    return series?.value ?? 0;
+  }
+  const onWork = { queue: WORK.queue, event_type: 'user.activated' };
+
+  it("reports a queue's counters at zero from the moment it subscribes, so its first event shows", async () => {
+    const metrics = new Metrics('test-service');
+    const { broker, consumer } = setup([WORK], metrics);
+    await broker.connect();
+    await consumer.subscribe(subscription(WORK.queue, () => undefined));
+
+    const series = async (metric: { get(): Promise<{ values: { labels: object }[] }> }) =>
+      (await metric.get()).values.map((v) => v.labels);
+    expect(await series(metrics.eventRetries)).toEqual([onWork]);
+    expect(await series(metrics.eventsDeadLettered)).toEqual([
+      { queue: WORK.queue, reason: 'unparseable' },
+      { queue: WORK.queue, reason: 'unsupported_version' },
+      { queue: WORK.queue, reason: 'untrusted_sender' },
+      { queue: WORK.queue, reason: 'exhausted' },
+    ]);
+  });
+
+  it('counts a handled event, and how long after it occurred it was handled', async () => {
+    const metrics = new Metrics('test-service');
+    const { broker, consumer, channel } = setup([WORK], metrics);
+    await broker.connect();
+    await consumer.subscribe(subscription(WORK.queue, () => undefined));
+
+    channel().deliver(WORK.queue, activation());
+    await settle();
+
+    expect(await value(metrics.eventsHandled, onWork)).toBe(1);
+    expect(await value(metrics.eventLag, onWork, 'foc_event_lag_seconds_count')).toBe(1);
+    expect(
+      await value(metrics.eventHandleDuration, onWork, 'foc_event_handle_duration_seconds_count'),
+    ).toBe(1);
+  });
+
+  it('counts a retry when a handler fails', async () => {
+    const metrics = new Metrics('test-service');
+    const { broker, consumer, channel } = setup([WORK], metrics);
+    await broker.connect();
+    await consumer.subscribe(
+      subscription(WORK.queue, () => {
+        throw new Error('dependency not ready');
+      }),
+    );
+
+    channel().deliver(WORK.queue, activation());
+    await settle();
+
+    expect(await value(metrics.eventRetries, onWork)).toBe(1);
+    expect(await value(metrics.eventsHandled, onWork)).toBe(0);
+  });
+
+  it('counts a dead letter once attempts are spent, as exhausted', async () => {
+    const metrics = new Metrics('test-service');
+    const { broker, consumer, channel } = setup([WORK], metrics);
+    await broker.connect();
+    await consumer.subscribe(
+      subscription(WORK.queue, () => {
+        throw new Error('still broken');
+      }),
+    );
+
+    channel().deliver(WORK.queue, activation(), { [HEADER_ATTEMPT]: broker.maxAttempts });
+    await settle();
+
+    expect(
+      await value(metrics.eventsDeadLettered, { queue: WORK.queue, reason: 'exhausted' }),
+    ).toBe(1);
+    expect(await value(metrics.eventRetries, onWork)).toBe(0);
+  });
+
+  it('labels a per-instance queue by its stable name, and counts what it drops', async () => {
+    const AUTH_STATUS: SubscriptionSpec = {
+      queue: 'foc.test.auth-status.5f0c9e2a-0b1d-4c6e-9a43-2d7f81e0b6c4',
+      metricsLabel: 'foc.test.auth-status',
+      routingKeys: ['user.activated'],
+      exclusive: true,
+      autoDelete: true,
+    };
+    const metrics = new Metrics('test-service');
+    const { broker, consumer, channel } = setup([AUTH_STATUS], metrics);
+    await broker.connect();
+    let failing = false;
+    await consumer.subscribe(
+      subscription(AUTH_STATUS.queue, () => {
+        if (failing) throw new Error('boom');
+      }),
+    );
+
+    channel().deliver(AUTH_STATUS.queue, activation());
+    await settle();
+    failing = true;
+    channel().deliver(AUTH_STATUS.queue, activation());
+    channel().deliver(AUTH_STATUS.queue, 'not json');
+    await settle();
+
+    const stable = { queue: 'foc.test.auth-status' };
+    expect(await value(metrics.eventsHandled, { ...stable, event_type: 'user.activated' })).toBe(1);
+    expect(await value(metrics.eventsDropped, { ...stable, reason: 'handler_failed' })).toBe(1);
+    expect(await value(metrics.eventsDropped, { ...stable, reason: 'unparseable' })).toBe(1);
+    // No series is named after this instance's queue, so a restart adds none.
+    expect(await metrics.render()).not.toContain('5f0c9e2a');
+  });
+
+  it('counts a message that cannot be parsed as an unparseable dead letter, never a retry', async () => {
+    const metrics = new Metrics('test-service');
+    const { broker, consumer, channel } = setup([WORK], metrics);
+    await broker.connect();
+    await consumer.subscribe(subscription(WORK.queue, vi.fn()));
+
+    channel().deliver(WORK.queue, 'not json');
+    await settle();
+
+    expect(
+      await value(metrics.eventsDeadLettered, { queue: WORK.queue, reason: 'unparseable' }),
+    ).toBe(1);
+  });
+});
+
+describe('a message is held to the account that published it (PLT-06)', () => {
+  /** A service that signs in to the broker as itself: account `test`, service `test`. */
+  const AS_ITSELF = 'amqp://test:secret@broker.test';
+
+  async function consuming(url?: string, metrics?: Metrics) {
+    const { broker, consumer, channel } = setup([WORK], metrics, url);
+    await broker.connect();
+    const seen: string[] = [];
+    await consumer.subscribe(subscription(WORK.queue, (e) => void seen.push(e.payload.userId)));
+    return { channel, seen };
+  }
+
+  it('handles an event published by the account its producer signs in with', async () => {
+    const { channel, seen } = await consuming(AS_ITSELF);
+
+    channel().deliver(WORK.queue, activation('user-1'), {}, { userId: 'user-service' });
+    await settle();
+
+    expect(seen).toEqual(['user-1']);
+    expect(channel().published).toEqual([]);
+  });
+
+  it('sets aside an event that names the right producer but was published by another account', async () => {
+    const metrics = new Metrics('test');
+    const { channel, seen } = await consuming(AS_ITSELF, metrics);
+
+    // The envelope says user-service; the broker says the Order Service published it.
+    const forged = channel().deliver(WORK.queue, activation(), {}, { userId: 'order-service' });
+    await settle();
+
+    expect(seen).toEqual([]);
+    expect(channel().published).toEqual([
+      {
+        exchange: DLX,
+        routingKey: WORK.queue,
+        headers: expect.objectContaining({
+          [HEADER_FAILURE]:
+            'sender order-service may not publish user.activated: only user-service may',
+        }),
+      },
+    ]);
+    expect(channel().acked).toEqual([forged]);
+    const { values } = await metrics.eventsDeadLettered.get();
+    expect(values.find((v) => v.labels.reason === 'untrusted_sender')?.value).toBe(1);
+  });
+
+  it('sets aside an event whose publisher did not identify itself', async () => {
+    const { channel, seen } = await consuming(AS_ITSELF);
+
+    channel().deliver(WORK.queue, activation());
+    await settle();
+
+    expect(seen).toEqual([]);
+    expect(channel().published[0]!.headers[HEADER_FAILURE]).toBe(
+      'sender unknown may not publish user.activated: only user-service may',
+    );
+  });
+
+  it('is not taken in by a sender written into a header', async () => {
+    const { channel, seen } = await consuming(AS_ITSELF);
+
+    channel().deliver(
+      WORK.queue,
+      activation(),
+      { 'x-foc-sender': 'user-service' },
+      { userId: 'order-service' },
+    );
+    await settle();
+
+    expect(seen).toEqual([]);
+  });
+
+  it('retries under its own account and still knows who first sent the event', async () => {
+    const { broker, consumer, channel } = setup([WORK], undefined, AS_ITSELF);
+    await broker.connect();
+    let attempts = 0;
+    const seen: string[] = [];
+    await consumer.subscribe(
+      subscription(WORK.queue, (e) => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('not yet');
+        seen.push(e.payload.userId);
+      }),
+    );
+
+    channel().deliver(WORK.queue, activation('user-9'), {}, { userId: 'user-service' });
+    await settle();
+
+    // Published again as itself: the broker would refuse it under the User Service's name.
+    const retry = channel().publishedOptions[0]!;
+    expect(retry.userId).toBe('test');
+    expect(retry.headers).toMatchObject({ 'x-foc-sender': 'user-service', [HEADER_ATTEMPT]: 2 });
+
+    // The retry comes back carrying its own account, and is accepted for what it records.
+    channel().deliver(WORK.queue, activation('user-9'), retry.headers, { userId: retry.userId });
+    await settle();
+    expect(seen).toEqual(['user-9']);
+  });
+
+  it('does not ask who sent it when every service shares one login', async () => {
+    // A test run or `npm run dev`: one account, so nothing to tell apart.
+    const { channel, seen } = await consuming('amqp://foc:secret@broker.test');
+
+    channel().deliver(WORK.queue, activation('user-1'));
+    await settle();
+
+    expect(seen).toEqual(['user-1']);
+  });
+});

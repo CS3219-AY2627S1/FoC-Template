@@ -1,0 +1,21 @@
+/* Phone: the two filters share the row, edge to edge with the cards below. */
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: var(--space-3);
+  align-items: end;
+}
+
+/* An errand about to leave the board, told apart from the rest by more than its number. */
+.urgent {
+  color: var(--color-warning);
+  font-weight: var(--weight-semibold);
+}
+
+/* Wider: sized to what is typed in them (a building code, a number), not stretched across the page. */
+@media (min-width: 768px) {
+  .filters {
+    grid-template-columns: repeat(auto-fill, minmax(13rem, 16rem));
+    gap: var(--space-4);
+  }
+}

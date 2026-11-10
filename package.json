@@ -1,0 +1,45 @@
+{
+  "name": "foc-app",
+  "private": true,
+  "description": "Friend on Campus \u2014 CS3219 AY2627S1 Group 30",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "workspaces": [
+    "platform",
+    "test-harness",
+    "user-service",
+    "auth-client",
+    "supplier-service",
+    "order-service",
+    "credit-service",
+    "chat-service",
+    "system-tests"
+  ],
+  "scripts": {
+    "audit:credits": "docker compose exec -T credit-service node credit-service/dist/audit-ledger.js",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:contract": "npm run contracts:compat -w @foc/test-harness && npm test -w @foc/test-harness -- contracts compat && npm test --workspaces --if-present -- --passWithNoTests .contract.test",
+    "test:concurrency": "npm test --workspaces --if-present -- --passWithNoTests .postgres.test",
+    "contracts:events": "npm run contracts:events -w @foc/test-harness",
+    "lint": "eslint .",
+    "format": "prettier --write \"**/*.{ts,mjs,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,mjs,json,md}\"",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev:user": "npm run dev -w user-service",
+    "dev:supplier": "npm run dev -w supplier-service",
+    "dev:order": "npm run dev -w order-service",
+    "dev:credit": "npm run dev -w credit-service",
+    "dev:chat": "npm run dev -w chat-service",
+    "report:conservation": "docker compose up -d --wait postgres rabbitmq && set -a && . ./.env && set +a && TEST_POSTGRES_URL=$HOST_POSTGRES_URL RABBITMQ_URL=$HOST_RABBITMQ_URL npm run load -w @foc/system-tests"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "@types/node": "^20.17.0",
+    "eslint": "^9.36.0",
+    "prettier": "^3.9.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.70.0"
+  }
+}

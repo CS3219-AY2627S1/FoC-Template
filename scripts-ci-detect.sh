@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+# AI Assistance Disclosure:
+# Tool: Claude Code (Claude Opus 5.5), dates: 2026-09-30 to 2026-11-03
+# Scope: Implementation for "delivery guarantees, duplicates and schema versions" (WEB-00, EVT-03,
+#   PLT-06); also tooling and boilerplate, tests and code comments.
+# Author review: Jonus Ho, Isaac Chua, Anselm Long, Patrick Thomas and Zhang Yuan validated the
+#   behaviour and the implementation, checked for fatal errors, and confirmed it does not conflict
+#   with the architecture before committing.
+
+# Decide what CI needs to run, given a list of changed paths on stdin.
+#
+#   git diff --name-only BASE HEAD | ./scripts-ci-detect.sh
+#
+# Emits `key=value` lines suitable for $GITHUB_OUTPUT. Kept as a script rather
+# than inline YAML so it can be tested without pushing a commit — see the
+# self-test at the bottom of this file (`./scripts-ci-detect.sh --self-test`).
+set -euo pipefail
+
+# Shared code and root configuration can break any service, so a change to any
+# of these fans out to all five. test-harness/ holds every service's shared test
+# fixtures and contract checks, so it fans out too; it is never in an image.
+# system-tests/ runs the real service code together, so it fans out the same way.
+SHARED_RE='^(platform/|test-harness/|system-tests/|package\.json|package-lock\.json|tsconfig\.base\.json|eslint\.config\.mjs|\.prettierrc|\.prettierignore|\.github/workflows/ci\.yml|\.github/actions/|\.nvmrc|scripts-scan-vulnerabilities\.sh|scripts-coverage-summary\.sh)'
+SERVICE_RE='^(user|supplier|order|credit|chat)-service/'
+# What the web-app job reads: the app, the contracts its API types are generated from, and what
+# it builds and scans its image with (the generated .env, compose.yaml, the scan, this workflow).
+WEB_RE='^(web-app/|contracts/|compose\.yaml|\.env\.example|scripts-(init-env|scan-vulnerabilities)\.sh|\.github/workflows/ci\.yml|\.github/actions/)'
+# Wiring between containers, as opposed to code inside one. `.env.example`
+# belongs here because the smoke job builds `.env` from it; `edge/` is the edge's config.
+STACK_RE='^(compose(\.dev)?\.yaml|postgres-init\.sh|rabbitmq-init\.sh|scripts-(smoke|demo-failures|demo-journey|demo-credits|restart-check|scan-secrets|init-env|env|lib|ci-detect|activation-token)\.sh|platform/|observability/|edge/|\.env\.example|\.gitleaks\.toml)|Dockerfile|\.dockerignore'
+# The deployment files that test-harness/test/compose-config.test.ts reads (PLT-06): a change to
+# one runs the Node job, where that test lives, without fanning out to every service.
+DEPLOY_CONFIG_RE='^(compose(\.dev)?\.yaml|postgres-init\.sh|rabbitmq-init\.sh|scripts-init-env\.sh|\.env\.example|edge/)|Dockerfile|\.dockerignore'
+# The supplier page and the service it lists from: their integration test
+# (web-app/test/suppliers.integration.test.tsx) runs against the real Supplier
+# Service whenever either side, or anything shared or stack-wide, changes.
+SUPPLIER_STACK_RE='^(supplier-service/|web-app/src/app/\(app\)/suppliers/|web-app/src/lib/supplier-|web-app/src/components/SupplierCard|web-app/test/suppliers\.integration\.test\.tsx)'
+# The load test (TST-03): not run in CI, but test-harness/test/load-harness.test.ts reads it, so a
+# change to it runs the Node job, without fanning out to every service.
+LOAD_RE='^(load/|scripts-load\.sh|compose\.load\.yaml)'
+# The release tooling (REL-03): not run on a change, but test-harness/test/release.test.ts reads it,
+# so a change to it runs the Node job, without fanning out to every service.
+RELEASE_RE='^(scripts-release\.sh|\.github/workflows/release\.yml)'
+# The requirements traceability matrix (REL-02): test-harness/test/traceability.test.ts reads it
+# and checks that every test it names exists, so a change to it, to a web app test or to a stack
+# script's checks runs the Node job. A service's own tests already do, as any service change does.
+TRACE_RE='^(docs/traceability\.(yaml|md)|web-app/(test|e2e)/|scripts-[a-z-]+\.sh)'
+# Paths that cannot affect a build, a test or a container.
+IGNORED_RE='^docs/|\.md$|^\.github/|^LICENSE$|^\.gitignore$|^\.(vscode|idea|claude)/'
+
+# Everything else fails closed. A path none of the patterns above recognises — a
+# new package such as auth-client/, seed data, a contract — is treated as
+# shared and runs everything, rather than nothing. Otherwise a whole new package
+# could merge with no job ever running its tests.
+KNOWN_RE="$SHARED_RE|$SERVICE_RE|^web-app/|$STACK_RE|$LOAD_RE|$RELEASE_RE|$IGNORED_RE"
+
+detect() {
+  local changed="$1" force_stack="${2:-false}"
+  local matches services=() svc shared=false unrecognised=false
+
+  matches() { printf '%s\n' "$changed" | grep -qE "$1"; }
+
+  if printf '%s\n' "$changed" | grep -vE "$KNOWN_RE" | grep -q .; then
+    unrecognised=true
+  fi
+  if [[ "$unrecognised" == "true" ]] || matches "$SHARED_RE"; then
+    shared=true
+  fi
+
+  for svc in user-service supplier-service order-service credit-service chat-service; do
+    if [[ "$shared" == "true" ]] || matches "^${svc}/"; then
+      services+=("\"${svc}\"")
+    fi
+  done
+
+  if [[ ${#services[@]} -eq 0 ]]; then
+    echo 'services=[]'
+  else
+    echo "services=[$(
+      IFS=,
+      echo "${services[*]}"
+    )]"
+  fi
+
+  matches "$WEB_RE" && echo 'web=true' || echo 'web=false'
+
+  if [[ "$shared" == "true" ]] || matches "$SERVICE_RE" || matches "$DEPLOY_CONFIG_RE" || matches "$LOAD_RE" ||
+    matches "$RELEASE_RE" || matches "$TRACE_RE"; then
+    echo 'node=true'
+  else
+    echo 'node=false'
+  fi
+
+  if [[ "$force_stack" == "true" || "$unrecognised" == "true" ]] || matches "$STACK_RE"; then
+    echo 'stack=true'
+  else
+    echo 'stack=false'
+  fi
+
+  if [[ "$force_stack" == "true" || "$shared" == "true" ]] || matches "$SUPPLIER_STACK_RE" || matches "$STACK_RE"; then
+    echo 'supplier_stack=true'
+  else
+    echo 'supplier_stack=false'
+  fi
+}
+
+# ---- self-test ---------------------------------------------------------------
+if [[ "${1:-}" == "--self-test" ]]; then
+  FAILURES=0
+  check() {
+    local name="$1" input="$2" expect="$3"
+    local got
+    got=$(detect "$input" false | grep "^${expect%%=*}=")
+    if [[ "$got" == "$expect" ]]; then
+      printf '  \033[32mPASS\033[0m  %-46s %s\n' "$name" "$expect"
+    else
+      printf '  \033[31mFAIL\033[0m  %-46s expected %s, got %s\n' "$name" "$expect" "$got"
+      FAILURES=$((FAILURES + 1))
+    fi
+  }
+
+  check "one service -> only that service"      "supplier-service/src/app.module.ts" 'services=["supplier-service"]'
+  check "one service -> node runs"              "supplier-service/src/app.module.ts" 'node=true'
+  check "one service -> web skipped"            "supplier-service/src/app.module.ts" 'web=false'
+  check "one service -> stack skipped"          "supplier-service/src/app.module.ts" 'stack=false'
+  check "platform -> all five services"         "platform/src/env.ts" 'services=["user-service","supplier-service","order-service","credit-service","chat-service"]'
+  check "platform -> stack runs"                "platform/src/env.ts" 'stack=true'
+  check "root config -> all five services"      "tsconfig.base.json" 'services=["user-service","supplier-service","order-service","credit-service","chat-service"]'
+  check "lockfile -> all five services"         "package-lock.json" 'services=["user-service","supplier-service","order-service","credit-service","chat-service"]'
+  check "vulnerability scan -> all five services" "scripts-scan-vulnerabilities.sh" 'services=["user-service","supplier-service","order-service","credit-service","chat-service"]'
+  check "release script -> node runs"           "scripts-release.sh" 'node=true'
+  check "release script -> no services"         "scripts-release.sh" 'services=[]'
+  check "release script -> stack skipped"       "scripts-release.sh" 'stack=false'
+  check "release workflow -> node runs"         ".github/workflows/release.yml" 'node=true'
+  check "release workflow -> no services"       ".github/workflows/release.yml" 'services=[]'
+  check "web only -> no services"               "web-app/src/app/page.tsx" 'services=[]'
+  check "web only -> web runs"                  "web-app/src/app/page.tsx" 'web=true'
+  check "web only -> node skipped"              "web-app/src/app/page.tsx" 'node=false'
+  check "docs only -> no services"              "docs/EXECUTION-PLAN.md" 'services=[]'
+  check "docs only -> node skipped"             "docs/EXECUTION-PLAN.md" 'node=false'
+  check "traceability matrix -> node runs"      "docs/traceability.yaml" 'node=true'
+  check "traceability matrix -> no services"    "docs/traceability.yaml" 'services=[]'
+  check "traceability matrix -> stack skipped"  "docs/traceability.yaml" 'stack=false'
+  check "web test -> node runs"                 "web-app/test/wallet.test.tsx" 'node=true'
+  check "stack script -> node runs"             "scripts-demo-journey.sh" 'node=true'
+  check "docs only -> stack skipped"            "docs/EXECUTION-PLAN.md" 'stack=false'
+  check "README only -> nothing runs"           "README.md" 'services=[]'
+  check "compose -> stack runs"                 "compose.yaml" 'stack=true'
+  check "mail reader -> stack runs"             "scripts-activation-token.sh" 'stack=true'
+  check "compose -> no services"                "compose.yaml" 'services=[]'
+  check "compose -> node runs its config tests" "compose.yaml" 'node=true'
+  check "env example -> node runs"              ".env.example" 'node=true'
+  check "postgres init -> stack runs"           "postgres-init.sh" 'stack=true'
+  check "dev override -> node runs"             "compose.dev.yaml" 'node=true'
+  check "dev override -> no services"           "compose.dev.yaml" 'services=[]'
+  check "broker init -> stack runs"             "rabbitmq-init.sh" 'stack=true'
+  check "env generator -> stack runs"           "scripts-init-env.sh" 'stack=true'
+  check "restart check -> stack runs"           "scripts-restart-check.sh" 'stack=true'
+  check "restart check -> node runs (traced)"   "scripts-restart-check.sh" 'node=true'
+  check "demo journey -> stack runs"            "scripts-demo-journey.sh" 'stack=true'
+  check "demo runbook -> nothing runs"          "docs/demo/d3-runbook.md" 'stack=false'
+  check "a Dockerfile -> stack runs"            "order-service/Dockerfile" 'stack=true'
+  check "a Dockerfile -> that service too"      "order-service/Dockerfile" 'services=["order-service"]'
+  check "web Dockerfile -> stack and web"       "web-app/Dockerfile" 'web=true'
+  check "contract -> web runs"                  "contracts/supplier-service.openapi.yaml" 'web=true'
+  # The web-app job runs these too: it generates .env, bakes its image from compose.yaml and scans it.
+  check "vulnerability scan -> web runs"        "scripts-scan-vulnerabilities.sh" 'web=true'
+  check "env generator -> web runs"             "scripts-init-env.sh" 'web=true'
+  check "env example -> web runs"               ".env.example" 'web=true'
+  check "compose -> web runs"                   "compose.yaml" 'web=true'
+  check "this workflow -> web runs"             ".github/workflows/ci.yml" 'web=true'
+  check "dev override -> web skipped"           "compose.dev.yaml" 'web=false'
+  check "a CI action -> all five"               ".github/actions/trivy-db/action.yml" 'services=["user-service","supplier-service","order-service","credit-service","chat-service"]'
+  check "a CI action -> web runs"               ".github/actions/trivy-db/action.yml" 'web=true'
+  check "chat service -> only that service"     "chat-service/src/app.module.ts" 'services=["chat-service"]'
+  check "two services -> both"                  "$(printf 'user-service/src/a.ts\ncredit-service/src/b.ts')" 'services=["user-service","credit-service"]'
+  check "mixed web + service"                   "$(printf 'web-app/x.tsx\norder-service/src/y.ts')" 'services=["order-service"]'
+  check "this workflow -> all five"             ".github/workflows/ci.yml" 'services=["user-service","supplier-service","order-service","credit-service","chat-service"]'
+  check "another workflow -> nothing"           ".github/workflows/release.yml" 'services=[]'
+  check "issue template -> nothing"             ".github/ISSUE_TEMPLATE/config.yml" 'node=false'
+  check "docs PDF -> nothing"                   "docs/CS3219-Instructions-MilestoneD2.pdf" 'node=false'
+  check "gitignore -> nothing"                  ".gitignore" 'node=false'
+  check "env example -> stack runs"             ".env.example" 'stack=true'
+  check "env example -> no services"            ".env.example" 'services=[]'
+  check "observability -> stack runs"           "observability/prometheus.yml" 'stack=true'
+  check "edge config -> stack runs"             "edge/nginx.conf" 'stack=true'
+  check "edge config -> node runs its config tests" "edge/headers.conf" 'node=true'
+  check "edge config -> no services"            "edge/nginx.conf" 'services=[]'
+  check "failure demo -> stack runs"            "scripts-demo-failures.sh" 'stack=true'
+  check "failure demo -> no services"           "scripts-demo-failures.sh" 'services=[]'
+  check "credit walkthrough -> stack runs"      "scripts-demo-credits.sh" 'stack=true'
+  check "credit walkthrough -> no services"     "scripts-demo-credits.sh" 'services=[]'
+  check "observability -> no services"          "observability/grafana/dashboards/foc-platform.json" 'services=[]'
+  check "new package -> all five services"      "auth-client/src/token-verifier.ts" 'services=["user-service","supplier-service","order-service","credit-service","chat-service"]'
+  check "new package -> node runs"              "auth-client/src/token-verifier.ts" 'node=true'
+  check "new package -> stack runs"             "auth-client/src/token-verifier.ts" 'stack=true'
+  check "seed data -> all five services"        "data/csv/supplier-seed-data.csv" 'services=["user-service","supplier-service","order-service","credit-service","chat-service"]'
+  check "unrecognised + service -> all five"    "$(printf 'supplier-service/src/a.ts\ncontracts/x.yaml')" 'services=["user-service","supplier-service","order-service","credit-service","chat-service"]'
+  check "test harness -> all five services"     "test-harness/src/compat.ts" 'services=["user-service","supplier-service","order-service","credit-service","chat-service"]'
+  check "test harness -> stack skipped"         "test-harness/src/compat.ts" 'stack=false'
+  check "system tests -> node runs"             "system-tests/test/reconciliation.test.ts" 'node=true'
+  check "docs + service -> only that service"   "$(printf 'docs/notes.md\norder-service/src/y.ts')" 'services=["order-service"]'
+  check "supplier service -> supplier stack"    "supplier-service/src/app.module.ts" 'supplier_stack=true'
+  check "supplier page -> supplier stack"       "web-app/src/app/(app)/suppliers/page.tsx" 'supplier_stack=true'
+  check "supplier client -> supplier stack"     "web-app/src/lib/supplier-api.ts" 'supplier_stack=true'
+  check "supplier IT itself -> supplier stack"  "web-app/test/suppliers.integration.test.tsx" 'supplier_stack=true'
+  check "platform -> supplier stack"            "platform/src/env.ts" 'supplier_stack=true'
+  check "compose -> supplier stack"             "compose.yaml" 'supplier_stack=true'
+  check "other web page -> no supplier stack"   "web-app/src/app/page.tsx" 'supplier_stack=false'
+  check "supplier unit test -> no supplier stack" "web-app/test/suppliers-page.test.tsx" 'supplier_stack=false'
+  check "order service -> no supplier stack"    "order-service/src/y.ts" 'supplier_stack=false'
+  check "docs only -> no supplier stack"        "docs/EXECUTION-PLAN.md" 'supplier_stack=false'
+  check "load test -> node runs its tests"      "load/user.js" 'node=true'
+  check "load test -> no services"              "scripts-load.sh" 'services=[]'
+  check "load override -> stack skipped"        "compose.load.yaml" 'stack=false'
+
+  echo
+  [[ $FAILURES -eq 0 ]] && echo "All detection checks passed." || {
+    echo "$FAILURES failed."
+    exit 1
+  }
+  exit 0
+fi
+
+# ---- normal use --------------------------------------------------------------
+detect "$(cat)" "${FORCE_STACK:-false}"

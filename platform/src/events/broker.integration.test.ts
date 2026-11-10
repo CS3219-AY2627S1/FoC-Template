@@ -1,0 +1,336 @@
+import amqp from 'amqplib';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { BrokerConnection } from './connection.js';
+import { EventConsumer } from './consumer.js';
+import { EventPublisher } from './publisher.js';
+import { UnroutableEventError } from './envelope.js';
+import { EVENTS, userActivatedPayload } from './catalogue.js';
+import { EXCHANGE, HEADER_FAILURE, deadLetterQueueName } from './topology.js';
+
+/**
+ * Exercises the real broker. Skipped unless RABBITMQ_URL is set, so `npm test`
+ * on a laptop without the stack up still passes:
+ *
+ *   docker compose up -d rabbitmq
+ *   set -a; . ./.env; set +a; RABBITMQ_URL=$HOST_RABBITMQ_URL npm test -w @foc/platform
+ */
+const URL = process.env.RABBITMQ_URL;
+const suite = URL ? describe : describe.skip;
+
+// A unique prefix per run, so a re-run never inherits a previous run's messages.
+const RUN = Math.random().toString(36).slice(2, 8);
+const QUEUE = `foc.test-${RUN}.activation`;
+
+/** A publisher for event types that exist only in this suite, each with the activation payload. */
+const testPublisher = (b: BrokerConnection, ...eventTypes: string[]) =>
+  new EventPublisher(b, 'test', {
+    schemas: Object.fromEntries(eventTypes.map((type) => [type, userActivatedPayload])),
+  });
+
+const waitFor = async <T>(fn: () => T | undefined, ms = 8000): Promise<T> => {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const v = fn();
+    if (v !== undefined) return v;
+    if (Date.now() > deadline) throw new Error('timed out waiting for a message');
+    await new Promise((r) => setTimeout(r, 25));
+  }
+};
+
+/**
+ * Deletes queues (and their dead-letter queues) over a throwaway connection. Call it only after the
+ * connection consuming them is closed: deleting a queue that still has a consumer makes the broker
+ * cancel it, and the consumer then recycles its channel, so a cleanup sharing that channel would
+ * fail with "Channel closing".
+ */
+async function deleteQueues(queues: string[]): Promise<void> {
+  const conn = await amqp.connect(URL as string);
+  try {
+    const ch = await conn.createChannel();
+    for (const q of queues) {
+      await ch.deleteQueue(q);
+      await ch.deleteQueue(deadLetterQueueName(q));
+    }
+  } finally {
+    await conn.close();
+  }
+}
+
+suite('broker integration', () => {
+  let broker: BrokerConnection;
+  let publisher: EventPublisher;
+  let consumer: EventConsumer;
+
+  beforeAll(async () => {
+    broker = new BrokerConnection(
+      URL as string,
+      `test-${RUN}`,
+      [{ queue: QUEUE, routingKeys: [EVENTS.USER_ACTIVATED] }],
+      // Short delays: the production backoff is 1s/5s/15s/60s, which no test
+      // should sit through. The path exercised is identical.
+      [60, 60],
+    );
+    await broker.connect();
+    publisher = new EventPublisher(broker, 'user-service');
+    consumer = new EventConsumer(broker);
+  }, 30_000);
+
+  afterAll(async () => {
+    // Leave no queues behind for the next run.
+    await broker?.close();
+    if (URL) await deleteQueues([QUEUE]);
+  });
+
+  it('declares its topology against an empty broker', async () => {
+    const ch = broker.getChannel();
+    // checkQueue throws if the queue does not exist.
+    await expect(ch.checkQueue(QUEUE)).resolves.toBeDefined();
+    await expect(ch.checkQueue(deadLetterQueueName(QUEUE))).resolves.toBeDefined();
+    await expect(ch.checkExchange(EXCHANGE)).resolves.toBeDefined();
+  });
+
+  it('delivers an activation to a consumer with its correlation id intact', async () => {
+    let seen: { correlationId: string; userId: string } | undefined;
+    await consumer.subscribe({
+      queue: QUEUE,
+      eventType: EVENTS.USER_ACTIVATED,
+      payloadSchema: userActivatedPayload,
+      handler: (envelope) => {
+        seen = { correlationId: envelope.correlationId, userId: envelope.payload.userId };
+      },
+    });
+
+    await publisher.publish({
+      eventType: EVENTS.USER_ACTIVATED,
+      schemaVersion: 1,
+      aggregateId: 'user-42',
+      correlationId: 'trace-from-http',
+      payload: { userId: 'user-42', activatedAt: new Date().toISOString() },
+    });
+
+    const got = await waitFor(() => seen);
+    expect(got.userId).toBe('user-42');
+    expect(got.correlationId).toBe('trace-from-http');
+  }, 20_000);
+
+  it('retries a transient failure, then succeeds', async () => {
+    const queue = `foc.test-${RUN}.retry`;
+    const b = new BrokerConnection(
+      URL as string,
+      `test-${RUN}-retry`,
+      [{ queue, routingKeys: ['test.retry'] }],
+      [60, 60],
+    );
+    await b.connect();
+    const attempts: number[] = [];
+    await new EventConsumer(b).subscribe({
+      queue,
+      eventType: 'test.retry',
+      payloadSchema: userActivatedPayload,
+      handler: (_e, ctx) => {
+        attempts.push(ctx.attempt);
+        if (ctx.attempt < 2) throw new Error('dependency not ready');
+      },
+    });
+    await testPublisher(b, 'test.retry').publish({
+      eventType: 'test.retry',
+      schemaVersion: 1,
+      aggregateId: 'a-1',
+      correlationId: 'retry-trace',
+      payload: { userId: 'a-1', activatedAt: new Date().toISOString() },
+    });
+
+    await waitFor(() => (attempts.includes(2) ? attempts : undefined));
+    expect(attempts[0]).toBe(1);
+    expect(attempts).toContain(2);
+
+    await b.close();
+    await deleteQueues([queue]);
+  }, 25_000);
+
+  it('sets a malformed message aside, with the reason, instead of crashing', async () => {
+    const queue = `foc.test-${RUN}.bad`;
+    const b = new BrokerConnection(
+      URL as string,
+      `test-${RUN}-bad`,
+      [{ queue, routingKeys: ['test.bad'] }],
+      [60, 60],
+    );
+    await b.connect();
+
+    let handlerRan = false;
+    await new EventConsumer(b).subscribe({
+      queue,
+      eventType: 'test.bad',
+      payloadSchema: userActivatedPayload,
+      handler: () => {
+        handlerRan = true;
+      },
+    });
+
+    // Bypasses the publisher deliberately: this is what a buggy or older
+    // producer would put on the wire.
+    b.getChannel().publish(EXCHANGE, 'test.bad', Buffer.from('{"nonsense":true}'), {
+      persistent: true,
+    });
+
+    const dlq = deadLetterQueueName(queue);
+    let dead: Awaited<ReturnType<typeof b.getChannel>['get']> extends infer _ ? any : never;
+    for (let i = 0; i < 200 && !dead; i++) {
+      dead = await b.getChannel().get(dlq, { noAck: true });
+      if (!dead) await new Promise((r) => setTimeout(r, 50));
+    }
+
+    expect(dead, 'malformed message should reach the dead-letter queue').toBeTruthy();
+    expect(handlerRan, 'handler must never see an invalid payload').toBe(false);
+    // An operator inspecting the dead letter must see why, without reading logs.
+    expect(String(dead.properties.headers[HEADER_FAILURE])).toMatch(
+      /payload invalid|envelope invalid/,
+    );
+
+    await b.close();
+    await deleteQueues([queue]);
+  }, 25_000);
+
+  it('retries a failure back to the failing queue only, not to another bound to the same key', async () => {
+    const key = `test.shared-${RUN}`;
+    const [qa, qb] = [`foc.test-${RUN}.shared-a`, `foc.test-${RUN}.shared-b`];
+    const b = new BrokerConnection(
+      URL as string,
+      `test-${RUN}-shared`,
+      [
+        { queue: qa, routingKeys: [key] },
+        { queue: qb, routingKeys: [key] },
+      ],
+      [60, 60],
+    );
+    await b.connect();
+    const consumer = new EventConsumer(b);
+    const seenA: number[] = [];
+    const seenB: number[] = [];
+    await consumer.subscribe({
+      queue: qa,
+      eventType: key,
+      payloadSchema: userActivatedPayload,
+      handler: (_e, ctx) => {
+        seenA.push(ctx.attempt);
+        if (ctx.attempt < 2) throw new Error('not yet');
+      },
+    });
+    await consumer.subscribe({
+      queue: qb,
+      eventType: key,
+      payloadSchema: userActivatedPayload,
+      handler: (_e, ctx) => void seenB.push(ctx.attempt),
+    });
+    await testPublisher(b, key).publish({
+      eventType: key,
+      schemaVersion: 1,
+      aggregateId: 'a-1',
+      correlationId: 'shared-trace',
+      payload: { userId: 'a-1', activatedAt: new Date().toISOString() },
+    });
+
+    await waitFor(() => (seenA.includes(2) ? seenA : undefined));
+    await new Promise((r) => setTimeout(r, 500)); // room for a stray redelivery to show up
+    expect(seenB).toEqual([1]);
+
+    await b.close();
+    await deleteQueues([qa, qb]);
+  }, 25_000);
+
+  it('keeps consuming after the server closes the channel', async () => {
+    const queue = `foc.test-${RUN}.recover`;
+    const b = new BrokerConnection(
+      URL as string,
+      `test-${RUN}-recover`,
+      [{ queue, routingKeys: ['test.recover'] }],
+      [60, 60],
+    );
+    await b.connect();
+    const seen: string[] = [];
+    await new EventConsumer(b).subscribe({
+      queue,
+      eventType: 'test.recover',
+      payloadSchema: userActivatedPayload,
+      handler: (e) => void seen.push(e.payload.userId),
+    });
+
+    // A passive check of a queue that does not exist makes the server close the channel.
+    await b
+      .getChannel()
+      .checkQueue(`foc.test-${RUN}.missing`)
+      .catch(() => undefined);
+    await waitFor(() => (b.isConnected() ? undefined : true)); // it noticed ...
+    await waitFor(() => (b.isConnected() ? true : undefined)); // ... and came back
+
+    await testPublisher(b, 'test.recover').publish({
+      eventType: 'test.recover',
+      schemaVersion: 1,
+      aggregateId: 'a-2',
+      correlationId: 'recover-trace',
+      payload: { userId: 'a-2', activatedAt: new Date().toISOString() },
+    });
+    expect(await waitFor(() => (seen.length ? seen : undefined))).toEqual(['a-2']);
+
+    await b.close();
+    await deleteQueues([queue]);
+  }, 25_000);
+
+  it('keeps the publisher usable while a workflow is still in flight', async () => {
+    // EI-FR1.1.2: the action returns its own result without waiting.
+    const started = Date.now();
+    await publisher.publish({
+      eventType: EVENTS.USER_ACTIVATED,
+      schemaVersion: 1,
+      aggregateId: 'user-99',
+      correlationId: 'fast-return',
+      payload: { userId: 'user-99', activatedAt: new Date().toISOString() },
+    });
+    expect(Date.now() - started).toBeLessThan(1000);
+  }, 15_000);
+  it('refuses to lose an event that needs a consumer while no queue is bound, then delivers it', async () => {
+    const type = `test.unrouted-${RUN}`;
+    const queue = `foc.test-${RUN}.unrouted`;
+    // A producer on a broker where nothing has ever bound a queue to this event.
+    const producerSide = new BrokerConnection(URL as string, `test-${RUN}-unrouted-producer`, []);
+    await producerSide.connect();
+    const publisher = new EventPublisher(producerSide, 'test', {
+      schemas: { [type]: userActivatedPayload },
+      requiresConsumer: new Set([type]),
+    });
+    const event = {
+      eventType: type,
+      schemaVersion: 1,
+      aggregateId: 'u-unrouted',
+      correlationId: 'unrouted-trace',
+      payload: { userId: 'u-unrouted', activatedAt: new Date().toISOString() },
+    };
+
+    await expect(publisher.publish(event)).rejects.toBeInstanceOf(UnroutableEventError);
+
+    // Its consumer starts and declares the queue; the same publish now arrives.
+    const consumerSide = new BrokerConnection(
+      URL as string,
+      `test-${RUN}-unrouted`,
+      [{ queue, routingKeys: [type] }],
+      [60, 60],
+    );
+    await consumerSide.connect();
+    let seen: string | undefined;
+    await new EventConsumer(consumerSide).subscribe({
+      queue,
+      eventType: type,
+      payloadSchema: userActivatedPayload,
+      handler: (envelope) => {
+        seen = envelope.eventId;
+      },
+    });
+    const sent = await publisher.publish(event);
+    expect(await waitFor(() => seen)).toBe(sent.eventId);
+
+    await producerSide.close();
+    await consumerSide.close();
+    await deleteQueues([queue]);
+  }, 25_000);
+});

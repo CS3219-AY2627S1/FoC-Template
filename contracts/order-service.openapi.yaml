@@ -1,0 +1,1496 @@
+openapi: 3.1.0
+info:
+  title: FoC Order Service API
+  version: 1.0.0
+  summary: Errand lifecycle API.
+servers:
+  - url: http://localhost:3003
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503':
+          description: >-
+            A dependency the service cannot work without (its database) is unavailable. It answers
+            200 again as soon as the dependency is back, with no restart (PL-NFR3.1.2).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthUnavailable' }
+  /orders/mine:
+    get:
+      operationId: listMyOrders
+      summary: List the caller's own errands.
+      description: |
+        Errands the caller requested or is the current courier of, in any status, most recently
+        changed first, a page at a time: `limit` errands (100 by default), then `nextCursor` for the
+        next page, null on the last. `truncated` is `nextCursor !== null`, kept for older clients.
+        Each carries the caller's private projection and `myRole`. A courier who withdrew or timed
+        out no longer holds the errand and does not see it. Filter by `role` before paging;
+        `active=true` includes only errands that have not reached a final status.
+
+        Pages are a keyset on the last change, which moves: an errand that changes while the caller
+        is paging moves ahead of their cursor, so no later page repeats it, and reading the first
+        page again (as polling does) picks it up. A client keeping several pages replaces its copy
+        of that errand by `orderId`.
+      parameters:
+        - in: query
+          name: role
+          schema: { type: string, enum: [REQUESTER, COURIER] }
+        - in: query
+          name: active
+          schema: { type: boolean }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The caller's errands.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MyOrders' }
+        '400': { $ref: '#/components/responses/InvalidCursor' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '422': { $ref: '#/components/responses/ListQueryInvalid' }
+  /orders/{orderId}:
+    get:
+      operationId: getOrder
+      summary: Read the caller-authorized projection of one errand.
+      description: |
+        Exact delivery instructions and participant IDs are returned only to the requester,
+        assigned courier, or the administrator specifically named by a referral. Other students
+        and unrelated administrators receive the open-list projection. Pending-credit and rejected
+        errands are private to their requester; other callers receive the same 404 as an unknown ID.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: view
+          in: query
+          required: false
+          description: Request private participant detail; unauthorized callers receive 403.
+          schema: { type: string, enum: [private] }
+      responses:
+        '200':
+          description: The authorized order projection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/InvalidOrderId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/PrivateForbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /orders:
+    get:
+      operationId: listOpenOrders
+      summary: Discover currently acceptable errands.
+      description: |
+        Returns only unexpired OPEN orders, leaves out the caller's own errands, and never exposes
+        delivery instructions or participant IDs. Ordered by acceptance deadline, then posting
+        time, a page at a time: `limit` errands (100 by default). The body stays a bare array, so
+        the next page's cursor comes in the `Next-Cursor` header, absent on the last page. These
+        keys never change while an errand is open, so errands posted between pages are never
+        repeated and never push one off a page; a new errand that sorts before the cursor shows on
+        the first page.
+
+        `pickupBuilding` keeps errands whose supplier is in that building, in any case;
+        `minReward` keeps those paying at least that much. Filters combine with the cursor: pass
+        the same ones with it. Unknown parameters are ignored, as they always have been.
+      parameters:
+        - in: query
+          name: pickupBuilding
+          schema: { type: string, minLength: 1, maxLength: 200 }
+        - in: query
+          name: minReward
+          schema: { type: integer, minimum: 1, maximum: 2147483647 }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Privacy-safe open-order summaries ordered by acceptance deadline.
+          headers:
+            Next-Cursor: { $ref: '#/components/headers/NextCursor' }
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 100
+                items: { $ref: '#/components/schemas/OpenOrderSummary' }
+        '400': { $ref: '#/components/responses/InvalidCursor' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '422': { $ref: '#/components/responses/ListQueryInvalid' }
+    post:
+      operationId: createOrder
+      summary: Submit an errand for asynchronous credit reservation.
+      description: |
+        Validates the request and active supplier first, then commits a private PENDING_CREDIT
+        errand and its reservation request in one transaction. Repeating the same requester-scoped
+        Idempotency-Key with the same body returns the original order.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 200 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOrder' }
+      responses:
+        '201':
+          description: New PENDING_CREDIT order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '200':
+          description: Exact result of an idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '422': { $ref: '#/components/responses/InvalidOrder' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
+  /orders/{orderId}/accept:
+    post:
+      operationId: acceptOrder
+      summary: Atomically accept an OPEN errand.
+      description: |
+        One conditional database update checks OPEN state, expected version, requester inequality,
+        and the live deadline. It chooses one courier under contention and emits one status event.
+        No Credit balance is consulted.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CommandIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AcceptOrder' }
+      responses:
+        '201':
+          description: The accepted order with participant detail for its courier.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/InvalidOrderId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AcceptanceForbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/AcceptanceConflict' }
+        '422': { $ref: '#/components/responses/InvalidOrder' }
+  /orders/{orderId}/pickup:
+    post:
+      operationId: recordPickup
+      summary: Assigned courier records pickup (ACCEPTED → PICKED_UP).
+      description: |
+        Only the assigned courier may record pickup, and only from ACCEPTED at the stated version.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CommandIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LifecycleCommand' }
+      responses:
+        '200':
+          description: The order after the transition, projected for the caller.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/InvalidOrderId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/ActionForbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/LifecycleConflict' }
+        '422': { $ref: '#/components/responses/InvalidOrder' }
+  /orders/{orderId}/deliver:
+    post:
+      operationId: recordDelivery
+      summary: Assigned courier records delivery (PICKED_UP → DELIVERED).
+      description: |
+        Only the assigned courier may record delivery, and only from PICKED_UP at the stated version.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CommandIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LifecycleCommand' }
+      responses:
+        '200':
+          description: The order after the transition, projected for the caller.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/InvalidOrderId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/ActionForbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/LifecycleConflict' }
+        '422': { $ref: '#/components/responses/InvalidOrder' }
+  /orders/{orderId}/confirm-receipt:
+    post:
+      operationId: confirmReceipt
+      summary: Requester confirms receipt (DELIVERED → COMPLETION_PENDING_CREDIT).
+      description: |
+        Only the requester may confirm. The order waits in COMPLETION_PENDING_CREDIT, unchangeable by
+        any participant, administrator or timer, until the Credit Service confirms the transfer
+        requested by the `order.completion-requested` event written in the same transaction.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CommandIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LifecycleCommand' }
+      responses:
+        '200':
+          description: The order after the transition, projected for the caller.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/InvalidOrderId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/ActionForbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/LifecycleConflict' }
+        '422': { $ref: '#/components/responses/InvalidOrder' }
+  /orders/{orderId}/cancel:
+    post:
+      operationId: cancelOrder
+      summary: Requester cancels an OPEN or ACCEPTED errand before pickup.
+      description: |
+        Moves the errand to RELEASE_PENDING_CREDIT (reason cancelled) and writes
+        `order.release-requested` in the same transaction. It becomes CANCELLED only when the Credit
+        Service confirms the release. PICKED_UP and later states refuse cancellation with 409.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CommandIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LifecycleCommand' }
+      responses:
+        '200':
+          description: The order after the transition, projected for the caller.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/InvalidOrderId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/ActionForbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/LifecycleConflict' }
+        '422': { $ref: '#/components/responses/InvalidOrder' }
+  /orders/{orderId}/withdraw:
+    post:
+      operationId: withdrawFromOrder
+      summary: Assigned courier withdraws before pickup.
+      description: |
+        The courier is removed. Before the acceptance deadline the errand returns to OPEN with its
+        deadline unchanged; after it, the errand moves to RELEASE_PENDING_CREDIT (reason expired) and
+        requests one release of the reward.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CommandIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LifecycleCommand' }
+      responses:
+        '200':
+          description: The order after the transition, projected for the caller.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/InvalidOrderId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/ActionForbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/LifecycleConflict' }
+        '422': { $ref: '#/components/responses/InvalidOrder' }
+  /orders/{orderId}/report-non-delivery:
+    post:
+      operationId: reportNonDelivery
+      summary: Requester reports an errand not delivered (PICKED_UP → DISPUTED).
+      description: |
+        Only the requester may report, and only from `nonDeliveryReportAt` (pickup plus the delivery
+        period, 2 hours by default) on; earlier it is refused with 409 `DELIVERY_PERIOD_NOT_PASSED`.
+        The errand is referred to an administrator, and no timer changes it afterwards.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CommandIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LifecycleCommand' }
+      responses:
+        '200':
+          description: The order after the transition, projected for the caller.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/InvalidOrderId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/ActionForbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/LifecycleConflict' }
+        '422': { $ref: '#/components/responses/InvalidOrder' }
+  /orders/{orderId}/report-non-receipt:
+    post:
+      operationId: reportNonReceipt
+      summary: Requester reports a delivered errand not received (DELIVERED → DISPUTED).
+      description: |
+        Instead of confirming, the requester may report the errand not received until
+        `autoConfirmAt` (delivery plus the auto-confirmation period, 24 hours by default). From then
+        the errand is confirmed automatically and a report is refused with 409
+        `AUTO_CONFIRMATION_PASSED`, even before the confirmation is recorded. A reported errand is
+        referred to an administrator, and no timer changes it afterwards.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CommandIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LifecycleCommand' }
+      responses:
+        '200':
+          description: The order after the transition, projected for the caller.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/InvalidOrderId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/ActionForbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/LifecycleConflict' }
+        '422': { $ref: '#/components/responses/InvalidOrder' }
+  /orders/{orderId}/history:
+    get:
+      operationId: getOrderHistory
+      summary: Read the private status history of an errand.
+      description: |
+        Every status change with its previous and new status, action, actor and time (OS-FR7.1.2).
+        Readable only by the requester, the current courier and the administrator named by a
+        referral; a former courier is an unrelated student. Hidden (pending/rejected) errands are
+        a 404 for everyone else.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The history, oldest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderHistory' }
+        '400': { $ref: '#/components/responses/InvalidOrderId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/PrivateForbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/orders:
+    get:
+      operationId: listAccountOrders
+      summary: An administrator's view of errands, one account's or all of them (ORD-15, ADM-06).
+      description: |
+        The errands one account requested (`requesterId`), currently holds as courier
+        (`courierId`), or both when both are given; every errand when neither is given (ADM-06).
+        `status` narrows either to one or more statuses. Newest first; `before` continues from the
+        last errand a page showed, and `total` counts what the whole query matches, `before`
+        included. Public fields only: no participant IDs, delivery instructions or item notes, even
+        for an errand referred to the caller, whose private details are read through
+        `GET /orders/{orderId}`. A courier who withdrew or timed out no longer holds the errand.
+        Administrators only.
+      parameters:
+        - { name: requesterId, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+        - { name: courierId, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+        - name: status
+          in: query
+          description: |
+            One or more errand statuses, comma-separated, such as `DISPUTED` or `OPEN,ACCEPTED`.
+            Each must be a value of `Order.status`; an unknown or empty one is refused, and so is
+            a repeated `status` parameter.
+          schema: { type: string, minLength: 1, maxLength: 400 }
+        - name: before
+          in: query
+          description: |
+            The `orderId` of the last errand a previous page showed: lists only the errands after
+            it in this order. Unlike `page`, nothing moves when errands are posted since or leave
+            the `status` filter. An errand that does not exist lists nothing.
+          schema: { type: string, format: uuid }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - {
+            name: pageSize,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 100, default: 20 },
+          }
+      responses:
+        '200':
+          description: One page of the account's errands.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountOrderPage' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+        '422': { $ref: '#/components/responses/AccountQueryInvalid' }
+  /admin/orders/reconciliation-attempts:
+    get:
+      operationId: listReconciliationAttempts
+      summary: Operator view of recent credit reconciliation decisions (CRD-07).
+      description: |
+        The 100 most recent decisions, newest first. Each records what Order and Credit each held
+        and what the job did: REISSUED (the same idempotent request written to the outbox again),
+        ALERTED (a contradiction raised as CREDIT_STATE_CONFLICT) or CREDIT_UNAVAILABLE. An errand
+        found contradicting Credit is not checked again until it changes; openContradictions counts
+        the errands that have not changed since. Administrators only.
+      responses:
+        '200':
+          description: Recent attempts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReconciliationAttempts' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+  /admin/orders/pending-credit:
+    get:
+      operationId: listCreditWaitExceeded
+      summary: Operator view of errands waiting for the Credit Service too long.
+      description: |
+        Errands still in PENDING_CREDIT after CREDIT_WAIT_TIMEOUT_MS (5 minutes by default,
+        OS-FR1.1.3), oldest first, with when the operator alert was raised. Listing an errand does not
+        reject it; it still opens if the reservation arrives. Administrators only.
+      responses:
+        '200':
+          description: Waiting errands.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreditWaitList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+  /admin/orders/referred:
+    get:
+      operationId: listReferredDisputes
+      summary: Disputes referred to the calling administrator, and those referred to no one yet.
+      description: |
+        Every disputed errand is referred to one administrator, chosen automatically from the
+        administrators who may act and never one who was its requester or courier. The caller's
+        own referrals carry their private details; disputes not yet referred to anyone appear
+        without them. `referredBy` is the action that disputed the errand. At most 100, oldest
+        change first. Administrators only.
+      responses:
+        '200':
+          description: The caller's referrals and the unreferred disputes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReferredOrders' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+  /admin/orders/decisions:
+    get:
+      operationId: listDisputeDecisions
+      summary: The most recent dispute decisions.
+      description: |
+        The 100 most recent decisions, newest first: the errand, the deciding administrator, the
+        outcome and their reason. Administrators only.
+      responses:
+        '200':
+          description: Recent decisions.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DisputeDecisions' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+  /admin/orders/{orderId}/resolve:
+    post:
+      operationId: resolveDispute
+      summary: The referred administrator decides a dispute (DISPUTED → COMPLETION_PENDING_CREDIT or RELEASE_PENDING_CREDIT).
+      description: |
+        Only the administrator the dispute is referred to may decide it, with a reason of 1 to 500
+        characters (trimmed) that is kept in the errand's history. `COURIER` requests the reward's
+        transfer to the courier; `REQUESTER` requests its release back to the requester (the errand
+        ends cancelled). Either way the errand waits for the Credit Service's confirmation.
+
+        `403 CONFLICT_OF_INTEREST`: the caller was ever this errand's requester or courier.
+        `403 NOT_REFERRED_ADMIN`: the dispute is referred to another administrator, or to no one
+        yet. A repeated decision without the first one's Idempotency-Key, or one made on a stale
+        version (for example after the dispute was referred to someone else), is a `409` and
+        changes nothing.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/CommandIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResolveDispute' }
+      responses:
+        '200':
+          description: The order after the decision, projected for the administrator.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/InvalidOrderId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/DecisionForbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/LifecycleConflict' }
+        '422': { $ref: '#/components/responses/InvalidOrder' }
+  /admin/orders/alerts:
+    get:
+      operationId: listOperatorAlerts
+      summary: Operator alerts across every errand (PLT-05).
+      description: |
+        `CREDIT_WAIT_EXCEEDED` (an errand waited for Credit past CREDIT_WAIT_TIMEOUT_MS),
+        `CREDIT_STATE_CONFLICT` (Credit's record disagrees with the errand's) and
+        `REFERRAL_UNASSIGNED` (a dispute had no eligible administrator; raised once per errand),
+        newest first, at most 100. Administrators only.
+      responses:
+        '200':
+          description: Alerts, newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OperatorAlertList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+  /admin/orders/{orderId}/timeline:
+    get:
+      operationId: getOrderTimeline
+      summary: Reconstruct one errand from its ID (PLT-05, EI-NFR4.1.1).
+      description: |
+        Everything the Order Service recorded about one errand: its state changes, every event it
+        caused and how sending each went, reconciliation decisions, operator alerts, and any dead
+        letter about it. Credit's half is `GET /admin/orders/{orderId}/credit` on the Credit Service.
+        Administrators only.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The errand's timeline.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderTimeline' }
+        '400': { $ref: '#/components/responses/InvalidOrderId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/dead-letters:
+    get:
+      operationId: listDeadLetters
+      summary: Find this service's dead letters (PLT-05).
+      description: |
+        Events this service's consumers could not handle after every retry, parked for an operator,
+        newest first. `q` matches a correlation ID, an aggregate (order or user) ID or an event ID
+        exactly. Administrators only.
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [WAITING, REDRIVEN] } }
+        - { name: queue, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+        - { name: q, in: query, schema: { type: string, minLength: 1, maxLength: 200 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - {
+            name: pageSize,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 100, default: 20 },
+          }
+      responses:
+        '200':
+          description: One page of dead letters.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeadLetterPage' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+        '422': { $ref: '#/components/responses/DeadLetterInvalid' }
+  /admin/dead-letters/{id}:
+    get:
+      operationId: getDeadLetter
+      summary: Inspect one dead letter, with the message it carried.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The dead letter, its body and headers as received.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeadLetterDetail' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+        '404': { $ref: '#/components/responses/DeadLetterNotFound' }
+  /admin/dead-letters/{id}/redrive:
+    post:
+      operationId: redriveDeadLetter
+      summary: Deliver a dead letter again, unchanged, to the queue it failed on.
+      description: |
+        Publishes the stored bytes and properties to the queue the message failed on, and nowhere
+        else, with its attempts started again. The payload cannot be edited. Recorded with who did it
+        and why once the broker confirms. A dead letter is redriven once; if it fails again, it comes
+        back as a new one. The consumer's inbox makes a repeated delivery harmless.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: Redriven. The dead letter, now REDRIVEN.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeadLetter' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/AdminOnly' }
+        '404': { $ref: '#/components/responses/DeadLetterNotFound' }
+        '409': { $ref: '#/components/responses/AlreadyRedriven' }
+        '422': { $ref: '#/components/responses/DeadLetterInvalid' }
+        '503': { $ref: '#/components/responses/BrokerUnavailable' }
+  /orders/{orderId}/receipt:
+    get:
+      operationId: getOrderReceipt
+      summary: Read the immutable completion receipt.
+      description: |
+        Available once the Credit Service has confirmed the transfer. Readable by the requester,
+        the courier, and the administrator named by a referral.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The receipt, including the Credit Service transaction reference.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderReceipt' }
+        '400': { $ref: '#/components/responses/InvalidOrderId' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/PrivateForbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /live:
+    get:
+      operationId: openLiveUpdates
+      summary: Open a stream of nudges about the caller's errands (N1.4).
+      description: |
+        Server-Sent Events. A nudge never carries an errand: on one, the page reads again through
+        the ordinary endpoints, which apply their ordinary rules, so a lost, repeated or reordered
+        nudge costs at most one read. Events:
+
+        - `ready` (`{}`), once, on connect: read everything shown, to catch up.
+        - `errand` (`{"orderId", "version"}`), to the errand's requester and courier, when its
+          status changes. `version` is the errand's version after the change; it is absent for a
+          change recorded before versions were carried.
+        - `board` (`{}`), to every stream, when an errand joins or leaves the open list; at most
+          once a second.
+        - a `: keep-alive` comment every 20 seconds.
+
+        The caller is authenticated when the stream opens. It ends itself after
+        `LIVE_STREAM_MAX_MS` (5 minutes by default); the page reconnects with its current token.
+        Polling remains the fallback: a page that is refused keeps polling.
+      responses:
+        '200':
+          description: The stream, starting with `ready`.
+          headers:
+            X-Accel-Buffering:
+              description: '`no`: a proxy must pass each event on as it is written.'
+              schema: { type: string, const: 'no' }
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429':
+          description: '`TOO_MANY_STREAMS`: the caller already holds 5 streams on this instance.'
+          headers:
+            Retry-After: { schema: { type: string, const: '60' } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '503':
+          description: >-
+            `LIVE_UNAVAILABLE`: live updates are switched off (`LIVE_UPDATES_ENABLED=false`), or
+            this instance holds 1,000 streams.
+          headers:
+            Retry-After: { schema: { type: string, const: '60' } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  /internal/orders/{orderId}/chat:
+    get:
+      operationId: getOrderForChat
+      summary: Read what the Chat Service decides access from (N1.2, ADR 0012).
+      description: |
+        Chat asks on every request and keeps no copy. `courierId` is the current courier: null
+        before acceptance and after a withdrawal, pickup timeout or a courier suspension before
+        pickup; one suspended after pickup stays courier while the errand is DISPUTED. `endedAt`
+        is when the errand reached a final status (`COMPLETED`, `CANCELLED`, `EXPIRED`,
+        `REJECTED`), else null.
+      security:
+        - serviceKey: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The errand's participants and status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderForChat' }
+        '400': { $ref: '#/components/responses/InvalidOrderId' }
+        '401':
+          description: Missing or unknown `X-Service-Key`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '404':
+          description: No errand has this ID.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    serviceKey:
+      type: apiKey
+      in: header
+      name: X-Service-Key
+  parameters:
+    CommandIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Optional. A key belongs to the caller who sent it and never expires. Command keys are
+        separate from the keys on `POST /orders`. A retry with the same key and request changes
+        nothing and gets the command's usual success status with the errand as
+        `GET /orders/{orderId}` shows it to the caller now, even if it has moved on since. Only a
+        command that took effect is kept: after a refusal the key is still free, and a retry with
+        it is judged again. The same key with a different command, errand, `expectedVersion` or
+        decision is `422 IDEMPOTENCY_KEY_REUSED`. Without a key, a retry is judged like any other
+        command.
+      schema: { type: string, minLength: 1, maxLength: 200 }
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor returned by the previous page.
+      schema: { type: string, minLength: 1, maxLength: 500 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 100 }
+  headers:
+    NextCursor:
+      description: Opaque cursor for the next page, as the `cursor` parameter. Absent on the last page.
+      schema: { type: string }
+  schemas:
+    Health:
+      type: object
+      required: [status, service, version, uptimeSeconds]
+      properties:
+        status: { type: string, const: ok }
+        service: { type: string, const: order-service }
+        version: { type: string }
+        uptimeSeconds: { type: number, minimum: 0 }
+        dependencies:
+          description: >-
+            Each dependency the service asks on every call. `database` is mandatory: while it is
+            down the answer is 503. `broker` is not: the outbox holds events until it is back.
+          type: object
+          additionalProperties: { type: string, enum: [up, down] }
+    HealthUnavailable:
+      type: object
+      required: [status, service, version, uptimeSeconds]
+      properties:
+        status: { type: string, const: unavailable }
+        service: { type: string, const: order-service }
+        version: { type: string }
+        uptimeSeconds: { type: number, minimum: 0 }
+        dependencies:
+          type: object
+          additionalProperties: { type: string, enum: [up, down] }
+    SupplierSnapshot:
+      type: object
+      required: [supplierId, name, type, building, floor, locationDescription]
+      properties:
+        supplierId: { type: string, format: uuid }
+        name: { type: string }
+        type: { type: string }
+        building: { type: string }
+        floor: { type: string }
+        locationDescription: { type: string }
+    OrderItem:
+      type: object
+      required: [name, quantity]
+      properties:
+        name: { type: string }
+        quantity: { type: integer, minimum: 1 }
+        note: { type: string }
+    Order:
+      type: object
+      required:
+        - orderId
+        - supplier
+        - items
+        - deliveryZone
+        - reward
+        - status
+        - version
+        - acceptanceDeadlineAt
+        - createdAt
+        - updatedAt
+        - serverTime
+      properties:
+        orderId: { type: string, format: uuid }
+        supplier: { $ref: '#/components/schemas/SupplierSnapshot' }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/OrderItem' }
+        deliveryZone: { type: string }
+        reward: { type: integer, minimum: 1, maximum: 5 }
+        status:
+          type: string
+          enum:
+            - PENDING_CREDIT
+            - OPEN
+            - ACCEPTED
+            - PICKED_UP
+            - DELIVERED
+            - DISPUTED
+            - COMPLETION_PENDING_CREDIT
+            - RELEASE_PENDING_CREDIT
+            - REJECTED
+            - COMPLETED
+            - CANCELLED
+            - EXPIRED
+        version: { type: integer, minimum: 1 }
+        acceptanceDeadlineAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        serverTime:
+          type: string
+          format: date-time
+          description: |
+            The server's clock when it answered. A client measures the deadlines against it, not
+            against its own clock, which may be wrong.
+        requesterId: { type: string }
+        courierId: { type: string }
+        deliveryInstructions: { type: string }
+        nonDeliveryReportAt:
+          type: string
+          format: date-time
+          description: |
+            Private, and only while `PICKED_UP`: pickup plus the delivery period. From then the
+            requester may report non-delivery.
+        autoConfirmAt:
+          type: string
+          format: date-time
+          description: |
+            Private, and only while `DELIVERED`: delivery plus the auto-confirmation period. From
+            then the errand is confirmed automatically unless the requester has confirmed or
+            reported it.
+        releaseReason:
+          type: string
+          enum: [CANCELLED, EXPIRED]
+          description: |
+            Private, and only while `RELEASE_PENDING_CREDIT`: the status the errand ends in once the
+            Credit Service confirms the credits are returned.
+        rejection:
+          type: object
+          required: [reason]
+          properties:
+            reason: { type: string }
+            available: { type: integer, minimum: 0 }
+    MyOrders:
+      type: object
+      required: [items, nextCursor, truncated]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Order'
+              - type: object
+                required: [myRole]
+                properties:
+                  myRole: { type: string, enum: [REQUESTER, COURIER] }
+        nextCursor:
+          type: [string, 'null']
+          description: The cursor for the next page, or null on the last.
+        truncated:
+          type: boolean
+          description: True when there is another page; the same as `nextCursor !== null`.
+    CreateOrder:
+      type: object
+      additionalProperties: false
+      required: [supplierId, items, deliveryZone, deliveryInstructions, reward]
+      properties:
+        supplierId: { type: string, format: uuid }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: '#/components/schemas/OrderItem' }
+        deliveryZone: { type: string, minLength: 1, maxLength: 200 }
+        deliveryInstructions: { type: string, minLength: 1, maxLength: 1000 }
+        reward: { type: integer, minimum: 1, maximum: 5 }
+    OpenOrderSummary:
+      type: object
+      required:
+        [
+          orderId,
+          supplier,
+          itemSummary,
+          deliveryZone,
+          reward,
+          status,
+          version,
+          acceptanceDeadlineAt,
+          timeRemainingSeconds,
+          createdAt,
+        ]
+      properties:
+        orderId: { type: string, format: uuid }
+        supplier: { $ref: '#/components/schemas/SupplierSnapshot' }
+        itemSummary:
+          type: array
+          items:
+            type: object
+            required: [name, quantity]
+            properties:
+              name: { type: string }
+              quantity: { type: integer, minimum: 1 }
+        deliveryZone: { type: string }
+        reward: { type: integer, minimum: 1, maximum: 5 }
+        status: { type: string, const: OPEN }
+        version: { type: integer, minimum: 1 }
+        acceptanceDeadlineAt: { type: string, format: date-time }
+        timeRemainingSeconds: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+    AcceptOrder:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+    LifecycleCommand:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, minimum: 1 }
+    OrderReceipt:
+      type: object
+      required:
+        [orderId, requesterId, courierId, supplier, items, reward, creditTransactionId, timestamps]
+      properties:
+        orderId: { type: string, format: uuid }
+        requesterId: { type: string }
+        courierId: { type: string }
+        supplier: { $ref: '#/components/schemas/SupplierSnapshot' }
+        items:
+          type: array
+          minItems: 1
+          description: What was asked for, as it was when the errand was posted.
+          items: { $ref: '#/components/schemas/OrderItem' }
+        reward: { type: integer, minimum: 1, maximum: 5 }
+        creditTransactionId: { type: string, format: uuid }
+        timestamps:
+          type: object
+          required:
+            [createdAt, acceptedAt, pickedUpAt, deliveredAt, completionRequestedAt, completedAt]
+          properties:
+            createdAt: { type: string, format: date-time }
+            acceptedAt: { type: string, format: date-time }
+            pickedUpAt: { type: string, format: date-time }
+            deliveredAt:
+              type: [string, 'null']
+              format: date-time
+              description: |
+                When the courier recorded delivery. Null when an administrator decided the dispute
+                for the courier before any delivery was recorded.
+            completionRequestedAt: { type: string, format: date-time }
+            completedAt: { type: string, format: date-time }
+    OrderHistory:
+      type: object
+      required: [orderId, entries]
+      properties:
+        orderId: { type: string, format: uuid }
+        entries:
+          type: array
+          items:
+            type: object
+            required:
+              [previousStatus, newStatus, action, actorType, actorId, reason, version, occurredAt]
+            properties:
+              previousStatus: { type: [string, 'null'] }
+              newStatus: { type: string }
+              action:
+                type: string
+                description: |
+                  The transition's action. To anyone but the referred administrator, every change
+                  the system made (a timer, a referral or a suspension) shows as `SYSTEM_OUTCOME`,
+                  with `actorType` `SYSTEM` and a null `actorId` and `reason`, so the history does
+                  not say what caused it. So does the Credit Service's cancellation for a suspended
+                  requester. The statuses and times are always the real ones, so a change only a
+                  suspension makes can be inferred.
+              actorType: { type: string }
+              actorId: { type: [string, 'null'] }
+              reason:
+                type: [string, 'null']
+                description: |
+                  An administrator's reason for a decision; or, to the referred administrator only,
+                  the user ID of the administrator referred or cleared on `ADMIN_ASSIGNED` and
+                  `ADMIN_UNASSIGNED`, and `requester suspended` or `courier suspended` on a change a
+                  suspension caused. Otherwise null.
+              version: { type: integer, minimum: 1 }
+              occurredAt: { type: string, format: date-time }
+    ResolveDispute:
+      type: object
+      additionalProperties: false
+      required: [outcome, reason, expectedVersion]
+      properties:
+        outcome: { type: string, enum: [COURIER, REQUESTER] }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+        expectedVersion: { type: integer, minimum: 1 }
+    ReferredOrders:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Order'
+              - type: object
+                required: [referredBy, assignedToMe]
+                properties:
+                  referredBy: { type: string }
+                  assignedToMe: { type: boolean }
+    DisputeDecisions:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [orderId, adminId, outcome, reason, decidedAt]
+            properties:
+              orderId: { type: string, format: uuid }
+              adminId: { type: string }
+              outcome: { type: string, enum: [COURIER, REQUESTER] }
+              reason: { type: string }
+              decidedAt: { type: string, format: date-time }
+    ReconciliationAttempts:
+      type: object
+      required: [items, openContradictions]
+      properties:
+        openContradictions: { type: integer, minimum: 0 }
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              [
+                attemptId,
+                runId,
+                orderId,
+                orderStatus,
+                orderVersion,
+                creditStatus,
+                creditDetail,
+                action,
+                reissuedEventId,
+                attemptedAt,
+              ]
+            properties:
+              attemptId: { type: string, format: uuid }
+              runId: { type: string, format: uuid }
+              orderId: { type: string, format: uuid }
+              orderStatus: { type: string }
+              orderVersion: { type: integer }
+              creditStatus:
+                { type: [string, 'null'], enum: [NONE, RESERVED, RELEASED, TRANSFERRED, null] }
+              creditDetail: { type: [string, 'null'] }
+              action: { type: string, enum: [REISSUED, ALERTED, CREDIT_UNAVAILABLE] }
+              reissuedEventId: { type: [string, 'null'], format: uuid }
+              attemptedAt: { type: string, format: date-time }
+    CreditWaitList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [orderId, requesterId, reward, createdAt, waitingMs, alertRaisedAt]
+            properties:
+              orderId: { type: string, format: uuid }
+              requesterId: { type: string }
+              reward: { type: integer }
+              createdAt: { type: string, format: date-time }
+              waitingMs: { type: number, minimum: 0 }
+              alertRaisedAt: { type: [string, 'null'], format: date-time }
+    OperatorAlert:
+      type: object
+      required: [kind, raisedAt, detail]
+      properties:
+        kind:
+          type: string
+          enum: [CREDIT_WAIT_EXCEEDED, CREDIT_STATE_CONFLICT, REFERRAL_UNASSIGNED]
+        raisedAt: { type: string, format: date-time }
+        detail: { description: What the alert recorded when it was raised. }
+    OperatorAlertList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            allOf:
+              - { $ref: '#/components/schemas/OperatorAlert' }
+              - type: object
+                required: [orderId]
+                properties:
+                  orderId: { type: string, format: uuid }
+    OrderTimeline:
+      type: object
+      required:
+        [
+          orderId,
+          status,
+          requesterId,
+          courierId,
+          reward,
+          version,
+          creditTransactionId,
+          createdAt,
+          updatedAt,
+          history,
+          events,
+          reconciliation,
+          alerts,
+          deadLetters,
+        ]
+      properties:
+        orderId: { type: string, format: uuid }
+        status: { type: string }
+        requesterId: { type: string }
+        courierId: { type: [string, 'null'] }
+        reward: { type: integer }
+        version: { type: integer }
+        creditTransactionId: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        history:
+          type: array
+          items:
+            type: object
+            required: [previousStatus, newStatus, action, actorType, actorId, version, occurredAt]
+            properties:
+              previousStatus: { type: [string, 'null'] }
+              newStatus: { type: string }
+              action: { type: string }
+              actorType: { type: string }
+              actorId: { type: [string, 'null'] }
+              version: { type: integer }
+              occurredAt: { type: string, format: date-time }
+        events:
+          description: Every event the errand caused, sent or still waiting in the outbox.
+          type: array
+          items:
+            type: object
+            required:
+              [
+                eventId,
+                eventType,
+                correlationId,
+                causationId,
+                occurredAt,
+                publishedAt,
+                attempts,
+                lastError,
+              ]
+            properties:
+              eventId: { type: string, format: uuid }
+              eventType: { type: string }
+              correlationId: { type: string }
+              causationId: { type: [string, 'null'] }
+              occurredAt: { type: string, format: date-time }
+              publishedAt: { type: [string, 'null'], format: date-time }
+              attempts: { type: integer, minimum: 0 }
+              lastError: { type: [string, 'null'] }
+        reconciliation:
+          type: array
+          items:
+            type: object
+            required:
+              [attemptId, runId, orderStatus, creditStatus, action, reissuedEventId, attemptedAt]
+            properties:
+              attemptId: { type: string }
+              runId: { type: string }
+              orderStatus: { type: string }
+              creditStatus: { type: [string, 'null'] }
+              action: { type: string }
+              reissuedEventId: { type: [string, 'null'] }
+              attemptedAt: { type: string, format: date-time }
+        alerts:
+          type: array
+          items: { $ref: '#/components/schemas/OperatorAlert' }
+        deadLetters:
+          type: array
+          items: { $ref: '#/components/schemas/DeadLetter' }
+    DeadLetter:
+      type: object
+      required:
+        [
+          id,
+          queue,
+          eventId,
+          eventType,
+          aggregateId,
+          correlationId,
+          failureReason,
+          attempts,
+          status,
+          parkedAt,
+          redrivenAt,
+          redrivenBy,
+          redriveReason,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        queue:
+          {
+            type: string,
+            description: The queue whose consumer failed,
+            which a redrive delivers to.,
+          }
+        eventId: { type: [string, 'null'] }
+        eventType: { type: [string, 'null'] }
+        aggregateId: { type: [string, 'null'], description: The order or user the event is about. }
+        correlationId: { type: [string, 'null'] }
+        failureReason: { type: [string, 'null'] }
+        attempts: { type: integer, minimum: 1 }
+        status: { type: string, enum: [WAITING, REDRIVEN] }
+        parkedAt: { type: string, format: date-time }
+        redrivenAt: { type: [string, 'null'], format: date-time }
+        redrivenBy: { type: [string, 'null'] }
+        redriveReason: { type: [string, 'null'] }
+    DeadLetterDetail:
+      allOf:
+        - { $ref: '#/components/schemas/DeadLetter' }
+        - type: object
+          required: [body, headers]
+          properties:
+            body:
+              { description: The message as received, parsed when it is JSON, its text otherwise. }
+            headers: { type: object, additionalProperties: true }
+    AccountOrderPage:
+      type: object
+      required: [page, pageSize, total, items]
+      properties:
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+        items:
+          type: array
+          description: The public projection; the private properties of Order are never present.
+          items: { $ref: '#/components/schemas/Order' }
+    DeadLetterPage:
+      type: object
+      required: [page, pageSize, total, items]
+      properties:
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/DeadLetter' }
+    OrderForChat:
+      type: object
+      required: [status, version, requesterId, courierId, endedAt]
+      properties:
+        status: { $ref: '#/components/schemas/Order/properties/status' }
+        version: { type: integer, minimum: 1 }
+        requesterId: { type: string }
+        courierId: { type: [string, 'null'] }
+        endedAt: { type: [string, 'null'], format: date-time }
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, correlationId]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            correlationId: { type: string }
+  responses:
+    BadRequest:
+      description: Missing or malformed Idempotency-Key.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    InvalidCursor:
+      description: The cursor is malformed or belongs to another list (`INVALID_CURSOR`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    ListQueryInvalid:
+      description: A parameter out of range or of the wrong type, or on `/orders/mine` an unknown one (`VALIDATION_FAILED`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    InvalidOrderId:
+      description: The order ID is not a UUID, or a command's Idempotency-Key is empty or over 200 characters.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Unauthenticated:
+      description: Missing, invalid, expired, logged-out, or inactive session.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    NotFound:
+      description: The order is unknown or not visible to this caller.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    PrivateForbidden:
+      description: The caller is not a participant or the administrator named by the referral.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    AcceptanceForbidden:
+      description: The caller is suspended or is the requester attempting self-acceptance.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    AcceptanceConflict:
+      description: The order is not OPEN, changed version, was already won, or its deadline passed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    InvalidOrder:
+      description: Invalid fields, inactive/unknown supplier, or an Idempotency-Key already used for a different request (`IDEMPOTENCY_KEY_REUSED`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    AccountQueryInvalid:
+      description: An unknown parameter or status, an empty account or status, a status list over 400 characters or repeated, a before that is not an errand ID, or a page out of range.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    AdminOnly:
+      description: The caller is not an administrator.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    DecisionForbidden:
+      description: |
+        The caller is not an administrator, took part in the errand (`CONFLICT_OF_INTEREST`), or is
+        not the administrator the dispute is referred to (`NOT_REFERRED_ADMIN`). Nothing changes.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    ActionForbidden:
+      description: |
+        This caller may never perform this action on this order (for example, a requester recording
+        pickup). `details` carries the current status and version. Nothing changes.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    LifecycleConflict:
+      description: |
+        `INVALID_ORDER_STATE` (the order is not in a state that allows this action),
+        `ORDER_CHANGED` (stale expectedVersion), or for the requester's reports
+        `DELIVERY_PERIOD_NOT_PASSED` or `AUTO_CONFIRMATION_PASSED`. `details` carries the current
+        status and version. Nothing changes.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    DependencyUnavailable:
+      description: Supplier verification is temporarily unavailable or invalid.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    DeadLetterNotFound:
+      description: No dead letter has this ID.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    DeadLetterInvalid:
+      description: '`VALIDATION_FAILED`: an unknown or malformed filter, or a redrive without a reason.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    AlreadyRedriven:
+      description: '`ALREADY_REDRIVEN`: if it failed again, it is waiting as a new dead letter.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    BrokerUnavailable:
+      description: '`BROKER_UNAVAILABLE`: the message broker is not connected. Nothing was sent.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }

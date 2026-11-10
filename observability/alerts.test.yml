@@ -1,0 +1,181 @@
+# promtool unit tests for alerts.yml:
+#   docker run --rm -v "$PWD/observability:/rules:ro" --entrypoint promtool \
+#     prom/prometheus:v3.13.4 test rules /rules/alerts.test.yml
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 15s
+
+tests:
+  # A daily scan has one hour of grace, then a ten-minute pending period. A fresh scan clears it.
+  - interval: 1m
+    input_series:
+      - series: 'foc_credit_ledger_audit_last_completed_timestamp_seconds{service="credit-service"}'
+        values: '0x1619 97200'
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: CreditLedgerAuditOverdue
+        exp_alerts: []
+      - eval_time: 25h9m
+        alertname: CreditLedgerAuditOverdue
+        exp_alerts: []
+      - eval_time: 25h11m
+        alertname: CreditLedgerAuditOverdue
+        exp_alerts:
+          - exp_labels: { service: credit-service, severity: warn }
+            exp_annotations:
+              summary: 'Credit ledger audit has not completed within 25 hours'
+              description: 'Check the daily audit scheduler and database. Run an on-demand audit from Operations.'
+      - eval_time: 27h
+        alertname: CreditLedgerAuditOverdue
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'foc_credit_ledger_audit_mismatches{service="credit-service"}'
+        values: '0 2 2 0'
+      - series: 'foc_credit_ledger_audit_failed{service="credit-service"}'
+        values: '0 0 1 0'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: CreditLedgerMismatch
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: CreditLedgerMismatch
+        exp_alerts:
+          - exp_labels: { service: credit-service, severity: page }
+            exp_annotations:
+              summary: 'Credit ledger audit found 2 mismatch(es)'
+              description: >-
+                Inspect the latest ledger audit in the admin Operations tab and its immutable findings
+                using the runbook. Do not edit balances automatically.
+      - eval_time: 3m
+        alertname: CreditLedgerMismatch
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: CreditLedgerAuditFailed
+        exp_alerts:
+          - exp_labels: { service: credit-service, severity: page }
+            exp_annotations:
+              summary: 'Credit ledger audit could not complete'
+              description: 'Inspect the credit-service logs and retry the audit; failure is not a clean reconciliation.'
+      - eval_time: 3m
+        alertname: CreditLedgerAuditFailed
+        exp_alerts: []
+
+  # One dead letter fires at once; a redrive clears it.
+  - interval: 15s
+    input_series:
+      - series: 'foc_dead_letters_waiting{service="credit-service",queue="foc.credit.wallet-provisioning"}'
+        values: '0 0 1 1 0'
+      - series: 'foc_dead_letters_waiting{service="order-service",queue="foc.order.reservation-results"}'
+        values: '0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 15s
+        alertname: DeadLetterWaiting
+        exp_alerts: []
+      - eval_time: 30s
+        alertname: DeadLetterWaiting
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              service: credit-service
+              queue: foc.credit.wallet-provisioning
+            exp_annotations:
+              summary: '1 dead letter(s) waiting on foc.credit.wallet-provisioning'
+              description: >-
+                An event failed every retry. Find it in the admin console's Operations tab, fix
+                the cause, then redrive it there.
+      - eval_time: 60s
+        alertname: DeadLetterWaiting
+        exp_alerts: []
+
+  # On the dead-letter queue itself only matters if it stays there; a retry queue never counts.
+  - interval: 30s
+    input_series:
+      - series: 'rabbitmq_detailed_queue_messages{queue="foc.order.transfer-results.dlq"}'
+        values: '1x6'
+      - series: 'rabbitmq_detailed_queue_messages{queue="foc.order.delay.1"}'
+        values: '5x6'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: DeadLetterNotParked
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: DeadLetterNotParked
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              queue: foc.order.transfer-results.dlq
+            exp_annotations:
+              summary: '1 dead letter(s) unparked on foc.order.transfer-results.dlq'
+              description: >-
+                The service that consumes this queue has not parked its dead letters for two
+                minutes. Check that it is running.
+
+  - interval: 1m
+    input_series:
+      - series: 'foc_orders_pending_credit_oldest_age_seconds{service="order-service"}'
+        values: '0 240 360'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: ErrandWaitingForCredit
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: ErrandWaitingForCredit
+        exp_alerts:
+          - exp_labels:
+              severity: warn
+              service: order-service
+            exp_annotations:
+              summary: 'An errand has waited 6m 0s for Credit'
+              description: >-
+                Look for a dead letter on the reservation queues, and at the errand's trace in the
+                Operations tab. Reconciliation retries it on its own.
+
+  - interval: 30s
+    input_series:
+      - series: 'up{job="services",instance="credit-service:3004"}'
+        values: '1 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: ServiceDown
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: ServiceDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: services
+              instance: credit-service:3004
+            exp_annotations:
+              summary: 'credit-service:3004 is not answering scrapes'
+              description: Prometheus has not reached its /metrics for a minute.
+
+  # A committed event that has not been published for two minutes: the broker is unreachable, or
+  # nobody is listening for it yet. A drained outbox reports 0 and never fires.
+  - interval: 1m
+    input_series:
+      - series: 'foc_outbox_oldest_unpublished_age_seconds{service="user-service"}'
+        values: '0 60 180 0'
+      - series: 'foc_outbox_oldest_unpublished_age_seconds{service="order-service"}'
+        values: '0 0 0 0'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: OutboxEventStuck
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: OutboxEventStuck
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              service: user-service
+            exp_annotations:
+              summary: 'An event has waited 3m 0s in the outbox of user-service'
+              description: >-
+                Read last_error on that service's unpublished outbox_events rows. "unroutable"
+                means the service that consumes the event has never declared its queue: start it.
+                Anything else points at RabbitMQ.
+      - eval_time: 3m
+        alertname: OutboxEventStuck
+        exp_alerts: []

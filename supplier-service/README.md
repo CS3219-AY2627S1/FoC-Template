@@ -1,0 +1,312 @@
+# Supplier Service (SUP-01, SUP-02, SUP-04, SUP-05, SUP-06)
+
+Owned by **Patrick** (Catalogue & Frontend). The campus supplier **catalogue**:
+the stores, cafés, printing points, shops and landmarks a student can request an
+errand from. SUP-01 delivered the data layer, the admin CRUD API, and an
+idempotent seed. **SUP-02** adds search, filtering, sorting and pagination to the
+listing (see [below](#listing-search-filtering--sorting-sup-02)). **SUP-04**'s
+deletion hold is met by deactivation (see
+[below](#deletion-hold-sup-04)); the listing UI (SUP-03) and the supplier picker
+live in `web-app`.
+
+Built on the shared runtime: `@foc/platform` (config, logging, correlation,
+health, the `{ error: { code, message, correlationId, details } }` envelope) and
+`@foc/auth-client` (verifies a caller's token and resolves their live identity
+from the User Service — this service never parses a token itself).
+
+Design & rationale (D2 §1–§2: DB choice, full schema, opening-hours decision,
+traceability): [`docs/supplier-service/schema.md`](../docs/supplier-service/schema.md).
+
+## Data model
+
+One `suppliers` row per supplier. Required (`NOT NULL`): `supplier_id`, `name`,
+`type`, `building`, `floor`, `location_description`, `active`, `version`,
+`created_at`, `updated_at`. Optional (nullable): `opening_hours` (JSONB),
+`latitude`+`longitude` (a pair), `image_url`, `tags` (JSONB). `type` is the closed
+enum `FOOD | CAFE | PRINTING | SHOPPING | LANDMARK`. Required-vs-optional, the
+enum, coordinate ranges, and the duplicate rule are all enforced by database
+constraints, not only the validator — see the schema doc. A second table,
+`supplier_idempotency_keys`, records each create's `Idempotency-Key`, the supplier it made and a
+hash of the body.
+
+**Opening hours** (SUP-06) are `[{ day, opens, closes }]` with 24-hour `HH:MM` times, stored by day
+and then opening time: up to four periods a day that may not overlap, so a midday break is
+two periods and a closed day is none. `00:00`–`23:59` is open all day. A `closes < opens`
+period runs past midnight and counts against the next day (schema doc §3).
+
+**Images.** `imageUrl` is a stored `https` URL; there is no upload. Seed rows that keep the
+template's GitHub `blob` page URLs are rewritten by the web app to `raw.githubusercontent.com` for
+display.
+
+## API
+
+All errors use the shared envelope.
+
+| Method   | Path             | Who           | Notes                                                             |
+| -------- | ---------------- | ------------- | ----------------------------------------------------------------- |
+| `GET`    | `/suppliers`     | any signed-in | Active suppliers only. Paged, filterable, searchable, sortable.   |
+| `GET`    | `/suppliers/:id` | any signed-in | Resolves any supplier by id, **including deactivated** ones.      |
+| `POST`   | `/suppliers`     | **admin**     | Create. Honors `Idempotency-Key`. `201` created / `200` replay.   |
+| `PUT`    | `/suppliers/:id` | **admin**     | Partial update. Requires `If-Match: <version>`.                   |
+| `DELETE` | `/suppliers/:id` | **admin**     | Soft deactivation (`active = false`). Requires `If-Match`.        |
+| `GET`    | `/buildings`     | any signed-in | The campus building list; `?inUse=true` for those with suppliers. |
+
+### Permission table (enforced server-side)
+
+The role is always read from the identity `@foc/auth-client` resolves — never from
+a header, a body, or the token.
+
+| Action      | Anonymous | Student (signed-in) | Admin |
+| ----------- | :-------: | :-----------------: | :---: |
+| List active |  ✗ (401)  |          ✓          |   ✓   |
+| Buildings   |  ✗ (401)  |          ✓          |   ✓   |
+| View by id  |  ✗ (401)  |          ✓          |   ✓   |
+| Create      |  ✗ (401)  |       ✗ (403)       |   ✓   |
+| Update      |  ✗ (401)  |       ✗ (403)       |   ✓   |
+| Deactivate  |  ✗ (401)  |       ✗ (403)       |   ✓   |
+
+A non-admin mutation returns `403 FORBIDDEN` and changes nothing (proven by a
+direct API call in `test/suppliers.test.ts`). A suspended or not-yet-activated account is
+`403 ACCOUNT_SUSPENDED` or `403 ACCOUNT_NOT_ACTIVATED`. If the User Service cannot be reached, a
+signed-in request fails closed with `503 IDENTITY_UNAVAILABLE`; `/health` and `/metrics` never ask
+it.
+
+### Validation — `422 VALIDATION_FAILED`
+
+Create/update bodies are validated with zod. **Every** invalid field is returned at
+once as `422` with `details: [{ field, code, message }, …]`. Rejected: an invalid
+`type`, a blank required field, a malformed or unpaired coordinate, an unknown
+field, a `building` not on the campus list (`UNKNOWN_BUILDING`), a
+case-insensitive duplicate of `name`+`building` among active suppliers
+(`DUPLICATE_NAME_BUILDING`), opening hours that overlap (`OVERLAPPING_HOURS`), more than four
+periods in a day (`TOO_MANY_PERIODS`), a period that opens and closes at the same time
+(`EMPTY_PERIOD`), an `imageUrl` that is not `https://`, an over-long field, and an empty update.
+
+### Retry safety
+
+- **Idempotency-Key** (create): a repeated `POST` with the same header returns that
+  supplier as it is now (`200`) instead of creating a second row or `409`. The same key with a
+  different body is `422 IDEMPOTENCY_KEY_REUSED`. The key is trimmed; a blank key means none,
+  and one over 200 characters is `400 BAD_REQUEST`.
+- **If-Match / version** (update, deactivate): send `If-Match: <version>` (the row's
+  `version`, also returned as the `ETag`). A stale value returns `412 STALE_VERSION`
+  and changes nothing; a missing header is `428 PRECONDITION_REQUIRED`, and a malformed one is
+  `400 BAD_REQUEST`.
+  Deactivation bumps the version, so a retry after a lost response is `412`: reload
+  the supplier to confirm it is inactive. Repeating at the version it returned is a
+  no-op `200`.
+- **Atomicity**: every mutation runs in one transaction — it commits fully or not
+  at all, and a failure surfaces through the error envelope with nothing
+  half-written.
+
+## Campus buildings (SUP-05)
+
+`src/suppliers/campus-buildings.ts` holds `CAMPUS_BUILDINGS`, the one sorted list
+of buildings a supplier may be in (SS-FR1.1.2), seeded from the buildings the two
+seed CSVs normalize to. A `building` on create, or on update when sent, is resolved
+onto it by `normalizeBuilding`: an alias first (`Com 2`→`COM2`), then a match
+ignoring case and spacing (`central library`→`Central Library`). It is stored in
+the listed spelling; anything else is `422` with `UNKNOWN_BUILDING` on `building`.
+
+`GET /buildings` returns `{ items }`, sorted. With no parameters it is the whole
+list, for the admin form; `?inUse=true` narrows it to the listed buildings with at
+least one active supplier, read live, for the web app's building filter.
+
+**To add a building**, add its name to `CAMPUS_BUILDINGS`, keeping the list
+sorted; the unit tests check the order. No migration or web-app change is needed.
+
+## Listing, search, filtering & sorting (SUP-02)
+
+`GET /suppliers` returns a **page of active suppliers**. All parameters are
+optional; an unmatched query is a `200` empty page (`total: 0`), never a `404`, so
+"no results" is always distinguishable from a failure.
+
+### Query parameters
+
+| Parameter  | Default | Notes                                                                                          |
+| ---------- | ------- | ---------------------------------------------------------------------------------------------- |
+| `page`     | `1`     | 1-based. Clamped up to `1`, never rejected.                                                    |
+| `pageSize` | `20`    | **Clamped to 1–100** (not rejected); anything but a plain integer falls back to `20`.          |
+| `type`     | —       | Case-insensitive match on the type enum (`FOOD \| CAFE \| PRINTING \| SHOPPING \| LANDMARK`).  |
+| `building` | —       | Canonicalized the same way create is, so `com2` matches `COM2`. Off-list values match nothing. |
+| `q`        | —       | Case-insensitive substring search across **name, building, location description, tags**.       |
+| `sort`     | `name`  | One of `name`, `type`, `building`, `updatedAt` (last-updated). Unknown → default.              |
+| `order`    | `asc`   | `asc` or `desc`, any case. Unknown → default.                                                  |
+
+An empty or whitespace-only `type`, `building` or `q` is ignored, so a cleared
+search box lists everything. An unknown `type`, a repeated `type`/`building`/`q`,
+a `q` over 200 characters, or a NUL character is a `422 VALIDATION_FAILED`. Unknown parameters are ignored.
+
+Name and building sort case-insensitively, and every sort is **tie-broken by name,
+then `supplierId`**, so paging the full set returns each record exactly once and
+the order is stable across requests. `total` and `items` are read in one snapshot,
+so they always agree.
+
+### Response
+
+```jsonc
+{ "page": 1, "pageSize": 20, "total": 42, "items": [/* … */] }
+```
+
+A **list item is lean** — `supplierId`, `name`, `type`, `building`, `imageUrl` —
+enough to render a card and open the detail view. Floor, location description,
+opening hours and coordinates are returned only by `GET /suppliers/:id`.
+
+> **Contract.** [`contracts/supplier-service.openapi.yaml`](../contracts/supplier-service.openapi.yaml)
+> is the contract (FND-03, #117), and `test/provider.contract.test.ts` checks real responses
+> against it. Its header still says `1.0.0-draft.1` and "not frozen", although the API it describes
+> is the one this service serves. The list uses the house page shape, `{ page, pageSize, total, items }`.
+
+### Location-query decision
+
+The **building filter is how a supplier is found "by location"**. Buildings come
+from the campus list (one canonical name per building, see above), so filtering by
+building has no duplicates and needs no proximity or coordinate search.
+Coordinates remain stored for map pins but are **not** a query axis; there is
+deliberately no radius/nearest search in this service.
+
+### Indexes and tag constraint
+
+At the current catalogue size, listing scans active suppliers; the baseline's
+partial type index remains available for filtering. Sorts and per-tag substring
+search do not rely on additional indexes. The count and page share one SQL
+statement and snapshot. Drizzle migration `0001_supplier_tags_array` enforces
+that tags are a JSON array or null, as required by per-tag search.
+
+## Seed
+
+Loaded at boot, idempotent and stable (schema doc §4): each supplier's id is a
+UUIDv5 of `lower(name)|building`, so three runs produce the same rows and ids and
+an admin's later edits are never overwritten. Source data:
+
+- **`data/csv/supplier-seed-data.csv`** — the CS3219 FoC template
+  (`CS3219-AY2627S1/FoC-Template`), 21 rows, kept verbatim (messy source encodings
+  and all) so the normalizer is exercised against the real thing.
+- **`data/csv/supplier-seed-additions.csv`** — this team's 12 supplementary
+  records, including the LANDMARK pickup points the template lacks, taking the
+  corpus to **33 active suppliers across 19 buildings and all five types** — past
+  SS-FR4.1.1's floor of ≥30 across ≥10 buildings.
+
+## Running this service
+
+Node 22.12 or later (`nvm use` picks it up from `.nvmrc`). Install dependencies
+once from the repository root — this is an npm workspace, so a per-service
+`npm install` is neither needed nor correct:
+
+```bash
+npm install
+npm run build -w @foc/platform -w @foc/auth-client   # again after pulling a change to either
+```
+
+The service imports the compiled shared packages, so it cannot start until they are built.
+
+### Commands
+
+Run these from the repository root.
+
+| Command                                        | What it does                            |
+| ---------------------------------------------- | --------------------------------------- |
+| `npm run dev:supplier`                         | Start with reload on change             |
+| `npm run build -w @foc/supplier-service`       | Compile TypeScript to `dist/`           |
+| `npm test -w @foc/supplier-service`            | Run this service's tests                |
+| `npm run typecheck -w @foc/supplier-service`   | Type-check without emitting             |
+| `npm run lint`                                 | Lint every service                      |
+| `npm run db:migrate -w @foc/supplier-service`  | Apply `drizzle/` to `DATABASE_URL`      |
+| `npm run db:generate -w @foc/supplier-service` | Write a migration after a schema change |
+| `npm run test:contract`                        | Contract checks for every service       |
+
+### Required environment
+
+On top of the shared base (`SERVICE_NAME`, `PORT`, `NODE_ENV`, `LOG_LEVEL`,
+`CORS_ORIGINS`, optional `RABBITMQ_URL`, `INTERNAL_PORT`, `TRUSTED_PROXY` and `METRICS_TOKEN`).
+Compose sets `INTERNAL_PORT` to 4002, though this service has no `/internal` routes. Without
+`RABBITMQ_URL` it still runs, and a suspended or demoted admin keeps access for up to 5 seconds:
+
+| Variable               | Example                                   | Notes                                                                                                                   |
+| ---------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`         | `postgres://…@postgres:5432/foc_supplier` | Migrated by the one-shot migrate step before the service starts.                                                        |
+| `USER_SERVICE_URL`     | `http://user-service:4001`                | The User Service's internal port, for identity introspection. By hand, `http://localhost:4001` with `compose.dev.yaml`. |
+| `INTERNAL_SERVICE_KEY` | `$SUPPLIER_INTERNAL_KEY` from `.env`      | Presented as `X-Service-Key`. At least 16 characters.                                                                   |
+
+A missing required variable stops the service at boot and names the variable.
+Nothing falls back to an insecure default.
+
+To run it by hand against the rest of the stack, work from the repository root. `npm run
+dev:supplier` runs in `supplier-service/`, so it never reads the root `.env`: load it into the shell
+first. `.env` says `NODE_ENV=production`, which a service run by hand should not use.
+
+```bash
+docker compose -f compose.yaml -f compose.dev.yaml up -d   # publishes the User Service's internal port 4001
+docker compose stop supplier-service                        # it holds port 3002
+set -a; . ./.env; NODE_ENV=development; set +a
+DATABASE_URL=$HOST_SUPPLIER_DATABASE_URL npm run db:migrate -w @foc/supplier-service
+DATABASE_URL=$HOST_SUPPLIER_DATABASE_URL USER_SERVICE_URL=http://localhost:4001 \
+  INTERNAL_SERVICE_KEY=$SUPPLIER_INTERNAL_KEY npm run dev:supplier
+curl -i http://localhost:3002/health
+```
+
+The stack still routes to the stopped container, so neither the web app nor the Order Service, when
+it checks a pickup point, reaches this process: call it at `http://localhost:3002`. It runs without
+the broker, which costs the 5-second window described above.
+
+The service never migrates at boot, and it seeds the catalogue on every boot, skipping suppliers
+already present.
+
+### What you get from `@foc/platform`
+
+Importing `PlatformModule.forRoot(...)` gives this service a `GET /health`
+endpoint, structured JSON logging where every line carries a correlation ID,
+request logging, a shared error envelope, and graceful shutdown on `SIGTERM`.
+`/health` reports its dependencies and answers `503` while the database is down, and `GET /metrics`
+serves Prometheus metrics behind `METRICS_TOKEN`. Do not re-implement these per service — extend
+the shared package instead, so a change lands once rather than five times.
+
+### Tests
+
+Mirror the User Service style: unit tests for the CSV parser, normalizer and
+deterministic ids; integration tests boot the real modules against an **ephemeral**
+in-memory PostgreSQL (PGlite) — never a shared database — with the authenticator
+replaced by a test double so the permission logic is exercised directly. The
+exception is `test/auth-integration.test.ts`, which runs the **real**
+`@foc/auth-client` authenticator against the wire-level fake User Service from
+`auth-client/test/helpers/`, so the admin routes are proven with real signed tokens.
+`test/provider.contract.test.ts` checks responses against the contract. No suite needs
+`TEST_POSTGRES_URL` or Docker, but the shared packages must be built first.
+
+### Docker
+
+```bash
+docker build -f supplier-service/Dockerfile -t foc/supplier-service .
+```
+
+The build context is the **repository root**, not this folder, because the image
+needs the workspace manifests, `@foc/platform`, `@foc/auth-client`, and the seed
+CSVs under `data/csv/`. The image runs as a non-root user and declares a
+`HEALTHCHECK`; `compose.yaml` wires it into the stack.
+
+### `requests.http`
+
+`supplier-service/requests.http` exercises **list, filter, sort, search,
+get-by-ID, create, update, deactivate and the building list** with both a student and an admin
+token, end to end against the Compose stack with no UI running (D2 §3). See the
+header of that file for how to obtain the two bearer tokens.
+
+## Deletion hold (SUP-04)
+
+SS-FR2.1.2.1 and EC2 ask that a supplier referenced by a live errand is never
+removed, and that one marked for deletion is not offered for a new errand. No
+hard deletion, reference count or call to the Order Service is needed, because:
+
+- **Suppliers are never removed.** `DELETE /suppliers/:id` only sets
+  `active = false` (ADR 0008: "deactivation, never deletion"). The row stays, and
+  `GET /suppliers/:id` still resolves it with `active: false`
+  (`test/suppliers.test.ts`, "excludes a deactivated supplier from listings but
+  keeps its row, fetchable by id").
+- **Errands do not depend on the row.** Each errand snapshots the supplier at
+  creation (ORD-08, `orders.supplier_snapshot`) and never asks this service
+  again, so deactivating or renaming a supplier cannot change a live or finished
+  errand.
+- **Marked for deletion means not selectable.** `GET /suppliers` lists active
+  suppliers only, so the web-app picker never offers a deactivated one, and the
+  Order Service refuses one with `422 INVALID_SUPPLIER`. A link to a deactivated
+  supplier is explained to the user rather than silently missing.
