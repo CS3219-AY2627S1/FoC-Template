@@ -1,6 +1,6 @@
 <!--
 AI Assistance Disclosure
-Tool: Cursor (Auto), date: 2026-11-09
+Tool: Cursor (Auto), date: 2026-11-10
 Scope: Documentation wording for Admin Service under author-fixed design.
 Author review: Sahana Avantika generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
 -->
@@ -43,7 +43,10 @@ SQLAlchemy models live in `app/models/`.
 - **Photos are names, not bytes.** `evidence_photo_urls` holds Order's object
   keys (`{orderId}/collection.jpg`, then delivery, then dispute when present).
   The bytes stay in Order's photo bucket. The AI job reads those keys with
-  `GetObject`.
+  `GetObject`. While the case is open, an admin reads one role back through
+  `GET /api/v1/admin/conflicts/{id}/photos/{role}` (`collection`, `delivery`,
+  or `dispute`). A resolved case returns 404 for that route. Order deletes
+  the objects when the case resolves.
 - **Idempotency is the unique order plus a conditional update.**
   - **Intake** is create-once. A repeat `POST` for the same `order_id` returns
     the existing row. A concurrent duplicate hits the unique index and is
@@ -58,10 +61,6 @@ SQLAlchemy models live in `app/models/`.
 ## Entity–Relationship Diagram
 
 Taken from the Alembic migrations (`b84b9a872e82` through `0007_report_ai`), not from a live `psql` dump. There is no foreign key. An admin id is a User Service user id stored as `varchar`.
-
-Source: [schema.mmd](schema.mmd). Rendered figure: [schema.png](schema.png).
-
-![Admin database schema](schema.png)
 
 ```mermaid
 erDiagram
@@ -179,19 +178,21 @@ created  →  ai_evaluated  →  under_review  →  resolved
          →  ai_failed     ↗
 ```
 
-Source: [conflict-state-diagram.mmd](conflict-state-diagram.mmd). Rendered figure: [conflict-state-diagram.png](conflict-state-diagram.png).
+Source: [conflict-state-diagram.mmd](conflict-state-diagram.mmd). Rendered figure: [conflict-state-diagram.png](conflict-state-diagram.png). Who calls whom is [seq-conflict.mmd](seq-conflict.mmd) ([seq-conflict.png](seq-conflict.png)).
 
 ![Conflict case states](conflict-state-diagram.png)
 
 Deadline auto-resolve can also go `ai_evaluated` → `resolved`, and
 `under_review` → `resolved` when `AUTO_RESOLVE_WHILE_UNDER_REVIEW` is true.
+A reassessment while `under_review` replaces the AI columns and does not
+change `status`. The rendered diagram has no extra state for that.
 
 **`faultparty` enum** — `requester`, `courier`, `no-fault`. The hyphen in
 `no-fault` is the stored value.
 
 ### `audit_logs` — append-only record of privileged actions
 
-One row per promote, demote, suspend, reinstate, claim, resolve, conflict reassessment, report dismiss, appeal reject, and appeal reassessment.
+One row per promote, demote, suspend, reinstate, claim, resolve, conflict reassessment, report dismiss, report reassessment, appeal reject, and appeal reassessment.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
@@ -266,6 +267,49 @@ open  →  rejected     (reject, suspension stays)
       →  reinstated   (reinstate of user_id)
 ```
 
+## Report and appeal journey
+
+The two status lists above are the stored values. The diagram below is the path a person actually takes. The same source is [report-appeal-diagram.mmd](report-appeal-diagram.mmd).
+
+Filing a report does not suspend anyone. Dismiss closes that report and leaves the account active. Suspend is a separate admin action: the account becomes `Suspended`, and every open report about that user becomes `actioned`. A correct password on the login page then gets no session and shows the appeal form. Reject keeps the suspension and emails the reason. Reinstate is what lets them log in again. Gemini only advises, on the open report (`dismiss`, `suspend`, `unsure`) and on the open appeal (`uphold`, `reinstate`, `unsure`).
+
+```mermaid
+stateDiagram-v2
+    direction TB
+
+    state "Report open" as report_open
+    state "Report dismissed" as dismissed
+    state "Account suspended" as suspended
+    state "Appeal open" as appeal_open
+    state "Appeal rejected" as rejected
+    state "Account reinstated" as reinstated
+
+    [*] --> report_open: a signed-in user reports someone
+
+    report_open --> dismissed: admin dismisses. The account stays active
+    report_open --> suspended: admin suspends. Open reports on that user become actioned
+
+    dismissed --> [*]
+
+    suspended --> appeal_open: right password, no session, appeal form on the login page
+
+    appeal_open --> rejected: admin rejects. The suspension stays
+    appeal_open --> reinstated: admin reinstates. They can log in again
+
+    rejected --> appeal_open: they send a new appeal
+    reinstated --> [*]
+
+    note right of report_open
+        Gemini advises dismiss, suspend, or unsure.
+        Filing the report does not suspend anyone.
+    end note
+
+    note right of appeal_open
+        Gemini advises uphold, reinstate, or unsure.
+        The admin still rejects or reinstates.
+    end note
+```
+
 ## Transaction boundaries
 
 Kafka is published **after** the database commit. A broker failure is logged
@@ -275,14 +319,17 @@ and does not roll back the row. There is no outbox.
 |---|---|---|
 | Intake | F3.1 | `INSERT conflict_cases`. On unique `order_id` violation, roll back and return the existing row. Jobs and `ConflictCaseCreated` run after commit. |
 | AI evaluation | F3.2 | No transaction held across the S3 read or the Gemini call. Then `UPDATE conflict_cases SET status = ai_evaluated\|ai_failed WHERE status = created`. |
-| Reminder | F3.7.1 | `UPDATE reminder_sent_at` if the case is not `resolved`. |
+| Conflict reassess | — | The request commits `INSERT audit_logs (reassess_conflict)` and then queues the job. The job holds no transaction across S3 or Gemini. On success, `UPDATE` the AI columns `WHERE status = under_review`. Status stays `under_review`. A failed rerun writes nothing. |
+| Reminder | F3.7.1 | `UPDATE reminder_sent_at` if the case is not `resolved`. No notification is sent. |
 | Claim | F3.4 | `UPDATE ... SET status = under_review WHERE status IN (ai_evaluated, ai_failed)` plus `INSERT audit_logs (review_conflict)`. Same admin repeating the claim does not insert a second audit row. `admin.review.started` is after commit. |
 | Manual resolve | F3.4.2 | `UPDATE ... SET status = resolved WHERE status = under_review` plus `INSERT audit_logs (resolve_conflict)`. Any admin may resolve; the claim check is not repeated. `admin.case.resolved` is after commit and includes `faultParty`. |
 | Auto-resolve | F3.5 | Same resolve update, allowed from `ai_evaluated` (and `under_review` when configured), only when `ai_fault_party` is set and `ai_confidence` meets the floor. `resolved_by_admin_id` stays null. |
 | Promote / demote / suspend / reinstate | F1 | User Service is called **before** this transaction. Then `INSERT audit_logs` and commit. Suspend also sets every open `user_reports` row for that user to `actioned`. Reinstate sets that user's open `suspension_appeals` row to `reinstated`. The matching user event is after commit. A User Service failure writes nothing here. |
 | Report intake | — | `INSERT user_reports`. On the partial unique index, roll back and return the open row. No audit row and no user-status change. A new row queues the assessment after commit. A repeat does not. |
 | Report AI | — | No transaction across the Gemini call. Then `UPDATE` the AI columns `WHERE status = open`. A failed first pass sets `ai_completed_at` only. A failed rerun writes nothing. The report is not closed. |
+| Report reassess | — | The request commits `INSERT audit_logs (reassess_report)` while the report is `open`, then queues the job described under Report AI. **409** if it is not open. |
 | Dismiss report | — | `UPDATE user_reports SET status = dismissed WHERE status = open` plus `INSERT audit_logs (dismiss_report)`. |
 | Appeal intake | — | `INSERT suspension_appeals`. On the partial unique index, roll back and return the open row. No audit row and no user-status change. A new row queues the assessment after commit. A repeat does not. |
 | Appeal AI | — | No transaction across the Gemini call. Then `UPDATE` the AI columns `WHERE status = open`. A failed first pass sets `ai_completed_at` only. A failed rerun writes nothing. The appeal is not closed. |
-| Reject appeal | — | `UPDATE suspension_appeals SET status = rejected, rejection_reason = ... WHERE status = open` plus `INSERT audit_logs (reject_appeal)` with that reason in `detail`. After commit, User Service is asked to email the reason. That call is not part of the transaction. |
+| Appeal reassess | — | The request commits `INSERT audit_logs (reassess_appeal)` while the appeal is `open`, then queues the job described under Appeal AI. **409** if it is not open. |
+| Reject appeal | — | `UPDATE suspension_appeals SET status = rejected, rejection_reason = ... WHERE status = open` plus `INSERT audit_logs (reject_appeal)` with that reason in `detail`. After commit, User Service `POST /api/v1/user/{userId}/appeal-rejected` emails the reason. That call is not part of the transaction. A failure there leaves the rejection in place. |

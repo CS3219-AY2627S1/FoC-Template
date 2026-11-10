@@ -1,0 +1,40 @@
+%% AI Assistance Disclosure
+%% Tool: Cursor (Auto), date: 2026-11-10
+%% Scope: Documentation wording for Admin Service under author-fixed design.
+%% Author review: Sahana Avantika generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+%% Gemini never closes a report or an appeal. Dismiss, suspend, reject, and reinstate are admin actions.
+%% A locked account cannot appeal until the password is reset.
+stateDiagram-v2
+    direction TB
+
+    state "Report open" as report_open
+    state "Report dismissed" as dismissed
+    state "Account suspended" as suspended
+    state "Appeal open" as appeal_open
+    state "Appeal rejected" as rejected
+    state "Account reinstated" as reinstated
+
+    [*] --> report_open: a signed-in user reports someone
+
+    report_open --> dismissed: admin dismisses. The account stays active
+    report_open --> suspended: admin suspends. Open reports on that user become actioned
+
+    dismissed --> [*]
+
+    suspended --> appeal_open: right password, no session, appeal form on the login page
+
+    appeal_open --> rejected: admin rejects. The suspension stays
+    appeal_open --> reinstated: admin reinstates. They can log in again
+
+    rejected --> appeal_open: they send a new appeal
+    reinstated --> [*]
+
+    note right of report_open
+        Gemini advises dismiss, suspend, or unsure.
+        Filing the report does not suspend anyone.
+    end note
+
+    note right of appeal_open
+        Gemini advises uphold, reinstate, or unsure.
+        The admin still rejects or reinstates.
+    end note

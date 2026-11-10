@@ -12,4 +12,4 @@ stable for deployed environments.
 validated correctness, edited where needed, and verified behavior/tests.
 Schema ownership and migration contents remain with Sahana Avantika.
 
-See also [`/ai/usage-log.md`](../../../../ai/usage-log.md).
+See also [`/ai/usage-log.md`](../../../ai/usage-log.md).

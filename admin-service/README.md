@@ -43,7 +43,7 @@ admin-service/
 │   │   ├── kafka_producer.py     # shared event envelope + topic publishes
 │   │   ├── kafka_consumer.py     # listener; no topics subscribed yet
 │   │   ├── ai_client.py          # Gemini Flash fault and appeal recommendations
-│   │   ├── order_photos.py       # fetch evidence bytes from Order Service
+│   │   ├── order_photos.py       # GetObject on Order's photo bucket
 │   │   ├── audit.py              # single write path into audit_logs
 │   │   ├── moderation.py         # report and appeal intake, dismiss, reject
 │   │   ├── conflict_resolution.py# the only resolve path (manual + auto)
@@ -131,6 +131,8 @@ Returns **201**. While that pair has an open report, a retry returns the same ro
 
 The assessment is advisory. It reads this comment and every other report about the same person, then stores `aiRecommendation` (`dismiss`, `suspend`, or `unsure`), `aiConfidence`, `aiReasoning`, and `aiCompletedAt`. It does not dismiss or suspend. A failed first pass sets `aiCompletedAt` and leaves the recommendation null. A failed rerun keeps the previous verdict. The appeal assessment still reads the human comments only.
 
+The path from an open report through suspend, the login appeal form, reject, and reinstate is [docs/report-appeal-diagram.mmd](docs/report-appeal-diagram.mmd) ([png](docs/report-appeal-diagram.png)). The same diagram is drawn in [docs/schema.md](docs/schema.md). Dismiss is the report action. Reject leaves the suspension in place. Reinstate is what lets them log in again.
+
 **Admin:**
 
 | Method | Path | Notes |
@@ -205,6 +207,8 @@ object records `ai_failed`.
 |---|---|---|
 | GET | `/api/v1/admin/conflicts?status=` | Filter by status; aliases `pending` → `ai_evaluated`, `non_deadline` → `ai_failed` |
 | GET | `/api/v1/admin/conflicts/{case_id}` | Detail |
+| GET | `/api/v1/admin/conflicts/{case_id}/photos/{role}` | `role` is `collection`, `delivery`, or `dispute`. Returns that object's bytes while the case is open. **404** if the case is missing, already `resolved`, that role was not stored, or the object is gone. `Cache-Control: private, no-store` |
+| POST | `/api/v1/admin/conflicts/{case_id}/reassess` | **202.** Only the admin who claimed it, and only while `under_review`. Audits `reassess_conflict`, then runs Gemini again. Status stays `under_review`. A failed rerun keeps the previous verdict. **409** for anyone else or any other status. **404** if the case is missing |
 | POST | `/api/v1/admin/conflicts/{case_id}/review` | Claim: `ai_evaluated` \| `ai_failed` → `under_review`; Kafka `admin.review.started` |
 | POST | `/api/v1/admin/conflicts/{case_id}/resolve` | Body `{ "faultParty": "requester\|courier\|no-fault", "decision": "accept\|reject" }` |
 
@@ -223,10 +227,14 @@ created  →  ai_evaluated  →  under_review  →  resolved
 - **under_review:** claimed by an admin.
 - **resolved:** manual resolve, or deadline auto-resolve following the AI verdict (if present and above `AUTO_RESOLVE_MIN_CONFIDENCE`).
 
+Reassess is not a new status. `POST .../reassess` is only for the admin who claimed the case, while it is `under_review`. The job replaces `ai_fault_party`, `ai_confidence`, `ai_reasoning`, and `ai_completed_at`. A failed rerun leaves those columns as they were. The same pattern applies to an open report (`reassess_report`) and an open appeal (`reassess_appeal`): the row stays open, and a failed rerun keeps the previous verdict.
+
 Default deadline is 168 hours (7 days); a reminder job is scheduled
 `REMINDER_BEFORE_DEADLINE_HOURS` before expiry (default 24h).
 
 `faultParty` values: `requester`, `courier`, `no-fault`.
+
+Who calls whom, from this service's side, is [docs/seq-conflict.mmd](docs/seq-conflict.mmd) ([png](docs/seq-conflict.png)). Order's own diagrams cover the same escalated order from Order's side.
 
 ## Kafka events (producer)
 
@@ -359,6 +367,8 @@ and the Kafka login (no live stack).
 `tests/test_gateway.py` covers the 404-not-403 admin check (ASGI, no live stack).
 `tests/test_order_photos.py` covers the S3 key read and the Gemini `inline_data`
 layout with a fake bucket (no live stack).
+`tests/test_case_review.py` covers the open-case photo route and conflict
+reassess (in-memory session, no live stack).
 `tests/test_moderation.py` covers report and appeal intake, dismiss, reject,
 the suspend/reinstate close, and queueing an appeal assessment, with an in-memory session (no live stack).
 `tests/test_appeal_ai.py` covers the appeal job with Gemini stubbed.
@@ -367,32 +377,41 @@ the suspend/reinstate close, and queueing an appeal assessment, with an in-memor
 skip when Admin Service is not reachable at `http://localhost:8084`. Admin
 calls send `x-user-id`, `x-is-admin`, and `x-permitted-action`.
 
-## Still open
+## Future plans
 
-- Deadline reminder does not notify anyone. `send_deadline_reminder` only sets
-  `reminder_sent_at`. Email or an in-app notice is still a TODO.
-- User Service is still the mock. Compose points `USER_SERVICE_BASE_URL` at
-  `mock-user-service`. That stub should be removed once the real User Service
-  contract is wired.
-- A failed Kafka publish is only logged. The database commits first, and if
-  Kafka is down the API still succeeds. There is no outbox to retry that event
-  later.
-- User Service search does not yet apply `status`, so the forwarded filter is
-  ignored until that service does. `POST /api/v1/user/{userId}/appeal-rejected`
-  is called after a reject; User Service does not implement it yet, and the
-  stored rejection still stands when that call fails.
-- Intake has no application auth: it relies on the gateway block and the
-  mesh policy (`deploy/values/services/admin.yaml`). Outside the cluster (Compose,
-  `uvicorn` on a laptop) anything that can reach the port can call it.
-- First admin. Promote requires an existing admin, so this service cannot create
-  the first one. The mock treats any `admin-*` bearer token as an admin. There
-  is no bootstrap or seed for a real first admin account.
-- AI integration. `ai_client.py` calls Gemini 3.8 Flash after intake. Photos
-  are read from Order's bucket and sent as inline base64 (`inline_data`),
-  each with a collection / delivery / dispute label. Copy `.env.example` to
-  `.env` and set `AI_PROVIDER_API_KEY` to a Google AI Studio key. Compose
-  reads that file. An empty key, a timeout, a missing object, or an unusable
-  reply records `ai_failed`.
+### Reliability
+
+- **Transactional outbox for Kafka.** Intake and resolve commit the database first and only log a Kafka failure, so a broker blip can leave Order out of sync. That is why `scripts/resolve_open_escalations.py --republish` exists. Write the event to an outbox table in the same transaction and have a relay publish it, so recovery no longer needs that script.
+- **Durable retry for appeal rejection.** If the call to User Service fails, the rejection stands and the user is never told. Queue it as a scheduler job with backoff instead of one 2-second attempt.
+- **Contract tests against Order and User Service.** The live tests skip when the stack is down. Check the Kafka envelopes and the internal intake payloads in CI, so a change on either side fails there.
+
+### Admin workflow
+
+- **Release or hand off a claimed case.** Another admin can already resolve a case that is `under_review`. They cannot reassess it, and nothing releases or reassigns the claim, so the case stays with an absent admin until someone resolves it or the deadline does. Add release and reassign, both audited.
+- **Audit log read API.** `audit_logs` is append-only and has no read endpoint. Add a filterable, paginated view by admin, target, action, and date range, and audit evidence-photo views too.
+- **Reasons on user actions.** Require a reason on suspend, promote, and demote, stored on the audit row, so a later reviewer can see why.
+- **Temporary suspensions.** An optional expiry, with a scheduled job that reinstates the account when it passes.
+- **Two-person approval for promote.** Another admin confirms before a new admin gets access.
+
+### Moderation quality
+
+- **Per-user history note.** A short admin note that later reports and appeals display, so the next admin sees what happened last time.
+- **Report abuse signals.** Flag users who file many reports that get dismissed, and surface people who are reported repeatedly. Do not auto-suspend from that signal.
+- **Appeal cool-down.** After a rejection, require a wait before a new appeal. User Service already caps appeal attempts at ten per fifteen minutes. That cap does not stop a new appeal as soon as the last one is rejected.
+- **Link reports to orders.** Let a report carry an optional `orderId`, so a report about a courier can show the related conflict case.
+- **AI agreement.** Record how often an admin's decision matched Gemini on conflicts, reports, and appeals. Use that to tune the prompts and to set `AUTO_RESOLVE_MIN_CONFIDENCE` from data.
+
+### Visibility
+
+- **Queue summary endpoint.** Counts by status, the oldest open item, cases nearing their deadline, and the median time to resolve. The admin dashboard already shows a few of these by listing each queue.
+- **Metrics.** Prometheus series for the AI job failure rate, auto-resolve count, outbox lag, and scheduler backlog.
+
+### Needs other services
+
+- **Order Service.** Let an admin open the order behind an escalation. Order currently returns an order only to its requester and courier.
+- **Badges Service.** Let an admin add or edit a badge, and grant or take away one badge for a campus award the counters would not earn. The seven badges today are a fixed catalog file.
+- **Supplier Service.** Let an admin add a category, and mark a stall as featured on the catalogue.
+- **Kafka.** Add the topics and ACLs in `foc-kafka` so the user events and `admin.conflict-case-created` can be published. The cluster chart leaves those topic names empty because nothing consumes them yet.
 
 ## AI Use Summary
 
