@@ -186,6 +186,17 @@ export default function MyRequests() {
       supplier_id: supplierId,
       pickup_location: editForm.pickupLocation,
       delivery_location: editForm.deliveryLocation,
+      // The edit form has no map picker: keep the stored pin when the address
+      // is unchanged, but clear it explicitly when the text was edited so the
+      // courier is not routed to a stale location.
+      delivery_latitude:
+        editForm.deliveryLocation.trim() === editOrder.delivery_location
+          ? (editOrder.delivery_latitude ?? null)
+          : null,
+      delivery_longitude:
+        editForm.deliveryLocation.trim() === editOrder.delivery_location
+          ? (editOrder.delivery_longitude ?? null)
+          : null,
     };
     setEditSubmitting(true);
     try {

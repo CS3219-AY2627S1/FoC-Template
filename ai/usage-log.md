@@ -1351,6 +1351,156 @@ commit=False)` so the settlement and its task result commit once,
   and confirmed it is non-empty. Grepped every cited test name against `tests/`.
   Re-read the Markdown for the one-sentence-per-line rule and no em dashes.
 
+## 09/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: N2H campus map. Added the `CampusMap` component (Leaflet +
+  OpenStreetMap via react-leaflet) with a red teardrop SVG pin anchored at its
+  bottom tip and a recenter control that restores the location and default
+  zoom, plus a "View on map" button after Location on the supplier detail
+  page. The supplier map opens in a `SupplierMapModal` using the same map style
+  as the order location picker, so no separate page or route is needed. Files:
+  `frontend/src/components/CampusMap.tsx`,
+  `frontend/src/components/SupplierMapModal.tsx`,
+  `frontend/src/pages/suppliers/SupplierDetail.tsx`,
+  `frontend/src/App.tsx`.
+- Prompt(s):
+  1. "I am going to use the Leaflet + OpenStreetMap approach. I have already
+     installed leaflet, react-leaflet and the related packages. Create a new
+     `CampusMap` component for map display. Then update the supplier card: add
+     a map button after the location, navigate to `CampusMap`, read the
+     supplier's longitude/latitude, and show the location on the map."
+  2. "Change the marker to red, the kind with a pointed tip at the bottom, with
+     the tip corresponding to the place."
+  3. "Move the map button from the supplier card to the supplier detail page,
+     again after Location. Also add a recenter button to the map view that
+     moves the supplier to the center and restores the default size. When done,
+     make the first commit, with the message matching the other commits."
+  4. "Change the supplier map to use the same modal form as the order create
+     screen instead of navigating to a new page."
+- Author review: `npx tsc --noEmit`, `npm run lint` (only pre-existing warnings)
+  and `npm run build` pass. Verified in Playwright that View on map opens the
+  modal in place (URL unchanged), shows the supplier pin and location text, and
+  closes with Escape.
+
+## 09/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Order creation location helpers. Auto-fill Pickup location from the
+  selected supplier's building/floor/location, and add a locate action after
+  the Delivery location title that opens a map picker modal where clicking the
+  map places a pin. On confirm the point is reverse-geocoded through the public
+  OSM Nominatim service (coordinate fallback plus a warning when it is
+  unavailable) and the address fills the delivery field. The lookup pins
+  `accept-language=en` so addresses stay English regardless of the browser
+  locale. Opening the picker first requests the browser's current position
+  with `navigator.geolocation.getCurrentPosition()` and uses it as the default
+  pin when available, falling back to the supplier location otherwise.
+  Extended `CampusMap` with a selectable mode, a responsive height
+  prop, modal-safe size invalidation, and a recenter control that does not leak
+  clicks to the map. Files: `frontend/src/pages/orders/CreateOrder.tsx`,
+  `frontend/src/components/LocationPickerModal.tsx`,
+  `frontend/src/lib/geocoding.ts`,
+  `frontend/src/components/CampusMap.tsx`.
+- Prompt(s):
+  1. "Now modify the order creation screen. Add: after a supplier is selected,
+     auto-fill the pickup location (the merchant's). For the delivery location,
+     add a locate icon after the title; clicking it opens a map to pick a point
+     and fill the address. If any part is impossible or hard to implement, pause
+     and tell me."
+  2. "No need to change order-service for now. The delivery field is filled in
+     Chinese — is that related to the system language or something? If possible,
+     change it to English."
+  3. "When picking an address, request the current position first, e.g. via
+     navigator.geolocation.getCurrentPosition(); if it succeeds use that as the
+     default and wait for confirmation and edits, otherwise keep the previous
+     picker-confirmation flow."
+- Author review: `npx tsc --noEmit`, `npm run lint` (only pre-existing warnings)
+  and `npm run build` pass. Verified in Playwright that selecting a supplier
+  fills the pickup address, the locate icon opens the picker, clicking the map
+  moves the pin, and confirming fills the geocoded address. Confirmed with a
+  direct Nominatim call that `accept-language=en` returns an English
+  display_name. Verified in Playwright that granting geolocation defaults the
+  pin to the current position and denying it falls back to the supplier
+  coordinates.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Store delivery-point coordinates on orders. Added nullable
+  `delivery_latitude`/`delivery_longitude` columns to `orders` (Alembic
+  migration `20261110_order_delivery_coordinates`), mirroring the supplier
+  fields and validating them to -90..90 / -180..180. The coordinates are
+  accepted by `OrderCreate`/`OrderUpdate`, returned by `OrderResponse`, and
+  persisted on create. The pending-update snapshot now dumps only the fields
+  the client sent, so an update without coordinates cannot null them out. The
+  create-order form submits the map picker's coordinates. Files:
+  `order-service/app/models/orders.py`, `order-service/app/schemas/orders.py`,
+  `order-service/app/repositories/orders.py`,
+  `order-service/app/services/orders.py`,
+  `order-service/migrations/versions/20261110_order_delivery_coordinates.py`,
+  `frontend/src/lib/api.ts`, `frontend/src/pages/orders/CreateOrder.tsx`, plus
+  tests.
+- Prompt(s): "Now I need to modify order-service: add storage for the delivery
+  location position, following the supplier's longitude/latitude, to prepare
+  for later work."
+- Author review: `ruff check` and `ruff format --check` pass; order-service
+  `pytest` reports 239 passed, 15 skipped (Postgres/env-gated). Frontend `tsc`,
+  `eslint` (only pre-existing warnings) and `vite build` pass. Added schema
+  range tests and a migration upgrade/downgrade test.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Replaced the OpenRouteService modal prototype with a simpler Google
+  Maps hand-off on the deliveries page. Active `ACCEPTED` and `PICKED_UP` rows
+  show a Navigate button that opens Google Maps directions in a new tab with
+  walking travel mode. The destination is the supplier's coordinates for the
+  pickup stage (falling back to the pickup address text) and the stored
+  delivery coordinates for the delivery stage (falling back to the delivery
+  address). Files: `frontend/src/pages/deliveries/MyDeliveries.tsx`.
+- Prompt(s): "Temporarily revert the other changes and implement the simpler
+  feature first: clicking the delivery navigation button should jump to Google
+  Maps for navigation."
+- Author review: `tsc`, `eslint` (only pre-existing warnings) and `vite build`
+  pass. Playwright verified both stages open Google Maps with the expected
+  destination and `travelmode=walking`, and completed rows expose no button.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Stop stale delivery coordinates after edits. The create-order form now
+  clears the picked coordinates when the user types a different delivery
+  address, and the edit-order form sends coordinates explicitly: it keeps the
+  stored pin when the address is unchanged and sends null when the text was
+  edited. Added repository tests covering explicit-null clearing and unset-field
+  preservation. Files: `frontend/src/pages/orders/CreateOrder.tsx`,
+  `frontend/src/pages/orders/MyRequests.tsx`,
+  `order-service/tests/test_orders_repository.py`.
+- Prompt(s): "Two things to fix before merge. 1) Stale delivery coordinates
+  after an edit: the edit form only sends the delivery_location text, so the old
+  lat/lng stay on the order and Navigate routes to the old pin; same in
+  CreateOrder when the user picks on the map and then types a different address.
+  Have the forms send the coordinates explicitly (null when the address
+  changed)."
+- Author review: `tsc`, `eslint` (only pre-existing warnings) and `vite build`
+  pass; order-service repository tests pass; Playwright verified both create and
+  edit payloads submit null coordinates after typing a new address.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Open Google Maps synchronously from the deliveries page. The Navigate
+  action now reads the already-loaded supplier from `useSuppliers` instead of
+  awaiting `suppliersApi.get`, so `window.open` runs inside the click handler and
+  is not blocked as a popup. Removed the per-row navigation loading state.
+  Files: `frontend/src/pages/deliveries/MyDeliveries.tsx`.
+- Prompt(s): "2) Navigate can be blocked as a popup: window.open runs after an
+  await suppliersApi.get(...). Use suppliers[order.supplier_id] from
+  useSuppliers, which is already loaded, so no fetch is needed."
+- Author review: `tsc`, `eslint` (only pre-existing warnings) and `vite build`
+  pass. Playwright verified both stages open Google Maps with the expected
+  destinations and that clicking Navigate makes no additional supplier request.
 ## 19/10/2026 - credit-service owner (fill in name)
 
 - Tool: DeepSeek Harness (model: deepseek-flash)

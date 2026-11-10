@@ -111,7 +111,7 @@ def _pending_task(update: OrderUpdate) -> SimpleNamespace:
         reservation_id="reservation-1",
         requester_id="user-1",
         created_at=datetime.now(UTC),
-        proposed_order=update.model_dump(mode="json"),
+        proposed_order=update.model_dump(mode="json", exclude_unset=True),
         status=PENDING,
         last_error=None,
     )

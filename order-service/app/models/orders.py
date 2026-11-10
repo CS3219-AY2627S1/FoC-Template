@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    Float,
     Index,
     Integer,
     String,
@@ -108,6 +109,8 @@ class OrderTable(Base):
 
     pickup_location: Mapped[str] = mapped_column(String(255), nullable=False)
     delivery_location: Mapped[str] = mapped_column(String(255), nullable=False)
+    delivery_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    delivery_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     proof_of_delivery_photo_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     status: Mapped[OrderStatus] = mapped_column(

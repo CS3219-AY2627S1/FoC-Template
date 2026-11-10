@@ -280,6 +280,8 @@ export interface OrderResponse {
   courier_id: string | null;
   pickup_location: string;
   delivery_location: string;
+  delivery_latitude?: number | null;
+  delivery_longitude?: number | null;
   status: OrderStatus;
   created_at: string;
 }
@@ -299,6 +301,8 @@ export interface OrderCreate {
   supplier_id: string;
   pickup_location: string;
   delivery_location: string;
+  delivery_latitude?: number | null;
+  delivery_longitude?: number | null;
 }
 
 export type OrderUpdate = OrderCreate;

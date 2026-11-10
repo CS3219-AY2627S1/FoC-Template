@@ -40,6 +40,8 @@ class OrderCreate(BaseModel):
     supplier_id: NonEmptyString
     pickup_location: NonEmptyString
     delivery_location: NonEmptyString
+    delivery_latitude: float | None = Field(default=None, ge=-90, le=90)
+    delivery_longitude: float | None = Field(default=None, ge=-180, le=180)
 
     @field_validator("deadline")
     @classmethod
@@ -64,6 +66,8 @@ class OrderResponse(BaseModel):
     courier_id: str | None
     pickup_location: str
     delivery_location: str
+    delivery_latitude: float | None = None
+    delivery_longitude: float | None = None
     status: OrderStatus
     created_at: datetime
 
@@ -101,6 +105,8 @@ class OrderUpdate(BaseModel):
     supplier_id: NonEmptyString
     pickup_location: NonEmptyString
     delivery_location: NonEmptyString
+    delivery_latitude: float | None = Field(default=None, ge=-90, le=90)
+    delivery_longitude: float | None = Field(default=None, ge=-180, le=180)
 
     @field_validator("deadline")
     @classmethod

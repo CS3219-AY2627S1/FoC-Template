@@ -570,7 +570,10 @@ async def update_order(
         if await release_tasks.get_for_order(session, order_id):
             raise OrderStateConflictError(order_id, "This order has a pending terminal action.")
 
-        proposed_order = updated_order.model_dump(mode="json")
+        # Keep only the fields the client actually sent so optional fields
+        # (e.g. delivery coordinates) are not overwritten with None when the
+        # stored update is re-validated and applied later.
+        proposed_order = updated_order.model_dump(mode="json", exclude_unset=True)
         pending = await update_tasks.get_pending_for_order(session, order_id)
         if pending is not None:
             if pending.proposed_order != proposed_order:
