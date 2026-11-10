@@ -3,6 +3,7 @@ package sg.edu.nus.foc.order.messagingpublisher.dto;
 import java.time.Instant;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -21,6 +22,8 @@ public class PenaltyScoreDeductionEvent implements OrderTaskEvent {
     private int penaltyAmount;
     private Instant occurredAt;
     private PenaltySystemPolicy appliedReason;
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Long courierSequence;
 
     @JsonIgnore
     private int eventVersion;

@@ -1740,3 +1740,8 @@ User explicitly approves the revised optional-search-and-browse proposal. A sing
 - Affected artifacts: Reporting creation/storage/API/scheduler, Order hold API,
   V20 persistence and compensation push/result contracts, frontend Report form,
   AsyncAPI/OpenAPI, gateway and environment/provisioning records.
+
+
+## CHANGE-185 / ADR-069 - sequenced penalty stream (2026-11-10)
+
+Yao Xiang approves one courier-penalty-event topic per environment and per-courier transactional source numbering, durable User inbox/cursor/recovery, and coordinated legacy drain. Order/User plus necessary topic wiring are in scope; no frontend, scoring-policy or cloud-resource mutation. See [CHANGE-185](../changes/CHANGE-185-sequenced-penalty-events.md). Implemented and locally verified: 727 Order and 284 User tests pass with no failures/errors/skips; both verify/coverage gates pass. AsyncAPI, 21 CI wiring tests, three local-emulator tests, Bash syntax and Compose configuration pass. Human review, cloud provisioning, broker smoke test and coordinated legacy drain remain pending. Detailed evidence is in CHANGE-185.

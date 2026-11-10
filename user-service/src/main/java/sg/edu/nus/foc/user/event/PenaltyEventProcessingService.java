@@ -18,10 +18,12 @@ public class PenaltyEventProcessingService {
 
     private final MongoTemplate mongoTemplate;
     private final UserService userService;
+    private final PenaltySequenceStore sequences;
 
     @Transactional
     public void process(PenaltyScoreEvent event, int penaltyChange) {
-
+        if (wasProcessed(event.eventId())) return;
+        sequences.claimLegacy(event.courierId());
         // Record the event first. Duplicate event IDs will fail here.
         mongoTemplate.insert(
                 new ProcessedPenaltyEvent(
@@ -37,5 +39,10 @@ public class PenaltyEventProcessingService {
                 event.courierId(),
                 penaltyChange
         );
+    }
+
+    public boolean wasProcessed(String eventId) {
+        return mongoTemplate.exists(org.springframework.data.mongodb.core.query.Query.query(
+                org.springframework.data.mongodb.core.query.Criteria.where("_id").is(eventId)), ProcessedPenaltyEvent.class);
     }
 }

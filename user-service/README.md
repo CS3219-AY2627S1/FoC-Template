@@ -134,3 +134,8 @@ $env:MONGODB_URI="mongodb+srv://..."
 ## Admin directory
 
 The Admin UI uses GET /api/users/admin/search with active-admin authorization and database pagination. Exact contract, changed files, tests and integration scope: [user-servicehandoff.md](user-servicehandoff.md). Existing User routes are preserved.
+
+
+## Unified penalty stream - CHANGE-185 (2026-11-10)
+
+New score outcomes use courier-penalty-event-{local,dev,prod}-v1, eventVersion2 and courierSequence. Separate addition/deduction topics/routes remain only for unsequenced historical backlog drain. User durably buffers out-of-order events and applies contiguous positions. See [cutover and API contract](../order-service/docs/penalty-event-cutover.md). Do not mix old first deliveries after activation; no automatic data/cloud cutover is performed by this patch.

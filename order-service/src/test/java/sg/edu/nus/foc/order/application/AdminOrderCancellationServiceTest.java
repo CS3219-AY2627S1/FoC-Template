@@ -53,7 +53,7 @@ class AdminOrderCancellationServiceTest {
     @BeforeEach
     void setUp() {
         service = new AdminOrderCancellationService(orders, checkpoints, receipts, outbox, signals,
-                new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class)), mock(OrderAuditLogger.class), org.mockito.Mockito.mock(sg.edu.nus.foc.order.application.PenaltyOutcomeRecorder.class));
+                new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class), TestPenaltySequences.store()), mock(OrderAuditLogger.class), org.mockito.Mockito.mock(sg.edu.nus.foc.order.application.PenaltyOutcomeRecorder.class));
         Instant created = Instant.parse("2026-10-16T00:00:00Z");
         order = Order.open("requester", "item", "pickup", "delivery", 5, 30, created, created.plusSeconds(3600));
         when(orders.getForLifecycleUpdate(order.getId())).thenReturn(Optional.of(order));

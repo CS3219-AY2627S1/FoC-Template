@@ -139,7 +139,7 @@ class LifecycleFailureIsolationTest {
     private LifecycleProcessingService lifecycle() {
         return new LifecycleProcessingService(
                 orders, new OrderExpiryProcessingService(orders, checkpoints, outbox, events,
-                        new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class)),
+                        new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class), TestPenaltySequences.store()),
                         mock(OrderAuditLogger.class)),
                 mock(OrderRepostService.class), mock(OrderAuditLogger.class), transitions);
     }

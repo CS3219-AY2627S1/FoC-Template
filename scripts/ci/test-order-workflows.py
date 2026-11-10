@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from test_report_pubsub import ReportCloudWorkflowTest
+from test_penalty_pubsub import PenaltyBootstrapTest, PenaltyCloudProvisioningTest
 
 ROOT = Path(__file__).resolve().parents[2]
 FAKE = r'''#!/usr/bin/env python3

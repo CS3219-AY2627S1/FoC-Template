@@ -15,6 +15,20 @@ import sg.edu.nus.foc.order.messagingpublisher.interfaces.IEventPublisher;
 class PenaltyScorePublishersTest {
 
     @Test
+    void bothSequencedDirectionsUseOneTopicWhileLegacyKeepsDrainRoute() {
+        @SuppressWarnings("unchecked") IEventPublisher<Object> transport = mock(IEventPublisher.class);
+        var addition = new PenaltyScoreAdditionPublisher(transport);
+        var deduction = new PenaltyScoreDeductionPublisher(transport);
+        ReflectionTestUtils.setField(addition, "sequencedTopicId", "courier-penalty-event-dev-v1");
+        ReflectionTestUtils.setField(deduction, "sequencedTopicId", "courier-penalty-event-dev-v1");
+        var added = new PenaltyScoreAdditionEvent(); added.setCourierSequence(1L);
+        var deducted = new PenaltyScoreDeductionEvent(); deducted.setCourierSequence(2L);
+        addition.publishPenaltyScoreAddition(added); deduction.publishPenaltyScoreDeduction(deducted);
+        verify(transport).publish("courier-penalty-event-dev-v1", added);
+        verify(transport).publish("courier-penalty-event-dev-v1", deducted);
+    }
+
+    @Test
     void routesToConfiguredTopicsAndPropagatesTransportFailure() {
         @SuppressWarnings("unchecked")
         IEventPublisher<Object> transport = mock(IEventPublisher.class);

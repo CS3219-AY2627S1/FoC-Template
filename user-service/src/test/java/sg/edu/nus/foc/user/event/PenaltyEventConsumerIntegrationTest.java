@@ -53,7 +53,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
         "USER_PUBSUB_PUSH_MODE=emulator",
         "PUBSUB_EMULATOR_HOST=localhost:8085",
 
-        "order-service.url=http://localhost:8082"
+        "order-service.url=http://localhost:8082",
+        "USER_PENALTY_SEQUENCE_RECOVERY_DELAY_MS=3600000"
 })
 @Testcontainers
 class PenaltyEventConsumerIntegrationTest {
@@ -90,6 +91,12 @@ class PenaltyEventConsumerIntegrationTest {
     @Autowired
     private JsonMapper jsonMapper;
 
+    @Autowired private PenaltySequenceStore sequenceStore;
+    @Autowired private SequencedPenaltyProcessor sequenceProcessor;
+    @Autowired private sg.edu.nus.foc.user.config.UserPushProperties push;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+    private sg.edu.nus.foc.user.logic.UserService scoredUsers;
+
     @MockitoBean
     private FirebaseAuthService firebaseAuthService;
 
@@ -98,6 +105,10 @@ class PenaltyEventConsumerIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.reset(scoredUsers);
+        mongoTemplate.remove(new Query(), sg.edu.nus.foc.user.model.CourierPenaltyStream.class);
+        mongoTemplate.remove(new Query(), sg.edu.nus.foc.user.model.PenaltyInboxItem.class);
+        mongoTemplate.remove(new Query(), sg.edu.nus.foc.user.model.PenaltyEventReceipt.class);
         mongoTemplate.remove(
                 new Query(),
                 ProcessedPenaltyEvent.class
@@ -924,6 +935,108 @@ class PenaltyEventConsumerIntegrationTest {
                     "appliedReason": "ACCEPTED_TASK_CANCELLATION"
                 }
                 """;
+    }
+
+    private PenaltyScoreEvent sequencedEvent(String id, String courier, long sequence, boolean reward) {
+        return new PenaltyScoreEvent(id, reward ? DEDUCTION_EVENT : ADDITION_EVENT, "order-" + id,
+                courier, reward ? 1 : 2, Instant.parse("2026-11-10T00:00:00.123456789Z"),
+                reward ? "SUCCESSFUL_DELIVERY" : "COURIER_BAD_ATTITUDE", sequence);
+    }
+
+    private void deliver(PenaltyScoreEvent event) {
+        var message = new PubSubMessage(Base64.getEncoder().encodeToString(jsonMapper.writeValueAsBytes(event)),
+                Map.of("eventId",event.eventId(),"eventType",event.eventType(),"eventVersion","2"), "broker-"+event.eventId(), null);
+        penaltyEventConsumer.consume(new PubSubPushRequest(message, push.penaltyEventSubscriptionPath()));
+    }
+
+    @Test void reversedArrivalRetainsRewardUntilEarlierAdditionAndAppliesDuplicatesOnce() {
+        createCourier("sequence-courier",0);
+        var first=sequencedEvent("seq-one","sequence-courier",1,false);
+        var second=sequencedEvent("seq-two","sequence-courier",2,true);
+        deliver(second);
+        assertEquals(0,userRepository.findByUserId("sequence-courier").orElseThrow().getPenalty());
+        assertEquals(0,mongoTemplate.count(new Query(),ProcessedPenaltyEvent.class));
+        deliver(first); deliver(second); deliver(first);
+        assertEquals(1,userRepository.findByUserId("sequence-courier").orElseThrow().getPenalty());
+        assertEquals(2,mongoTemplate.count(new Query(),ProcessedPenaltyEvent.class));
+        assertEquals(2,mongoTemplate.findById("sequence-courier",sg.edu.nus.foc.user.model.CourierPenaltyStream.class).lastAppliedSequence());
+    }
+
+    @Test void rejectsConflictingEventIdentityAndSequencePosition() {
+        createCourier("sequence-courier",0);
+        deliver(sequencedEvent("seq-one","sequence-courier",1,false));
+        assertThrows(ResponseStatusException.class,()->deliver(sequencedEvent("different","sequence-courier",1,false)));
+        assertThrows(ResponseStatusException.class,()->deliver(sequencedEvent("seq-one","sequence-courier",2,false)));
+        assertEquals(2,userRepository.findByUserId("sequence-courier").orElseThrow().getPenalty());
+    }
+
+    @Test void recoveryDrainsReceiptsSavedBeforeCrashAndGapsDoNotBlockAnotherCourier() {
+        createCourier("sequence-courier",0);createCourier("other-courier",0);
+        sequenceStore.accept(sequencedEvent("seq-two","sequence-courier",2,true));
+        deliver(sequencedEvent("other-one","other-courier",1,false));
+        sequenceProcessor.recover();
+        assertEquals(0,userRepository.findByUserId("sequence-courier").orElseThrow().getPenalty());
+        assertEquals(2,userRepository.findByUserId("other-courier").orElseThrow().getPenalty());
+        sequenceStore.accept(sequencedEvent("seq-one","sequence-courier",1,false));
+        sequenceProcessor.recover();
+        assertEquals(1,userRepository.findByUserId("sequence-courier").orElseThrow().getPenalty());
+    }
+
+    @Test void failedRecoveryBatchMovesBehindOtherPendingCouriers() {
+        for (int index = 0; index < 51; index++) {
+            mongoTemplate.insert(new sg.edu.nus.foc.user.model.CourierPenaltyStream(
+                    "pending-" + index, 0, true, true, Instant.EPOCH));
+        }
+        var firstBatch = sequenceStore.pendingStreams();
+        assertEquals(50, firstBatch.size());
+        String waiting = java.util.stream.IntStream.range(0, 51).mapToObj(index -> "pending-" + index)
+                .filter(courier -> !firstBatch.contains(courier)).findFirst().orElseThrow();
+        firstBatch.forEach(sequenceStore::deferRetry);
+        assertEquals(waiting, sequenceStore.pendingStreams().getFirst());
+    }
+
+    @Test void failedScoreTransactionKeepsReceiptButRollsBackCursorAndProcessedMarker() {
+        createCourier("sequence-courier",0);
+        org.mockito.Mockito.doThrow(new IllegalStateException("score failed")).when(scoredUsers).adjustPenalty("sequence-courier",2);
+        deliver(sequencedEvent("seq-one","sequence-courier",1,false));
+        assertEquals(1,mongoTemplate.count(new Query(),sg.edu.nus.foc.user.model.PenaltyEventReceipt.class));
+        assertEquals(0,mongoTemplate.count(new Query(),ProcessedPenaltyEvent.class));
+        assertEquals(0,mongoTemplate.findById("sequence-courier",sg.edu.nus.foc.user.model.CourierPenaltyStream.class).lastAppliedSequence());
+        org.mockito.Mockito.reset(scoredUsers);
+        sequenceProcessor.recover();
+        assertEquals(2,userRepository.findByUserId("sequence-courier").orElseThrow().getPenalty());
+        assertEquals(1,mongoTemplate.count(new Query(),ProcessedPenaltyEvent.class));
+    }
+
+    @Test void lateLegacyFirstDeliveryCannotReorderSequencedStreamButKnownDuplicateIsSafe() throws Exception {
+        createCourier("sequence-courier",0);
+        var legacy=createAdditionEvent("old-event","sequence-courier",2,"ACCEPTED_TASK_CANCELLATION");
+        penaltyEventConsumer.consumeAddition(createRequest(legacy));
+        deliver(sequencedEvent("seq-one","sequence-courier",1,true));
+        penaltyEventConsumer.consumeAddition(createRequest(legacy));
+        assertThrows(ResponseStatusException.class,()->penaltyEventConsumer.consumeAddition(createRequest(
+                createAdditionEvent("late-old-event","sequence-courier",2,"ACCEPTED_TASK_CANCELLATION"))));
+        assertEquals(1,userRepository.findByUserId("sequence-courier").orElseThrow().getPenalty());
+    }
+
+    @Test void twoConsumerInstancesCannotCommitTheSamePositionTwice() throws Exception {
+        createCourier("sequence-courier",0);
+        sequenceStore.accept(sequencedEvent("seq-one","sequence-courier",1,false));
+        sequenceStore.accept(sequencedEvent("seq-two","sequence-courier",2,true));
+        var workers=java.util.concurrent.Executors.newFixedThreadPool(2);
+        var start=new java.util.concurrent.CountDownLatch(1);
+        try {
+            var jobs=new java.util.ArrayList<java.util.concurrent.Future<?>>();
+            for(int i=0;i<2;i++)jobs.add(workers.submit(()->{
+                try { start.await(); sequenceStore.applyNext("sequence-courier"); }
+                catch (org.springframework.dao.DataAccessException expectedTransactionConflict) { }
+                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new RuntimeException(interrupted); }
+            }));
+            start.countDown();for(var job:jobs)job.get(15,java.util.concurrent.TimeUnit.SECONDS);
+        } finally { workers.shutdownNow(); }
+        sequenceProcessor.recover();
+        assertEquals(1,userRepository.findByUserId("sequence-courier").orElseThrow().getPenalty());
+        assertEquals(2,mongoTemplate.count(new Query(),ProcessedPenaltyEvent.class));
     }
 
     private Map<String, String> validAttributes() {

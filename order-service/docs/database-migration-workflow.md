@@ -220,3 +220,6 @@ test/runtime evidence and unverified gates belong to CHANGE-156. This task does
 not migrate a user/staging/production database. Rollback disables new commands,
 retains all journal/inbox/outbox records and reconciles pending compensation;
 never drop tombstones or restore old code that reinterprets new-policy keys.
+
+
+CHANGE-185: V21__courier_penalty_sequences.sql adds transactional per-courier counters and immutable event-to-sequence bindings, with no legacy backfill. Expected latest Flyway version21. Apply through normal startup only after coordinated v1 drain; keep schema/history on rollback. See penalty-event-cutover.md and ADR-069.

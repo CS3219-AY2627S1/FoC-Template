@@ -19,4 +19,5 @@ public class CourierPenaltyEventFacts {
     private final Instant occurredAt;
     private final PenaltySystemPolicy appliedReason;
     private final long orderVersion;
+    private final long courierSequence;
 }

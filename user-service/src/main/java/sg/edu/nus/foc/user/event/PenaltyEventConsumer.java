@@ -23,6 +23,7 @@ import tools.jackson.databind.json.JsonMapper;
 import lombok.RequiredArgsConstructor;
 
 import sg.edu.nus.foc.common.penalty.PenaltySystemPolicy;
+import sg.edu.nus.foc.user.config.UserPushProperties;
 import sg.edu.nus.foc.user.event.PenaltyScoreEvent;
 import sg.edu.nus.foc.user.dto.PubSubPushRequest;
 import sg.edu.nus.foc.user.logic.UserService;
@@ -42,6 +43,21 @@ public class PenaltyEventConsumer {
     private final JsonMapper jsonMapper;
     private final UserService userService;
     private final PenaltyEventProcessingService processingService;
+    private final SequencedPenaltyProcessor sequenced;
+    private final UserPushProperties push;
+
+    public void consume(PubSubPushRequest request) {
+        PenaltyScoreEvent event = decodeEvent(request);
+        if (event == null || (!ADDITION_EVENT.equals(event.eventType()) && !DEDUCTION_EVENT.equals(event.eventType()))) {
+            throw badRequest("Unexpected penalty event type");
+        }
+        validateEvent(event, request, event.eventType(), "2");
+        if (event.courierSequence() == null || event.courierSequence() < 1
+                || !push.penaltyEventSubscriptionPath().equals(request.subscription())) {
+            throw badRequest("A positive courier sequence and the configured subscription are required");
+        }
+        sequenced.receive(event);
+    }
 
     // Consume a penalty addition event.
     public void consumeAddition(PubSubPushRequest request) {
@@ -53,6 +69,7 @@ public class PenaltyEventConsumer {
             processingService.process(event, event.penaltyAmount());
         } catch (DuplicateKeyException e) {
             // Event was already processed. Acknowledge without applying it again.
+            if (!processingService.wasProcessed(event.eventId())) throw e;
         }
     }
 
@@ -66,6 +83,7 @@ public class PenaltyEventConsumer {
             processingService.process(event, -event.penaltyAmount());
         } catch (DuplicateKeyException e) {
             // Event was already processed. Acknowledge without applying it again.
+            if (!processingService.wasProcessed(event.eventId())) throw e;
         }
     }
 
@@ -98,6 +116,12 @@ public class PenaltyEventConsumer {
             PubSubPushRequest request,
             String expectedEventType
     ) {
+        validateEvent(event, request, expectedEventType, EVENT_VERSION);
+        if (event.courierSequence() != null) throw badRequest("Sequenced events require the unified endpoint");
+    }
+
+    private void validateEvent(PenaltyScoreEvent event, PubSubPushRequest request,
+            String expectedEventType, String version) {
 
         if (event == null) {
             throw badRequest("Penalty event cannot be null");
@@ -140,7 +164,7 @@ public class PenaltyEventConsumer {
             throw badRequest("Event type does not match Pub/Sub attributes");
         }
 
-        if (!EVENT_VERSION.equals(attributes.get("eventVersion"))) {
+        if (!version.equals(attributes.get("eventVersion"))) {
             throw badRequest("Unsupported penalty event version");
         }
 

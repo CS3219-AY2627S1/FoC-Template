@@ -16,9 +16,11 @@ public class PenaltyScoreAdditionPublisher implements IPenaltyScoreAdditionPubli
 
     @Value("${order.messaging.topics.courier-penalty-addition:TODO_TOPIC}")
     private String topicId = "TODO_TOPIC";
+    @Value("${order.messaging.topics.courier-penalty-event:TODO_TOPIC}")
+    private String sequencedTopicId = "TODO_TOPIC";
 
     @Override
     public void publishPenaltyScoreAddition(PenaltyScoreAdditionEvent event) {
-        eventPublisher.publish(topicId, event);
+        eventPublisher.publish(event.getCourierSequence() == null ? topicId : sequencedTopicId, event);
     }
 }

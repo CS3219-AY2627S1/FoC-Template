@@ -539,3 +539,8 @@ Effective Report simplification (CHANGE-169): credit/general reports are unlinke
 ## CHANGE-179 - Courier suspension role context (2026-11-04)
 
 Courier suspension is an acceptance restriction (ADR-067). Order uses User role-context roles plus isCourierSuspended; assigned couriers can keep delivering while suspended. A new acceptance is denied403 with an explanation; saved/uncertain command recovery remains protected. Role, ownership, state, version and report-hold checks still apply. No new environment variables or migrations. Use the root wrapper with -pl order-service -am verify to limit checks to Order and its shared library; the root reactor also contains User Service.
+
+
+## Unified penalty stream ? CHANGE-185 (2026-11-10)
+
+New score outcomes use courier-penalty-event-{local,dev,prod}-v1, eventVersion2 and courierSequence. Separate addition/deduction topics/routes remain only for unsequenced historical backlog drain. User durably buffers out-of-order events and applies contiguous positions. See [cutover and API contract](docs/penalty-event-cutover.md). Do not mix old first deliveries after activation; no automatic data/cloud cutover is performed by this patch.

@@ -54,6 +54,7 @@ x-order-pubsub-topics: &order-pubsub-topics
   PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
   ORDER_COMPLETION_TOPIC: order-completion-local-v1
   ORDER_OPEN_REFUND_TOPIC: open-order-refund-local-v1
+  ORDER_COURIER_PENALTY_EVENT_TOPIC: courier-penalty-event-local-v1
   ORDER_COURIER_PENALTY_ADDITION_TOPIC: courier-penalty-addition-local-v1
   ORDER_COURIER_PENALTY_DEDUCTION_TOPIC: courier-penalty-deduction-local-v1
   ORDER_CREDIT_COMPENSATION_TOPIC: credit-command-compensation-local-v1
@@ -263,6 +264,7 @@ services:
       ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
       SPRING_PROFILES_ACTIVE: prod
       USER_MESSAGING_MODE: emulator
+      USER_PUBSUB_PENALTY_EVENT_SUBSCRIPTION: user-courier-penalty-event-local-v1
       USER_PUBSUB_PUSH_MODE: emulator
       PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
       PUBSUB_PROJECT_ID: demo-foc-local

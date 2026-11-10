@@ -32,3 +32,8 @@ Resolution HTTP/compensation/result APIs and the real Admin Reports frontend are
 - Report creation still needs durable submission identity/recovery if hold placement succeeds but Report persistence fails. This is separate from the completed resolution saga; do not silently release/fabricate reports.
 - Reportable Orders exclude OPEN: ACCEPTED, IN_PROGRESS, PICKED_UP and DELIVERED only, with assigned courier. Current-snapshot hold retries are accepted; no snapshot migration.
 - Retention and operator handling for unresolved journals/FAILED results need rollout agreement.
+
+
+## CHANGE-185 supersession: penalty ordering implemented jointly
+
+User explicitly authorizes Order/User changes for unified sequenced scoring. The prior arrival-order policy follow-up is superseded by ADR-069 (source commit order), durable inbox and per-courier cursor. Runtime/cloud readiness remains subject to verification and coordinated cutover. Theft/permanent suspension and legacy-account compatibility are unrelated, unchanged follow-ups. Contract/provisioning: penalty-event-cutover.md.

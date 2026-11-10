@@ -1,6 +1,7 @@
 package sg.edu.nus.foc.common.penalty;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,7 +21,8 @@ class PenaltySystemPolicyTest {
             "WRONG_LOCATION_DELIVERY, 4",
             "ITEM_MISHANDLING_OR_DAMAGE, 4",
             "DELIBERATE_ITEM_RETENTION_OR_THEFT, 10",
-            "COURIER_UNRESPONSIVE, 3"
+            "COURIER_UNRESPONSIVE, 3",
+            "COURIER_BAD_ATTITUDE, 2"
     })
     void preservesPublishedReasonNamesAndApprovedPositiveAmounts(String reason, int amount) {
         PenaltySystemPolicy policy = PenaltySystemPolicy.valueOf(reason);
@@ -36,11 +38,12 @@ class PenaltySystemPolicyTest {
     }
 
     @Test
-    void badAttitudeIsAnAdminSelectableTwoPointPenalty() {
+    void badAttitudeRemainsReadableButCannotBeNewlySelected() {
         PenaltySystemPolicy policy = PenaltySystemPolicy.valueOf("COURIER_BAD_ATTITUDE");
         assertEquals(2, policy.getPenaltyAmount());
-        assertTrue(PenaltySystemPolicy.getCourierPenaltyCases().contains(policy));
-        assertTrue(PenaltySystemPolicy.getFullPenaltyPolicy().contains(policy));
+        assertFalse(PenaltySystemPolicy.getCourierPenaltyCases().contains(policy));
+        assertFalse(PenaltySystemPolicy.getFullPenaltyPolicy().contains(policy));
+        assertTrue(PenaltySystemPolicy.getCourierPenaltyCases().contains(PenaltySystemPolicy.COURIER_UNRESPONSIVE));
     }
 
     @Test
@@ -53,10 +56,10 @@ class PenaltySystemPolicyTest {
     @Test
     void courierPenaltyCasesExcludeTheThreeAutomaticOrderOutcomes() {
         assertEquals(List.of(
+                PenaltySystemPolicy.COURIER_UNRESPONSIVE,
                 PenaltySystemPolicy.WRONG_LOCATION_DELIVERY,
                 PenaltySystemPolicy.ITEM_MISHANDLING_OR_DAMAGE,
-                PenaltySystemPolicy.DELIBERATE_ITEM_RETENTION_OR_THEFT,
-                PenaltySystemPolicy.COURIER_BAD_ATTITUDE),
+                PenaltySystemPolicy.DELIBERATE_ITEM_RETENTION_OR_THEFT),
                 PenaltySystemPolicy.getCourierPenaltyCases());
     }
 
@@ -69,7 +72,7 @@ class PenaltySystemPolicyTest {
                 PenaltySystemPolicy.WRONG_LOCATION_DELIVERY,
                 PenaltySystemPolicy.ITEM_MISHANDLING_OR_DAMAGE,
                 PenaltySystemPolicy.DELIBERATE_ITEM_RETENTION_OR_THEFT,
-                PenaltySystemPolicy.COURIER_BAD_ATTITUDE),
+                PenaltySystemPolicy.COURIER_UNRESPONSIVE),
                 PenaltySystemPolicy.getFullPenaltyPolicy());
     }
 

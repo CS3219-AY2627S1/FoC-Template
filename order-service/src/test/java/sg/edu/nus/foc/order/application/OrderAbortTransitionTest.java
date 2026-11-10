@@ -43,7 +43,7 @@ class OrderAbortTransitionTest {
     private final OrderEventOutboxRepository outbox = mock(OrderEventOutboxRepository.class);
     private final OrderTransitionService service = new OrderTransitionService(orders, checkpoints, receipts,
             users, credits, outbox, mock(ApplicationEventPublisher.class),
-            new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class)), mock(OrderAuditLogger.class), org.mockito.Mockito.mock(sg.edu.nus.foc.order.application.PenaltyOutcomeRecorder.class));
+            new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class), TestPenaltySequences.store()), mock(OrderAuditLogger.class), org.mockito.Mockito.mock(sg.edu.nus.foc.order.application.PenaltyOutcomeRecorder.class));
 
     @Test
     void unexpiredAbortPublishesUserPenaltyButNotCreditRefund() {

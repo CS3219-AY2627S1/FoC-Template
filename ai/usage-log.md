@@ -3591,3 +3591,8 @@ expiry. Implementation is complete in the working tree.
 - **Prompt:** "yes fix the tests in the current branch"
 - **Key response:** Repaired the five stale V20-era assertions by supplying the required submission ID, expecting Flyway V20, and counting V20's added Order foreign key. The first complete run then exposed the 80% JaCoCo branch gate, so positive and negative `ReportCreationSettings` safety-gate scenarios were added without changing production behavior. The focused controller/PostgreSQL suite passes 24 tests. Final Order/common `verify` passes 714 Order and 13 common tests with zero failures, errors, or skips; OpenAPI, packaging, and coverage gates pass at 80.25% branch and 93.78% line coverage. The delayed Surefire shutdown/connection diagnostics are non-fatal.
 - **Author verification:** Automated verification is complete; human review complete.
+
+
+## CHANGE-185 - sequenced courier penalty integration
+
+Tool: OpenAI Codex (GPT-6), 2026-11-10. Mode: implementation/tests/documentation. User approved unified topic, per-courier numbering and User Service changes. Scope: Order/User, required topic wiring, contracts/tests. No cloud/data/commit/push action. Full verify passes: 727 Order and 284 User tests, no failures/errors/skips, coverage checks pass; AsyncAPI and 21 mocked CI wiring tests pass. Initial RED contract failed as intended; migration-version assertion and retry-fairness edge corrected with regression coverage. No live cloud/broker test or deployment; human review/cutover pending.

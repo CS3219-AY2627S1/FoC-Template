@@ -17,6 +17,7 @@ import sg.edu.nus.foc.order.messagingpublisher.mapper.OrderTaskEventMapper;
 @RequiredArgsConstructor
 public class OrderTaskEventFactory {
     private final OrderTaskEventMapper mapper;
+    private final CourierPenaltySequenceStore penaltySequences;
 
     public OrderTaskEvent penalty(String commandId, Order order, String courierId,
                                   Instant occurredAt, PenaltySystemPolicy reason) {
@@ -27,9 +28,10 @@ public class OrderTaskEventFactory {
                 .fingerprint(type, commandId, order.getId(), courierId, reason.name())
                 .getBytes(StandardCharsets.UTF_8);
         String eventId = UUID.nameUUIDFromBytes(identity).toString();
+        long sequence = penaltySequences.assign(courierId, eventId);
         long resultingVersion = order.getVersion() + 1;
         CourierPenaltyEventFacts facts = new CourierPenaltyEventFacts(eventId, order.getId(), courierId,
-                reason.getPenaltyAmount(), occurredAt, reason, resultingVersion);
+                reason.getPenaltyAmount(), occurredAt, reason, resultingVersion, sequence);
         if (reason == successfulDeliveryReward) {
             return mapper.toPenaltyDeductionEvent(facts);
         }

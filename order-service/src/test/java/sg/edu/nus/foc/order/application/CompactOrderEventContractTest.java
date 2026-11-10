@@ -25,7 +25,7 @@ class CompactOrderEventContractTest {
 
     private final JsonMapper json = JsonMapper.builder().build();
     private final OrderTaskEventFactory factory = new OrderTaskEventFactory(
-            Mappers.getMapper(OrderTaskEventMapper.class));
+            Mappers.getMapper(OrderTaskEventMapper.class), TestPenaltySequences.store());
 
     @Test
     void cancellationAndExpiryUseExactlySevenFieldsIncludingNullCourier() {

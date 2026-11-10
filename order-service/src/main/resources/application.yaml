@@ -94,6 +94,7 @@ order:
     topics:
       order-completion: ${ORDER_COMPLETION_TOPIC:order-completion-dev-v1}
       open-order-refund: ${ORDER_OPEN_REFUND_TOPIC:open-order-refund-dev-v1}
+      courier-penalty-event: ${ORDER_COURIER_PENALTY_EVENT_TOPIC:courier-penalty-event-dev-v1}
       courier-penalty-addition: ${ORDER_COURIER_PENALTY_ADDITION_TOPIC:courier-penalty-addition-dev-v1}
       courier-penalty-deduction: ${ORDER_COURIER_PENALTY_DEDUCTION_TOPIC:courier-penalty-deduction-dev-v1}
   lifecycle:

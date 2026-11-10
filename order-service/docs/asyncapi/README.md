@@ -227,3 +227,8 @@ CHANGE-141 / ADR-048 producer refinement: ordinary completion reads the stored a
 
 
 CHANGE-146: addition/deduction topics and payloads unchanged. Apply penalty emits nothing. Completion/auto-completion emits only the highest stored/overdue addition, or successful reward if no penalty; admin cancellation only stored/explicit maximum, never overdue/reward. No replacement topic or consumer.
+
+
+## Unified penalty stream ? CHANGE-185 (2026-11-10)
+
+New score outcomes use courier-penalty-event-{local,dev,prod}-v1, eventVersion2 and courierSequence. Separate addition/deduction topics/routes remain only for unsequenced historical backlog drain. User durably buffers out-of-order events and applies contiguous positions. See [cutover and API contract](../penalty-event-cutover.md). Do not mix old first deliveries after activation; no automatic data/cloud cutover is performed by this patch.

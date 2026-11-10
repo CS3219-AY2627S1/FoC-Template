@@ -610,3 +610,8 @@ evidence and rollback-only Order compensation. One-hour inactive pre-hold expiry
 replaces owner cancellation. Order V20 lifecycle tombstones serialize placement
 against compensation. Existing report resolution remains all-or-nothing. See
 `changes/CHANGE-184-durable-report-creation-compensation.md` and ADR-068.
+
+
+## CHANGE-185 / ADR-069 - sequenced penalty stream (2026-11-10)
+
+Yao Xiang approves one courier-penalty-event topic per environment and per-courier transactional source numbering, durable User inbox/cursor/recovery, and coordinated legacy drain. Order/User plus necessary topic wiring are in scope; no frontend, scoring-policy or cloud-resource mutation. See [CHANGE-185](../changes/CHANGE-185-sequenced-penalty-events.md). Implemented and locally verified: 727 Order and 284 User tests pass with no failures/errors/skips; both verify/coverage gates pass. AsyncAPI, 21 CI wiring tests, three local-emulator tests, Bash syntax and Compose configuration pass. Human review, cloud provisioning, broker smoke test and coordinated legacy drain remain pending. Detailed evidence is in CHANGE-185.

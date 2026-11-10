@@ -922,3 +922,8 @@ Sequence/classes: open/type -> SupplierSelector request state -> existing useApi
 ## CHANGE-183 - Resolution account display (2026-11-09)
 
 Existing Admin report review presentation -> ReportCase Resolution account-first rows -> shared authenticated User name enrichment using resolvedBy -> profile link/full-ID copy and no-Order regression checks.21 focused tests, full lint and TypeScript pass; browser/staging not exercised. No new D1 capability, backend rule, schema or contract. Details: changes/CHANGE-183-admin-resolver-display.md.
+
+
+## CHANGE-185 / ADR-069 - sequenced penalty stream (2026-11-10)
+
+Yao Xiang approves one courier-penalty-event topic per environment and per-courier transactional source numbering, durable User inbox/cursor/recovery, and coordinated legacy drain. Order/User plus necessary topic wiring are in scope; no frontend, scoring-policy or cloud-resource mutation. See [CHANGE-185](../changes/CHANGE-185-sequenced-penalty-events.md). Implemented and locally verified: 727 Order and 284 User tests pass with no failures/errors/skips; both verify/coverage gates pass. AsyncAPI, 21 CI wiring tests, three local-emulator tests, Bash syntax and Compose configuration pass. Human review, cloud provisioning, broker smoke test and coordinated legacy drain remain pending. Detailed evidence is in CHANGE-185.

@@ -25,23 +25,25 @@ class CourierPenaltyEventContractTest {
             PenaltySystemPolicy.OVERDUE_DELIVERY,
             PenaltySystemPolicy.SUCCESSFUL_DELIVERY);
 
-    private final OrderTaskEventFactory factory = new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class));
+    private final OrderTaskEventFactory factory = new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class), TestPenaltySequences.store());
     private final JsonMapper json = JsonMapper.builder().build();
 
     @Test
-    void serializesExactlySevenFieldsWithApprovedPositiveAmountsAndCourierRecipient() {
+    void serializesExactlyEightFieldsWithApprovedPositiveAmountsAndCourierRecipient() {
         Order order = order();
         // Shared report-case mappings do not introduce new automatic Order flows.
         for (PenaltySystemPolicy reason : AUTOMATIC_ORDER_REASONS) {
             OrderTaskEvent event = factory.penalty("command", order, "courier", NOW, reason);
             JsonNode payload = json.valueToTree(event);
             Set<String> fields = new HashSet<>(payload.propertyNames());
-            assertEquals(Set.of("eventId", "eventType", "orderId", "courierId", "penaltyAmount", "occurredAt", "appliedReason"), fields);
+            assertEquals(Set.of("eventId", "eventType", "orderId", "courierId", "penaltyAmount", "occurredAt", "appliedReason", "courierSequence"), fields);
             assertEquals(reason == PenaltySystemPolicy.ACCEPTED_TASK_CANCELLATION ? 2 : 1, payload.get("penaltyAmount").asInt());
             assertEquals(reason.name(), payload.get("appliedReason").asString());
             assertEquals("courier", payload.get("courierId").asString());
             assertEquals(order.getId(), payload.get("orderId").asString());
             assertEquals(NOW.toString(), payload.get("occurredAt").asString());
+            org.junit.jupiter.api.Assertions.assertTrue(payload.get("courierSequence").asLong() > 0);
+            assertEquals(2, event.getEventVersion());
             assertEquals(reason == PenaltySystemPolicy.SUCCESSFUL_DELIVERY
                     ? "PenaltyScoreDeductionEvent" : "PenaltyScoreAdditionEvent", event.getEventType());
         }

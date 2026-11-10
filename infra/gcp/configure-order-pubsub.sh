@@ -32,6 +32,8 @@ publisher="serviceAccount:foc-order-service@${PROJECT_ID}.iam.gserviceaccount.co
 topics=(
   "$ORDER_COMPLETION_TOPIC"
   "$ORDER_OPEN_REFUND_TOPIC"
+  "$ORDER_COURIER_PENALTY_EVENT_TOPIC"
+  # Drain-only legacy topics: never delete or republish historical scoring effects.
   "$ORDER_COURIER_PENALTY_ADDITION_TOPIC"
   "$ORDER_COURIER_PENALTY_DEDUCTION_TOPIC"
   "$ORDER_CREDIT_COMPENSATION_TOPIC"

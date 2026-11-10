@@ -1351,3 +1351,10 @@ CHANGE-182 final verification (2026-11-09):18 focused tests and354 full frontend
 ## CHANGE-183 - Admin resolver identity display (2026-11-09)
 
 Completed source/checks on `hfix/report-ui-fixing`: Resolution rows now Admin name, Admin ID, Admin reply, Resolved time, matching participant account sections. Existing User name lookup uses persisted resolvedBy, including General reports without an Order; name links to Admin Users, ID copies in full. Existing loading/deleted/unavailable handling retained; absent historical resolver shows Not available. No backend, contract, schema or resolution/concurrency changes. Two new tests initially failed; all21 focused tests, full lint and Next route generation/TypeScript pass. Browser/staging not exercised. See changes/CHANGE-183-admin-resolver-display.md; human review pending.
+
+
+## CHANGE-185 / ADR-069 - sequenced penalty stream (2026-11-10)
+
+Yao Xiang approves one courier-penalty-event topic per environment and per-courier transactional source numbering, durable User inbox/cursor/recovery, and coordinated legacy drain. Order/User plus necessary topic wiring are in scope; no frontend, scoring-policy or cloud-resource mutation. See [CHANGE-185](../../changes/CHANGE-185-sequenced-penalty-events.md). Implemented and locally verified: 727 Order and 284 User tests pass with no failures/errors/skips; both verify/coverage gates pass. AsyncAPI, 21 CI wiring tests, three local-emulator tests, Bash syntax and Compose configuration pass. Human review, cloud provisioning, broker smoke test and coordinated legacy drain remain pending. Detailed evidence is in CHANGE-185.
+
+CHANGE-186 started (2026-11-10): Yao Xiang explicitly approves unresponsive3 replacing active bad-attitude2, ascending Admin apply/cancel choices and required common/User compatibility. Existing CHANGE-185 tree preserved. No migration/data/cloud change. Tests first; see changes/CHANGE-186-unresponsive-penalty-ordering.md.

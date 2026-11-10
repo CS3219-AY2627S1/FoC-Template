@@ -119,7 +119,7 @@ class OrderApplicationServicesTest {
             credits,
             mock(OrderEventOutboxRepository.class),
             mock(ApplicationEventPublisher.class),
-            new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class)),
+            new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class), TestPenaltySequences.store()),
             audit, org.mockito.Mockito.mock(sg.edu.nus.foc.order.application.PenaltyOutcomeRecorder.class));
         Order order = Order.open("requester", "item", "p", "d", 2, 15, START, START.plusSeconds(1800));
         order.accept("courier", 0, START.plusSeconds(1));
@@ -168,7 +168,7 @@ class OrderApplicationServicesTest {
             mock(CreditServicePort.class),
             mock(OrderEventOutboxRepository.class),
             mock(ApplicationEventPublisher.class),
-            new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class)),
+            new OrderTaskEventFactory(Mappers.getMapper(OrderTaskEventMapper.class), TestPenaltySequences.store()),
             mock(OrderAuditLogger.class), org.mockito.Mockito.mock(sg.edu.nus.foc.order.application.PenaltyOutcomeRecorder.class));
         assertSame(existing, service.complete("same", existing.getId(), "requester", 0, AUTH));
     }
@@ -217,7 +217,7 @@ class OrderApplicationServicesTest {
         OrderEventOutboxRepository outbox = mock(OrderEventOutboxRepository.class);
         ApplicationEventPublisher applicationEvents = mock(ApplicationEventPublisher.class);
         OrderTaskEventFactory eventFactory = new OrderTaskEventFactory(
-                Mappers.getMapper(OrderTaskEventMapper.class));
+                Mappers.getMapper(OrderTaskEventMapper.class), TestPenaltySequences.store());
         OrderAuditLogger audit = mock(OrderAuditLogger.class);
         OrderTransitionService transitions = mock(OrderTransitionService.class);
         LifecycleProcessingService lifecycle = new LifecycleProcessingService(
