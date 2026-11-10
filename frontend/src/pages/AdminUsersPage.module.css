@@ -133,24 +133,30 @@
   white-space: nowrap;
 }
 
-/* Three even bands: name, status in the middle, buttons on the right.
+/* Name takes the spare room. Status, rating and the buttons stay compact.
    A shrink-wrapped name column left a long empty stretch after short names. */
 .table th:nth-child(1) {
-  width: 40%;
+  width: 34%;
 }
 
 .table th:nth-child(2) {
-  width: 20%;
+  width: 16%;
 }
 
 .table th:nth-child(3) {
-  width: 40%;
+  width: 18%;
+}
+
+.table th:nth-child(4) {
+  width: 32%;
 }
 
 .table th:nth-child(2),
 .table td:nth-child(2),
 .table th:nth-child(3),
-.table td:nth-child(3) {
+.table td:nth-child(3),
+.table th:nth-child(4),
+.table td:nth-child(4) {
   text-align: center;
   white-space: nowrap;
 }
@@ -212,6 +218,32 @@
   display: flex;
   justify-content: center;
   gap: var(--touch-gap);
+}
+
+.rating {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.average {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.average svg {
+  color: var(--color-warning);
+}
+
+.count,
+.muted {
+  color: var(--color-text-subtle);
+  font-size: var(--font-size-xs);
 }
 
 /* "Admin" and "You" beside a name. Outlined so it never reads as a status. */
@@ -302,6 +334,12 @@
   .table td {
     padding: var(--space-1) 0;
     border-top: none;
+    white-space: normal;
+  }
+
+  .rating {
+    flex-direction: row;
+    gap: var(--space-2);
   }
 
   /* The label takes a fixed left column, so a value that wraps stays aligned. */

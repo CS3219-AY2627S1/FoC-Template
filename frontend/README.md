@@ -63,7 +63,7 @@ variables cannot be used inside media queries, so `767px` is written literally.
 - Signed in: `/browse`, `/my-requests`, `/my-deliveries`, `/requests/new`,
   `/orders/:orderId` (requester), `/deliveries/:orderId` (courier),
   `/suppliers`, `/suppliers/new`, `/suppliers/:supplierId`, `/profile`, `/friends`
-- Admin: `/admin`, `/admin/suppliers`, `/admin/users`, `/admin/escalations`, `/admin/ratings`
+- Admin: `/admin`, `/admin/suppliers`, `/admin/users` (rating average and count are a column on this table), `/admin/escalations`. `/admin/ratings` redirects to `/admin/users`.
 
 ## Backends
 
