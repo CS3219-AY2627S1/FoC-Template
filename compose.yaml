@@ -1,0 +1,340 @@
+services:
+  user-db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: user_db
+      POSTGRES_USER: user_service
+      POSTGRES_PASSWORD: ${USER_DB_PASSWORD:?Set USER_DB_PASSWORD in .env}
+    networks:
+      - user-data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user_service -d user_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+
+  supplier-db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: supplier_db
+      POSTGRES_USER: supplier
+      POSTGRES_PASSWORD: ${SUPPLIER_DB_PASSWORD:?Set SUPPLIER_DB_PASSWORD in .env}
+    networks:
+      - supplier-data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supplier -d supplier_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - supplier-db-data:/var/lib/postgresql/data
+
+  credit-db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: credit_db
+      POSTGRES_USER: credit
+      POSTGRES_PASSWORD: ${CREDIT_DB_PASSWORD:?Set CREDIT_DB_PASSWORD in .env}
+    networks:
+      - credit-data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U credit -d credit_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - credit-db-data:/var/lib/postgresql/data
+
+  order-db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: order_db
+      POSTGRES_USER: order_service
+      POSTGRES_PASSWORD: ${ORDER_DB_PASSWORD:?Set ORDER_DB_PASSWORD in .env}
+    networks:
+      - order-data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U order_service -d order_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+
+  faq-db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: faq_db
+      POSTGRES_USER: faq_service
+      POSTGRES_PASSWORD: ${FAQ_DB_PASSWORD:?Set FAQ_DB_PASSWORD in .env}
+    networks:
+      - faq-data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U faq_service -d faq_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - faq-db-data:/var/lib/postgresql/data
+
+  user-service:
+    build: ./user-service
+    image: foc/user-service
+    restart: unless-stopped
+    networks:
+      - edge
+      - services
+      - user-data
+    environment:
+      DATABASE_URL: postgresql+psycopg://user_service:${USER_DB_PASSWORD:?Set USER_DB_PASSWORD in .env}@user-db:5432/user_db
+      JWT_PRIVATE_KEY_PATH: /run/keys/jwt-private.pem
+      JWT_PUBLIC_KEY_PATH: /run/keys/jwt-public.pem
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      ORDER_CONTACT_SERVICE_KEY: ${ORDER_CONTACT_SERVICE_KEY:?Set ORDER_CONTACT_SERVICE_KEY in .env}
+    volumes:
+      - type: bind
+        source: ./user-service/keys/jwt-private.pem
+        target: /run/keys/jwt-private.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./user-service/keys/jwt-public.pem
+        target: /run/keys/jwt-public.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      user-db:
+        condition: service_healthy
+    # The image probes OpenAPI.
+
+  supplier-service:
+    build: ./supplier-service
+    image: foc/supplier-service
+    restart: unless-stopped
+    networks:
+      - edge
+      - services
+      - supplier-data
+    environment:
+      DATABASE_URL: postgresql+psycopg://supplier:${SUPPLIER_DB_PASSWORD:?Set SUPPLIER_DB_PASSWORD in .env}@supplier-db:5432/supplier_db
+      JWT_PUBLIC_KEY_PATH: /run/keys/jwt-public.pem
+      SUPPLIER_IMAGE_DIR: /data/supplier-images
+    volumes:
+      - type: bind
+        source: ./user-service/keys/jwt-public.pem
+        target: /run/keys/jwt-public.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - ./data/csv:/data/csv:ro
+      # Admin-uploaded photos; a named volume so they survive rebuilds.
+      - supplier-images:/data/supplier-images
+    ports:
+      - "127.0.0.1:8001:8001"
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+    # The image probes OpenAPI.
+
+  credit-service:
+    build: ./credit-service
+    image: foc/credit-service
+    networks:
+      - edge
+      - services
+      - credit-data
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://credit:${CREDIT_DB_PASSWORD:?Set CREDIT_DB_PASSWORD in .env}@credit-db:5432/credit_db
+      JWT_PUBLIC_KEY_PATH: /run/keys/jwt-public.pem
+      INITIAL_CREDITS: 20
+      USER_SERVICE_KEY: ${USER_SERVICE_KEY:?Set USER_SERVICE_KEY in .env}
+      ORDER_SERVICE_KEY: ${ORDER_SERVICE_KEY:?Set ORDER_SERVICE_KEY in .env}
+    volumes:
+      - type: bind
+        source: ./user-service/keys/jwt-public.pem
+        target: /run/keys/jwt-public.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      - "127.0.0.1:8002:8002"
+    depends_on:
+      credit-db:
+        condition: service_healthy
+    # The image probes /health.
+
+  order-service:
+    build: ./order-service
+    image: foc/order-service
+    networks:
+      - edge
+      - services
+      - order-data
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_URL: postgresql+psycopg://order_service:${ORDER_DB_PASSWORD:?Set ORDER_DB_PASSWORD in .env}@order-db:5432/order_db
+      JWT_PUBLIC_KEY_PATH: /run/keys/jwt-public.pem
+      SUPPLIER_SERVICE_URL: http://supplier-service:8001
+      USER_SERVICE_URL: http://user-service:8000
+      AUTO_CONFIRM_RECEIPT_HOURS: ${AUTO_CONFIRM_RECEIPT_HOURS:-24}
+      ORDER_CONTACT_SERVICE_KEY: ${ORDER_CONTACT_SERVICE_KEY:?Set ORDER_CONTACT_SERVICE_KEY in .env}
+    # Credit calls and ORDER_SERVICE_KEY belong to order-worker only.
+    volumes:
+      - type: bind
+        source: ./user-service/keys/jwt-public.pem
+        target: /run/keys/jwt-public.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      - "127.0.0.1:8003:8003"
+    depends_on:
+      order-db:
+        condition: service_healthy
+      supplier-service:
+        condition: service_healthy
+    # The image probes OpenAPI and PostgreSQL directly.
+
+  order-worker:
+    # Runs the image built by order-service with a different command.
+    image: foc/order-service
+    pull_policy: never
+    networks:
+      - services
+      - order-data
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 20s
+    environment:
+      DATABASE_URL: postgresql+psycopg://order_service:${ORDER_DB_PASSWORD:?Set ORDER_DB_PASSWORD in .env}@order-db:5432/order_db
+      CREDIT_SERVICE_URL: http://credit-service:8002
+      AUTO_CONFIRM_RECEIPT_HOURS: ${AUTO_CONFIRM_RECEIPT_HOURS:-24}
+      CREDIT_JOB_MAX_ATTEMPTS: ${CREDIT_JOB_MAX_ATTEMPTS:-10}
+      ORDER_SERVICE_KEY: ${ORDER_SERVICE_KEY:?Set ORDER_SERVICE_KEY in .env}
+    depends_on:
+      order-service:
+        condition: service_healthy
+      credit-service:
+        condition: service_healthy
+    # The API image's HTTP health probe does not apply to this worker process.
+    healthcheck:
+      disable: true
+
+  user-credit-worker:
+    # Runs the image built by user-service with a different command.
+    image: foc/user-service
+    pull_policy: never
+    networks:
+      - services
+      - user-data
+    command: ["python", "-m", "app.credit_worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://user_service:${USER_DB_PASSWORD:?Set USER_DB_PASSWORD in .env}@user-db:5432/user_db
+      CREDIT_SERVICE_URL: http://credit-service:8002
+      USER_SERVICE_KEY: ${USER_SERVICE_KEY:?Set USER_SERVICE_KEY in .env}
+    restart: unless-stopped
+    depends_on:
+      user-service:
+        condition: service_healthy
+      credit-service:
+        condition: service_healthy
+    # The API image's HTTP health probe does not apply to this worker process.
+    healthcheck:
+      disable: true
+
+  faq-service:
+    build: ./faq-service
+    image: foc/faq-service
+    restart: unless-stopped
+    init: true
+    networks:
+      - edge
+      - services
+      - faq-data
+    environment:
+      DATABASE_URL: postgresql+psycopg://faq_service:${FAQ_DB_PASSWORD:?Set FAQ_DB_PASSWORD in .env}@faq-db:5432/faq_db
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-5-5}
+      FAQ_MIN_SIMILARITY: ${FAQ_MIN_SIMILARITY:-0.60}
+      FAQ_REQUESTS_PER_MINUTE: ${FAQ_REQUESTS_PER_MINUTE:-30}
+    volumes:
+      - ./faq-service/docs:/app/docs:ro
+    ports:
+      - "127.0.0.1:8004:8004"
+    depends_on:
+      faq-db:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    build: ./frontend
+    image: foc/frontend
+    restart: unless-stopped
+    networks:
+      - edge
+      - services
+    environment:
+      USER_API_PROXY_TARGET: http://user-service:8000
+      SUPPLIER_API_PROXY_TARGET: http://supplier-service:8001
+      CREDIT_API_PROXY_TARGET: http://credit-service:8002
+      ORDER_API_PROXY_TARGET: http://order-service:8003
+      FAQ_API_PROXY_TARGET: http://faq-service:8004
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      user-service:
+        condition: service_healthy
+      supplier-service:
+        condition: service_healthy
+      credit-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+
+networks:
+  edge:
+    driver: bridge
+  services:
+    driver: bridge
+    internal: true
+  user-data:
+    driver: bridge
+    internal: true
+  supplier-data:
+    driver: bridge
+    internal: true
+  credit-data:
+    driver: bridge
+    internal: true
+  order-data:
+    driver: bridge
+    internal: true
+  faq-data:
+    driver: bridge
+    internal: true
+
+volumes:
+  user-db-data:
+  supplier-db-data:
+  supplier-images:
+  credit-db-data:
+  order-db-data:
+  faq-db-data:

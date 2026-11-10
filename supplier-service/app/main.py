@@ -1,0 +1,344 @@
+from contextlib import asynccontextmanager
+from math import ceil
+from uuid import UUID
+
+from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+
+from .admin_queries import (
+    DuplicatePlaceError,
+    DuplicateSupplierError,
+    InvalidHoursError,
+    NoChangeError,
+    PlaceInUseError,
+    UnknownPlaceError,
+    count_audit_logs,
+    create_place,
+    create_supplier,
+    deactivate_supplier,
+    delete_place,
+    list_audit_logs,
+    rename_place,
+    update_supplier,
+)
+from .api_schemas import (
+    AuditLogPage,
+    PlaceCreate,
+    PlaceRename,
+    PlaceResponse,
+    SupplierCreate,
+    SupplierPage,
+    SupplierResponse,
+    SupplierUpdate,
+)
+from .auth import CurrentUser, admin_reason, current_user, load_jwt_public_key, require_admin
+from .classification import SUPPLIER_TYPES
+from .database import create_database_engine
+from .images import MAX_UPLOAD_BYTES, InvalidImageError, create_image_store, process_image
+from .schema import create_schema
+from .supplier_queries import (
+    DEFAULT_PAGE_SIZE,
+    DEFAULT_SORT,
+    MAX_PAGE_SIZE,
+    SORT_OPTIONS,
+    count_suppliers,
+    get_supplier,
+    list_places,
+    list_suppliers,
+    resolve_place_id,
+)
+
+
+def create_app() -> FastAPI:
+    engine = create_database_engine()
+    # Read once at startup, not per request: the same public key verifies
+    # every token for the life of the process.
+    public_key = load_jwt_public_key()
+    image_store = create_image_store()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        try:
+            # Creates missing tables and columns; existing supplier records are preserved.
+            with engine.begin() as connection:
+                create_schema(connection)
+            # Open a real connection at startup to verify PostgreSQL is available.
+            with engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+            app.state.database = engine
+            app.state.jwt_public_key = public_key
+            yield
+        finally:
+            engine.dispose()
+
+    app = FastAPI(title="Friend on Campus Supplier Service", lifespan=lifespan,
+                  dependencies=[Depends(current_user)])
+
+    @app.get("/api/v1/places", response_model=list[PlaceResponse])
+    def get_places(request: Request):
+        """Every place, for the browse filter and the admin place picker."""
+        with request.app.state.database.connect() as connection:
+            return [PlaceResponse(**row) for row in list_places(connection)]
+
+    @app.get("/api/v1/suppliers", response_model=SupplierPage)
+    def browse_suppliers(
+        request: Request,
+        q: str | None = Query(None, max_length=200,
+                              description="Matches supplier name or place name"),
+        type: str | None = Query(None, description=f"One of {', '.join(SUPPLIER_TYPES)}"),
+        place: str | None = Query(None, max_length=200,
+                                  description="Place id or search key; includes nested places"),
+        sort: str = Query(DEFAULT_SORT, description=f"One of {', '.join(SORT_OPTIONS)}"),
+        page: int = Query(1, ge=1),
+        page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+        include_inactive: bool = Query(
+            False, description="Admin only: also return hidden suppliers"),
+        caller: CurrentUser = Depends(current_user),
+    ):
+        # Browsing hides deactivated suppliers; an admin needs to see them to
+        # restore one, so the flag is refused for everyone else.
+        if include_inactive and caller.auth_role != "ADMIN":
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "Admin access is required."
+            )
+        with request.app.state.database.connect() as connection:
+            place_id = None
+            if place is not None:
+                try:
+                    place_id = resolve_place_id(connection, place)
+                except ValueError as error:
+                    raise HTTPException(status_code=422, detail="Invalid place name.") from error
+                if place_id is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Unknown place {place!r}.",
+                    )
+            filters = {
+                "search": q,
+                "supplier_type": type,
+                "place_id": place_id,
+                "include_inactive": include_inactive,
+            }
+            try:
+                total = count_suppliers(connection, **filters)
+                rows = list_suppliers(
+                    connection, page=page, page_size=page_size, sort=sort, **filters
+                )
+            except ValueError as error:
+                # Invalid category, search or sort: a client mistake, not a server fault.
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=str(error),
+                ) from error
+
+        return SupplierPage(
+            items=[SupplierResponse.from_row(row) for row in rows],
+            page=page,
+            page_size=page_size,
+            total=total,
+            total_pages=ceil(total / page_size) if total else 0,
+        )
+
+    @app.get("/api/v1/suppliers/{supplier_id}", response_model=SupplierResponse)
+    def read_supplier(supplier_id: UUID, request: Request):
+        """One supplier, active or not, so existing orders stay resolvable."""
+        with request.app.state.database.connect() as connection:
+            row = get_supplier(connection, supplier_id)
+        if row is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Supplier not found."
+            )
+        return SupplierResponse.from_row(row)
+
+    # Admin endpoints. require_admin re-uses the already-verified caller, so a
+    # request still costs one User Service call, and denies with 403 rather
+    # than 401: the caller is known, the role is not enough.
+
+    @app.post("/api/v1/suppliers", response_model=SupplierResponse,
+              status_code=status.HTTP_201_CREATED)
+    def add_supplier(request: Request, body: SupplierCreate,
+                     admin: CurrentUser = Depends(require_admin)):
+        """Add a supplier to an existing place.
+
+        No X-Admin-Reason: the created record is its own explanation. Changing
+        or hiding one does need a reason, as in User Service, where registering
+        an account needs none but altering one does.
+        """
+        with request.app.state.database.begin() as connection:
+            try:
+                row = create_supplier(
+                    connection, actor_id=UUID(admin.id), values=body.model_dump(),
+                )
+            except UnknownPlaceError as error:
+                raise HTTPException(404, "Unknown place.") from error
+            except DuplicateSupplierError as error:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "A supplier with this name already exists at that place and floor.",
+                ) from error
+        return SupplierResponse.from_row(row)
+
+    @app.patch("/api/v1/suppliers/{supplier_id}", response_model=SupplierResponse)
+    def edit_supplier(supplier_id: UUID, request: Request, body: SupplierUpdate,
+                      admin: CurrentUser = Depends(require_admin),
+                      reason: str = Depends(admin_reason)):
+        """Change the supplied fields. Setting is_active restores a hidden supplier."""
+        with request.app.state.database.begin() as connection:
+            try:
+                row = update_supplier(
+                    connection, actor_id=UUID(admin.id), supplier_id=supplier_id,
+                    changes=body.model_dump(exclude_unset=True), reason=reason,
+                )
+            except InvalidHoursError as error:
+                raise HTTPException(422, str(error)) from error
+            except UnknownPlaceError as error:
+                raise HTTPException(404, "Unknown place.") from error
+            except DuplicateSupplierError as error:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "A supplier with this name already exists at that place and floor.",
+                ) from error
+            except NoChangeError as error:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT, "Supplier is already in that state."
+                ) from error
+        if row is None:
+            raise HTTPException(404, "Supplier not found.")
+        return SupplierResponse.from_row(row)
+
+    @app.delete("/api/v1/suppliers/{supplier_id}", response_model=SupplierResponse)
+    def remove_supplier(supplier_id: UUID, request: Request,
+                        admin: CurrentUser = Depends(require_admin),
+                        reason: str = Depends(admin_reason)):
+        """Hide a supplier from browsing. The record stays so orders resolve."""
+        with request.app.state.database.begin() as connection:
+            try:
+                row = deactivate_supplier(
+                    connection, actor_id=UUID(admin.id),
+                    supplier_id=supplier_id, reason=reason,
+                )
+            except NoChangeError as error:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT, "Supplier is already inactive."
+                ) from error
+        if row is None:
+            raise HTTPException(404, "Supplier not found.")
+        return SupplierResponse.from_row(row)
+
+    @app.post("/api/v1/places", response_model=PlaceResponse,
+              status_code=status.HTTP_201_CREATED)
+    def add_place(request: Request, body: PlaceCreate,
+                  admin: CurrentUser = Depends(require_admin)):
+        """Add a place, optionally inside an existing one."""
+        with request.app.state.database.begin() as connection:
+            try:
+                row = create_place(
+                    connection, actor_id=UUID(admin.id), name=body.name,
+                    parent_id=body.parent_id,
+                )
+            except UnknownPlaceError as error:
+                raise HTTPException(404, "Unknown parent place.") from error
+            except DuplicatePlaceError as error:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "A place with an equivalent name already exists.",
+                ) from error
+            except ValueError as error:
+                # A name with no letters or digits has no usable search key.
+                raise HTTPException(422, str(error)) from error
+        return PlaceResponse(**row)
+
+    @app.patch("/api/v1/places/{place_id}", response_model=PlaceResponse)
+    def edit_place(place_id: UUID, request: Request, body: PlaceRename,
+                   admin: CurrentUser = Depends(require_admin),
+                   reason: str = Depends(admin_reason)):
+        """Rename a place. Its parent cannot change, so no cycle can form."""
+        with request.app.state.database.begin() as connection:
+            try:
+                row = rename_place(
+                    connection, actor_id=UUID(admin.id), place_id=place_id,
+                    name=body.name, reason=reason,
+                )
+            except DuplicatePlaceError as error:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "A place with an equivalent name already exists.",
+                ) from error
+            except NoChangeError as error:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT, "The location already has that name."
+                ) from error
+            except ValueError as error:
+                raise HTTPException(422, str(error)) from error
+        if row is None:
+            raise HTTPException(404, "Place not found.")
+        return PlaceResponse(**row)
+
+    @app.delete("/api/v1/places/{place_id}", response_model=PlaceResponse)
+    def remove_place(place_id: UUID, request: Request,
+                     admin: CurrentUser = Depends(require_admin),
+                     reason: str = Depends(admin_reason)):
+        """Delete a place that no supplier or other place uses."""
+        with request.app.state.database.begin() as connection:
+            try:
+                row = delete_place(
+                    connection, actor_id=UUID(admin.id), place_id=place_id,
+                    reason=reason,
+                )
+            except PlaceInUseError as error:
+                raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+        if row is None:
+            raise HTTPException(404, "Place not found.")
+        return PlaceResponse(**row)
+
+    @app.post("/api/v1/supplier-images", status_code=status.HTTP_201_CREATED)
+    async def upload_supplier_image(
+        file: UploadFile,
+        focus: float = Form(0.5, ge=0, le=1,
+                            description="Where to crop to the card's shape: 0 top/left, 1 bottom/right"),
+        admin: CurrentUser = Depends(require_admin),
+    ) -> dict[str, str]:
+        """Store a supplier photo and return its URL for the image_url field.
+
+        Every upload is cropped to the card's shape at `focus`, chosen by the
+        admin from a preview, so a tall phone photo never loses its sign to
+        the card's own crop.
+
+        Not tied to a supplier, so a new supplier can have its photo before it
+        exists. Saving that URL through the create or update endpoint is what
+        records the change in the audit log.
+        """
+        # One byte over the limit is enough to know the file is too large.
+        data = await file.read(MAX_UPLOAD_BYTES + 1)
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                                "Image must be 5MB or smaller.")
+        try:
+            image = process_image(data, focus=focus)
+        except InvalidImageError as error:
+            raise HTTPException(422, str(error)) from error
+        return {"url": image_store.save(image)}
+
+    # Not /api/v1/admin/...: User Service already owns that path, and two
+    # services answering the same URL is ambiguous behind a proxy or gateway.
+    @app.get("/api/v1/supplier-changes", response_model=AuditLogPage)
+    def read_audit_logs(request: Request, page: int = Query(1, ge=1),
+                        page_size: int = Query(20, ge=1, le=MAX_PAGE_SIZE),
+                        admin: CurrentUser = Depends(require_admin)):
+        """Every recorded admin change, newest first."""
+        with request.app.state.database.connect() as connection:
+            total = count_audit_logs(connection)
+            rows = list_audit_logs(connection, page=page, page_size=page_size)
+        return AuditLogPage(
+            items=rows, page=page, page_size=page_size, total=total,
+            total_pages=ceil(total / page_size) if total else 0,
+        )
+
+    # Mounted after the upload route so POST reaches it. A mount is outside the
+    # app-wide login dependency on purpose: an <img> tag cannot send a bearer
+    # token, and supplier photos are not private.
+    app.mount(image_store.URL_PREFIX, StaticFiles(directory=image_store.directory),
+              name="supplier-images")
+
+    return app

@@ -1,0 +1,129 @@
+# Service integration
+
+| Service | Owns | Integration |
+| --- | --- | --- |
+| User (`8000`) | Accounts, roles, JWT signing | Registration outbox delivers initial-credit events to Credit Service; internal contact lookup for Order Service with `ORDER_CONTACT_SERVICE_KEY` |
+| Supplier (`8001`) | Catalogue, campus locations, opening hours | Order Service fetches supplier details using the caller's JWT |
+| Credit (`8002`) | Available/reserved balances, reservations, immutable ledger | Accepts order mutations only with `ORDER_SERVICE_KEY` |
+| Order (`8003`) | Errands, assignments, history, credit jobs | Worker reserves/releases/transfers credits, expires unaccepted orders and auto-confirms delivered ones |
+| FAQ (`8004`) | FAQ chunks, local embeddings, support request metadata | Public Help panel; calls Anthropic directly with retrieved FAQ evidence |
+
+Each service has its own PostgreSQL database. Services use HTTP contracts and
+shared IDs; they do not read each other's tables. Only User Service receives the
+private JWT key. Other APIs verify its tokens locally with the public key.
+Role switching returns a fresh `access_token` alongside the updated user profile;
+the frontend replaces its token so Order Service sees the new role immediately.
+
+Login returns a 15-minute access token (JWT) and a 7-day refresh token (an
+opaque random string; User Service stores only its SHA-256 hash).
+`POST /api/v1/users/refresh` exchanges a refresh token for a new pair and
+revokes the old one (rotation); it re-reads the user's role and status, so
+admin changes reach the other services at the next refresh (within 15 minutes).
+`POST /api/v1/users/logout` revokes the refresh token. Suspending or disabling
+an account revokes all its refresh tokens. The frontend refreshes on a 401 and
+retries once; if that fails it returns to the login screen.
+
+## Registration and initial credits
+
+User Service commits the user and registration event in one transaction.
+`user-credit-worker` sends that event to Credit Service with `USER_SERVICE_KEY`.
+Credit Service deduplicates event delivery and initializes one account, with
+20 credits by default. `/credits/me/initialize` is an authenticated recovery
+path and cannot allocate a second balance. Registration does not block on Credit.
+
+## Creating an errand
+
+The frontend lists real suppliers from Supplier Service and sends a selected
+supplier ID, request details, acceptance deadline, reward and `Idempotency-Key`
+to `POST /api/v1/orders`. The requester is taken from the JWT. Order Service
+checks the supplier's activity/opening status and records a pickup snapshot.
+It atomically saves a `RESERVING` order, history entry and `RESERVE` job.
+
+`order-worker` sends this body to Credit Service using `X-Service-Key`:
+
+```json
+{
+  "order_id": "<persisted order UUID>",
+  "requester_user_id": "<JWT subject>",
+  "amount": 1,
+  "idempotency_key": "order:<order UUID>:reserve"
+}
+```
+
+Only an acknowledged reservation makes the order `OPEN`. Insufficient funds
+make it `REJECTED`. Missing accounts and dependency failures are retried. If
+reservation succeeds after the deadline, the order moves to `EXPIRING` and queues
+release without becoming available for acceptance.
+
+## Delivery, cancellation and expiry
+
+The courier accepts, picks up and marks delivery through Order Service. The
+requester confirms receipt, or the worker auto-confirms after the configured
+window (24 hours by default). Order Service then queues a `TRANSFER` using the
+persisted requester, assigned courier and reward; the frontend supplies no
+recipient or transfer amount. After acknowledgement, the order is `COMPLETED`.
+
+Canceling an unassigned open order queues `RELEASE`; automatic expiry does the
+same for unaccepted orders. Only release acknowledgement finalizes `CANCELLED`
+or `EXPIRED`. Row locks prevent acceptance from racing cancellation or expiry.
+
+The worker inspects reservations by order ID before retrying, validates their
+identity/amount/recipient, and uses stable per-operation keys. A crash after a
+credit commit can therefore recover without spending or paying twice. Pending
+jobs persist, use bounded exponential backoff, and remain visible for operator
+attention if credentials or data need fixing.
+
+## Order safeguards
+
+Couriers may hold only one `ACCEPTED`/`PICKED_UP` order, enforced by a partial
+unique index. An assigned courier can return an `ACCEPTED` errand to `OPEN`
+without changing its original acceptance deadline or reserved credit.
+
+Order participants may read each other's display name and preferred contact via
+`GET /api/v1/orders/{id}/contact` only during `ACCEPTED`/`PICKED_UP`/`DELIVERED`.
+Order Service uses the separate `ORDER_CONTACT_SERVICE_KEY` for User Service's
+internal lookup; it cannot use this key to change credit balances.
+
+After `CREDIT_JOB_MAX_ATTEMPTS` failures (default 10), the credit job stops with
+`failed_at` and the order exposes `credit_error`. Admins resolve the cause and
+retry from the dashboard; replay keeps the original idempotency key and
+reconciles Credit Service first. Apply
+`order-service/migrations/001_review_fixes.sql` before upgrading an existing
+Order database.
+
+## Frontend and containers
+
+The frontend calls only user-authorized routes and reads balances/ledger directly
+from Credit Service. It never holds service keys or calls reservation mutations.
+Orders are persisted by the server. Order states and balances refresh immediately
+after actions, every second while credit actions are pending, and every five
+seconds otherwise while signed in. Pending states are displayed until workers
+finish; the UI does not claim completion before credit acknowledgement.
+
+Compose starts all five APIs/databases plus `user-credit-worker` and
+`order-worker`. Vite routes `/api/v1/orders` to Order, `/api/v1/credits` to Credit,
+supplier routes to Supplier, `/api/v1/faq` to FAQ, and user routes to User.
+See [startup](startup.md).
+Create the root `.env` from `.env.example` (service keys and database passwords)
+and generate the User Service JWT keys before starting; existing account/order
+data lives in persistent named volumes. Each database is reachable only on its
+owner's private network.
+
+For a manual walkthrough, register two accounts, create a one-credit request
+from an open supplier, accept/deliver it as the second account, then confirm as
+the requester. With a 20-credit initial allocation and no other activity, expect
+requester `19 available / 1 reserved` after reservation, then `19 / 0` and courier
+`21 / 0` after confirmation is processed. A canceled/expired one-credit request
+returns its held credit to the requester. Pending states can take a worker poll
+plus a frontend refresh to resolve.
+
+## General FAQ support
+
+The Help panel also works before login. It sends only the current question to
+FAQ Service; no JWT or personal order/credit data is supplied. The service owns
+its pgvector database and embeds both FAQ chunks and incoming questions locally.
+Only the question and retrieved FAQ evidence are sent to Anthropic for an answer.
+HTML comments and the authoring README are excluded from indexing. Startup
+indexes changed documents; later changes can be indexed explicitly without a
+restart. Missing/stale indexes and provider failures produce a temporary-support
+message without blocking the core application. See [FAQ setup](faq-service/README.md).

@@ -1,0 +1,1220 @@
+/* Basic simple styling */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  background-color: #ffffff;
+  color: #222222;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* Header */
+.header {
+  border-bottom: 1px solid #cccccc;
+  background-color: #ffffff;
+  color: #232958;
+  padding: 10px 16px;
+}
+
+.header-container {
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.brand {
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  color: #232958;
+}
+
+.header-actions {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.logout-btn {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.role-switcher {
+  display: flex;
+  border: 1px solid #cfd5e3;
+}
+
+.role-btn {
+  background: transparent;
+  color: #232958;
+  border: none;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.role-btn.active {
+  background-color: #0580d9;
+  font-weight: bold;
+}
+
+.nav-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.nav-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #4d5570;
+  padding: 4px 8px;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.nav-tab.active {
+  background-color: #0580d9;
+  border-color: #0580d9;
+  color: #ffffff;
+}
+
+.credit-badge-btn {
+  background-color: #ffffff;
+  color: #232958;
+  border: 1px solid #cccccc;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+/* Main Container */
+.main-content {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 20px 16px;
+}
+
+.section-header {
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #eeeeee;
+  padding-bottom: 8px;
+}
+
+.section-header h2 {
+  font-size: 18px;
+  color: #232958;
+}
+
+/* Simple Square Cards */
+.card {
+  border: 1px solid #cccccc;
+  background-color: #ffffff;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.grid-suppliers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.supplier-name {
+  font-size: 15px;
+  font-weight: bold;
+  color: #232958;
+  margin-bottom: 4px;
+}
+
+.supplier-info {
+  font-size: 13px;
+  color: #444444;
+  margin-bottom: 4px;
+}
+
+/* Buttons */
+.btn {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 12px;
+  border: 1px solid #cccccc;
+  cursor: pointer;
+  background-color: #efefef;
+  color: #222222;
+}
+
+/* Without this a blocked button looks identical to a working one, so it reads
+   as broken rather than as waiting for something. */
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: #0580d9;
+  color: #ffffff;
+  border-color: #0580d9;
+}
+
+.btn-secondary {
+  background-color: #efefef;
+  color: #222222;
+  border-color: #cccccc;
+}
+
+.btn-danger {
+  background-color: #c62828;
+  color: #ffffff;
+  border-color: #c62828;
+}
+
+.btn-sm {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+/* Unauthenticated landing */
+.landing-page {
+  min-height: 100vh;
+  background: #f7f9fc;
+}
+
+.landing-header {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 22px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #232958;
+}
+
+.landing-brand {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.landing-brand-mark {
+  border: 1px solid #232958;
+  padding: 4px 7px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.landing-main {
+  min-height: calc(100vh - 75px);
+  display: grid;
+  place-items: center;
+  padding: 32px 20px 80px;
+}
+
+.landing-card {
+  width: min(100%, 620px);
+  border: 1px solid #cfd5e3;
+  background: #ffffff;
+  padding: clamp(30px, 7vw, 64px);
+  text-align: center;
+}
+
+.landing-card h1 {
+  color: #232958;
+  font-size: clamp(34px, 7vw, 56px);
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+  margin-bottom: 18px;
+}
+
+.landing-card p {
+  color: #4d5570;
+  font-size: 17px;
+  line-height: 1.6;
+  margin: 0 auto 28px;
+  max-width: 480px;
+}
+
+.landing-actions {
+  display: grid;
+  gap: 10px;
+  margin: 0 auto;
+  max-width: 360px;
+}
+
+.landing-button {
+  min-height: 46px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid #cccccc;
+  font-size: 11px;
+  font-weight: bold;
+  background-color: #f5f5f5;
+}
+
+.badge-open {
+  border-color: #0580d9;
+  color: #0580d9;
+}
+.badge-accepted {
+  border-color: #d97706;
+  color: #d97706;
+}
+.badge-picked-up {
+  border-color: #b45309;
+  color: #b45309;
+}
+.badge-delivered {
+  border-color: #16a34a;
+  color: #16a34a;
+}
+.badge-completed {
+  border-color: #15803d;
+  color: #15803d;
+  background: #f0fdf4;
+}
+.badge-cancelled {
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+/* Whether a supplier is trading right now, beside its hours. Shaped like the
+   tag pills on the same card so the two read as one family. */
+.supplier-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.supplier-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.supplier-status-open {
+  background: #e6f4ea;
+  color: #1e7b3c;
+}
+.supplier-status-closed {
+  background: #edf2f7;
+  color: #6b7280;
+}
+
+/* Filter bar */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.search-input {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #cccccc;
+  font-size: 13px;
+}
+
+.filter-select {
+  padding: 6px 8px;
+  border: 1px solid #cccccc;
+  font-size: 13px;
+}
+
+/* Searchable hierarchy used by filtering and both admin location fields. */
+.place-tree-select {
+  position: relative;
+  width: 100%;
+  font-size: 13px;
+}
+
+.filter-place-tree {
+  flex: 0 1 260px;
+  min-width: 190px;
+}
+
+.place-tree-trigger {
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 1px solid #cccccc;
+  background: #ffffff;
+  color: #222222;
+  font: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+}
+
+.place-tree-trigger:focus-visible,
+.place-tree-search:focus-visible,
+.place-tree-toggle:focus-visible,
+.place-tree-option:focus-visible,
+.place-tree-empty-option:focus-visible {
+  outline: 2px solid #1478d4;
+  outline-offset: 1px;
+}
+
+.place-tree-trigger:disabled {
+  background: #eeeeee;
+  color: #777777;
+  cursor: not-allowed;
+}
+
+.place-tree-panel {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 3px);
+  left: 0;
+  width: max(100%, 260px);
+  padding: 8px;
+  border: 1px solid #aaaaaa;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
+}
+
+.place-tree-search {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid #cccccc;
+  font: inherit;
+}
+
+.place-tree-options {
+  max-height: 280px;
+  overflow-y: auto;
+  margin-top: 6px;
+}
+
+.place-tree-row {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+.place-tree-toggle,
+.place-tree-toggle-spacer {
+  flex: 0 0 26px;
+  width: 26px;
+}
+
+.place-tree-toggle,
+.place-tree-option,
+.place-tree-empty-option {
+  border: 0;
+  background: transparent;
+  color: #222222;
+  font: inherit;
+}
+
+.place-tree-toggle {
+  height: 30px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.place-tree-option {
+  flex: 1;
+  padding: 7px 6px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.place-tree-empty-option {
+  width: 100%;
+  padding: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.place-tree-row:hover,
+.place-tree-empty-option:hover,
+.place-tree-option.is-selected,
+.place-tree-empty-option.is-selected {
+  background: #eef6ff;
+}
+
+.place-tree-option.is-selected,
+.place-tree-empty-option.is-selected {
+  font-weight: bold;
+}
+
+.place-tree-no-results {
+  padding: 10px 8px;
+  color: #666666;
+}
+
+/* Forms */
+.form-group {
+  margin-bottom: 12px;
+}
+
+.admin-divider {
+  border: 0;
+  border-top: 1px solid #cccccc;
+  margin: 20px 0;
+}
+
+/* Record list, the form that edits it, and location creation alongside. */
+.supplier-admin-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr minmax(220px, 300px);
+  gap: 12px;
+  /* Each card keeps its own height, so the short ones are not padded out to
+     match the tall form between them. */
+  align-items: start;
+}
+
+/* The list and the form it drives share a height; the location card, which is
+   unrelated to either, keeps its own. Column layout lets the list take the
+   space left over instead of leaving the stretched card part empty. */
+.supplier-admin-layout > .card:nth-child(1),
+.supplier-admin-layout > .card:nth-child(2) {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The New location and Edit location cards stack in the third column. */
+.supplier-admin-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.required-marker {
+  color: #c0392b;
+  font-weight: bold;
+}
+
+.form-hint {
+  font-size: 12px;
+  color: #555555;
+  margin: 6px 0;
+}
+
+/* Buttons sit at the bottom right; the required note keeps the left. */
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.form-actions .form-hint {
+  margin: 0 auto 0 0;
+}
+
+.supplier-admin-form-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.supplier-admin-form-header h3 {
+  margin: 0;
+}
+
+/* Short fields pair up; long ones span both columns via .field-wide. */
+.supplier-admin-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 12px;
+}
+
+.supplier-admin-fields .field-wide {
+  grid-column: 1 / -1;
+}
+
+.supplier-admin-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  /* height 0 keeps the rows out of the grid row's height calculation, so the
+     form decides how tall the pair is; flex-grow then fills what is left.
+     Without it, 21 suppliers would stretch the row and leave the form padded
+     out with empty space. */
+  flex: 1 1 0;
+  height: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.supplier-admin-list button {
+  text-align: left;
+  margin-bottom: 4px;
+}
+
+.supplier-admin-list .is-hidden {
+  opacity: 0.55;
+}
+
+/* Too narrow for three: the list and form keep the row, locations drop below. */
+@media (max-width: 1100px) {
+  .supplier-admin-layout {
+    grid-template-columns: minmax(240px, 320px) 1fr;
+  }
+
+  .supplier-admin-aside {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .supplier-admin-layout {
+    grid-template-columns: 1fr;
+  }
+
+  /* Stacked, there is no form beside it to take a height from. */
+  .supplier-admin-list {
+    flex: none;
+    height: auto;
+    max-height: 320px;
+  }
+}
+
+@media (max-width: 520px) {
+  .supplier-admin-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+.audit-heading,
+.audit-entry-header,
+.audit-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.audit-heading {
+  margin-bottom: 14px;
+}
+
+.audit-heading span,
+.audit-entry-header time {
+  color: #4d5570;
+  font-size: 12px;
+}
+
+/* A fixed-height window onto the log, so it scrolls instead of growing.
+   Scrolling past either end continues with the page, so it never traps the wheel. */
+.audit-scroll {
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 6px;
+  margin-bottom: 12px;
+  border-top: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
+}
+.audit-scroll:focus-visible {
+  outline: 2px solid #3182ce;
+  outline-offset: 2px;
+}
+.audit-scroll .audit-entry:first-child {
+  margin-top: 12px;
+}
+
+.audit-entry {
+  border: 1px solid #d8dce5;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.audit-entry-header {
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eeeeee;
+}
+
+.audit-entry-header strong {
+  color: #232958;
+}
+
+.audit-people {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  padding: 12px 0;
+}
+
+.audit-people h4 {
+  color: #232958;
+  margin-bottom: 5px;
+}
+
+.audit-people dl > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.audit-people dt {
+  color: #4d5570;
+}
+
+.audit-people dt::after {
+  content: ":";
+}
+
+.audit-people dd {
+  font-weight: 600;
+}
+
+.audit-changes {
+  border-top: 1px solid #eeeeee;
+  padding-top: 10px;
+}
+
+.audit-change + .audit-change {
+  margin-top: 10px;
+}
+
+.audit-change {
+  overflow-wrap: anywhere;
+}
+
+.audit-change-values {
+  color: #4d5570;
+  /* Block, or the label and the values run together as one word and the
+     margin below has nothing to act on. */
+  display: block;
+  margin-top: 3px;
+}
+
+.audit-reason {
+  margin-top: 10px;
+}
+
+.audit-pagination {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.form-group label,
+.form-group .form-label {
+  display: block;
+  font-weight: bold;
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+/* Admin photo field: a preview beside the upload controls. */
+.supplier-photo-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+.supplier-photo-preview {
+  width: 160px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border: 1px solid #cccccc;
+  background: #edf2f7;
+}
+.supplier-photo-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  font-size: 12px;
+}
+.supplier-photo-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.supplier-photo-preview.is-pending-removal {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+.photo-pending {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #b45309;
+}
+.supplier-photo-actions .is-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* Framing step for a new photo: a card-shaped preview the admin drags. */
+.photo-cropper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 360px;
+}
+.photo-cropper-frame {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid #cccccc;
+  background: #edf2f7;
+  touch-action: none;
+  user-select: none;
+}
+.photo-cropper-frame.is-draggable {
+  cursor: grab;
+}
+.photo-cropper-frame.is-draggable:active {
+  cursor: grabbing;
+}
+.photo-cropper-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+.photo-cropper-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.photo-cropper-slider input {
+  flex: 1;
+}
+.photo-cropper-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Seven day toggles, then quick picks; wraps on narrow screens. */
+.day-picker,
+.day-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #cccccc;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.notice-box {
+  padding: 8px 10px;
+  border: 1px solid #cccccc;
+  background-color: #f9f9f9;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+/* Modals */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 12px;
+}
+
+.modal-content {
+  background: #ffffff;
+  border: 1px solid #999999;
+  max-width: 480px;
+  width: 100%;
+  padding: 16px;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #eeeeee;
+  padding-bottom: 6px;
+}
+
+.confirm-dialog {
+  max-width: 400px;
+}
+
+.confirm-dialog h3 {
+  margin: 0 0 8px;
+}
+
+.confirm-dialog p {
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Tables */
+.table-container {
+  overflow-x: auto;
+  border: 1px solid #cccccc;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th,
+td {
+  padding: 8px 10px;
+  border: 1px solid #cccccc;
+  text-align: left;
+}
+
+th {
+  background-color: #f2f2f2;
+  font-weight: bold;
+}
+
+/* Stats */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.stat-box {
+  border: 1px solid #cccccc;
+  padding: 12px;
+  text-align: center;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #555555;
+}
+
+.stat-number {
+  font-size: 22px;
+  font-weight: bold;
+  color: #232958;
+  margin: 4px 0;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 24px;
+  border: 1px solid #cccccc;
+  background: #fafafa;
+  color: #666666;
+}
+
+.auth-screen {
+  min-height: calc(100vh - 75px);
+  height: auto;
+  overflow: visible;
+}
+
+.auth-panel {
+  width: 100%;
+  max-width: 620px;
+  border: 1px solid #cfd5e3;
+  background: #ffffff;
+  padding: clamp(30px, 7vw, 64px);
+}
+
+.auth-panel .btn-block {
+  min-height: 46px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.auth-panel form,
+.auth-panel .form-group,
+.auth-panel .form-group input,
+.auth-panel .form-group select {
+  width: 100%;
+}
+
+.auth-panel .form-group input,
+.auth-panel .form-group select {
+  min-height: 46px;
+  padding: 10px 12px;
+  font-size: 15px;
+}
+
+.auth-panel h1 {
+  color: #232958;
+  font-size: clamp(30px, 5vw, 42px);
+  letter-spacing: -0.035em;
+  line-height: 1.08;
+  margin-bottom: 10px;
+}
+
+.auth-help {
+  color: #4d5570;
+  font-size: 16px;
+  margin-bottom: 24px;
+}
+
+.auth-divider {
+  border-top: 1px solid #eeeeee;
+  margin: 16px 0;
+}
+
+.field-error,
+.action-error {
+  border: 1px solid #dc2626;
+  color: #991b1b;
+  background-color: #fef2f2;
+  padding: 8px 10px;
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.form-group .field-error {
+  margin: 5px 0 0;
+}
+
+.password-help {
+  color: #555555;
+  font-size: 12px;
+  margin: -6px 0 14px;
+}
+
+.optional-fields {
+  border: 1px solid #dddddd;
+  margin-bottom: 14px;
+  padding: 10px;
+}
+
+.optional-fields summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.optional-fields[open] summary {
+  margin-bottom: 12px;
+}
+
+.success-message {
+  border: 1px solid #15803d;
+  color: #166534;
+  background-color: #f0fdf4;
+  padding: 10px;
+  margin: 14px 0;
+  font-size: 13px;
+}
+
+.detail-card {
+  max-width: 720px;
+}
+
+.detail-card h3 {
+  color: #232958;
+  margin-bottom: 12px;
+}
+
+.detail-card p {
+  margin-bottom: 8px;
+}
+
+.detail-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 600px) {
+  .header-container {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .header-actions {
+    width: 100%;
+  }
+  .grid-suppliers,
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+  .landing-header {
+    padding: 18px 20px;
+  }
+  .landing-main {
+    align-items: start;
+    padding-top: 20px;
+  }
+  .landing-card,
+  .auth-panel {
+    padding: 34px 22px;
+  }
+  .filter-bar {
+    flex-direction: column;
+  }
+  .filter-bar > .search-input,
+  .filter-bar > .filter-select,
+  .filter-bar > .filter-place-tree,
+  .filter-bar > .btn {
+    width: 100%;
+    min-width: 0;
+  }
+  .filter-place-tree {
+    flex: 1 1 100%;
+  }
+  .place-tree-panel {
+    width: 100%;
+  }
+}
+
+/* Supplier listing: result count and server-side pagination controls. */
+.section-count {
+  color: #6B7280;
+  font-size: 0.9rem;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.pagination-status {
+  color: #6B7280;
+  font-size: 0.9rem;
+}
+
+
+/* Supplier cards keep tags beside the title and actions aligned within a row. */
+.supplier-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+/* Bleeds to the card edges; every card's image area is the same height so the
+   grid lines up whether or not a supplier has a photo. */
+.supplier-image {
+  display: block;
+  width: calc(100% + 28px);
+  margin: -14px -14px 12px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #edf2f7;
+}
+
+.supplier-image-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.category-FOOD_BEVERAGE { background: #fdf0e6; color: #b5652b; }
+.category-RETAIL { background: #e8f1fb; color: #2f6aa8; }
+.category-FACILITY { background: #eef0f3; color: #5b6472; }
+
+.supplier-card-header {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-bottom: 8px;
+}
+
+.supplier-card-header .supplier-name {
+  flex: 1 1 150px;
+  min-width: 0;
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+}
+
+.supplier-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: 100%;
+  margin: 0 0 0 auto;
+  padding: 0;
+  list-style: none;
+}
+
+.supplier-tag {
+  max-width: 100%;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #edf2f7;
+  color: #40516a;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.supplier-card .supplier-info {
+  overflow-wrap: anywhere;
+}
+
+.supplier-card-actions {
+  margin-top: auto;
+  padding-top: 14px;
+}

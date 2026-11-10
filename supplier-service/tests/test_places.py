@@ -1,0 +1,326 @@
+import csv
+import io
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from uuid import uuid4
+
+from sqlalchemy import delete, func, insert, select, text, update
+from sqlalchemy.exc import IntegrityError
+
+from app.admin_queries import (
+    DuplicatePlaceError, NoChangeError, PlaceInUseError, create_place, delete_place,
+    rename_place,
+)
+from app.places import canonical_place_records, normalize_place_name
+from app.database import create_database_engine
+from app.schema import create_schema, places, supplier_audit_logs, suppliers
+from app.seed import DEFAULT_CSV, read_suppliers, seed
+
+# Data rows in the seed CSV, counted independently of read_suppliers.
+CSV_ROWS = len(list(csv.DictReader(io.StringIO(DEFAULT_CSV.read_text(encoding="utf-8-sig")))))
+
+
+# Required columns, supplied where the test is about some other constraint.
+HOURS = {"opening_time": "08:00", "closing_time": "18:00", "operating_days": ["MON"]}
+
+
+class PlaceNormalizationTests(unittest.TestCase):
+    def test_formatting_variants_match(self):
+        for value in ("COM 2", "com2", "Com  2", "C O M 2", "Com-2"):
+            self.assertEqual(normalize_place_name(value), "com2")
+        self.assertEqual(normalize_place_name("Prince George’s Park"),
+                         normalize_place_name("Prince George's Park"))
+        self.assertNotEqual(normalize_place_name("Computing 2"), "com2")
+
+    def test_empty_key_is_rejected(self):
+        for value in ("", "  ", "---"):
+            with self.assertRaises(ValueError):
+                normalize_place_name(value)
+
+    def test_csv_matches_authored_names(self):
+        rows = read_suppliers(DEFAULT_CSV)
+        # Every row is read; the count follows the CSV as suppliers are added.
+        self.assertEqual(len(rows), CSV_ROWS)
+        instachef = next(row for row in rows if row["name"] == "InstaChef")
+        self.assertEqual(instachef["place_key"], "com3")
+        self.assertEqual(instachef["location_description"], "Beside Terrace, near the foyer")
+        smooy = next(row for row in rows if row["name"] == "Smooy")
+        self.assertEqual(smooy["place_key"], "com3")
+        self.assertIsNone(smooy["location_description"])
+        self.assertEqual(smooy["operating_days"], ["MON", "TUE", "WED", "THU", "FRI"])
+        self.assertEqual(sum(row["place_key"] == "com2" for row in rows), 2)
+        self.assertEqual(sum(row["place_key"] == "princegeorgespark" for row in rows), 4)
+        # Food court stalls point at the food court, not the building around it.
+        self.assertEqual(sum(row["place_key"] == "centralsquare" for row in rows), 4)
+        names = {row["search_key"]: row["name"] for row in canonical_place_records()}
+        self.assertEqual(names["com2"], "COM2")
+        self.assertEqual(names["princegeorgespark"], "Prince George's Park")
+
+    def test_csv_operating_days_shorthand(self):
+        for value, expected in (("DAILY", 7), ("MON-FRI", 5), ("MON-SAT", 6)):
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "suppliers.csv"
+                reader = csv.DictReader(io.StringIO(DEFAULT_CSV.read_text(encoding="utf-8-sig")))
+                rows = list(reader)
+                rows[0]["OperatingDays"] = value
+                with path.open("w", newline="") as output:
+                    writer = csv.DictWriter(output, fieldnames=reader.fieldnames)
+                    writer.writeheader()
+                    writer.writerows(rows)
+                self.assertEqual(len(read_suppliers(path)[0]["operating_days"]), expected)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "suppliers.csv"
+            path.write_text(DEFAULT_CSV.read_text(encoding="utf-8-sig").replace(
+                ",MON-SAT", ",", 1
+            ))
+            with self.assertRaisesRegex(ValueError, "CSV row 2: OperatingDays must not be empty"):
+                read_suppliers(path)
+
+    def test_unknown_place_fails_with_row_number(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "suppliers.csv"
+            path.write_text(DEFAULT_CSV.read_text(encoding="utf-8-sig").replace(
+                "Central Library", "Unknown Campus Place", 1
+            ))
+            with self.assertRaisesRegex(ValueError, "CSV row 2: Unknown place"):
+                read_suppliers(path)
+
+    def test_seed_identity_survives_place_formatting_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "suppliers.csv"
+            reader = csv.DictReader(io.StringIO(DEFAULT_CSV.read_text(encoding="utf-8-sig")))
+            with path.open("w", newline="") as output:
+                writer = csv.DictWriter(output, fieldnames=reader.fieldnames)
+                writer.writeheader()
+                for row in reader:
+                    if row["Building"] == "COM2":
+                        row["Building"] = "Com 2"
+                    writer.writerow(row)
+            self.assertEqual(read_suppliers(path), read_suppliers(DEFAULT_CSV))
+
+
+@unittest.skipUnless(os.getenv("RUN_POSTGRES_TESTS") == "1", "Set RUN_POSTGRES_TESTS=1 for PostgreSQL checks")
+class PlaceDatabaseTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.engine = create_database_engine()
+        cls.schema = "supplier_test_" + uuid4().hex
+        with cls.engine.begin() as connection:
+            connection.execute(text(f'CREATE SCHEMA "{cls.schema}"'))
+        cls.db = cls.engine.execution_options(schema_translate_map={None: cls.schema})
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            with cls.engine.begin() as connection:
+                connection.execute(text(f'DROP SCHEMA "{cls.schema}" CASCADE'))
+        finally:
+            cls.engine.dispose()
+
+    def test_import_matching_constraints_and_preservation(self):
+        records = read_suppliers(DEFAULT_CSV)
+        total = len(records)
+        self.assertEqual(seed(self.db, records), (total, total))
+        self.assertEqual(seed(self.db, records), (0, total))
+        with self.db.begin() as connection:
+            self.assertEqual(connection.scalar(select(func.count()).select_from(places)),
+                             len(canonical_place_records()))
+            # Spelling variants of a place find the suppliers the CSV puts there.
+            for value in ("COM 2", "com2", "Com2", "Central Square", "Yusof Ishak House",
+                          "UTown", "Prince George’s Park", "Prince George's Park"):
+                key = normalize_place_name(value)
+                expected = sum(record["place_key"] == key for record in records)
+                self.assertGreater(expected, 0, value)
+                count = connection.scalar(select(func.count()).select_from(
+                    suppliers.join(places)
+                ).where(places.c.search_key == normalize_place_name(value)))
+                self.assertEqual(count, expected)
+            ids = dict(connection.execute(select(places.c.search_key, places.c.id)).all())
+            self.assertEqual(connection.scalar(select(places.c.parent_id).where(
+                places.c.id == ids["centralsquare"])), ids["yusofishakhouse"])
+            # Database constraints protect parent references independently of APIs.
+            for statement in (
+                delete(places).where(places.c.id == ids["yusofishakhouse"]),
+                update(places).where(places.c.id == ids["com3"]).values(parent_id=ids["com3"]),
+                update(places).where(places.c.id == ids["com3"]).values(parent_id=uuid4()),
+            ):
+                with self.assertRaises(IntegrityError):
+                    with connection.begin_nested():
+                        connection.execute(statement)
+            place_id = connection.scalar(select(places.c.id).where(places.c.search_key == "com2"))
+            invalid_operations = [
+                delete(places).where(places.c.id == place_id),
+                insert(places).values(name="COM 2"),
+                insert(suppliers).values(name="Bad FK", supplier_type="FOOD_BEVERAGE", place_id=uuid4(), **HOURS),
+                insert(suppliers).values(name="No place", supplier_type="FOOD_BEVERAGE", **HOURS),
+                insert(suppliers).values(name=" ", supplier_type="FOOD_BEVERAGE", place_id=place_id, **HOURS),
+                insert(suppliers).values(name="Bad coordinate", supplier_type="FOOD_BEVERAGE", place_id=place_id, latitude=91, **HOURS),
+                # Hours are required, so Order Service can tell whether a supplier is open.
+                insert(suppliers).values(name="No hours", supplier_type="FOOD_BEVERAGE", place_id=place_id),
+                insert(suppliers).values(name="No days", supplier_type="FOOD_BEVERAGE", place_id=place_id,
+                                         opening_time="08:00", closing_time="18:00"),
+                insert(suppliers).values(name="Empty days", supplier_type="FOOD_BEVERAGE", place_id=place_id,
+                                         **{**HOURS, "operating_days": []}),
+                insert(suppliers).values(name="Bad day", supplier_type="FOOD_BEVERAGE", place_id=place_id,
+                                         **{**HOURS, "operating_days": ["FUN"]}),
+            ]
+            for statement in invalid_operations:
+                with self.assertRaises(IntegrityError):
+                    with connection.begin_nested():
+                        connection.execute(statement)
+            # Unknown floors must not bypass supplier uniqueness, and neither
+            # must a different spelling of the same name.
+            values = dict(name="Duplicate test", supplier_type="FOOD_BEVERAGE",
+                          place_id=place_id, **HOURS)
+            connection.execute(insert(suppliers).values(**values))
+            for spelling in ("Duplicate test", "duplicate  test", "DUPLICATE-TEST"):
+                with self.assertRaises(IntegrityError, msg=spelling):
+                    with connection.begin_nested():
+                        connection.execute(
+                            insert(suppliers).values({**values, "name": spelling})
+                        )
+            # A different name at the same place is a separate supplier, not a
+            # duplicate: the rule compares spellings, not meanings.
+            connection.execute(insert(suppliers).values(
+                {**values, "name": "Duplicate test @ NUS"}
+            ))
+            # A different floor is a separate branch of the same shop.
+            connection.execute(insert(suppliers).values({**values, "floor": "2"}))
+            connection.execute(delete(suppliers).where(
+                suppliers.c.name.like("Duplicate test%")
+            ))
+            connection.execute(update(suppliers).where(suppliers.c.id == records[0]["id"]).values(
+                name="Edited supplier", is_active=False
+            ))
+        self.assertEqual(seed(self.db, records), (0, len(records)))
+        with self.db.connect() as connection:
+            row = connection.execute(select(suppliers).where(suppliers.c.id == records[0]["id"])).mappings().one()
+            self.assertEqual(row["name"], "Edited supplier")
+            self.assertFalse(row["is_active"])
+
+
+@unittest.skipUnless(os.getenv("RUN_POSTGRES_TESTS") == "1", "Set RUN_POSTGRES_TESTS=1 for PostgreSQL checks")
+class PlaceAdminDatabaseTests(unittest.TestCase):
+    """Rename and delete against PostgreSQL, in a throwaway schema."""
+
+    def setUp(self):
+        self.engine = create_database_engine()
+        self.schema = "supplier_test_" + uuid4().hex
+        with self.engine.begin() as connection:
+            connection.execute(text(f'CREATE SCHEMA "{self.schema}"'))
+        self.db = self.engine.execution_options(schema_translate_map={None: self.schema})
+        with self.db.begin() as connection:
+            create_schema(connection)
+        self.admin = uuid4()
+
+    def tearDown(self):
+        try:
+            with self.engine.begin() as connection:
+                connection.execute(text(f'DROP SCHEMA "{self.schema}" CASCADE'))
+        finally:
+            self.engine.dispose()
+
+    def add(self, name, parent_id=None):
+        with self.db.begin() as connection:
+            return create_place(connection, actor_id=self.admin, name=name,
+                                parent_id=parent_id)["id"]
+
+    def audit(self, place_id):
+        with self.db.connect() as connection:
+            return connection.execute(
+                select(supplier_audit_logs.c.action_type, supplier_audit_logs.c.previous_value,
+                       supplier_audit_logs.c.new_value, supplier_audit_logs.c.reason)
+                .where(supplier_audit_logs.c.entity_id == place_id)
+                .order_by(supplier_audit_logs.c.created_at)
+            ).all()
+
+    def test_rename_updates_name_and_key_and_is_audited(self):
+        com3 = self.add("COM3")
+        terrace = self.add("Terrace", com3)
+        with self.db.begin() as connection:
+            row = rename_place(connection, actor_id=self.admin, place_id=terrace,
+                               name="The Terrace", reason="official name")
+        self.assertEqual((row["name"], row["search_key"], row["parent_id"], row["parent_name"]),
+                         ("The Terrace", "theterrace", com3, "COM3"))
+        action, previous, new, reason = self.audit(terrace)[-1]
+        self.assertEqual(action, "PLACE_RENAMED")
+        self.assertEqual(previous["name"], "Terrace")
+        self.assertEqual(new["name"], "The Terrace")
+        self.assertEqual(reason, "official name")
+        # A different spelling of the same name is still a change worth recording.
+        with self.db.begin() as connection:
+            rename_place(connection, actor_id=self.admin, place_id=terrace,
+                         name="the terrace", reason="lower case")
+
+    def test_rename_refuses_duplicates_unchanged_names_and_missing_places(self):
+        self.add("COM2")
+        com3 = self.add("COM3")
+        for name, error in (("COM 2", DuplicatePlaceError), ("COM3", NoChangeError),
+                            ("!!!", ValueError)):
+            with self.assertRaises(error, msg=name):
+                with self.db.begin() as connection:
+                    rename_place(connection, actor_id=self.admin, place_id=com3,
+                                 name=name, reason="test")
+        with self.db.begin() as connection:
+            self.assertIsNone(rename_place(connection, actor_id=self.admin,
+                                           place_id=uuid4(), name="X", reason="test"))
+        self.assertEqual([row[0] for row in self.audit(com3)], ["PLACE_CREATED"])
+
+    def test_delete_only_removes_unused_places(self):
+        com3 = self.add("COM3")
+        terrace = self.add("The Terrace", com3)
+        with self.db.begin() as connection:
+            connection.execute(insert(suppliers).values(
+                name="Hidden stall", supplier_type="FOOD_BEVERAGE", place_id=terrace,
+                is_active=False, **HOURS,
+            ))
+        # COM3 has a location inside it; The Terrace has a (hidden) supplier.
+        for place_id, counts in ((com3, (0, 1)), (terrace, (1, 0))):
+            with self.assertRaises(PlaceInUseError) as caught:
+                with self.db.begin() as connection:
+                    delete_place(connection, actor_id=self.admin, place_id=place_id,
+                                 reason="test")
+            self.assertEqual((caught.exception.supplier_count,
+                              caught.exception.child_count), counts)
+
+        with self.db.begin() as connection:
+            connection.execute(delete(suppliers))
+            row = delete_place(connection, actor_id=self.admin, place_id=terrace,
+                               reason="closed down")
+            self.assertEqual(row["name"], "The Terrace")
+            row = delete_place(connection, actor_id=self.admin, place_id=com3,
+                               reason="test cleanup")
+            self.assertIsNone(delete_place(connection, actor_id=self.admin,
+                                           place_id=com3, reason="again"))
+        with self.db.connect() as connection:
+            self.assertEqual(connection.scalar(select(func.count()).select_from(places)), 0)
+        action, previous, new, reason = self.audit(terrace)[-1]
+        self.assertEqual((action, previous["name"], previous["parent_id"], new, reason),
+                         ("PLACE_DELETED", "The Terrace", str(com3), {}, "closed down"))
+        # The name is free again once the place is gone.
+        self.add("The Terrace")
+
+    def test_older_audit_constraint_is_upgraded(self):
+        # A database created before rename/delete existed only allowed the
+        # original actions; starting the service must widen the list.
+        table = f'"{self.schema}".supplier_audit_logs'
+        with self.engine.begin() as connection:
+            connection.execute(text(f"""
+                ALTER TABLE {table} DROP CONSTRAINT supplier_audit_action_allowed;
+                ALTER TABLE {table} ADD CONSTRAINT supplier_audit_action_allowed CHECK
+                    (action_type IN ('SUPPLIER_CREATED', 'SUPPLIER_UPDATED',
+                                     'SUPPLIER_DEACTIVATED', 'PLACE_CREATED'));
+            """))
+        with self.db.begin() as connection:
+            create_schema(connection)
+            create_schema(connection)  # A second start is a no-op.
+        place_id = self.add("Kiosk")
+        with self.db.begin() as connection:
+            delete_place(connection, actor_id=self.admin, place_id=place_id, reason="test")
+        self.assertEqual(self.audit(place_id)[-1][0], "PLACE_DELETED")
+
+
+if __name__ == "__main__":
+    unittest.main()

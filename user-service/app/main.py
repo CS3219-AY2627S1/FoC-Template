@@ -1,0 +1,534 @@
+import hashlib
+import os
+import secrets
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
+import jwt
+from argon2 import PasswordHasher, exceptions as argon2_exceptions
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
+from cryptography.hazmat.primitives.serialization import (
+    load_pem_private_key,
+    load_pem_public_key,
+)
+from fastapi import Body, FastAPI, HTTPException, Query, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
+from pydantic import ValidationError
+
+from .database import Database, DuplicateEmailError
+from .database import (
+    AdminPermissionError,
+    LastActiveAdminError,
+    NoChangeError,
+    UserNotFoundError,
+)
+from .api_schemas import (
+    AccountStatusUpdateRequest,
+    AdminAuditPageResponse,
+    AuthRoleUpdateRequest,
+    LoginRequest,
+    LoginResponse,
+    ProfileUpdateRequest,
+    RefreshTokenRequest,
+    RegistrationRequest,
+    RoleModeUpdateRequest,
+    RoleModeResponse,
+    UserResponse,
+)
+
+
+# Backlog N1.2: access tokens expire within 30 minutes, refresh tokens within 7 days.
+ACCESS_TOKEN_TTL_SECONDS = 15 * 60
+REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60
+SESSION_EXPIRED_MESSAGE = "Your session has expired. Please log in again."
+
+
+def _hash_refresh_token(token: str) -> str:
+    # Refresh tokens are 256-bit random values, so a fast hash is sufficient.
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _key_material(explicit_value: str | None, value_name: str, path_name: str) -> bytes:
+    value = explicit_value or os.getenv(value_name)
+    if value:
+        return value.encode()
+
+    path = os.getenv(path_name)
+    if not path:
+        raise RuntimeError(f"{path_name} is required")
+    try:
+        with open(path, "rb") as key_file:
+            return key_file.read()
+    except OSError as error:
+        raise RuntimeError(f"Could not read {path_name}: {path}") from error
+
+
+def _load_signing_keys(
+    private_key: str | None, public_key: str | None
+) -> tuple[RSAPrivateKey, RSAPublicKey]:
+    try:
+        loaded_private_key = load_pem_private_key(
+            _key_material(
+                private_key, "JWT_PRIVATE_KEY", "JWT_PRIVATE_KEY_PATH"
+            ),
+            password=None,
+        )
+        loaded_public_key = load_pem_public_key(
+            _key_material(public_key, "JWT_PUBLIC_KEY", "JWT_PUBLIC_KEY_PATH")
+        )
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("JWT signing keys must be valid PEM-encoded RSA keys") from error
+
+    if not isinstance(loaded_private_key, RSAPrivateKey) or not isinstance(
+        loaded_public_key, RSAPublicKey
+    ):
+        raise RuntimeError("JWT signing keys must be RSA keys")
+    if loaded_private_key.key_size < 2048:
+        raise RuntimeError("JWT private key must be at least 2048 bits")
+    if (
+        loaded_private_key.public_key().public_numbers()
+        != loaded_public_key.public_numbers()
+    ):
+        raise RuntimeError("JWT private and public keys do not match")
+    return loaded_private_key, loaded_public_key
+
+
+def create_app(
+    database_url: str | None = None,
+    jwt_private_key: str | None = None,
+    jwt_public_key: str | None = None,
+) -> FastAPI:
+    
+    database_url = database_url or os.getenv("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required")
+    database = Database(database_url)
+
+    password_hasher = PasswordHasher()
+    # verify a hash even for unknown emails to disguise timing differences between valid and invalid logins
+    dummy_password_hash = password_hasher.hash("TimingOnly1!")
+
+    signing_key, verification_key = _load_signing_keys(
+        jwt_private_key, jwt_public_key
+    )
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        database.initialize()
+        try:
+            yield
+        finally:
+            database.close()
+
+    app = FastAPI(
+        title="Friend on Campus User Service",
+        version="1.0.0",
+        lifespan=lifespan,
+    )
+    app.state.database = database
+
+    cors_origins = os.getenv("CORS_ORIGINS")
+    if not cors_origins:
+        raise RuntimeError("CORS_ORIGINS is required")
+    allowed_origins = [origin.strip() for origin in cors_origins.split(",") if origin.strip()]
+    if not allowed_origins:
+        raise RuntimeError("CORS_ORIGINS must contain at least one origin")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(
+        _: Request, error: RequestValidationError
+    ) -> JSONResponse:
+        errors = []
+        for item in error.errors():
+            field = str(item["loc"][-1]) if item["loc"] else "body"
+            message = item["msg"]
+            if message.startswith("Value error, "):
+                message = message.removeprefix("Value error, ")
+            errors.append({"field": field, "message": message})
+        return JSONResponse(status_code=422, content={"errors": errors})
+
+    @app.get("/health")
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.post(
+        "/api/v1/users/register",
+        response_model=UserResponse,
+        status_code=status.HTTP_201_CREATED,
+        openapi_extra={
+            "requestBody": {
+                "content": {
+                    "application/json": {"schema": RegistrationRequest.model_json_schema()}
+                },
+                "required": True,
+            }
+        },
+    )
+    def register(body: dict[str, object] = Body(...)) -> dict[str, object]:
+        try:
+            registration = RegistrationRequest.model_validate(body)
+        except ValidationError as error:
+            raise RequestValidationError(error.errors()) from error
+
+        now = datetime.now(timezone.utc).isoformat()
+        user = {
+            "id": str(uuid4()),
+            "email": registration.email,
+            "password_hash": password_hasher.hash(registration.password),
+            "display_name": registration.display_name,
+            "contact_preference": registration.contact_preference,
+            "telegram_handle": registration.telegram_handle,
+            "phone_number": registration.phone_number,
+            "profile_picture_url": registration.profile_picture_url,
+            "auth_role": "USER",
+            "active_role_mode": "REQUESTER",
+            "account_status": "ACTIVE",
+            "created_at": now,
+        }
+        try:
+            return database.create_user(user)
+        except DuplicateEmailError:
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={
+                    "errors": [
+                        {
+                            "field": "email",
+                            "message": "is already registered",
+                        }
+                    ]
+                },
+            )
+
+    def issue_access_token(user: dict[str, object]) -> str:
+        issued_at = datetime.now(timezone.utc)
+        return jwt.encode({
+            "sub": user["id"], "user_id": user["id"], "email": user["email"],
+            "auth_role": user["auth_role"], "active_role_mode": user["active_role_mode"],
+            "account_status": user["account_status"], "iat": issued_at,
+            "exp": issued_at + timedelta(seconds=ACCESS_TOKEN_TTL_SECONDS),
+        }, signing_key, algorithm="RS256")
+
+    def refresh_token_expiry() -> datetime:
+        return datetime.now(timezone.utc) + timedelta(seconds=REFRESH_TOKEN_TTL_SECONDS)
+
+    def session_response(user: dict[str, object], refresh_token: str) -> dict[str, object]:
+        return {
+            "access_token": issue_access_token(user),
+            "token_type": "bearer",
+            "expires_in": ACCESS_TOKEN_TTL_SECONDS,
+            "refresh_token": refresh_token,
+            "refresh_expires_in": REFRESH_TOKEN_TTL_SECONDS,
+            "user": {
+                "id": user["id"],
+                "email": user["email"],
+                "display_name": user["display_name"],
+                "auth_role": user["auth_role"],
+                "active_role_mode": user["active_role_mode"],
+                "account_status": user["account_status"],
+            },
+        }
+
+    @app.post(
+        "/api/v1/users/login",
+        response_model=LoginResponse,
+        openapi_extra={
+            "requestBody": {
+                "content": {"application/json": {"schema": LoginRequest.model_json_schema()}},
+                "required": True,
+            }
+        },
+    )
+    def login(body: dict[str, object] = Body(...)) -> dict[str, object]:
+        try:
+            credentials = LoginRequest.model_validate(body)
+        except ValidationError as error:
+            raise RequestValidationError(error.errors()) from error
+
+        user = database.find_user_by_email(credentials.email)
+        password_hash = user["password_hash"] if user else dummy_password_hash
+
+        try:
+            password_matches = password_hasher.verify(password_hash, credentials.password)
+        except (
+            argon2_exceptions.VerificationError,
+            argon2_exceptions.InvalidHashError,
+        ):
+            password_matches = False
+
+        if not user or not password_matches:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        # Only revealed after a correct password, so it does not expose which
+        # emails are registered.
+        if user["account_status"] != "ACTIVE":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"This account has been {user['account_status'].lower()}.",
+            )
+
+        refresh_token = secrets.token_urlsafe(32)
+        database.create_refresh_token(
+            user["id"], _hash_refresh_token(refresh_token), refresh_token_expiry()
+        )
+        return session_response(user, refresh_token)
+
+    @app.post(
+        "/api/v1/users/refresh",
+        response_model=LoginResponse,
+        openapi_extra={
+            "requestBody": {
+                "content": {"application/json": {"schema": RefreshTokenRequest.model_json_schema()}},
+                "required": True,
+            }
+        },
+    )
+    def refresh(body: dict[str, object] = Body(...)) -> dict[str, object]:
+        """Exchange a refresh token for a new access token and a new refresh token.
+
+        Each refresh token works once (rotation). The user's current role and
+        status are read from the database, so admin changes apply here.
+        """
+        try:
+            refresh_request = RefreshTokenRequest.model_validate(body)
+        except ValidationError as error:
+            raise RequestValidationError(error.errors()) from error
+        new_refresh_token = secrets.token_urlsafe(32)
+        user = database.rotate_refresh_token(
+            _hash_refresh_token(refresh_request.refresh_token),
+            _hash_refresh_token(new_refresh_token),
+            refresh_token_expiry(),
+        )
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=SESSION_EXPIRED_MESSAGE,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return session_response(user, new_refresh_token)
+
+    @app.post(
+        "/api/v1/users/logout",
+        status_code=status.HTTP_204_NO_CONTENT,
+        openapi_extra={
+            "requestBody": {
+                "content": {"application/json": {"schema": RefreshTokenRequest.model_json_schema()}},
+                "required": True,
+            }
+        },
+    )
+    def logout(body: dict[str, object] = Body(...)) -> Response:
+        """Revoke the refresh token (F1.3.1). Unknown or used tokens are ignored."""
+        try:
+            logout_request = RefreshTokenRequest.model_validate(body)
+        except ValidationError as error:
+            raise RequestValidationError(error.errors()) from error
+        database.revoke_refresh_token(_hash_refresh_token(logout_request.refresh_token))
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    def authenticated_user(request: Request) -> dict[str, object]:
+        authorization = request.headers.get("Authorization", "")
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not token or token != token.strip():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        try:
+            claims = jwt.decode(
+                token,
+                verification_key,
+                algorithms=["RS256"],
+                options={"require": ["sub", "exp"]},
+            )
+        except jwt.PyJWTError as error:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token.",
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from error
+        user_id = claims["sub"]
+        if not isinstance(user_id, str) or not user_id:
+            raise HTTPException(status_code=401, detail="Invalid authentication token.")
+        user = database.find_user_profile(user_id)
+        if not user or user["account_status"] != "ACTIVE":
+            raise HTTPException(status_code=401, detail="Invalid authentication token.")
+        return user
+
+    @app.get("/api/v1/users", response_model=list[UserResponse])
+    def list_users(request: Request):
+        actor = authenticated_user(request)
+        if actor["auth_role"] != "ADMIN":
+            raise HTTPException(status_code=403, detail="Admin access is required.")
+        return database.list_user_profiles()
+
+    @app.get("/api/v1/internal/users/{user_id}/contact")
+    def get_order_contact(user_id: str, request: Request):
+        expected = os.getenv("ORDER_CONTACT_SERVICE_KEY", "")
+        supplied = request.headers.get("X-Service-Key", "")
+        if not expected or not secrets.compare_digest(supplied.encode(), expected.encode()):
+            raise HTTPException(status_code=403, detail="Invalid service key.")
+        target = database.find_user_profile(user_id)
+        if not target:
+            raise HTTPException(status_code=404, detail="User not found.")
+        preference = target["contact_preference"]
+        field = {"TELEGRAM": "telegram_handle", "PHONE": "phone_number", "EMAIL": "email"}.get(preference)
+        return {"display_name": target["display_name"],
+                "contact_preference": preference if field else None,
+                "contact": target[field] if field else None}
+
+    @app.get("/api/v1/users/{user_id}", response_model=UserResponse)
+    def get_user_profile(user_id: str, request: Request):
+        actor = authenticated_user(request)
+        if user_id == actor["id"]:
+            target = actor
+        else:
+            if actor["auth_role"] != "ADMIN":
+                raise HTTPException(status_code=403, detail="Cannot access another user's profile.")
+            target = database.find_user_profile(user_id)
+            if not target:
+                raise HTTPException(status_code=404, detail="User not found.")
+        return target
+
+    @app.patch("/api/v1/users/{user_id}", response_model=UserResponse)
+    def update_user_profile(user_id: str, request: Request, body: dict[str, object] = Body(...)):
+        actor = authenticated_user(request)
+        if user_id == actor["id"]:
+            target = actor
+        else:
+            if actor["auth_role"] != "ADMIN":
+                raise HTTPException(status_code=403, detail="Cannot access another user's profile.")
+            target = database.find_user_profile(user_id)
+            if not target:
+                raise HTTPException(status_code=404, detail="User not found.")
+        try:
+            update_request = ProfileUpdateRequest.model_validate(body)
+        except ValidationError as error:
+            raise RequestValidationError(error.errors()) from error
+        changes = update_request.model_dump(exclude_unset=True)
+        if user_id == actor["id"]:
+            return database.update_user_profile(target["id"], changes)
+        reason = request.headers.get("X-Admin-Reason", "").strip()
+        if not reason or len(reason) > 500:
+            raise HTTPException(status_code=422, detail="X-Admin-Reason must contain 1 to 500 characters.")
+        try:
+            return database.admin_update_profile(actor["id"], target["id"], changes, reason)
+        except AdminPermissionError as error:
+            raise HTTPException(status_code=403, detail="Admin access is required.") from error
+        except UserNotFoundError as error:
+            raise HTTPException(status_code=404, detail="User not found.") from error
+
+    @app.patch(
+        "/api/v1/users/{user_id}/role-mode",
+        response_model=RoleModeResponse,
+        openapi_extra={
+            "requestBody": {
+                "content": {
+                    "application/json": {"schema": RoleModeUpdateRequest.model_json_schema()}
+                },
+                "required": True,
+            }
+        },
+    )
+    def update_role_mode(user_id: str, request: Request, body: dict[str, object] = Body(...)):
+        actor = authenticated_user(request)
+        if user_id != actor["id"]:
+            raise HTTPException(status_code=403, detail="Cannot change another user's role-mode.")
+        try:
+            update_request = RoleModeUpdateRequest.model_validate(body)
+        except ValidationError as error:
+            raise RequestValidationError(error.errors()) from error
+        updated = database.update_active_role_mode(user_id, update_request.active_role_mode)
+        if not updated:
+            raise HTTPException(status_code=401, detail="Invalid authentication token.")
+        return {**updated, "access_token": issue_access_token(updated)}
+
+    @app.patch(
+        "/api/v1/users/{user_id}/auth-role",
+        response_model=UserResponse,
+        openapi_extra={
+            "requestBody": {
+                "content": {"application/json": {"schema": AuthRoleUpdateRequest.model_json_schema()}},
+                "required": True,
+            }
+        },
+    )
+    def update_auth_role(user_id: str, request: Request, body: dict[str, object] = Body(...)):
+        actor = authenticated_user(request)
+        if actor["auth_role"] != "ADMIN" or user_id == actor["id"]:
+            raise HTTPException(status_code=403, detail="An admin must change another account.")
+        try:
+            update_request = AuthRoleUpdateRequest.model_validate(body)
+        except ValidationError as error:
+            raise RequestValidationError(error.errors()) from error
+        try:
+            return database.change_auth_role(
+                actor["id"], user_id, update_request.auth_role, update_request.reason
+            )
+        except AdminPermissionError as error:
+            raise HTTPException(status_code=403, detail="Admin access is required.") from error
+        except UserNotFoundError as error:
+            raise HTTPException(status_code=404, detail="User not found.") from error
+        except LastActiveAdminError as error:
+            raise HTTPException(status_code=409, detail="At least one active admin must remain.") from error
+        except NoChangeError as error:
+            raise HTTPException(status_code=409, detail="Authorization role is unchanged.") from error
+
+    @app.patch(
+        "/api/v1/users/{user_id}/status",
+        response_model=UserResponse,
+        openapi_extra={
+            "requestBody": {
+                "content": {"application/json": {"schema": AccountStatusUpdateRequest.model_json_schema()}},
+                "required": True,
+            }
+        },
+    )
+    def update_status(user_id: str, request: Request, body: dict[str, object] = Body(...)):
+        actor = authenticated_user(request)
+        if actor["auth_role"] != "ADMIN" or user_id == actor["id"]:
+            raise HTTPException(status_code=403, detail="An admin must change another account.")
+        try:
+            update_request = AccountStatusUpdateRequest.model_validate(body)
+        except ValidationError as error:
+            raise RequestValidationError(error.errors()) from error
+        try:
+            return database.change_account_status(
+                actor["id"], user_id,
+                update_request.account_status, update_request.reason,
+            )
+        except AdminPermissionError as error:
+            raise HTTPException(status_code=403, detail="Admin access is required.") from error
+        except UserNotFoundError as error:
+            raise HTTPException(status_code=404, detail="User not found.") from error
+        except LastActiveAdminError as error:
+            raise HTTPException(status_code=409, detail="At least one active admin must remain.") from error
+        except NoChangeError as error:
+            raise HTTPException(status_code=409, detail="Account status is unchanged.") from error
+
+    @app.get("/api/v1/admin/audit-logs", response_model=AdminAuditPageResponse)
+    def list_audit_logs(
+        request: Request,
+        page: int = Query(default=1, ge=1),
+        page_size: int = Query(default=10, ge=1, le=100),
+    ):
+        actor = authenticated_user(request)
+        if actor["auth_role"] != "ADMIN":
+            raise HTTPException(status_code=403, detail="Admin access is required.")
+        return database.admin_audit_page(page, page_size)
+
+    return app
