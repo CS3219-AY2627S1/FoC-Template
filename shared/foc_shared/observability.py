@@ -533,6 +533,7 @@ class Observability:
                     checks.update(extra())
                 except Exception:
                     logging.getLogger("app").exception("Readiness: extra check failed.")
+                    checks["extra"] = "unavailable"
             broker = broker_state()
             if check_broker:
                 checks["broker"] = "ok" if broker["connected"] else "unavailable"

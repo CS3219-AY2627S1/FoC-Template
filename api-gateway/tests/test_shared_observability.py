@@ -54,3 +54,28 @@ def test_metrics_scrape_reports_a_refresh_raised_timeout_as_a_refresh_failure(ca
         (logging.ERROR, "Metrics refresh failed.")
     ]
     assert records[0].exc_info[0] is TimeoutError
+
+
+def test_readiness_is_degraded_when_the_extra_check_raises():
+    def broken_extra() -> dict[str, str]:
+        raise RuntimeError("boom")
+
+    response = TestClient(_app(check_broker=False, readiness_extra=broken_extra)).get(
+        "/health/ready"
+    )
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "degraded"
+    assert body["checks"] == {"extra": "unavailable"}
+
+
+def test_readiness_is_ready_when_the_extra_check_passes():
+    response = TestClient(_app(check_broker=False, readiness_extra=lambda: {"cache": "ok"})).get(
+        "/health/ready"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    assert body["checks"] == {"cache": "ok"}
