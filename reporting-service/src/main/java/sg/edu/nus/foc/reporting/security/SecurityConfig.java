@@ -33,7 +33,7 @@ import tools.jackson.databind.json.JsonMapper;
 @EnableMethodSecurity
 class SecurityConfig {
     private static final String[] PUBLIC = { "/actuator/health", "/actuator/health/**", "/actuator/info", "/api/reports/docs", "/api/reports/docs/**", "/api/reports/v3/api-docs", "/api/reports/v3/api-docs/**", "/api/reports/swagger-ui/**", "/error" };
-    @Bean @org.springframework.core.annotation.Order(2)
+    @Bean @org.springframework.core.annotation.Order(4)
     SecurityFilterChain security(HttpSecurity http, JwtAuthenticationConverter converter, JsonSecurityHandlers handlers) throws Exception {
         http.csrf(AbstractHttpConfigurer::disable).cors(Customizer.withDefaults())
                 .sessionManagement(value -> value.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -58,7 +58,7 @@ class SecurityConfig {
     @Bean JwtAuthenticationConverter converter() { var converter = new JwtAuthenticationConverter(); converter.setJwtGrantedAuthoritiesConverter(jwt -> List.of()); return converter; }
     @Bean JsonSecurityHandlers handlers(JsonMapper mapper, Clock clock) { return new JsonSecurityHandlers(mapper, clock); }
     @Bean CorsConfigurationSource cors(ReportingProperties properties) {
-        var cors = new CorsConfiguration(); cors.setAllowedOrigins(properties.corsOrigins()); cors.setAllowedMethods(List.of("GET", "POST", "PATCH", "OPTIONS"));
+        var cors = new CorsConfiguration(); cors.setAllowedOrigins(properties.corsOrigins()); cors.setAllowedMethods(List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS"));
         cors.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Request-Id")); cors.setMaxAge(3600L);
         var source = new UrlBasedCorsConfigurationSource(); source.registerCorsConfiguration("/**", cors); return source;
     }

@@ -42,6 +42,9 @@ public class OrderOutboxDispatcher {
     @org.springframework.beans.factory.annotation.Autowired
     private org.springframework.beans.factory.ObjectProvider<sg.edu.nus.foc.order.application.reportresolution.ReportCompensationPublisher> reportCompensationPublisher;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.beans.factory.ObjectProvider<sg.edu.nus.foc.order.application.reportcreation.ReportCreationResultPublisher> reportCreationResultPublisher;
+
     @Value("${order.messaging.outbox.batch-size:50}")
     private int batchSize;
 
@@ -84,6 +87,8 @@ public class OrderOutboxDispatcher {
 
     private void publish(OrderEventOutbox message) {
         switch (message.getEventType()) {
+            case "ReportCreationCompensationResult" -> reportCreationResultPublisher.getObject().publish(objectMapper.readValue(
+                    message.getPayload(), sg.edu.nus.foc.order.application.reportcreation.ReportCreationMessages.Result.class));
             case "ReportResolutionCompensationRequested" -> reportCompensationPublisher.getObject().publish(objectMapper.readValue(
                     message.getPayload(), sg.edu.nus.foc.order.application.reportresolution.ReportResolutionMessages.Compensation.class));
             case "CreditCompensationRequested" -> compensationPublisher.getObject().publish(objectMapper.readValue(

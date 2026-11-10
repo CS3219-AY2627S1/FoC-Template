@@ -15,15 +15,16 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.*;
 
 class HttpOrderAssociationClientTest {
+    private static final String SUBMISSION = "11111111-1111-4111-8111-111111111111";
     @Test void courierHoldSendsCourierScopeWithTheOriginalBearerToken() {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://orders");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo("http://orders/api/orders/mine/active/order/report-holds/errand"))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer courier"))
-                .andExpect(content().json("{\"requireAssignedCourier\":true,\"reporterRole\":\"COURIER\"}"))
+                .andExpect(content().json("{\"requireAssignedCourier\":true,\"reporterRole\":\"COURIER\",\"submissionId\":\"" + SUBMISSION + "\"}"))
                 .andRespond(withSuccess("{\"id\":\"order\",\"requesterId\":\"owner\",\"courierId\":\"courier\",\"status\":\"ACCEPTED\",\"reportId\":\"errand\",\"isCompletionHold\":true}", MediaType.APPLICATION_JSON));
         assertEquals("owner", new HttpOrderAssociationClient(builder.build())
-                .placeReportHold("order", "errand", true, "Bearer courier", "COURIER").requesterId());
+                .placeReportHold("order", "errand", SUBMISSION, true, "Bearer courier", "COURIER").requesterId());
         server.verify();
     }
     @Test void placesTheAtomicActiveOrderHoldAndForwardsAuthorization() {
@@ -32,10 +33,10 @@ class HttpOrderAssociationClientTest {
         server.expect(once(), requestTo("http://orders/api/orders/mine/active/order%20one/report-holds/report%2Fone"))
                 .andExpect(method(org.springframework.http.HttpMethod.PUT))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer abc"))
-                .andExpect(content().json("{\"requireAssignedCourier\":true}"))
+                .andExpect(content().json("{\"requireAssignedCourier\":true,\"submissionId\":\"" + SUBMISSION + "\"}"))
                 .andRespond(withSuccess("{\"id\":\"order one\",\"requesterId\":\"owner\",\"courierId\":\"courier\",\"status\":\"DELIVERED\",\"reportId\":\"report/one\",\"isCompletionHold\":true}", MediaType.APPLICATION_JSON));
         AssociatedOrder order = new HttpOrderAssociationClient(builder.build())
-                .placeReportHold("order one", "report/one", true, "Bearer abc");
+                .placeReportHold("order one", "report/one", SUBMISSION, true, "Bearer abc", "REQUESTER");
         assertEquals("owner", order.requesterId());
         assertEquals("courier", order.courierId());
         server.verify();

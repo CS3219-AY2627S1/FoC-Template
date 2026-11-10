@@ -603,3 +603,10 @@ User approves bounded browse/search pickup and delivery selectors. Existing inst
 ## CHANGE-183 - Admin resolver display (2026-11-09)
 
 Approved report-detail presentation: Admin name/profile link, copyable Admin ID, reply and resolution time, using persisted resolvedBy and existing User name lookup even without an associated Order.21 focused tests, lint and TypeScript pass. Backend/contracts/concurrency unchanged; browser/staging not exercised. See changes/CHANGE-183-admin-resolver-display.md.
+# CHANGE-184 — Durable report creation compensation (2026-11-10)
+
+User approved a journal-first, idempotent Report creation flow with deterministic
+evidence and rollback-only Order compensation. One-hour inactive pre-hold expiry
+replaces owner cancellation. Order V20 lifecycle tombstones serialize placement
+against compensation. Existing report resolution remains all-or-nothing. See
+`changes/CHANGE-184-durable-report-creation-compensation.md` and ADR-068.

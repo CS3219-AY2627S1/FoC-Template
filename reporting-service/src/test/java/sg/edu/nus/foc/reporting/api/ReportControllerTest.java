@@ -17,7 +17,8 @@ import static org.mockito.Mockito.*;
 class ReportControllerTest {
     private final ReportService service = mock(ReportService.class);
     private final CallerRoles roles = mock(CallerRoles.class);
-    private final ReportController controller = new ReportController(service, roles);
+    private final ReportCreationCoordinator creations = mock(ReportCreationCoordinator.class);
+    private final ReportController controller = new ReportController(service, roles, creations);
     private final Jwt jwt = Jwt.withTokenValue("token").header("alg", "none").subject("u").build();
     private final Report report = new Report("r", "u", ReportCategory.GENERAL, "description", null, null,
             ReportStatus.READY_FOR_REVIEW, Instant.parse("2026-10-13T00:00:00Z"), null, null, null,
@@ -25,8 +26,13 @@ class ReportControllerTest {
             Instant.parse("2026-10-13T00:00:00Z"))), List.of());
 
     @Test void createsListsViewsRespondsAndResolvesReports() {
-        when(service.submit(eq("u"), eq("Bearer token"), any(), any(), isNull(), isNull())).thenReturn(report);
-        var created = controller.create(new CreateReportRequest(ReportCategory.GENERAL, "description", null), null, jwt);
+        String submissionId="11111111-1111-4111-8111-111111111111";
+        var submission=new ReportSubmission(submissionId,"r","u","hash",ReportCategory.GENERAL,null,
+                "description",List.of(),ReportSubmissionState.COMPLETED,false,2,0,null,null,null,null,null,null,
+                report.createdAt(),report.createdAt());
+        when(creations.submit(eq(submissionId),eq("u"),eq("Bearer token"),any(),any(),isNull(),isNull()))
+                .thenReturn(new ReportCreationCoordinator.Outcome(submission,report,true));
+        var created = controller.create(new CreateReportRequest(submissionId,ReportCategory.GENERAL, "description", null), null, jwt);
         assertEquals(HttpStatus.CREATED, created.getStatusCode());
 
         when(service.list(1, 20)).thenReturn(new PageResult<>(List.of(report), 1, 20, 1, 1));

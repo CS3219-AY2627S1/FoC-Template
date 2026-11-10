@@ -65,6 +65,13 @@ order:
       audience: ${ORDER_COMPENSATION_PUSH_AUDIENCE:}
       service-account: ${ORDER_COMPENSATION_PUSH_SERVICE_ACCOUNT:}
   reports:
+    creation:
+      enabled: ${ORDER_REPORT_CREATION_ENABLED:false}
+      result-topic: ${REPORT_CREATION_COMPENSATION_RESULT_TOPIC:}
+      request-subscription: ${ORDER_REPORT_CREATION_COMPENSATION_SUBSCRIPTION:}
+      push-mode: ${ORDER_REPORT_CREATION_PUSH_MODE:google}
+      audience: ${ORDER_REPORT_CREATION_PUSH_AUDIENCE:}
+      service-account: ${ORDER_REPORT_CREATION_PUSH_SERVICE_ACCOUNT:}
     resolution:
       enabled: ${ORDER_REPORT_RESOLUTION_ENABLED:false}
       base-url: ${REPORT_SERVICE_URL:}

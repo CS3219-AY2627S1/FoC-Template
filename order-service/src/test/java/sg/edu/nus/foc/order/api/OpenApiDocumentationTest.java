@@ -48,7 +48,8 @@ import tools.jackson.databind.json.JsonMapper;
         OrderCommandController.class, OrderOutboxAdminController.class,
         OrderCompletionHoldController.class, OrderCreditHistoryController.class, OrderInvolvementController.class,
         CreditCompensationResultController.class, UserDeletionEligibilityController.class,
-        AdminReportResolutionController.class, ReportCompensationResultController.class},
+        AdminReportResolutionController.class, ReportCompensationResultController.class,
+        ReportCreationCompensationController.class},
     excludeAutoConfiguration = {
         SecurityAutoConfiguration.class,
         OAuth2ResourceServerAutoConfiguration.class
@@ -74,6 +75,8 @@ class OpenApiDocumentationTest {
     @MockitoBean private sg.edu.nus.foc.order.application.reportresolution.ReportResolutionService reportResolutions;
     @MockitoBean private sg.edu.nus.foc.order.application.reportresolution.ReportResolutionJournal reportJournal;
     @MockitoBean private sg.edu.nus.foc.order.config.ReportResolutionSettings reportSettings;
+    @MockitoBean private sg.edu.nus.foc.order.application.reportcreation.ReportCreationLifecycle reportCreationLifecycle;
+    @MockitoBean private sg.edu.nus.foc.order.config.ReportCreationSettings reportCreationSettings;
     @MockitoBean private sg.edu.nus.foc.order.application.recovery.OrderCompensationJournal compensationJournal;
     @MockitoBean private sg.edu.nus.foc.order.config.CompensationTransportSettings compensationSettings;
     @MockitoBean private sg.edu.nus.foc.order.application.AdminApplyPenaltyService penalties;
@@ -112,6 +115,7 @@ class OpenApiDocumentationTest {
         assertThat(paths.path(CreditCompensationResultController.PATH).path("post")
                 .path("responses").has("204")).isTrue();
         assertThat(paths.path(ReportCompensationResultController.PATH).path("post").path("responses").has("204")).isTrue();
+        assertThat(paths.path(ReportCreationCompensationController.PATH).path("post").path("responses").has("204")).isTrue();
         assertThat(paths.path(PREFIX + "/admin/{orderId}/reports/{reportId}/resolve").path("post").path("responses").has("202")).isTrue();
         assertThat(paths.path(PREFIX + "/admin/report-resolutions/{commandId}").has("get")).isTrue();
         assertThat(paths.path(PREFIX + "/mine/completed").path("get").path("responses").has("200")).isTrue();

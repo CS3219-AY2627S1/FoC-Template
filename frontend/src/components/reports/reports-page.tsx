@@ -24,10 +24,12 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { AdminFilterActions, AdminFilterForm, AdminHeading, AdminLoadState, AdminPagination, CopyId, adminDate } from "@/components/admin/admin-ui"
 
-export function AdminReportsPage({ reportId }: { reportId?: string }) {
+type ResolutionStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">
+
+export function AdminReportsPage({ reportId, resolutionStorage }: { reportId?: string; resolutionStorage?: ResolutionStorage }) {
   return <section className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8 sm:px-6">
     <AdminHeading title={reportId ? "Report details" : "Reports"} description="Review delivered-item issues, evidence and responses." />
-    {reportId ? <ReportCase key={reportId} id={reportId} /> : <ReportList />}
+    {reportId ? <ReportCase key={reportId} id={reportId} resolutionStorage={resolutionStorage} /> : <ReportList />}
   </section>
 }
 
@@ -132,7 +134,7 @@ function ReportOrderSummary({ order }: { order: AdminOrder }) {
   return <Link href={"/admin/orders?orderId=" + encodeURIComponent(order.id)} aria-label={"Open order " + order.id + " in Orders"}
     className="block min-w-0 px-5 py-6 transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:px-8">{content}</Link>
 }
-function ReportCase({ id }: { id: string }) {
+function ReportCase({ id, resolutionStorage }: { id: string; resolutionStorage?: ResolutionStorage }) {
   const api = useReportApi(); const { user, loading: authLoading } = useAuth()
   const load = useCallback((signal: AbortSignal) => api.detail(id, user?.uid ?? "", signal), [api, id, user?.uid])
   const { data: report, error, loading, refresh } = useReportResource(load, Boolean(user) && !authLoading)
@@ -177,19 +179,19 @@ function ReportCase({ id }: { id: string }) {
         ["Admin ID", report.resolvedBy ? <CopyId key="admin-id" id={report.resolvedBy} /> : "Not available"],
         ["Admin reply", report.resolutionNote], ["Resolved", adminDate(report.resolvedAt!)],
       ]} /></ReportSection>}
-      {(report.status !== "RESOLVED" || savedResolution(resolutionKey(report.id, user?.uid ?? ""))) && <div className="flex justify-end border-t px-5 py-5 sm:px-8"><Button onClick={() => setResolving(true)}>{report.status === "RESOLVED" ? "Resume resolution" : "Mark report resolved"}</Button></div>}
+      {(report.status !== "RESOLVED" || savedResolution(resolutionKey(report.id, user?.uid ?? ""), resolutionStorage)) && <div className="flex justify-end border-t px-5 py-5 sm:px-8"><Button onClick={() => setResolving(true)}>{report.status === "RESOLVED" ? "Resume resolution" : "Mark report resolved"}</Button></div>}
     </Card>
-    {resolving && <ResolveReportDialog report={report} onClose={() => setResolving(false)} onDone={() => { setResolving(false); refresh() }} />}
+    {resolving && <ResolveReportDialog report={report} resolutionStorage={resolutionStorage} onClose={() => setResolving(false)} onDone={() => { setResolving(false); refresh() }} />}
   </>
 }
 function Participant({ id, name }: { id: string; name: string | null }) {
   return <Link href={"/admin/users/" + encodeURIComponent(id)} className="text-sm underline underline-offset-4">{name || "Deactivated user"}</Link>
 }
-function ResolveReportDialog({ report, onClose, onDone }: { report: DeliveryReport; onClose: () => void; onDone: () => void }) {
+function ResolveReportDialog({ report, onClose, onDone, resolutionStorage }: { report: DeliveryReport; onClose: () => void; onDone: () => void; resolutionStorage?: ResolutionStorage }) {
   const api = useReportApi(); const { user } = useAuth()
   const storageKey = resolutionKey(report.id, user?.uid ?? "")
   const [attempt, setAttempt] = useState<{ commandId: string; reply: string } | null>(() => {
-    try { const saved = JSON.parse(savedResolution(storageKey) ?? "null"); return saved?.commandId && typeof saved.reply === "string" ? saved : null } catch { return null }
+    try { const saved = JSON.parse(savedResolution(storageKey, resolutionStorage) ?? "null"); return saved?.commandId && typeof saved.reply === "string" ? saved : null } catch { return null }
   })
   const [note, setNote] = useState(attempt?.reply ?? ""); const [busy, setBusy] = useState(false)
   const [pending, setPending] = useState(Boolean(attempt && report.order && report.violationCategory !== "CREDITS")); const [final, setFinal] = useState(false)
@@ -197,8 +199,8 @@ function ResolveReportDialog({ report, onClose, onDone }: { report: DeliveryRepo
   const succeeded = useRef(false)
   const complete = useCallback(() => {
     if (succeeded.current) return
-    succeeded.current = true; clearResolution(storageKey); toast.success("Report resolved."); onDone()
-  }, [onDone, storageKey])
+    succeeded.current = true; clearResolution(storageKey, resolutionStorage); toast.success("Report resolved."); onDone()
+  }, [onDone, resolutionStorage, storageKey])
   const poll = useCallback(async (signal: AbortSignal) => {
     if (!attempt) return
     try {
@@ -227,7 +229,7 @@ function ResolveReportDialog({ report, onClose, onDone }: { report: DeliveryRepo
     const current = attempt ?? { commandId: crypto.randomUUID(), reply: note.trim() }
     setAttempt(current)
     try {
-      try { sessionStorage.setItem(storageKey, JSON.stringify(current)) }
+      try { (resolutionStorage ?? sessionStorage).setItem(storageKey, JSON.stringify(current)) }
       catch { throw new Error("Allow site storage so this resolution can be safely retried.") }
       const result = await api.resolve(report.id, user.uid, current.reply, current.commandId)
       if (result.status === "SUCCEEDED" || result.status === "RESOLVED") complete()
@@ -250,11 +252,11 @@ function ResolveReportDialog({ report, onClose, onDone }: { report: DeliveryRepo
     {report.status === "AWAITING_COURIER_RESPONSE" && <p role="alert" className="rounded-md border p-3 text-sm">The other participant has not responded and their response deadline has not passed. Are you sure you want to resolve this report?</p>}
     <Label htmlFor="resolution-note">Admin reply</Label><Textarea id="resolution-note" maxLength={2000} required value={note} onChange={event => setNote(event.target.value)} disabled={busy || !!attempt} />
     {error && <p role="status" className="text-sm text-muted-foreground">{error}</p>}<DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>Back</Button>
-      {final ? <Button type="button" onClick={() => { clearResolution(storageKey); setAttempt(null); setFinal(false); setError(null) }}>Start new request</Button>
+      {final ? <Button type="button" onClick={() => { clearResolution(storageKey, resolutionStorage); setAttempt(null); setFinal(false); setError(null) }}>Start new request</Button>
         : <Button type="submit" disabled={busy || pending || !note.trim()}>{busy ? "Saving…" : attempt ? "Retry same request" : "Confirm resolved"}</Button>}
     </DialogFooter>
   </form></DialogContent></Dialog>
 }
 function resolutionKey(reportId: string, userId: string) { return `report-resolution:${userId}:${reportId}` }
-function savedResolution(key: string) { try { return sessionStorage.getItem(key) } catch { return null } }
-function clearResolution(key: string) { try { sessionStorage.removeItem(key) } catch { /* An already committed result remains successful. */ } }
+function savedResolution(key: string, storage?: ResolutionStorage) { try { return (storage ?? sessionStorage).getItem(key) } catch { return null } }
+function clearResolution(key: string, storage?: ResolutionStorage) { try { (storage ?? sessionStorage).removeItem(key) } catch { /* An already committed result remains successful. */ } }

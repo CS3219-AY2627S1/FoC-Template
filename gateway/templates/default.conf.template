@@ -75,6 +75,10 @@ server {
         default_type application/json;
         return 404 '{"status":404,"error":"NOT_FOUND","message":"No service handles this path."}';
     }
+    location ~ "^/api/orders/internal([;/].*)?$" {
+        default_type application/json;
+        return 404 '{"status":404,"error":"NOT_FOUND","message":"No service handles this path."}';
+    }
     # The User Service's penalty adjustment is for other services and only checks that the caller is
     # signed in, so from a browser anyone could suspend any courier or clear their own penalty.
     # A regex location, so it wins over the /api/users prefix; ";" and "/" cover matrix and extra segments.

@@ -6,6 +6,7 @@
  * Author review: I reviewed for correctness
  */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import type { ComponentProps } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ReportForm } from "@/components/reporting/report-form"
@@ -14,6 +15,28 @@ import type { Order } from "@/lib/orders"
 
 const mocks = vi.hoisted(() => ({ api: vi.fn() }))
 vi.mock("@/hooks/use-api", () => ({ useApi: () => mocks.api }))
+
+let reportStorage: Pick<Storage, "getItem" | "setItem" | "removeItem">
+
+function memoryStorage(): Pick<Storage, "getItem" | "setItem" | "removeItem"> {
+  const values = new Map<string, string>()
+  return {
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => { values.set(key, value) },
+    removeItem: key => { values.delete(key) },
+  }
+}
+
+function renderReportForm(props: Omit<ComponentProps<typeof ReportForm>, "submissionStorage">) {
+  return render(<ReportForm {...props} submissionStorage={reportStorage} />)
+}
+
+const blobText = (blob: Blob) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader()
+  reader.onload = () => resolve(String(reader.result))
+  reader.onerror = () => reject(reader.error)
+  reader.readAsText(blob)
+})
 
 const order = (id: string, status: Order["status"]): Order => ({
   id, requesterId: "user", courierId: status === "OPEN" ? null : "courier",
@@ -26,7 +49,7 @@ it("Errand uses the courier-scoped active list and submits an assigned order", a
   mocks.api.mockImplementation((path: string) => path.startsWith("/api/orders")
     ? Promise.resolve({ items: [order("assigned", "ACCEPTED")], page: 1, size: 100, totalItems: 1, totalPages: 1 })
     : Promise.resolve({ id: "errand-report" }))
-  render(<ReportForm initialCategory="ERRAND" initialOrderId="assigned" />)
+  renderReportForm({ initialCategory: "ERRAND", initialOrderId: "assigned" })
   await waitFor(() => expect(mocks.api).toHaveBeenCalledWith("/api/orders/mine/active?mode=courier&page=1&size=100", expect.anything()))
   expect(screen.getByText(/The requester has 24 hours to reply/)).toBeInTheDocument()
   await waitFor(() => expect(screen.getByRole("combobox", { name: "Associated order" })).toHaveTextContent(/assigned/))
@@ -40,11 +63,14 @@ it("Errand uses the courier-scoped active list and submits an assigned order", a
     reader.onerror = () => reject(reader.error)
     reader.readAsText(body.get("report") as Blob)
   })
-  expect(JSON.parse(json)).toEqual({ category: "ERRAND", description: "Cannot contact requester", orderId: "assigned" })
+  expect(JSON.parse(json)).toMatchObject({ category: "ERRAND", description: "Cannot contact requester", orderId: "assigned" })
+  expect(JSON.parse(json).submissionId).toMatch(/^[0-9a-f-]{36}$/)
 })
 
 beforeEach(() => {
   vi.clearAllMocks()
+  sessionStorage.clear()
+  reportStorage = memoryStorage()
   Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => "blob:preview") })
   Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() })
 })
@@ -55,7 +81,7 @@ describe("report form", () => {
     mocks.api.mockImplementation((path: string) => path.startsWith("/api/orders")
       ? Promise.resolve({ items: [order("stale", "ACCEPTED")], totalPages: 1 })
       : Promise.reject(new ApiError(409, "CONFLICT", "This order has an active report. Please resolve it before proceeding.")))
-    render(<ReportForm initialCategory={category} initialOrderId="stale" />)
+    renderReportForm({ initialCategory: category, initialOrderId: "stale" })
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Associated order" })).toHaveTextContent(/stale/))
     fireEvent.change(screen.getByLabelText("Description (required)"), { target: { value: "Keep my explanation" } })
     fireEvent.click(screen.getByRole("button", { name: "Submit report" }))
@@ -69,7 +95,7 @@ describe("report form", () => {
     mocks.api.mockImplementation((path: string) => path.includes("page=1")
       ? Promise.resolve({ items: [order("open", "OPEN"), order("progress", "IN_PROGRESS")], page: 1, size: 100, totalItems: 3, totalPages: 2 })
       : Promise.resolve({ items: [order("delivered", "DELIVERED")], page: 2, size: 100, totalItems: 3, totalPages: 2 }))
-    render(<ReportForm initialCategory="ORDER" initialOrderId="delivered" />)
+    renderReportForm({ initialCategory: "ORDER", initialOrderId: "delivered" })
     await waitFor(() => expect(mocks.api).toHaveBeenCalledWith("/api/orders/mine/active?page=2&size=100", expect.anything()))
     expect(mocks.api.mock.calls.every(([path]) => !String(path).includes("associated"))).toBe(true)
     expect(screen.queryByText("Private report")).not.toBeInTheDocument()
@@ -89,7 +115,7 @@ describe("report form", () => {
     mocks.api.mockImplementation((path: string) => path.startsWith("/api/orders")
       ? Promise.resolve({ items: [], page: 1, size: 100, totalItems: 0, totalPages: 0 })
       : Promise.resolve({ id: "report-1" }))
-    render(<ReportForm initialCategory="ORDER" />)
+    renderReportForm({ initialCategory: "ORDER" })
     await waitFor(() => expect(mocks.api).toHaveBeenCalled())
     fireEvent.change(screen.getByLabelText("Description (required)"), { target: { value: "Missing package" } })
     fireEvent.click(screen.getByRole("button", { name: "Submit report" }))
@@ -111,7 +137,7 @@ describe("report form", () => {
 
   it("does not offer OPEN orders for an ORDER report", async () => {
     mocks.api.mockResolvedValue({ items: [order("open", "OPEN"), order("accepted", "ACCEPTED")], page: 1, size: 100, totalItems: 2, totalPages: 1 })
-    render(<ReportForm initialCategory="ORDER" />)
+    renderReportForm({ initialCategory: "ORDER" })
     await waitFor(() => expect(mocks.api).toHaveBeenCalledWith("/api/orders/mine/active?page=1&size=100", expect.anything()))
     fireEvent.click(screen.getByRole("combobox", { name: "Associated order" }))
     expect(await screen.findByRole("option", { name: /ACCEPTED/ })).toBeInTheDocument()
@@ -124,7 +150,7 @@ describe("report form", () => {
       attempts += 1
       return attempts === 1 ? Promise.reject(new ApiError(503, "SERVICE_UNAVAILABLE", "Storage is unavailable.")) : Promise.resolve({ id: "report-2" })
     })
-    render(<ReportForm initialCategory="GENERAL" />)
+    renderReportForm({ initialCategory: "GENERAL" })
     expect(mocks.api).not.toHaveBeenCalled()
     fireEvent.change(screen.getByLabelText("Description (required)"), { target: { value: "Keep this description" } })
     const photos = screen.getByLabelText("Photos")
@@ -140,13 +166,13 @@ describe("report form", () => {
     expect(await screen.findByText("Storage is unavailable.")).toBeInTheDocument()
     expect(screen.getByLabelText("Description (required)")).toHaveValue("Keep this description")
     expect(screen.getByAltText("Preview of receipt.png")).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Submit report" }))
+    fireEvent.click(screen.getByRole("button", { name: "Retry submission" }))
     expect(await screen.findByText("Reference: report-2")).toBeInTheDocument()
   })
 
   it("does not accept a prefilled order absent from the authoritative response", async () => {
     mocks.api.mockResolvedValue({ items: [order("other", "OPEN")], page: 1, size: 100, totalItems: 1, totalPages: 1 })
-    render(<ReportForm initialCategory="ORDER" initialOrderId="unrelated" />)
+    renderReportForm({ initialCategory: "ORDER", initialOrderId: "unrelated" })
     expect(await screen.findByText(/linked order is not eligible/)).toBeInTheDocument()
     expect(screen.queryByRole("option", { name: /unrelated/ })).not.toBeInTheDocument()
   })
@@ -156,7 +182,7 @@ describe("report form", () => {
     const pending = new Promise<{ id: string }>(resolve => { resolveReport = resolve })
     mocks.api.mockImplementation((path: string) => path.startsWith("/api/orders")
       ? Promise.resolve({ items: [], page: 1, size: 100, totalItems: 0, totalPages: 0 }) : pending)
-    render(<ReportForm initialCategory="GENERAL" />)
+    renderReportForm({ initialCategory: "GENERAL" })
     expect(mocks.api).not.toHaveBeenCalled()
     fireEvent.change(screen.getByLabelText("Description (required)"), { target: { value: "One report only" } })
     const submit = screen.getByRole("button", { name: "Submit report" })
@@ -166,9 +192,47 @@ describe("report form", () => {
     resolveReport({ id: "once" })
     expect(await screen.findByText("Reference: once")).toBeInTheDocument()
   })
+  it("stores one submission ID before sending and reuses it on an uncertain retry", async () => {
+    const sent: string[] = []
+    let reports = 0
+    mocks.api.mockImplementation(async (path: string, options?: { body?: FormData }) => {
+      if (!path.startsWith("/api/reports")) return { items: [], totalPages: 0 }
+      const stored = JSON.parse(reportStorage.getItem("foc.reportSubmission.v1") || "{}")
+      expect(stored.submissionId).toMatch(/^[0-9a-f-]{36}$/)
+      const payload = JSON.parse(await blobText(options?.body?.get("report") as Blob))
+      sent.push(payload.submissionId)
+      reports += 1
+      if (reports === 1) throw new ApiError(503, "SERVICE_UNAVAILABLE", "Uncertain response")
+      return { id: "stable-report" }
+    })
+    renderReportForm({ initialCategory: "GENERAL" })
+    fireEvent.change(screen.getByLabelText("Description (required)"), { target: { value: "Stable retry" } })
+    fireEvent.click(screen.getByRole("button", { name: "Submit report" }))
+    expect(await screen.findByText("Uncertain response")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Retry submission" }))
+    expect(await screen.findByText("Reference: stable-report")).toBeInTheDocument()
+    expect(sent).toHaveLength(2)
+    expect(sent[1]).toBe(sent[0])
+    expect(mocks.api.mock.calls.some(([path]) => String(path).includes(`/submissions/${sent[0]}/resume`))).toBe(true)
+    expect(reportStorage.getItem("foc.reportSubmission.v1")).toBeNull()
+  })
+
+  it("fails before sending when session storage cannot retain the stable ID", async () => {
+    const unavailable = {
+      getItem: vi.fn(() => null), removeItem: vi.fn(), clear: vi.fn(),
+      setItem: vi.fn(() => { throw new DOMException("denied") }),
+    }
+    mocks.api.mockResolvedValue({ id: "must-not-send" })
+    render(<ReportForm initialCategory="GENERAL" submissionStorage={unavailable} />)
+    fireEvent.change(screen.getByLabelText("Description (required)"), { target: { value: "Cannot persist" } })
+    fireEvent.click(screen.getByRole("button", { name: "Submit report" }))
+    expect(await screen.findByText(/cannot safely retain a report retry/)).toBeInTheDocument()
+    expect(mocks.api).not.toHaveBeenCalled()
+  })
+
   it("normalizes a retired Credits link to General without attaching its order ID", async () => {
     mocks.api.mockResolvedValue({ id: "credit-report" })
-    render(<ReportForm initialCategory="CREDITS" initialOrderId="paid" />)
+    renderReportForm({ initialCategory: "CREDITS", initialOrderId: "paid" })
     expect(screen.queryByRole("combobox", { name: "Associated order" })).not.toBeInTheDocument()
     expect(mocks.api).not.toHaveBeenCalled()
     fireEvent.change(screen.getByLabelText("Description (required)"), { target: { value: "Missing payment" } })
@@ -186,7 +250,7 @@ describe("report form", () => {
   })
   it("explains an existing active report without sending another submission", async () => {
     mocks.api.mockResolvedValue({ items: [{ ...order("held", "DELIVERED"), isCompletionHold: true }], totalPages: 1 })
-    render(<ReportForm initialCategory="ORDER" initialOrderId="held" />)
+    renderReportForm({ initialCategory: "ORDER", initialOrderId: "held" })
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Associated order" })).toHaveTextContent(/DELIVERED/))
     expect(screen.queryByText("Active report")).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText("Description (required)"), { target: { value: "Duplicate" } })

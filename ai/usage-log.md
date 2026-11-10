@@ -3548,3 +3548,23 @@ OpenAI Codex; Yao Xiang on hfix/report-service; authorized frontend implementati
 - **Prompt:** User requests Resolution fields in admin name, ID, reply and time order, matching requester/courier account sections because multiple admins can resolve reports.
 - **Key response:** Reused shared account rows, profile/copy controls and authenticated User lookup using persisted resolvedBy, including reports without an Order. Historical missing IDs show Not available. Two new tests reproduced missing behavior;21 focused tests, full lint and route generation/TypeScript pass. Backend, contracts, data, config, saga and concurrent-conflict behavior unchanged; browser/staging not exercised. No commit/push.
 - **Author verification:** Yao Xiang specified the presentation and name requirement. Human source/visual review pending; automated verification is not human approval.
+## CHANGE-184 durable report creation compensation — 2026-11-10
+
+**Tool:** OpenAI Codex
+
+**Prompt:** Plan and implement durable Report creation with browser idempotency,
+deterministic evidence, an Order-safe compensation journal, and no background
+roll-forward; expire inactive pre-hold submissions after one hour.
+
+**Key response:** Compared the existing unsafe upload/hold/save sequence with the
+approved rollback invariant, designed a Firestore submission journal and an Order
+report-ID lifecycle tombstone that serializes late placement against compensation,
+and proposed the cross-service contracts, migration, frontend recovery, infrastructure
+and test plan recorded in CHANGE-184 / ADR-068.
+
+**Affected locations:** `reporting-service/`, `order-service/`, `frontend/`,
+gateway/shared environment and Pub/Sub provisioning records, CHANGE-184 and ADR-068.
+
+**Author verification:** User selected current `main`, rollback-only recovery,
+no owner cancellation or hold-query endpoint, and a one-hour inactive pre-hold
+expiry. Implementation is complete in the working tree.

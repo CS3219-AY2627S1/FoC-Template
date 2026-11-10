@@ -42,7 +42,8 @@ public class ReportService {
         this.clock = clock;
     }
 
-    public Report submit(String reporterId, String bearerToken, ReportCategory category,
+    /** Legacy package-private test seam. Production creation is exclusively ReportCreationCoordinator. */
+    Report submit(String reporterId, String bearerToken, ReportCategory category,
                          String description, String requestedOrderId, List<MultipartFile> photos) {
         if (category != ReportCategory.ORDER && category != ReportCategory.ERRAND && category != ReportCategory.GENERAL) {
             throw new BadRequestException("Choose Order, Errand or General for a new report.", "category");
@@ -61,7 +62,7 @@ public class ReportService {
         try {
             List<Attachment> attachments = upload(reportId, "submission", validated, uploadAttempts);
             AssociatedOrder associated = orderId == null ? null
-                    : orders.placeReportHold(orderId, reportId, true, bearerToken,
+                    : orders.placeReportHold(orderId, reportId, reportId, true, bearerToken,
                             category == ReportCategory.ERRAND ? "COURIER" : "REQUESTER");
             if (associated != null) validateHold(associated, reporterId, reportId, category);
 

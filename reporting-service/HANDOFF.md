@@ -223,3 +223,29 @@ Reports Ready for review is a UI shortcut for existing READY_FOR_REVIEW status, 
 
 
 Verified CHANGE-178:54 affected existing Orders/Reports/admin page tests pass, including inline form containment, toggle/status synchronization, page reset, retained search and Clear; existing grey resolved-card/history and resolution tests remain green. Initial targeted tests reproduced detached Orders toggle and absent Reports toggle. Full lint and frontend production Docker build/TypeScript pass; TOML and whitespace checks pass. Recreated only frontend with --no-deps --wait; healthy. Built Admin Orders/Reports routes return200. Backend tests not rerun for this UI-only change; API/data/schema/index/env/topic/shared config, backend/business/saga/workflow/skill unchanged. No data/volume deletion, cloud/Git publication or sibling restart. Browser visual confirmation after refresh and staging frontend rollout remain. Logs under order-service/target:change178-red.log, change178-tests.log, change178-lint.log, change178-build.log and change178-local-start.log. Existing test React act warnings remain; no failed final checks.
+## CHANGE-184 — durable creation with rollback compensation (2026-11-10)
+
+New report multipart requests require a canonical browser-generated
+`submissionId`. Reporting transactionally creates `report_submissions`, a stable
+backend report ID, normalized/versioned fingerprint and a `PENDING`
+`active_report_orders` slot before storage or Order effects. Evidence IDs are
+`<index>-<sha256>` under `reports/{reportId}/submission/`; retries use
+put-if-absent and verify existing content metadata/hash.
+
+Only the request that acquires the two-minute `HOLD_PENDING` lease calls Order.
+After a valid hold response, one Firestore transaction creates the visible report,
+stores authoritative participants, activates the slot and completes the journal.
+There is deliberately no `HOLD_CONFIRMED` recovery state. Any uncertain call,
+expired lease or failed activation fences and publishes
+`ReportCreationCompensationRequested`; background recovery may only expire
+one-hour inactive pre-hold journals, fence leases, redrive compensation/results
+and retry cleanup. It must never activate a report.
+
+Order V20 must deploy first. Its report-ID lifecycle/tombstone and durable
+deduplication serialize compensation with hold placement. Creation result and
+request push endpoints use their exact Google identities; the scheduler has a
+separate exact identity. Install `firestore.indexes.json`, run
+`configure-report-pubsub.sh ... prepare|wire`, deploy with both creation flags
+false, execute staging failure/race tests, then enable both flags together.
+Production remains disabled. Disabling is not cleanup: preserve journals,
+tombstones, outboxes and evidence requiring reconciliation.

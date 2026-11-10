@@ -48,6 +48,18 @@ export type ReportPage = {
   totalPages: number
 }
 
+export type ReportSubmissionState = "RECEIVED" | "EVIDENCE_STORED" | "HOLD_PENDING" |
+  "COMPLETED" | "REJECTED" | "COMPENSATING" | "COMPENSATED" | "RECONCILIATION_REQUIRED"
+
+export type ReportSubmissionResponse = {
+  submissionId: string
+  reportId: string
+  state: ReportSubmissionState
+  lastError: string | null
+  updatedAt: string
+  report: ReportResponse | null
+}
+
 export type AssociatedOrderPage = OrderPage
 
 export const REPORT_CATEGORY_LABELS: Record<ReportCategory, string> = {
@@ -58,7 +70,7 @@ export const REPORT_CATEGORY_LABELS: Record<ReportCategory, string> = {
   GENERAL: "General",
 }
 
-export const REPORT_CATEGORIES = { ORDER: "Order", ERRAND: "Errand", GENERAL: "General" }
+export const REPORT_CATEGORIES = { ORDER: "Request", ERRAND: "Errand", GENERAL: "General" }
 
 export function reportCategoryRequiresOrder(category: ReportCategory) {
   return category === "ORDER" || category === "ERRAND" || category === "COURIER"

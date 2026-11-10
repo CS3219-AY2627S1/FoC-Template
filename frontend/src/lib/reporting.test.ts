@@ -19,8 +19,9 @@ it("requires associations only for order and courier categories", () => {
   expect(validReportCategory("unexpected")).toBe("GENERAL")
 })
 
-it("offers Order, Errand and General for new reports and normalizes retired deep links", () => {
+it("offers Request, Errand and General for new reports and normalizes retired deep links", () => {
   expect(Object.keys(REPORT_CATEGORIES)).toEqual(["ORDER", "ERRAND", "GENERAL"])
+  expect(REPORT_CATEGORIES.ORDER).toBe("Request")
   expect(validReportCategory("COURIER")).toBe("GENERAL")
   expect(validReportCategory("CREDITS")).toBe("GENERAL")
 })

@@ -688,3 +688,23 @@ Existing authenticated Supplier GET list: status=active&page=1&size=100&sort=nam
 ## CHANGE-182 - Bounded Supplier queries supersede all-page loader (2026-11-09)
 
 Order pickup/delivery selectors query existing authenticated GET /api/suppliers only when opened: status=active&page=1&size=20&sort=name&order=asc. Optional q is trimmed,2+characters,300ms debounce; blank browses without search. Show more requests only the next current-query page; errors retry the same page. Query/close/unmount/disable cancels old work; late results ignored. Selected Supplier ID/label remains independent of current results. Existing Order command/pair validation/auth unchanged. No new endpoint/response: Page totalPages still used. Supplier backend cached findAll/in-memory scan remains a limitation; frontend paging does not imply backend100million-record scalability. CHANGE-181 create imageUrl:null and type-query contracts retained.
+## Effective CHANGE-184 / ADR-068 — durable report creation rollback (2026-11-10)
+
+Linked report creation now requires a browser UUID `submissionId` and Reporting
+durably allocates the stable report ID, input fingerprint, deterministic evidence
+manifest and pending order reservation before calling Order. The Order hold body
+also requires the submission ID. Identical retries reuse the report ID; changed
+input conflicts. Reporting exposes caller-scoped submission status and resume
+routes. Pre-hold inactivity expires after one hour.
+
+Creation recovery is rollback-only. Reporting never queries Order for a hold and
+never activates a report in the background. An uncertain hold, expired two-minute
+hold lease or failed final Firestore activation fences the journal and publishes
+the separate generation-2 creation compensation. Order V20 locks placement and
+compensation through one report lifecycle: compensation-first persists a
+CANCELLED tombstone, placement-first releases only the exact bound hold, binding
+mismatches never release, and duplicate requests replay the durable result.
+Safe results allow evidence/reservation cleanup; unsafe results retain the fence
+for reconciliation. Resolution compensation remains separate and continues to
+restore both services when report resolution and hold release cannot both commit.
+Owner cancellation, creation roll-forward and internal hold querying are absent.
