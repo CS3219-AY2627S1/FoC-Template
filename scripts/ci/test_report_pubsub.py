@@ -222,8 +222,8 @@ gcloud() {
             enabled = 'true' if environment == 'staging' else 'false'
             self.assertEqual(enabled, settings['REPORT_RESOLUTION_ENABLED'])
             self.assertEqual(enabled, settings['ORDER_REPORT_RESOLUTION_ENABLED'])
-            self.assertEqual('false', settings['REPORT_CREATION_ENABLED'])
-            self.assertEqual('false', settings['ORDER_REPORT_CREATION_ENABLED'])
+            self.assertEqual(enabled, settings['REPORT_CREATION_ENABLED'])
+            self.assertEqual(enabled, settings['ORDER_REPORT_CREATION_ENABLED'])
             self.assertEqual(f'report-creation-compensation-{suffix}-v1', settings['REPORT_CREATION_COMPENSATION_TOPIC'])
             self.assertEqual(f'report-creation-compensation-result-{suffix}-v1', settings['REPORT_CREATION_COMPENSATION_RESULT_TOPIC'])
             self.assertEqual(f'report-resolution-compensation-{suffix}-v1', settings['ORDER_REPORT_COMPENSATION_TOPIC'])
