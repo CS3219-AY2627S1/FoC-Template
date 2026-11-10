@@ -346,7 +346,8 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=6h"
     volumes:
-      - ./observability/prometheus:/etc/prometheus:ro
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/helm/foc/charts/observability/files/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     expose:
       - "9090"
@@ -365,8 +366,9 @@ services:
       # it like any other admin UI (loopback binding + credentials).
       GF_AUTH_ANONYMOUS_ENABLED: "false"
     volumes:
-      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./infra/helm/foc/charts/observability/files/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ./infra/helm/foc/charts/observability/files/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ./infra/helm/foc/charts/observability/files/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
       - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"

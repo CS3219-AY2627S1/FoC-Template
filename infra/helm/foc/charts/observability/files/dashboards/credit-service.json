@@ -1,6 +1,6 @@
 {
   "uid": "credit-service-observability",
-  "title": "Credit Service \u2014 Observability",
+  "title": "Credit Service - Observability",
   "description": "HTTP, business, saga and event-path health for credit-service (N2H).",
   "tags": [
     "foc",
@@ -530,7 +530,7 @@
       "id": 9,
       "type": "timeseries",
       "title": "Request rate by route",
-      "description": "Route templates only \u2014 user ids never become label values.",
+      "description": "Route templates only - user ids never become label values.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -628,7 +628,7 @@
       "id": 11,
       "type": "timeseries",
       "title": "Error rate by envelope code",
-      "description": "409 is split into insufficient_credits vs conflict \u2014 status alone cannot tell them apart.",
+      "description": "409 is split into insufficient_credits vs conflict - status alone cannot tell them apart.",
       "gridPos": {
         "h": 8,
         "w": 12,

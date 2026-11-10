@@ -1,6 +1,6 @@
 {
   "uid": "services-overview",
-  "title": "All services \u2014 Overview",
+  "title": "All services - Overview",
   "tags": [
     "foc",
     "n2h",
@@ -30,7 +30,7 @@
       },
       "targets": [
         {
-          "expr": "count(up{job=~\"credit-service|user-service|supplier-service|order-service|notification-service|api-gateway\"} == 1)",
+          "expr": "count(up{job=~\"credit-service|user-service|supplier-service|order-service|notification-service|chat-service|api-gateway\"} == 1)",
           "refId": "A"
         }
       ],
@@ -100,7 +100,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate({__name__=~\"(credit|user|supplier|order|notification|gateway)_http_requests_total\"}[$__rate_interval]))",
+          "expr": "sum(rate({__name__=~\"(credit|user|supplier|order|notification|chat|gateway)_http_requests_total\"}[$__rate_interval]))",
           "refId": "A"
         }
       ],
@@ -135,7 +135,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate({__name__=~\"(credit|user|supplier|order|notification|gateway)_http_requests_total\", status=~\"5..\"}[$__rate_interval]))",
+          "expr": "sum(rate({__name__=~\"(credit|user|supplier|order|notification|chat|gateway)_http_requests_total\", status=~\"5..\"}[$__rate_interval]))",
           "refId": "A"
         }
       ],
@@ -170,7 +170,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (service) (rate({__name__=~\"(credit|user|supplier|order|notification|gateway)_http_requests_total\"}[$__rate_interval]))",
+          "expr": "sum by (service) (rate({__name__=~\"(credit|user|supplier|order|notification|chat|gateway)_http_requests_total\"}[$__rate_interval]))",
           "legendFormat": "{{service}}",
           "refId": "A"
         }
@@ -201,7 +201,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, service) (rate({__name__=~\"(credit|user|supplier|order|notification|gateway)_http_request_duration_seconds_bucket\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, service) (rate({__name__=~\"(credit|user|supplier|order|notification|chat|gateway)_http_request_duration_seconds_bucket\"}[$__rate_interval])))",
           "legendFormat": "{{service}}",
           "refId": "A"
         }
@@ -232,7 +232,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (service, status) (rate({__name__=~\"(credit|user|supplier|order|notification|gateway)_http_requests_total\", status=~\"[45]..\"}[$__rate_interval]))",
+          "expr": "sum by (service, status) (rate({__name__=~\"(credit|user|supplier|order|notification|chat|gateway)_http_requests_total\", status=~\"[45]..\"}[$__rate_interval]))",
           "legendFormat": "{{service}}",
           "refId": "A"
         }
@@ -263,7 +263,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (service, status) (rate({__name__=~\"(credit|user|supplier|order|notification|gateway)_http_requests_total\"}[$__rate_interval]))",
+          "expr": "sum by (service, status) (rate({__name__=~\"(credit|user|supplier|order|notification|chat|gateway)_http_requests_total\"}[$__rate_interval]))",
           "legendFormat": "{{service}}",
           "refId": "A"
         }
@@ -325,7 +325,7 @@
       },
       "targets": [
         {
-          "expr": "up{job=~\"credit-service|user-service|supplier-service|order-service|notification-service|api-gateway\"}",
+          "expr": "up{job=~\"credit-service|user-service|supplier-service|order-service|notification-service|chat-service|api-gateway\"}",
           "legendFormat": "{{service}}",
           "refId": "A"
         }

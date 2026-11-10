@@ -1,0 +1,6 @@
+apiVersion: v2
+name: observability
+description: In-cluster Prometheus and admin-only Grafana for Campus Errand.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
