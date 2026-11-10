@@ -46,6 +46,10 @@ export default function CreateOrder() {
   const [deadline, setDeadline] = useState("");
   const [pickupLocation, setPickupLocation] = useState("");
   const [deliveryLocation, setDeliveryLocation] = useState("");
+  const [deliveryCoords, setDeliveryCoords] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
 
   const [deadlineError, setDeadlineError] = useState<string | null>(null);
   const [rewardError, setRewardError] = useState<string | null>(null);
@@ -120,6 +124,8 @@ export default function CreateOrder() {
       supplier_id: supplierId ?? "",
       pickup_location: pickupLocation,
       delivery_location: deliveryLocation,
+      delivery_latitude: deliveryCoords?.latitude ?? null,
+      delivery_longitude: deliveryCoords?.longitude ?? null,
     };
 
     setSubmitting(true);
@@ -241,7 +247,13 @@ export default function CreateOrder() {
       <LocationPickerModal
         opened={pickerOpen}
         onClose={picker.close}
-        onPick={(picked) => setDeliveryLocation(picked.address)}
+        onPick={(picked) => {
+          setDeliveryLocation(picked.address);
+          setDeliveryCoords({
+            latitude: picked.latitude,
+            longitude: picked.longitude,
+          });
+        }}
         initialLatitude={selectedSupplier?.latitude ?? null}
         initialLongitude={selectedSupplier?.longitude ?? null}
       />

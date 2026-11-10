@@ -1400,3 +1400,28 @@ commit=False)` so the settlement and its task result commit once,
   display_name. Verified in Playwright that granting geolocation defaults the
   pin to the current position and denying it falls back to the supplier
   coordinates.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Store delivery-point coordinates on orders. Added nullable
+  `delivery_latitude`/`delivery_longitude` columns to `orders` (Alembic
+  migration `20261110_order_delivery_coordinates`), mirroring the supplier
+  fields and validating them to -90..90 / -180..180. The coordinates are
+  accepted by `OrderCreate`/`OrderUpdate`, returned by `OrderResponse`, and
+  persisted on create. The pending-update snapshot now dumps only the fields
+  the client sent, so an update without coordinates cannot null them out. The
+  create-order form submits the map picker's coordinates. Files:
+  `order-service/app/models/orders.py`, `order-service/app/schemas/orders.py`,
+  `order-service/app/repositories/orders.py`,
+  `order-service/app/services/orders.py`,
+  `order-service/migrations/versions/20261110_order_delivery_coordinates.py`,
+  `frontend/src/lib/api.ts`, `frontend/src/pages/orders/CreateOrder.tsx`, plus
+  tests.
+- Prompt(s): "Now I need to modify order-service: add storage for the delivery
+  location position, following the supplier's longitude/latitude, to prepare
+  for later work."
+- Author review: `ruff check` and `ruff format --check` pass; order-service
+  `pytest` reports 239 passed, 15 skipped (Postgres/env-gated). Frontend `tsc`,
+  `eslint` (only pre-existing warnings) and `vite build` pass. Added schema
+  range tests and a migration upgrade/downgrade test.
