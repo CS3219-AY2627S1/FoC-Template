@@ -1,3 +1,9 @@
+<!--
+AI Assistance Disclosure
+Tool: OpenAI Codex (GPT-5.6 Luna, GPT-5.6 Sol, GPT-6 Sol and GPT-6.1 Sol), 2026-09-25 to 2026-11-11.
+Scope: Documentation wording assistance under author-finalized User Service requirements and architecture.
+Author review: Josh Wang Kai Kiat validated correctness, edited where needed, and verified behavior/tests.
+-->
 # User Service architecture
 
 User Service owns accounts, credentials, sessions, verification, friendships and account lifecycle decisions. For setup, configuration and test commands, use the [README](../README.md); for stored fields, use the [schema guide](schema.md). Exact HTTP/event payloads belong in [OpenAPI](../src/openapi.ts) and [API_CONTRACT_UPDATES.txt](../API_CONTRACT_UPDATES.txt).

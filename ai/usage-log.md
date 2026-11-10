@@ -1,19 +1,23 @@
-# AI usage log (Order Service + Load test + Admin Service + Badges + Rating + Frontend)
+# AI usage log (Order Service + Load test + Admin Service + Badges + Rating + Frontend + User Service)
 
 Shared FoC log. **Order Service** and **Load test** work is owned by
 **Varun Sivakumar**. **Admin Service** work is owned by **Sahana Avantika**.
 **Badges Service**, **Rating Service** and the **Frontend** are owned by
-**Ngooi Jun Sen**.
+**Ngooi Jun Sen**. **User Service** is owned by **Josh Wang Kai Kiat**.
 
 **Tool:** Cursor (Auto) for Order, Load test and Admin. Claude Code (Claude
 Opus 5 until 2026-09-28, Claude Opus 5.5 from 2026-10-01) for Badges, Rating
-and the Frontend.
+and the Frontend. OpenAI Codex (GPT-5.6 Luna, GPT-5.6 Sol, GPT-6 Sol and
+GPT-6.1 Sol) for User Service.
 
 **Author review:** For Order / Load test entries, Varun Sivakumar generated
 ideas, designed implementation, validated correctness, edited where needed,
 and verified behavior/tests. For Admin Service entries, Sahana Avantika did
 the same for that service. For Badges, Rating and Frontend entries, Ngooi Jun
-Sen did the same, and per-file headers read "Reviewed by Ngooi Jun Sen".
+Sen did the same, and per-file headers read "Reviewed by Ngooi Jun Sen". For
+User Service entries, Josh Wang Kai Kiat generated the ideas, finalized the
+requirements and design, reviewed and edited the implementation, and verified
+the recorded behavior/tests.
 
 **Plans:** Cursor plan files under [`plans/`](plans/) are **author design
 notes** reworded for agent execution. They are not AI-originated architecture
@@ -242,6 +246,204 @@ part along the expressway".
 
 ---
 
+## 8. User Service
+
+| Field | Detail |
+| --- | --- |
+| Owner | Josh Wang Kai Kiat |
+| Dates | 2026-09-25 to 2026-11-11 |
+| Tool | OpenAI Codex (GPT-5.6 Luna, GPT-5.6 Sol, GPT-6 Sol and GPT-6.1 Sol) |
+| Mode | generate / implement / test / debug / refactor / docs / explain |
+| Plan | [`plans/user_service_plan.md`](plans/user_service_plan.md) |
+
+**Already decided by author:** User Service ownership and boundaries;
+Node.js/Express/TypeScript with Prisma/PostgreSQL; opaque server-side
+sessions; salted `scrypt` password hashes; email and Telegram verification;
+account status, lockout, password recovery and six-month deletion behavior;
+Admin report/appeal and user-management contracts; bidirectional friendship
+rules; durable Kafka outboxes for user lifecycle events; endpoint shapes,
+validation rules, security boundaries and failure behavior.
+
+**What Codex produced:** TypeScript/Express implementation and refactoring;
+Prisma schema and migration drafts under the author-decided schema; unit and
+integration tests; OpenAPI definitions; Docker/Compose and configuration
+boilerplate; debugging fixes; documentation wording and diagrams. Applied
+Prisma migration SQL files have no in-file headers; see
+`user-service/prisma/migrations/AI_ASSISTANCE.md`.
+
+**Verification recorded:** TypeScript builds, Prisma validation, unit tests
+and isolated PostgreSQL integration suites were run throughout development.
+The latest recorded User Service checks before this disclosure included the
+build, 97 unit tests, and isolated friendship, Admin-user and account-support
+integration suites. The author also manually verified signup, email OTP,
+Telegram verification, login and password reset through the frontend.
+Historical results apply to the revisions tested; they do not replace final
+submission acceptance or the outstanding load-test evidence noted in the
+User Service README.
+
+### Exact prompts and key responses
+
+These are exact user prompts selected because they directly produced the
+main implementation changes. IDE context wrappers, repeated follow-ups,
+secrets and personal test data are excluded.
+
+**2026-09-25 — initial implementation setup**
+
+> Continue from my ChatGPT planning conversation.
+>
+> Project: CS3219 Group 15 Food on Campus.
+> My services: User Service and Rating Service.
+> Current branch: user-service.
+> Use supplier-service as the implementation reference.
+> Use FoC\_API\_Contract.md as the API contract.
+>
+> I am a beginner. Explain changes before making them.
+> First inspect the repository and tell me what files you found.
+> Do not modify files until I approve the plan.
+
+Key response: Codex inspected the repository and explained the existing
+service structure. After author approval, it generated the initial
+Express/Prisma implementation, tests, Docker setup and documentation under
+the author-finalized plan.
+
+The phrase "Continue from my ChatGPT planning conversation" refers to an
+earlier conversation that, as confirmed by Josh Wang Kai Kiat on 2026-11-11,
+did not influence submitted project code, requirements or design decisions.
+It is therefore not listed as an AI source for the submitted User Service
+work.
+
+**2026-10-01 — OpenAPI documentation**
+
+> can we import swagger my teammate asked for it
+
+Key response: Codex added Swagger UI and an OpenAPI document for User Service
+endpoints, together with tests and README instructions.
+
+**2026-10-27 — friendships**
+
+> ok can we implement friendships then? what do we need to do
+
+Key response: Under the author's friendship rules, Codex implemented send,
+accept, reject, list and remove flows; added the Prisma model/migration,
+OpenAPI descriptions, unit/integration tests and documentation; and tested
+the flow against a disposable PostgreSQL database.
+
+**2026-10-29 — suspended login, reports and appeals**
+
+> currently what have we done? if the friendship feature is ok, can we commit
+> and push? also do merge whatever from main to keep our branch updated, then
+> sahana has told me: hey, user service has to add three things. Suspend and
+> reinstate already exist, so those stay as they are.
+>
+> 1. Login must say the account is suspended. In POST /api/v1/user/login, a
+> correct password on a suspended account currently returns 401
+> INVALID_CREDENTIALS, the same as a wrong password. After the password
+> matches and accessStatus is SUSPENDED, return 403 with code
+> ACCOUNT_SUSPENDED instead. Do not create a session. A wrong password stays
+> 401.
+>
+> 2. A logged-in user can report someone. Add POST /api/v1/user/reports with
+> { reportedUserId, comment }. Take the reporter from the session, not from
+> the body. Reject it if the reporter is suspended, if the other user does
+> not exist, or if they are the same user. Then call Admin:
+>
+> POST /api/v1/admin/reports with
+> { reporterUserId, reportedUserId, comment }.
+>
+> Admin returns 201 and the stored report. Pass that back to the caller.
+>
+> 3. A suspended user can send one appeal. Add POST /api/v1/user/appeals with
+> { email, password, message }. Check the password the same way login does.
+> Accept it only when the account is suspended, and do not create a session.
+> Then call Admin:
+>
+> POST /api/v1/admin/appeals with { userId, message }.
+>
+> can we do all that, and test it and update documentation if needed, once it
+> is all good to push and commit go ahead and do so and then create a PR for
+> these two new things (friendship feature and this)
+
+Key response: Codex implemented the fixed contracts, validation, Admin HTTP
+client and failure mapping; added tests/OpenAPI/docs; then corrected response
+validation to camelCase after the Admin owner clarified the contract.
+
+**2026-11-02 — deletion event completion**
+
+> Wait @woshjang wanted to check, is the user deletion path implemented? Like
+> the mark as delete, wait 6 months without login before it's deleted and
+> publish event
+>
+> If yes then @dondonkek does credit service work w the event already?13:13
+>
+> varun asked
+
+Follow-up exact prompt:
+
+> what do we need or can we implement it already
+
+Key response: Codex completed final account cleanup with an atomic durable
+`UserDeleted` outbox, Kafka retry publisher, tests, migration and contract
+documentation, while recording Credit consumption as an integration handoff.
+
+**2026-11-03 — filtering and appeal feedback**
+
+> hello, just one small thing, for GET /api/v1/user/friends, can u have it
+> take in an optional q parameter? For example,
+> /friends?q=lim&page=1&pageSize=20 would return only friends whose name
+> contains "lim", case-insensitive. Everything else stays the same. Add a
+> length cap on q, with 400 INVALID_PAGINATION-style errors for anything
+> invalid -junsen
+>
+> Hey when you can could you help me implement these,
+>
+> 1. Filter admin search by status
+>
+> GET /api/v1/user/search must accept status: Created, Verified, or Suspended.
+> No status means every user, as it does today. total must be the filtered
+> count. The dashboard uses status=Suspended and reads total. Suspended means
+> accessStatus is SUSPENDED. Verified means active with both email and
+> Telegram verified. Everyone else is Created. An unknown status is a 400. A
+> missing status is not.
+>
+> 2. Tell the user their appeal was rejected
+>
+> After an admin rejects an appeal, Admin calls:
+> POST /api/v1/user/{userId}/appeal-rejected
+> with the admin's Authorization header and { "reason": "..." }. The reason
+> is already trimmed and 1–4000 characters. Return 200 and email that reason,
+> plus that they can appeal again. In development, logging the email is enough.
+>
+> On the next correct-password login, still return 403 ACCOUNT_SUSPENDED and
+> no session. Wrong password stays the generic 401. During that suspended
+> login, call:
+> GET /api/v1/admin/appeals/latest?userId={userId}
+>
+> No auth. Keep this path off the public gateway. If the latest appeal has
+> status: "rejected" and a rejectionReason, put that reason in the 403 error
+> string. The login page already displays that string. Otherwise keep "Your
+> account is suspended. You may submit an appeal".
+>
+> Also accept rejectionReason on the appeal record Admin already returns. It
+> is null while the appeal is open. - sahana
+>
+> can we first merge whatever from main, then do both. test to make sure its
+> working, if it is all good then commit and push, the open a PR?
+
+Key response: Codex implemented friend-name filtering, status-aware Admin
+search/counts, rejection notification email handling and latest-appeal
+feedback; then added tests and updated the contracts and documentation.
+
+**2026-11-04 — documentation refactor**
+
+> can we clean up the docs or whatever, make them less verbose, more concise
+> and to the point, for any of the documentation in our user service
+
+Key response: Codex condensed the User Service README, API contract notes,
+architecture guide and schema guide while retaining implemented behavior,
+diagrams, commands and integration caveats.
+
+---
+
 ## File attribution map
 
 | Location | How disclosed |
@@ -264,3 +466,6 @@ part along the expressway".
 | `frontend/README.md` and `docs/` | README "AI assistance" section |
 | Rating and Badges entries in shared deploy files: `deploy/values/services/{rating,badges}.yaml` and their `envs/local` overrides, routes in `deploy/charts/foc-gateway/values.yaml`, topics and users in `deploy/charts/foc-kafka/values.yaml`, the databases in `infra/local/aws/variables.tf`, `RATING_SERVICE_URL` in `deploy/values/services/order.yaml`, Rating in `.env.example` | This log only (shared files; no header added) |
 | Rating and Badges jobs in `.github/workflows/ci.yml` | This log only |
+| AI-influenced `user-service/src/**/*.ts`, `scripts/*.cjs`, Prisma schema, Docker/Compose and comment-capable config/docs | Per-file header |
+| `user-service/prisma/migrations/*.sql` | `user-service/prisma/migrations/AI_ASSISTANCE.md` only; applied SQL unchanged |
+| `user-service/package*.json` and generated artifacts | This log and User Service README; format does not support comments or content is generated |
