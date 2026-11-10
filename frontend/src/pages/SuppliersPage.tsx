@@ -280,15 +280,12 @@ export function SuppliersPage() {
           {filters}
 
           {/*
-            Scaffolding for review, not shipping copy: UI FR10.1.1 asks for
-            Store, Facility and Landmark toggles, which is Supplier F1.1's
-            Type field. No service implements it, so these are F1.2.1 tags.
+            The filters are categories (Supplier F1.2.1 tags). UI FR10.1.1 asks for
+            Store, Facility and Landmark toggles, which is Supplier F1.1's Type
+            field, and no service implements it. Sorting runs in the browser, and a
+            name search loads the whole catalogue, because the endpoint supports
+            neither. Kept out of the page: it is a note for reviewers, not for users.
           */}
-          <p className={styles.sidebarNote}>
-            Filtering by category. FR10.1.1 asks for Store, Facility and Landmark, which is the
-            Type field no service implements yet. Sorting runs in the browser, and a name search
-            loads the whole catalogue, because the endpoint supports neither.
-          </p>
         </aside>
 
         <section className={styles.results}>

@@ -268,7 +268,7 @@ export function AdminUsersPage() {
           pending === null ? null : pending.kind === 'suspend' ? (
             <>
               {pending.user.name} is blocked from logging in and from every action, within a
-              minute (Admin F1.2.1). Orders already in progress are not cancelled. Every open
+              minute. Orders already in progress are not cancelled. Every open
               report about them is closed.
             </>
           ) : pending.kind === 'reinstate' ? (
