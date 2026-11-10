@@ -136,7 +136,9 @@ rating prompt and the profile's rating and badges.
 
 ## AI assistance
 
-The initial scaffold was generated with Claude Code (Claude Opus 5) on 2026-09-22;
-per-file disclosure headers are in place and the prompts belong in
-`/ai/usage-log.md`. Author review pending. `docs/` was written with Claude Code
-(Claude Opus 5.5) on 2026-11-09 from the code as it stands.
+The initial scaffold was generated with Claude Code (Claude Opus 5) on 2026-09-22,
+and later work with Claude Code (Claude Opus 5.5); per-file disclosure headers
+are in place. `docs/` was written with Claude Code (Claude Opus 5.5) on
+2026-11-09 from the code as it stands. Prompts, decisions and the plan are in
+`/ai/usage-log.md` (section 7) and `/ai/plans/frontend_plan.md`. Reviewed by
+Ngooi Jun Sen.
