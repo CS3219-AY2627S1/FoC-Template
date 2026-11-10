@@ -115,7 +115,8 @@
 
 .table {
   width: 100%;
-  min-width: 820px;
+  min-width: 720px;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: var(--font-size-sm);
 }
@@ -132,20 +133,26 @@
   white-space: nowrap;
 }
 
-/* Status and Actions stay as wide as their contents. The spare width stays
-   in the name column, so the buttons are not floating in an empty field. */
-.table th:nth-child(2),
-.table td:nth-child(2),
-.table th:nth-child(3),
-.table td:nth-child(3) {
-  width: 1%;
-  white-space: nowrap;
+/* Three even bands: name, status in the middle, buttons on the right.
+   A shrink-wrapped name column left a long empty stretch after short names. */
+.table th:nth-child(1) {
+  width: 40%;
+}
+
+.table th:nth-child(2) {
+  width: 20%;
+}
+
+.table th:nth-child(3) {
+  width: 40%;
 }
 
 .table th:nth-child(2),
 .table td:nth-child(2),
-.actionsHead {
+.table th:nth-child(3),
+.table td:nth-child(3) {
   text-align: center;
+  white-space: nowrap;
 }
 
 .table td {
