@@ -4,6 +4,9 @@ replicas: 1
 port: 8000
 healthPath: /health
 
+metrics:
+  enabled: true
+
 image:
   repository: foc/chat-service
   tag: dev

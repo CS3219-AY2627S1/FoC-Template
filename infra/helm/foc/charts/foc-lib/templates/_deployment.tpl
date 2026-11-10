@@ -18,6 +18,12 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: {{ .Chart.Name }}
+      {{- if and .Values.metrics .Values.metrics.enabled }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.metrics.port | default .Values.port | default 8000 | quote }}
+        prometheus.io/path: {{ .Values.metrics.path | default "/metrics" | quote }}
+      {{- end }}
     spec:
       {{- include "foc-lib.imagePullSecrets" . | nindent 6 }}
       containers:
@@ -26,6 +32,10 @@ spec:
           imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
           ports:
             - containerPort: {{ .Values.port | default 8000 }}
+            {{- if and .Values.metrics .Values.metrics.enabled .Values.metrics.port (ne (int .Values.metrics.port) (int (.Values.port | default 8000))) }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+            {{- end }}
           env:
             {{- range $k, $v := .Values.env }}
             - name: {{ $k }}
