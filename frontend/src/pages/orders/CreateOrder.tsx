@@ -228,7 +228,12 @@ export default function CreateOrder() {
               placeholder="Where to deliver"
               required
               value={deliveryLocation}
-              onChange={(e) => setDeliveryLocation(e.currentTarget.value)}
+              onChange={(e) => {
+                setDeliveryLocation(e.currentTarget.value);
+                // Typing a new address invalidates the map pin, so drop the
+                // coordinates instead of submitting a mismatched location.
+                setDeliveryCoords(null);
+              }}
             />
           </Stack>
 

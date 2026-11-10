@@ -1465,3 +1465,24 @@ commit=False)` so the settlement and its task result commit once,
 - Author review: `tsc`, `eslint` (only pre-existing warnings) and `vite build`
   pass. Playwright verified both stages open Google Maps with the expected
   destination and `travelmode=walking`, and completed rows expose no button.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Stop stale delivery coordinates after edits. The create-order form now
+  clears the picked coordinates when the user types a different delivery
+  address, and the edit-order form sends coordinates explicitly: it keeps the
+  stored pin when the address is unchanged and sends null when the text was
+  edited. Added repository tests covering explicit-null clearing and unset-field
+  preservation. Files: `frontend/src/pages/orders/CreateOrder.tsx`,
+  `frontend/src/pages/orders/MyRequests.tsx`,
+  `order-service/tests/test_orders_repository.py`.
+- Prompt(s): "Two things to fix before merge. 1) Stale delivery coordinates
+  after an edit: the edit form only sends the delivery_location text, so the old
+  lat/lng stay on the order and Navigate routes to the old pin; same in
+  CreateOrder when the user picks on the map and then types a different address.
+  Have the forms send the coordinates explicitly (null when the address
+  changed)."
+- Author review: `tsc`, `eslint` (only pre-existing warnings) and `vite build`
+  pass; order-service repository tests pass; Playwright verified both create and
+  edit payloads submit null coordinates after typing a new address.
