@@ -21,7 +21,6 @@ import { OrderDetailPage } from './pages/OrderDetailPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { AdminEscalationsPage } from './pages/AdminEscalationsPage';
-import { AdminRatingsPage } from './pages/AdminRatingsPage';
 import { AdminSuppliersPage } from './pages/AdminSuppliersPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { AdminLayout } from './components/layout/AdminLayout';
@@ -80,7 +79,7 @@ export function App() {
             <Route path="/admin/suppliers" element={<AdminSuppliersPage />} />
             <Route path="/admin/escalations" element={<AdminEscalationsPage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
-            <Route path="/admin/ratings" element={<AdminRatingsPage />} />
+            <Route path="/admin/ratings" element={<Navigate to="/admin/users" replace />} />
           </Route>
         ) : null}
       </Route>

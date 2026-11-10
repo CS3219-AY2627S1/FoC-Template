@@ -1,8 +1,8 @@
 /**
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-02
- * Scope: Generated the shared user search for User management and Rating
- *        lookup: debounced service search, ranked results, instant narrowing.
+ * Scope: Generated the user search for User management: debounced service
+ *        search, ranked results, instant narrowing.
  * Reviewed by Ngooi Jun Sen.
  *
  * The service does the real search (it covers every user, not just a page),

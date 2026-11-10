@@ -24,7 +24,6 @@ const SECTIONS = [
   { to: '/admin/suppliers', label: 'Supplier approvals' },
   { to: '/admin/escalations', label: 'Escalations' },
   { to: '/admin/users', label: 'User management' },
-  { to: '/admin/ratings', label: 'Rating lookup' },
 ];
 
 export function AdminLayout() {
