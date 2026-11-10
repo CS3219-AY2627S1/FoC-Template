@@ -1,0 +1,76 @@
+/* AI Assistance Disclosure: Claude (claude.ai chat, model: Claude Opus 5.5), 2026-09-26.
+   Scope: AI-generated styles for the supplier details dialog.
+   Author review: I verified the UI; the supplier details dialog lays out correctly. */
+/* Tool: Codex (OpenAI), date: 2026-10-16.
+   Scope: Sized the shared read-only map and removed its duplicate pin styles.
+   Author review: I verified the UI; the read-only map fits the dialog. */
+/* Tool: Codex (OpenAI), date: 2026-10-17.
+   Scope: Removed unused supplier-details footer rules.
+   Author review: I reviewed the code; the removed rules weren't used anywhere. */
+.supplier-dialog.supplier-details {
+  width: min(560px, calc(100% - 32px));
+}
+.supplier-details h2 {
+  overflow-wrap: anywhere;
+}
+.supplier-details-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 18px;
+}
+.supplier-details-inactive {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #eef1f0;
+  color: #607a80;
+  font-size: 12px;
+  font-weight: 700;
+}
+.supplier-details-location,
+.supplier-details-hours {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 12px;
+  color: #34575c;
+  line-height: 1.5;
+}
+.supplier-details-location svg,
+.supplier-details-hours svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: #607a80;
+}
+.supplier-details-location strong {
+  color: #153941;
+}
+.supplier-details-map.interactive-map,
+.supplier-details-map .leaflet-container {
+  height: 220px;
+}
+.supplier-details-map.interactive-map {
+  margin-top: 20px;
+}
+.supplier-details-map.interactive-map:fullscreen,
+.supplier-details-map.interactive-map:fullscreen .leaflet-container {
+  height: 100vh;
+  margin-top: 0;
+}
+.supplier-details-maps-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 10px 0 20px;
+  color: #176849;
+  font-weight: 600;
+}
+.supplier-details-photo {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  object-fit: cover;
+  background: #eef5f2;
+}

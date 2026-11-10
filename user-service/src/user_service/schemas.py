@@ -1,0 +1,184 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-09-26
+# Scope: AI-generated registration request and user response models with NUS email, username and password validation;
+#        AI-added the profile update request model, and aligned the username and password rules with the web client (2026-09-27);
+#        AI-limited emails to @u.nus.edu, added role to UserResponse and removed AdminResponse (2026-09-28);
+#        AI-made the profile update request reject unknown fields (2026-09-28);
+#        AI-changed the password fields to SecretStr so they're masked if a request model is logged (2026-09-29);
+#        AI-added UsernameResponse for the internal username lookup (2026-10-19);
+#        AI-added the refresh token to TokenResponse and the refresh/logout request model (2026-11-09);
+#        AI-added AdminUserResponse and AdminUserPage for the admin user list (2026-11-09).
+# Author review: I tested the behaviour: invalid NUS emails, usernames and passwords are rejected.
+
+import re
+from datetime import datetime
+from typing import Annotated, Literal
+
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    SecretStr,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
+from pydantic_core import PydanticCustomError
+
+from user_service.security import Role
+from user_service.tables import USERNAME_MAX_LENGTH
+
+# Student addresses only; the platform is limited to NUS students (admins use one too)
+ALLOWED_EMAIL_DOMAINS = frozenset({"u.nus.edu"})
+
+USERNAME_MIN_LENGTH = 3
+PASSWORD_MIN_LENGTH = 8
+# Caps the work an attacker can force by sending a huge password to be hashed
+PASSWORD_MAX_LENGTH = 128
+
+# Character rules match the web client's (frontend/src/utils/validation.ts); keep the two in sync
+Username = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=USERNAME_MIN_LENGTH,
+        max_length=USERNAME_MAX_LENGTH,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    ),
+]
+
+# Each must match at least once. Whitespace is allowed but doesn't count as a special character.
+PASSWORD_CHARACTER_CLASSES = (
+    re.compile(r"[A-Z]"),
+    re.compile(r"[a-z]"),
+    re.compile(r"[0-9]"),
+    re.compile(r"[^A-Za-z0-9\s]"),
+)
+
+
+def check_password_rules(password: SecretStr) -> SecretStr:
+    value = password.get_secret_value()
+    # Checked here rather than with Field(min_length=...), which on a SecretStr reports "items" instead of "characters".
+    # Same error types and messages as a str field's.
+    if len(value) < PASSWORD_MIN_LENGTH:
+        raise PydanticCustomError(
+            "string_too_short",
+            "String should have at least {min_length} characters",
+            {"min_length": PASSWORD_MIN_LENGTH},
+        )
+    if len(value) > PASSWORD_MAX_LENGTH:
+        raise PydanticCustomError(
+            "string_too_long",
+            "String should have at most {max_length} characters",
+            {"max_length": PASSWORD_MAX_LENGTH},
+        )
+    if not all(character_class.search(value) for character_class in PASSWORD_CHARACTER_CLASSES):
+        raise ValueError("must contain an uppercase letter, a lowercase letter, a number and a special character")
+    return password
+
+
+# SecretStr masks the value in repr and logs; call get_secret_value() to hash it. Not stripped: spaces are valid.
+Password = Annotated[
+    SecretStr,
+    AfterValidator(check_password_rules),
+    Field(json_schema_extra={"minLength": PASSWORD_MIN_LENGTH, "maxLength": PASSWORD_MAX_LENGTH}),
+]
+
+
+class RegisterRequest(BaseModel):
+    # Rejects unknown fields such as "role", so a sign-up can't ask to be an admin
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    username: Username
+    password: Password
+
+    @field_validator("email")
+    @classmethod
+    def check_nus_domain(cls, email: str) -> str:
+        domain = email.rsplit("@", 1)[1].lower()
+        if domain not in ALLOWED_EMAIL_DOMAINS:
+            raise ValueError("must be an NUS student email address (@u.nus.edu)")
+        return email
+
+
+class UpdateUserRequest(BaseModel):
+    # Rejects unknown fields such as "role" or "email", so asking to change them is an error, not a silent no-op
+    model_config = ConfigDict(extra="forbid")
+
+    # Omitted fields are left unchanged
+    username: Username | None = None
+    # Not length-checked here: check_password caps it, so a wrong password gets 400 rather than 422
+    current_password: SecretStr | None = None
+    new_password: Password | None = None
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def reject_null_username(cls, username: object) -> object:
+        # Only runs when the field is sent, so an explicit null is an error rather than "no change"
+        if username is None:
+            raise ValueError("must not be null")
+        return username
+
+    @model_validator(mode="after")
+    def check_passwords(self) -> "UpdateUserRequest":
+        if self.new_password is None:
+            return self
+        if not self.current_password:
+            raise ValueError("current_password is required to set a new password")
+        # Otherwise the user asked for a change and "succeeds" with nothing changed.
+        # Compares the two inputs only, so it reveals nothing about the stored password.
+        if self.new_password == self.current_password:
+            raise ValueError("new_password must be different from current_password")
+        return self
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    username: str
+    email_verified_at: datetime | None
+    role: Role
+    created_at: datetime
+
+
+class UsernameResponse(BaseModel):
+    # Only what other students may see about a user; never the email address
+    id: int
+    username: str
+
+
+class AdminUserResponse(BaseModel):
+    # What an admin needs to find and promote an account; nothing else about it
+    id: int
+    username: str
+    email: str
+    role: Role
+
+
+class AdminUserPage(BaseModel):
+    items: list[AdminUserResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class TokenResponse(BaseModel):
+    # Field names are fixed by the OAuth2 spec; Swagger's Authorize button reads them
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    # Seconds until the access token expires, so the client can refresh before then
+    expires_in: int
+    # Single use: POST /auth/refresh returns a new one each time
+    refresh_token: str
+
+
+class RefreshTokenRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # SecretStr so it's masked if the request model is logged; 43 characters when issued
+    refresh_token: SecretStr = Field(max_length=128)
+    

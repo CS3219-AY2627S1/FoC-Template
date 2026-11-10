@@ -1,0 +1,115 @@
+# AI Assistance Disclosure:
+# Tool: Claude (claude.ai chat, model: Claude Opus 5.5), date: 2026-09-26
+# Scope: AI-assisted review for tests for access control (401 vs 403) and the health check;
+#        AI-updated paths after the /suppliers prefix was removed, and tokens for the "type" claim (Claude Code, 2026-09-27),
+#        then the "role" claim (2026-09-28).
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-19
+# Scope: AI-removed the delivery location parts, which moved to the order service.
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-09
+# Scope: AI-changed the forged-token cases from HS256 with a shared secret to RS256 and added the HS256-with-public-key case.
+# Author review: I ran the tests; the forged RS256 and HS256 tokens are refused.
+
+import base64
+import hashlib
+import hmac
+import json
+
+import jwt
+import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+from .conftest import ADMIN, STUDENT, TEST_PRIVATE_KEY, TEST_PUBLIC_PEM, make_token, supplier_body
+
+pytestmark = pytest.mark.anyio
+
+OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+def hs256_signed_with(secret: str, claims: dict) -> str:
+    """The algorithm-confusion attack: HS256 keyed with the RSA public key, which every service has. PyJWT refuses to
+    make such a token, so it's built by hand."""
+
+    def b64(data: bytes) -> bytes:
+        return base64.urlsafe_b64encode(data).rstrip(b"=")
+
+    signing_input = b64(b'{"alg":"HS256","typ":"JWT"}') + b"." + b64(json.dumps(claims).encode())
+    signature = b64(hmac.new(secret.encode(), signing_input, hashlib.sha256).digest())
+    return (signing_input + b"." + signature).decode()
+
+
+async def test_health_needs_no_sign_in(client):
+    response = await client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "database": "ok"}
+
+
+async def test_no_token_is_401_with_bearer_challenge(client):
+    response = await client.get("/")
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json()["detail"] == "Sign in to continue."
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "not-a-jwt",
+        make_token(key=OTHER_KEY),
+        make_token(role="superuser"),
+        jwt.encode(
+            {"sub": "x", "role": "admin", "exp": 9999999999}, None, algorithm="none"
+        ),
+        # The old claim name, before the User Service's "role" claim was adopted
+        jwt.encode(
+            {"sub": "x", "type": "admin", "exp": 9999999999},
+            TEST_PRIVATE_KEY,
+            algorithm="RS256",
+        ),
+        hs256_signed_with(TEST_PUBLIC_PEM, {"sub": "x", "role": "admin", "exp": 9999999999}),
+    ],
+    ids=["garbage", "wrong-key", "unknown-role", "alg-none", "type-claim", "hs256-with-public-key"],
+)
+async def test_invalid_tokens_are_401(client, token):
+    response = await client.get("/", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+
+
+async def test_expired_token_says_session_expired(client):
+    response = await client.get(
+        "/", headers={"Authorization": f"Bearer {make_token(expires_in=-60)}"}
+    )
+    assert response.status_code == 401
+    assert "expired" in response.json()["detail"]
+
+
+async def test_token_without_expiry_is_rejected(client):
+    token = jwt.encode({"sub": "x", "role": "admin"}, TEST_PRIVATE_KEY, algorithm="RS256")
+    response = await client.get("/", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+
+
+async def test_student_can_read(client):
+    assert (await client.get("/", headers=STUDENT)).status_code == 200
+    assert (await client.get("/meta", headers=STUDENT)).status_code == 200
+
+
+async def test_student_cannot_create(client):
+    response = await client.post("/", headers=STUDENT, json=supplier_body())
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Only administrators can make this change."
+
+
+async def test_student_cannot_edit(client):
+    created = (await client.post("/", headers=ADMIN, json=supplier_body())).json()
+    url = f"/{created['id']}"
+    assert (
+        await client.patch(url, headers=STUDENT, json={"name": "Hacked"})
+    ).status_code == 403
+    assert (await client.get(url, headers=STUDENT)).json()["name"] == "Test Kiosk"
+
+
+async def test_admin_identity_is_recorded(client):
+    headers = {"Authorization": f"Bearer {make_token('admin', '42')}"}
+    created = (await client.post("/", headers=headers, json=supplier_body())).json()
+    assert created["createdBy"] == "42"
+    assert created["updatedBy"] == "42"

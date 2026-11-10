@@ -1,0 +1,44 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-09-25
+# Scope: AI added the pydantic-settings and pwdlib[argon2] dependencies and pytest/testcontainers dev dependencies
+#        (via 'uv add'), the create-initial-admin project script and the pytest config; rest of file authored by the team.
+#        Claude (claude.ai, model: Claude Opus 5.5) added aio-pika and the resync-wallets script (2026-10-17).
+#        Claude Code (model: Claude Opus 5.5) changed pyjwt to pyjwt[crypto] for RS256 tokens (via 'uv add', 2026-11-09).
+# Author review: I reviewed the code; the added dependencies install with uv.
+
+[project]
+name = "user-service"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "nathantew14", email = "nathantew14@gmail.com" }
+]
+requires-python = ">=3.14.7"
+dependencies = [
+    "aio-pika>=10.1.1",
+    "alembic>=1.20.0",
+    "asyncpg>=0.31.0",
+    "fastapi[standard-no-fastapi-cloud-cli]>=0.141.1",
+    "pwdlib[argon2]>=0.3.1",
+    "pydantic-settings>=2.15.0",
+    "pyjwt[crypto]>=2.15.0",
+    "sqlalchemy[asyncio]>=2.1.0",
+]
+
+[project.scripts]
+create-initial-admin = "user_service.scripts.create_admin:main"
+resync-wallets = "user_service.scripts.resync_wallets:main"
+
+[build-system]
+requires = ["uv_build>=0.12.7,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "testcontainers[postgres]>=4.15.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

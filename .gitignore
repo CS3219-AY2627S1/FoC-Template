@@ -13,3 +13,10 @@ out/
 # OS
 .DS_Store
 Thumbs.db
+__pycache__
+
+# IDEs
+.vscode/
+# Local agent plans
+.claude/plans/
+*.code-workspace

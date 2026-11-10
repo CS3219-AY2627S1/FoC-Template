@@ -1,0 +1,96 @@
+<!--
+AI Assistance Disclosure:
+Tool: Claude (claude.ai chat, model: Claude Opus 5.5), date: 2026-09-26
+Scope: AI-generated service README; AI-updated paths, Docker access and settings for the gateway (Claude Code, 2026-09-27);
+       AI-added GET /lookup, and removed the delivery locations, which moved to the order service (Claude Code, 2026-10-19).
+Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-09
+Scope: AI-updated the setup steps for JWT_PUBLIC_KEY, which replaced JWT_SECRET, and noted that only the API needs it.
+Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-11
+Scope: AI-pointed the root .env step at the root README's setup guide.
+Author review: I reviewed the code and followed the setup steps.
+-->
+
+# Service Overview
+The Supplier Service manages the campus suppliers students can request pickups from (shops, printers and other
+places). It covers backlog requirements F4 to F6 and N3. Delivery locations used to live here too; they moved to the
+Order Service (`/api/orders/delivery-locations`).
+
+It uses FastAPI with SQLAlchemy Core on a Postgres 18 database, with Alembic for migrations, like the User Service.
+uv is the package manager of choice, optionally with mise for python versioning and the tasks below.
+
+The design and the reasons for it are in [DESIGN.md](DESIGN.md).
+
+# Getting started
+[Install uv](https://docs.astral.sh/uv/getting-started/installation/) and Docker Desktop first.
+
+1. Set up the root `.env` as in [step 2 of the root README](../README.md#2-create-the-root-env). Compose won't
+   start even the supplier database until every required value there is set.
+2. In `supplier-service`, copy `.env.example` to `.env`. Put `SUPPLIER_DB_PASSWORD` from the root `.env` in
+   `DATABASE_URL`, and copy the `JWT_PUBLIC_KEY="..."` line from the root `.env`.
+3. Run these in `supplier-service`:
+
+| With mise | Without mise | What it does |
+|---|---|---|
+| `mise run supplier-db` | `docker compose up -d supplier-db` | Starts Postgres on `127.0.0.1:5434` |
+| `mise run migrate` | `uv run alembic upgrade head` | Creates or updates the tables |
+| `mise run seed` | `uv run python -m supplier_service.seed` | Loads `seed/*.csv` into empty tables (safe to run again) |
+| `mise run serve` | `uv run fastapi dev src/supplier_service/main.py --port 8002` | API at http://localhost:8002, docs at http://localhost:8002/docs |
+| `mise run test` | `uv run pytest --cov=supplier_service` | Tests, in a separate `supplier_service_test` database |
+
+To run everything in Docker instead, run `docker compose up --build` from the repo root. `supplier-migrate` migrates
+and seeds, then `supplier-service` starts. It isn't published on a host port: reach it through the gateway at
+http://localhost:8080/api/suppliers, with docs at http://localhost:8080/api/suppliers/docs.
+
+## Signing in
+Every endpoint except `/health` needs `Authorization: Bearer <token>`: a JWT from the User Service with `sub`,
+`role` (`student` or `admin`) and `exp`. Sign in through the User Service (`POST /api/users/auth/login`), or make
+one without it using the User Service's script, from `user-service/`:
+
+```
+uv run python scripts/make_token.py --role admin      # or --role student
+```
+
+In Swagger (`/docs`), click **Authorize** and paste the token.
+
+## Changing the tables
+Edit `src/supplier_service/tables.py`, then create a migration, review it, and apply it:
+
+```
+uv run alembic revision --autogenerate -m "describe the change"
+uv run alembic upgrade head
+```
+
+`tests/test_suppliers.py::test_migrations_match_tables` fails if `tables.py` and the migrations disagree.
+Autogenerate ignores the keyword-search index (`ix_suppliers_search_trgm`), so a change to it must be written into
+a migration by hand.
+
+# API
+JSON uses camelCase (`startTime`, `locationDescription`), matching `frontend/src/types/supplier.ts`.
+
+Paths are relative to the service. Behind the gateway they're under `/api/suppliers`, so `GET /{id}` is
+`GET /api/suppliers/{id}`.
+
+| Method and path | Who | What |
+|---|---|---|
+| `GET /health` | anyone | Liveness and database check |
+| `GET /meta` | signed in | Supplier types and the served-area bounds |
+| `GET /` | signed in | Query options: `q`, `type` (repeatable), `building`, `openNow`, `active` (`false` lists deactivated records), `nearLat` + `nearLng` (+ `radius`, in metres), `sort` (`name`, `-name`, `type`, `-createdAt`, `-updatedAt`, `distance`), `page`, `pageSize` |
+| `GET /buildings` | signed in | Building names, for the location filter |
+| `GET /lookup?ids=1&ids=2` | signed in | Up to 100 suppliers by id in one call, deactivated ones included; unknown ids are left out. Used by the Order Service to show errands' suppliers |
+| `GET /{id}` | signed in | One supplier |
+| `POST /` | admin | Create |
+| `PATCH /{id}` | admin | Change any fields; `{"active": false}` deactivates and `{"active": true}` reactivates |
+
+A request with no token, or an invalid one, gets 401; a request whose role isn't allowed gets 403. Validation errors
+return 422 with `{"detail": "...", "errors": {"fieldName": "message"}}`.
+
+# Configuration
+| Variable | Default | Meaning |
+|---|---|---|
+| `DATABASE_URL` | none, required | Postgres connection (`postgresql+asyncpg://...`) |
+| `JWT_PUBLIC_KEY` | none, required by the API (not by migrations or seeding) | The User Service's RSA public key (PEM; one line with `\n` is fine). Verifies RS256 tokens |
+| `CORS_ORIGINS` | empty | Comma-separated browser origins allowed to call the service directly |
+| `ENABLE_DOCS` | `false` | Serves `/docs`, `/redoc` and `/openapi.json` |
+| `ROOT_PATH` | empty | Path prefix the gateway serves the service under (`/api/suppliers` in Compose) |
+| `SERVED_AREA_MIN_LAT` … `SERVED_AREA_MAX_LNG` | a box around the NUS Kent Ridge campus | Where suppliers may be placed |
+| `PORT` | `8000` | Port inside the container |

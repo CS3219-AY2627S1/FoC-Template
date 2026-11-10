@@ -1,0 +1,87 @@
+<!--
+AI Assistance Disclosure:
+Tool: OpenAI Codex (GPT-6), date: 2026-10-17
+Scope: Documented the database-free AI autofill endpoint, local settings, and Groq free-plan limits.
+Tool: OpenAI Codex (GPT-6), date: 2026-10-20
+Scope: Documented predefined delivery-location matching in autofill.
+Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-18
+Scope: Documented the database, the order-worker process, the local development commands and delivery locations;
+       AI-updated the overview and added the demo section (2026-10-19); AI-replaced JWT_SECRET with JWT_PUBLIC_KEY (2026-11-09);
+       AI-pointed the setup steps at the root README's guide and listed the .env values, the Groq key link and the
+       demo's tools (2026-11-11).
+Author review: I reviewed the code and followed the local development commands.
+-->
+
+# Order service
+
+The Order Service runs the errand lifecycle (OPEN, ACCEPTED, PICKED_UP, DELIVERED, then COMPLETED, CANCELLED or
+EXPIRED) and sends the matching credit commands to the Credit Service over RabbitMQ. It also owns delivery locations
+and serves AI autofill for the create-request form. The design and its decisions are in
+[docs/order-service-plan.md](../docs/order-service-plan.md).
+
+It has two processes built from one image:
+
+- **order-service**: the HTTP API. It never connects to RabbitMQ.
+- **order-worker**: publishes queued credit commands (the outbox relay), applies the credit service's replies, and
+  runs the sweeper, which expires errands past their deadline and resends credit commands stuck PENDING.
+
+## Run locally with the full app
+
+Follow [Running the project](../README.md#running-the-project) in the root README. For autofill, also set
+`GROQ_API_KEY` in the root `.env`; get a free key at [console.groq.com/keys](https://console.groq.com/keys). The
+gateway exposes the service at `http://localhost:8080/api/orders`; local API docs are at `/api/orders/docs`. The
+service can start without the Groq key, but autofill returns 503 until it is configured.
+
+`credit-demo` logs in to RabbitMQ as `order-service` and reads the same reply queue as `order-worker`. Run
+`docker compose stop order-worker` before using it, or the two split the replies between them.
+
+## Run directly on your machine
+
+[Install uv](https://docs.astral.sh/uv/getting-started/installation/) and Docker Desktop, and set up the root `.env`
+as in [step 2 of the root README](../README.md#2-create-the-root-env). Compose won't start even the order database
+until every required value there is set.
+
+Copy `.env.example` to `.env` in `order-service` and fill it in from the root `.env`: replace `<ORDER_DB_PASSWORD>`
+and `<RABBITMQ_ORDER_SERVICE_PASSWORD>`, copy the `JWT_PUBLIC_KEY="..."` line, and add `GROQ_API_KEY` for autofill.
+The other services' URLs point at the gateway, so keep the full stack running (`docker compose up`) for supplier
+names, credit status and autofill's supplier matching. Then, in `order-service`:
+
+| With mise | Without mise | What it does |
+|---|---|---|
+| `mise run order-db` | `docker compose up -d --wait order-db rabbitmq` | Starts Postgres on `127.0.0.1:5436` and RabbitMQ on `127.0.0.1:5672` |
+| `mise run migrate` | `uv run alembic upgrade head` | Creates or updates the tables |
+| `mise run serve` | `uv run fastapi dev src/order_service/main.py --port 8004` | API at http://localhost:8004, docs at http://localhost:8004/docs |
+| `mise run worker` | `uv run order-worker` | Runs the background worker |
+| `mise run test` | `uv run pytest --cov=order_service` | Tests, in a throwaway Postgres container (Docker must be running; RabbitMQ not needed) |
+
+## Demo
+
+With the full stack running, from the repository root (it needs `bash`, `curl`, `jq` and `python3`; on macOS,
+`brew install jq`):
+
+```
+order-service/scripts/demo.sh            # every step, without stopping
+order-service/scripts/demo.sh --pause    # wait for Enter before each step, for presenting
+```
+
+It registers three new students and walks through: wallets opening, an errand's credits being reserved, two couriers
+accepting at once (one gets 409), pick-up, delivery and payment, a repeated confirmation (409, nobody paid twice),
+the credit worker stopped while an errand completes (the transfer waits in RabbitMQ) and restarted, an errand expiring
+and its credits being released, and the credit audit. It stops and restarts `credit-worker` and moves one errand's
+deadline into the past with `psql`. Set `ORDER_SWEEP_SECONDS=5` in the root `.env` for a faster expiry step.
+
+## Delivery locations
+
+`/delivery-locations` (list, get, create, edit) holds where errands are delivered. These used to be in supplier-service.
+- **Predefined** locations are the shared campus list, loaded from `seed/delivery-locations.csv` by `order-migrate`
+  (`python -m order_service.seed`, safe to rerun). Everyone sees them; only admins add or edit them.
+- **Personal** locations are added by a student. Only that student sees and edits them.
+- A location can't be edited while an errand using it has a courier on the way (409).
+
+## Autofill
+
+`POST /autofill` requires a user-service bearer token and JSON `{"description":"..."}` with 20–500 trimmed characters. It extracts nullable title, supplier, delivery building and floor, short description, delivery deadline, and credits. The supplier is resolved to an active supplier ID and name. Unknown or invalid suggestions return `null`. When the extracted delivery building or campus spot matches one active predefined location (including a unique parenthesized base or abbreviation), the response uses its saved building, floor and description and includes `locationRef` with its ID, name and coordinates. The form selects and maps that location. Otherwise `locationRef` is null and the individual extracted fields are returned. This endpoint never creates an order. The `description` suggestion for unmatched locations contains only stated delivery-location details.
+
+## Groq free-plan limits
+
+For `openai/gpt-oss-120b`, Groq currently lists **30 requests/minute**, **1,000 requests/day**, **8,000 tokens/minute**, and **200,000 tokens/day** on its free plan. Limits are shared at the organization level, and your account may differ; check the [Groq rate-limits page](https://console.groq.com/docs/rate-limits) and your console Limits page for current values. A limit hit returns HTTP 429.

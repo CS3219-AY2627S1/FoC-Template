@@ -1,0 +1,163 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-09-26
+# Scope: AI-generated tests for the POST /auth/register endpoint; AI-added cases for the web client's username and
+#        password rules (2026-09-27); AI-added the student-email-only and role cases (2026-09-28);
+#        AI-added the cases for keeping passwords out of 422 responses and model reprs (2026-09-29).
+# Author review: I ran the tests; the registration cases pass.
+
+import asyncio
+
+import pytest
+from httpx import AsyncClient
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from user_service.schemas import PASSWORD_MAX_LENGTH, RegisterRequest
+from user_service.security import password_hash
+from user_service.tables import USERNAME_MAX_LENGTH, users
+
+pytestmark = pytest.mark.anyio
+
+VALID = {"email": "alice@u.nus.edu", "username": "alice", "password": "S3cret-pass"}
+
+
+async def count_users(engine: AsyncEngine) -> int:
+    async with engine.connect() as conn:
+        return await conn.scalar(select(func.count()).select_from(users)) or 0
+
+
+async def test_creates_user_with_hashed_password(client: AsyncClient, engine: AsyncEngine) -> None:
+    response = await client.post("/auth/register", json=VALID)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["email"] == "alice@u.nus.edu"
+    assert body["username"] == "alice"
+    assert body["email_verified_at"] is None
+    assert body["role"] == "student"
+    assert "password" not in body and "password_hash" not in body
+
+    async with engine.connect() as conn:
+        stored_hash = (
+            await conn.execute(select(users.c.password_hash).where(users.c.id == body["id"]))
+        ).scalar_one()
+    assert stored_hash != VALID["password"]
+    assert password_hash.verify(VALID["password"], stored_hash)
+
+
+async def test_strips_username_whitespace(client: AsyncClient) -> None:
+    response = await client.post("/auth/register", json={**VALID, "username": "  alice  "})
+
+    assert response.status_code == 201
+    assert response.json()["username"] == "alice"
+
+
+async def test_rejects_staff_email(client: AsyncClient, engine: AsyncEngine) -> None:
+    response = await client.post("/auth/register", json={**VALID, "email": "prof@nus.edu.sg"})
+
+    assert response.status_code == 422
+    assert await count_users(engine) == 0
+
+
+async def test_cannot_register_as_admin(client: AsyncClient, engine: AsyncEngine) -> None:
+    response = await client.post("/auth/register", json={**VALID, "role": "admin"})
+
+    assert response.status_code == 422
+    assert await count_users(engine) == 0
+
+
+@pytest.mark.parametrize(
+    "duplicate",
+    [
+        {"email": "ALICE@u.nus.edu", "username": "someone-else"},
+        {"email": "other@u.nus.edu", "username": "ALICE"},
+    ],
+)
+async def test_rejects_case_insensitive_duplicates(
+    client: AsyncClient, engine: AsyncEngine, duplicate: dict[str, str]
+) -> None:
+    await client.post("/auth/register", json=VALID)
+
+    response = await client.post("/auth/register", json={**VALID, **duplicate})
+
+    assert response.status_code == 409
+    # Same message either way, so it doesn't reveal which field is taken
+    assert response.json()["detail"] == "Username or email is already in use"
+    assert await count_users(engine) == 1
+
+
+async def test_concurrent_registrations_create_exactly_one_user(
+    client: AsyncClient, engine: AsyncEngine
+) -> None:
+    responses = await asyncio.gather(
+        client.post("/auth/register", json=VALID),
+        client.post("/auth/register", json=VALID),
+    )
+
+    assert sorted(r.status_code for r in responses) == [201, 409]
+    assert await count_users(engine) == 1
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        {"email": "not-an-email"},
+        {"email": "alice@gmail.com"},
+        {"email": "alice@fake-u.nus.edu.evil.com"},
+        {"username": "ab"},
+        {"username": "a" * (USERNAME_MAX_LENGTH + 1)},
+        {"username": "has space"},
+        {"username": "emoji😀"},
+        {"username": "has.dot"},
+        {"password": "Sh0rt-"},
+        {"password": "no-upper-1"},
+        {"password": "NO-LOWER-1"},
+        {"password": "No-digits-here"},
+        {"password": "NoSpecial123"},
+        # Whitespace isn't a special character
+        {"password": "No Special 123"},
+        {"password": "Aa1-" + "a" * (PASSWORD_MAX_LENGTH - 3)},
+    ],
+)
+async def test_rejects_invalid_input(
+    client: AsyncClient, engine: AsyncEngine, field: dict[str, str]
+) -> None:
+    response = await client.post("/auth/register", json={**VALID, **field})
+
+    assert response.status_code == 422
+    assert await count_users(engine) == 0
+
+
+@pytest.mark.parametrize("password", ["Sh0rt-", "NoSpecial123", "Aa1-" + "a" * (PASSWORD_MAX_LENGTH - 3)])
+async def test_validation_errors_leave_out_the_password(client: AsyncClient, password: str) -> None:
+    response = await client.post("/auth/register", json={**VALID, "password": password})
+
+    assert response.status_code == 422
+    assert password not in response.text
+    assert all("input" not in error for error in response.json()["detail"])
+
+
+@pytest.mark.parametrize(
+    ("password", "message"),
+    [
+        ("Sh0rt-", "String should have at least 8 characters"),
+        ("Aa1-" + "a" * (PASSWORD_MAX_LENGTH - 3), f"String should have at most {PASSWORD_MAX_LENGTH} characters"),
+    ],
+)
+async def test_password_length_errors_say_characters(client: AsyncClient, password: str, message: str) -> None:
+    response = await client.post("/auth/register", json={**VALID, "password": password})
+
+    assert [error["msg"] for error in response.json()["detail"]] == [message]
+
+
+def test_request_repr_masks_the_password() -> None:
+    assert VALID["password"] not in repr(RegisterRequest(**VALID))
+
+
+@pytest.mark.parametrize("missing", ["email", "username", "password"])
+async def test_rejects_missing_fields(client: AsyncClient, missing: str) -> None:
+    body = {key: value for key, value in VALID.items() if key != missing}
+
+    response = await client.post("/auth/register", json=body)
+
+    assert response.status_code == 422

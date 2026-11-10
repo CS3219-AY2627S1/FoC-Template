@@ -1,8 +1,22 @@
-# CS3219 — Software Design and Architecture (AY2627 Sem 1)
+<!--
+AI Assistance Disclosure:
+Tool: Claude Code (model: Claude Opus 5.5), date: 2026-09-27; 2026-10-19; 2026-11-09; 2026-11-10; 2026-11-11
+Tool: OpenAI Codex (GPT-6), date: 2026-10-16; 2026-10-17; 2026-10-20
+Tool: Claude (claude.ai, model: Claude Opus 5.5), date: 2026-10-17
+Scope: AI-written "Gateway, root paths and API docs" section and AI Use Summary bullets, including the frontend AI entry view disclosure,
+       the credit-service routing note, the Credit Service AI Use Summary, frontend list/navigation fixes,
+       and predefined delivery-location autofill; the rest was written by the team.
+       Claude Code wrote the Order Service, Session Management and Admin Dashboard summaries (2026-10-19, 2026-11-09),
+       and on 2026-11-10 fixed garbled characters and added the tools list and usage-log pointer to the AI Use Summary.
+       Claude Code rewrote "Running the project" as a step-by-step setup guide, filled in the repository tree and wrote the Setup Documentation summary (2026-11-11).
+Author review: I reviewed the code and docs these sections summarise; the routing and docs notes match nginx.conf and compose.yaml.
+-->
 
-## Friend on Campus (FoC)
+# CS3219 - Software Design and Architecture (AY2627 Sem 1)
 
-**Friend on Campus (FoC)** is a peer-to-peer campus errand platform where
+## CampusRun
+
+**CampusRun** is a peer-to-peer campus errand platform where
 students can request items to be collected from stores or facilities on
 campus, and other students can fulfil (and deliver) those requests. The
 platform runs on a closed credit economy — credits cannot be bought,
@@ -10,15 +24,156 @@ withdrawn, or exchanged for money, and only circulate within the platform.
 
 ---
 
+## Running the project
+
+These steps take a fresh clone to a running app at http://localhost:8080. Everything runs in Docker, so this is all
+you need to try the app. To work on one service with hot reload, finish these steps first, then follow
+[Developing one service on your machine](#developing-one-service-on-your-machine).
+
+### 1. Prerequisites
+
+- [Docker Desktop](https://docs.docker.com/get-started/get-docker/) (or Docker Engine with the Compose plugin), running.
+- `openssl` and `sh`, for the key script (preinstalled on macOS and Linux; on Windows, use WSL or Git Bash).
+- Free host ports: `8080` (the app), `5433`–`5436` (the databases) and `5672` / `15672` (RabbitMQ).
+
+### 2. Create the root `.env`
+
+From the repository root:
+
+```sh
+cp .env.example .env
+sh scripts/generate-jwt-keys.sh >> .env
+```
+
+The second command appends the RS256 key pair that signs and checks access tokens. User-service signs tokens with
+the private key, and the other services only get the public key. The empty `JWT_PRIVATE_KEY=` and `JWT_PUBLIC_KEY=`
+lines from the example can stay, because the appended lines come later and win. You can also delete them.
+
+Then open `.env` and set these. Compose refuses to start **any** container, even a single database, until all of
+them have a value:
+
+| Variable | What to put |
+| --- | --- |
+| `USER_DB_PASSWORD`, `SUPPLIER_DB_PASSWORD`, `CREDIT_DB_PASSWORD`, `ORDER_DB_PASSWORD` | Any random strings |
+| `RABBITMQ_ADMIN_PASSWORD` | Any random string. It signs you in to the RabbitMQ management UI as `admin`. |
+| `RABBITMQ_USER_SERVICE_PASSWORD`, `RABBITMQ_CREDIT_SERVICE_PASSWORD`, `RABBITMQ_ORDER_SERVICE_PASSWORD` | Any random strings |
+
+One way to make a random string: `openssl rand -hex 24`.
+
+These are optional, but recommended:
+
+| Variable | Without it |
+| --- | --- |
+| `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_USERNAME`, `INITIAL_ADMIN_PASSWORD` | No admin account exists, so nobody can add suppliers, manage delivery locations or promote other admins. The email must end in `@u.nus.edu`, and the username and password follow the registration rules. |
+| `GROQ_API_KEY` | AI autofill on the create-errand form returns an error (503); everything else works. Get a free key at [console.groq.com/keys](https://console.groq.com/keys). |
+
+Leave the rest at their defaults.
+
+### 3. Start everything
+
+```sh
+docker compose up --build
+```
+
+The first build takes a few minutes. Compose starts the databases and RabbitMQ, and runs one-off containers that
+apply each database's migrations, load the seed data (suppliers and delivery locations) and create the first admin.
+Then it starts the services, the frontend and the gateway. Add `-d` to run it in the background.
+
+### 4. Check that it worked
+
+In another terminal:
+
+```sh
+docker compose ps -a
+```
+
+- The `*-migrate` containers and `user-seed-admin` should show `Exited (0)`. Everything else should be `Up`, with
+  the databases and `rabbitmq` marked `healthy`.
+- `docker compose logs user-seed-admin` says whether the first admin was created (or skipped, if
+  `INITIAL_ADMIN_*` is empty).
+
+Then open http://localhost:8080:
+
+1. Sign in with the initial admin, or register a new account. Registration needs an `@u.nus.edu` email.
+2. Your wallet shows as pending for a moment, then shows 100 credits. That means the user service, RabbitMQ and the
+   credit worker are talking to each other.
+3. The Suppliers page (in the header) lists the seeded suppliers.
+
+Other local addresses:
+
+| What | Where |
+| --- | --- |
+| Web app | http://localhost:8080 |
+| API docs for each service | http://localhost:8080/api/users/docs, `/api/suppliers/docs`, `/api/orders/docs`, `/api/credits/docs` |
+| RabbitMQ management UI | http://localhost:15672 (user `admin`, password `RABBITMQ_ADMIN_PASSWORD`) |
+| Databases (for tools such as `psql`) | `127.0.0.1` ports `5433` (user), `5434` (supplier), `5435` (credit), `5436` (order) |
+
+To see the whole errand lifecycle and its credit movements without clicking through the app, run
+`order-service/scripts/demo.sh` (it needs `curl`, `jq` and `python3`; see the
+[order-service README](order-service/README.md#demo)).
+
+### 5. Stop, restart and reset
+
+| Command | What it does |
+| --- | --- |
+| `docker compose stop` | Stops the containers and keeps the data |
+| `docker compose up --build` | Starts again, rebuilding any image whose code changed |
+| `docker compose down` | Removes the containers; the data stays in Docker volumes |
+| `docker compose down -v` | Removes the containers **and all data** (databases and queued messages). The next `up` starts from scratch. |
+
+### Troubleshooting
+
+- **`required variable ... is missing a value`**: a variable from the first table in step 2 is empty in the root `.env`.
+- **A database password changed in `.env` stopped working.** Postgres only reads its password when it first creates
+  the database. Either change it back, or run `docker compose down -v` to start over with empty databases.
+  RabbitMQ passwords are different: they're re-applied on every start, so a change works after
+  `docker compose up -d rabbitmq`.
+- **Everyone was signed out.** Generating a new key pair invalidates all existing tokens. Sign in again.
+- **`port is already allocated`**: another program (or another copy of this project) is using one of the ports from
+  step 1. Stop it, or change the host port in `compose.yaml`.
+- **A service keeps restarting or the gateway returns 502**: `docker compose logs <service>` shows why, e.g.
+  `docker compose logs user-service`.
+
+### Developing one service on your machine
+
+Each service can run outside Docker, with hot reload, while its database (and RabbitMQ, if it needs it) runs in
+Compose. The root `.env` from step 2 is still needed, because Compose reads it to start those containers. Each
+service then has its own `.env` for running on your machine. Follow the service's README:
+
+- [user-service](user-service/README.md)
+- [supplier-service](supplier-service/README.md)
+- [order-service](order-service/README.md)
+- [credit-service](credit-service/README.md)
+- [frontend](frontend/README.md) (the Vite dev server, which sends API calls to the gateway)
+
+The Python services use [uv](https://docs.astral.sh/uv/getting-started/installation/) and Python 3.14.7, and
+optionally [mise](https://mise.jdx.dev/installing-mise.html) for the Python version and task shortcuts. The frontend
+uses Node 24.18.0.
+
+### Cloud deployment
+
+`compose.yaml` is for local development and demos only. Deploying to the cloud needs separate configuration, which
+isn't in this repository yet.
+
+### Gateway, root paths and API docs
+
+- **One entry point.** Browsers reach every service through a single nginx gateway ([`gateway/nginx.conf`](gateway/nginx.conf)) at http://localhost:8080. It's the only container published on the host. The services are reachable only on the Compose private network, by service name (e.g. `http://user-service:8000`). The databases are also published, but bound to `127.0.0.1` for host tooling. The reasoning is in [`docs/auth-plan.md`](docs/auth-plan.md).
+- **Routing.** `/api/users/...` goes to user-service, `/api/suppliers/...` to supplier-service, `/api/orders/...` to order-service, and `/api/credits/...` to credit-service; every other path goes to the `frontend` container, which serves the built web app. So the app runs at http://localhost:8080 and calls the API on the same origin, with relative `/api/...` URLs. For the API routes, nginx strips the prefix, so each service defines its routes relative to its own root and doesn't repeat its name: `GET /api/suppliers/{id}` is `GET /{id}` in supplier-service.
+- **Root paths.** The services never see the prefix, so each one reads a `ROOT_PATH` setting (e.g. `/api/users`, set in `compose.yaml`) and passes it to FastAPI's `root_path`. That keeps the docs pages, the OpenAPI schema and any URLs a service builds itself (such as `Location` headers) pointing at the gateway path. Leave it empty when running a service directly on your machine.
+- **Opt-in API docs.** `/docs`, `/redoc` and `/openapi.json` are off unless `ENABLE_DOCS=true`. `compose.yaml` and each service's `.env.example` turn them on for local development; deployed environments leave the setting unset, so they don't publish the API schema. Through the gateway, the docs are at `http://localhost:8080/api/<service>/docs`.
+- **Adding a service:**
+  1. Add a `location /api/<service>/` block to `gateway/nginx.conf`.
+  2. Set `ROOT_PATH` and `ENABLE_DOCS` for the service in `compose.yaml`.
+  3. Add the service to the gateway's `depends_on`.
+  4. If the service has a route at its root (like the supplier list), also add an exact-match `location = /api/<service>` block. Otherwise a request without the trailing slash, e.g. `/api/<service>?q=...`, gets a 404.
+
 ## Team Members
 
 | Name | Role |
 | ----- | ----- |
-| Your Name | Your ownership |
-| Your Name | Your ownership |
-| Your Name | Your ownership |
-| Your Name | Your ownership |
-| Your Name | Your ownership |
+| Nathan Tew | User Service, Integration |
+| Aaron Rodrigues | Supplier Service, Credit Service |
+| Yang Qifeng | Frontend |
 
 ---
 
@@ -30,11 +185,19 @@ microservice (`user-service/`, `supplier-service/`, `order-service/`,
 
 ```text
 .
-├── user-service/
-├── supplier-service/
-├── order-service/
-├── credit-service/
-├── <n2h-service>/
+├── user-service/       # accounts, sign-in, sessions, admin roles
+├── supplier-service/   # campus suppliers
+├── order-service/      # errands, delivery locations, AI autofill
+├── credit-service/     # wallets and credit ledger (API + RabbitMQ worker)
+├── frontend/           # React web app, served by nginx
+├── gateway/            # nginx gateway: the single entry point at :8080
+├── rabbitmq/           # broker start-up script and queue/permission definitions
+├── scripts/            # repo-wide scripts (e.g. generate-jwt-keys.sh)
+├── data/               # source data for seeds and images
+├── docs/               # design plans for each part of the system
+├── ai/                 # AI usage log
+├── compose.yaml        # the whole stack for local development
+├── .env.example        # template for the root .env
 └── README.md
 ```
 
@@ -46,3 +209,185 @@ microservice (`user-service/`, `supplier-service/`, `order-service/`,
   one-service-per-folder skeleton** for core implementation.
 
 ---
+
+## AI Use Summary
+
+**Tools (whole project):** Claude Code (model: Claude Opus 5.5), Claude (claude.ai chat, model: Claude Opus 5.5), OpenAI Codex (GPT-5 and GPT-6). Each section below names the tool used for that part.
+
+**Prompts and key exchanges:** see [`ai/usage-log.md`](ai/usage-log.md).
+
+### User Service and Gateway (Nathan)
+
+**Tools:** Claude Code (model: Claude Opus 5.5)
+
+**Decisions made by the team before AI assistance:** FastAPI with SQLAlchemy Core for the user service; a `users` table with an auto-increment integer id; a separate admin table (later replaced by an admin role on `users`, see below).
+
+**Used for:**
+- **Explaining** implementation order (tables → Alembic → FastAPI), Docker Compose networking and service-name DNS, environment variable handling (`pydantic-settings` precedence, root vs. service `.env`), Docker layer caching with uv, and how a Compose setup differs from a Google Cloud Run deployment.
+- **Suggesting** separate admin accounts (their own credentials, not a foreign key to `users`), which the team adopted, plus case-insensitive unique indexes on email and username.
+- **Suggesting** a local Compose layout (separate `user-db`, `user-migrate` and `user-service` containers). This was an AI suggestion; the AI retracted its initial claim that a separate migration service is "standard practice" after being asked for documentation.
+- **Generating** boilerplate for the user service: root `compose.yaml` and `.env.example` entries, `user-service/Dockerfile`, `user-service/.dockerignore`, `user-service/.env.example`, `src/user_service/{config,db,main}.py` (settings, database engine and `GET /health`), and `src/user_service/tables.py` (the `users` and `admins` table definitions, to the team's column spec). The AI also added the `pydantic-settings` dependency to `user-service/pyproject.toml`.
+- **Configuring** Alembic (after the team ran its async template): `user-service/migrations/env.py` reads `DATABASE_URL` from the app settings and uses the tables' metadata for autogenerate. The placeholder URL was removed from `user-service/alembic.ini`.
+- **Debugging** type-checker warnings: a targeted Pyright ignore on `Settings()` in `config.py`, and the `lifespan` return type in `main.py` changed to `AsyncGenerator`.
+- **Generating** the `user-migrate` Compose service (a one-off `alembic upgrade head` that `user-service` waits for), and **explaining** the autogenerate workflow, image rebuilds (`--build`), and host vs. Compose development. The mise tasks and `user-service/README.md` were written by the team and reviewed by the AI; the AI added the README's interactive API docs section.
+- **Suggesting and generating** initial admin seeding: a `create-initial-admin` uv project script (`src/user_service/scripts/create_admin.py`) that creates the first admin from `INITIAL_ADMIN_*` settings only when the `admins` table is empty, a `create-admin` mise task wrapping it, a shared Argon2 hasher (`src/user_service/security.py`, adding the `pwdlib[argon2]` dependency), and the matching README section. The team chose to supply the initial credentials via environment variables; the AI recommended a one-off command over an Alembic data migration or app-startup hook.
+- **Generating** tests for the admin seeding script (`user-service/tests/`), using pytest with a throwaway Postgres container (Testcontainers) so tests never touch development data, plus a `test` mise task. The test database is built by running the Alembic migrations (via a caller-supplied connection added to `migrations/env.py`), and a test fails if `tables.py` and the migrations drift apart.
+- **Completing** the team's draft registration endpoint as `POST /auth/register`: request/response models (`src/user_service/schemas.py`) that validate NUS emails, usernames and password length; hashing in a worker thread; a race-safe insert that returns 409 with a message that doesn't reveal which field is taken; committing the per-request transaction before the response is sent (`db.py`); and endpoint tests (`tests/test_register.py`). The team approved the AI's proposed field rules; the AI chose the non-revealing 409 message for privacy.
+- **Explaining** FastAPI's auth building blocks and the options for authenticating across microservices (gateway, JWT verification in each service, event-driven account creation), then **generating** a step-by-step guide (`docs/auth-plan.md`) for an nginx gateway and JWT login in the user service. The team chose the gateway and decided that the requester/courier toggle is a UI mode only; the AI proposed a `type` claim to tell users and admins apart, since the two tables share ids.
+- **Debugging and linking up** the gateway: explaining where the service hostnames and ports come from (Compose service names and each Dockerfile's start command), and finding that `user-service` crashed at startup because its JWT settings were set on `user-db` instead. For supplier-service, the AI pointed the web client at the gateway, removed the service's `/suppliers` route prefix at the team's request, added `ROOT_PATH` and opt-in docs to match user-service, and added an nginx exact-match route for `/api/suppliers`. It then documented the gateway conventions in this README and `AGENTS.md`.
+- **Explaining** session-token revocation options (short access tokens with stored refresh tokens, a gateway check, a shared denylist), now in `docs/auth-plan.md`. The team chose to keep the token's `type` claim and rename its user value to `student`; the AI applied this across user-service, supplier-service and the frontend.
+- **Planning and generating** the change from separate admin accounts to users with an `admin` role (`docs/admin-role-plan.md`). This was a team decision. Admins now sign in through the same `/auth/login`, and the token's `type` claim became `role`. A new migration adds `users.role` and drops `admins`. Registration and `create-initial-admin` accept `@u.nus.edu` emails only, and admins are kept out of errand pages in the frontend. The AI applied this across user-service, supplier-service and the frontend, and updated the tests and docs.
+- **Identifying** a gap in the admin-only design: with unique `@u.nus.edu` emails, a promoted student couldn't keep a student account, so they'd lose the ability to post and accept errands. The team chose the AI's recommended fix: admin is extra permissions on top of a student account. The AI removed `require_student`, showed the errand pages to admins in the frontend, and updated `docs/admin-role-plan.md` and `docs/auth-plan.md`.
+- **Generating** `PATCH /users/me` (username and password changes, with a row lock around the password check) and its tests, written before the code. The AI recommended keeping `200` for no-op updates so retries stay safe; the team agreed and added a server-side rule that a new password must differ from the current one.
+- **Generating** the frontend's connection to user-service: relative `/api/...` URLs with a Vite dev proxy (the team asked for an explicit dev-only target), registration, login and profile editing, and readable validation errors. It also aligned the backend's username and password rules with the frontend's, at the team's request.
+- **Generating** the frontend container (`frontend/Dockerfile`, `frontend/nginx.conf`) and its Compose service behind the gateway, and **explaining** why a built app needs a static file server and how the ports fit together.
+
+**Verification:** `GET /health` and settings loading were checked in-process against an unreachable database and a missing `DATABASE_URL`. <!-- TODO(author): describe your own review and testing of the AI outputs -->
+
+### Supplier Service (Aaron)
+
+**Tools:** Claude (claude.ai chat, model: Claude Opus 5.5)
+
+**Decisions made by the team before AI assistance:** FastAPI with SQLAlchemy Core and PostgreSQL; one service per folder with its own database; the user-service conventions (Alembic, config, Dockerfile); and the web client's supplier fields and types.
+
+**Used for:**
+- **Suggesting** Implementation support and code review for the supplier service, including:
+- **Preparing** the supplier seed data in supplier-service/seed/suppliers.csv, as well as seed/delivery-locations.csv and scripts/demo-supplier.json. These files do not contain header comments.
+- **Reviewing** and aligning the supplier service after the web client and user service were added, particularly around shared conventions and interfaces.
+- **Debugging** and verification of transaction behaviour. Testing showed that FastAPI 0.141 can send a response before a yield dependency's transaction is committed; the service therefore uses Depends(..., scope="function") so that the transaction is committed before the response is returned.
+- **Clarifying** and documenting design decisions recorded in supplier-service/DESIGN.md.
+
+**Verification:** The service was tested against PostgreSQL, including 58 automated tests with 94% coverage, and the API was exercised end-to-end over HTTP after migrating and seeding a fresh database. Docker image builds were not performed because Docker was unavailable. <!-- TODO(author): describe your own review and testing -->
+
+### Credit Service and RabbitMQ
+
+**Tool and mode:** Claude (claude.ai, model: Claude Opus 5.5), suggest, explain and debug (2026-10-17).
+
+**Decisions made by the team before AI assistance:** FastAPI with SQLAlchemy and PostgreSQL, the credit service's own database in `credit-service/`, RabbitMQ as the broker, every balance change sent as an asynchronous message rather than an event, and a "pending" state on the wallet until credits are applied. Requirements F12–F14 and N5 from the backlog.
+
+**Used for:**
+- **Suggesting** the credit service setup: the `wallets`, `reservations` and `ledger_entries` tables and migration, the idempotent reserve/adjust/transfer/release/open-wallet operations, the message contract, the RabbitMQ worker, the read-only API, the audit, the `credit-demo` stand-in for the Order Service, the Dockerfile, and 59 tests.
+- **Suggesting** the RabbitMQ setup (`rabbitmq/definitions.json`, `rabbitmq/provision.sh`): one login per service, topic permissions, quorum queues and dead-lettering. We tested the broker's behaviour before relying on it, and found that RabbitMQ 4 doesn't count `nack(requeue=True)` towards the delivery limit, so the worker never requeues.
+- **Generating** the User Service's transactional outbox for `OpenWallet` (`outbox` table and migration, relay, `resync-wallets`) and its tests, and the Compose, gateway and `.env.example` entries.
+- **Generating** the credit banner's connection to `GET /api/credits/wallets/me`, with the pending state.
+- **Explaining** the design and answering the Part 2 and Part 4 review questions in [`docs/credit-service-plan.md`](docs/credit-service-plan.md), including the integration steps for the Order Service.
+
+**Verification:** credit-service tests (59, 85% line coverage excluding the demo tool) and user-service tests (102, including the existing 95) pass against Postgres. The full stack was built and run with `docker compose up --build`, and the AI ran failure drills: credit worker stopped while an errand completes, RabbitMQ stopped during registration, the credit database stopped mid-command, a broker restart, invalid and unauthorised messages, three competing workers, and all containers recreated with a command still queued. The banner was checked in a browser at 1280px and 390px. <!-- TODO(author): describe your own review and testing -->
+
+### Frontend Client (Yang Qifeng)
+
+**Tools:** Claude Code (model: Claude Opus 5.5)
+
+**Decisions made by the team before AI assistance:** React and Vite for the existing web client; its supplier UI, user forms, fields, and client-side validation rules; and using the nginx gateway as the application's public entry point.
+
+**Used for:**
+
+- **Wiring** the client to the User and Supplier Services through relative `/api/...` URLs, including a Vite development proxy, typed API clients, token-based session handling, registration, login, profile editing, supplier listing, supplier details, and supplier updates.
+- **Reviewing and aligning** client request and response types, validation, loading states, permissions, pagination, and user-facing API errors with the service contracts.
+- **Generating** the frontend Docker and nginx configuration and adding the frontend Compose service so the built single-page app is served behind the gateway.
+
+**Verification:** `npm run build` and lint passed; nginx configuration was validated with `nginx -t`. <!-- TODO(author): describe your own review and testing -->
+
+### Frontend UI Extensions
+
+**Tool and mode:** OpenAI Codex (GPT-5), UI generation, refactoring, and debugging (2026-10-15–16).
+
+**Prompts and key results:**
+
+- “okay now abstract the section out as a component, put under components/credit-banner, then import into explore, my-tasks and my-requests concisely” → A shared credit banner on all three pages; credit amounts are placeholders.
+- “okay finally, lets extend the shared-toolbar abstraction, to allow for no tabs, and instead the replacement being a subheader text option, which explore will call and put "Available Tasks"” → One configurable Toolbar serves Explore, My Tasks, My Requests, and Suppliers.
+- “okay, now within supplier-details, lets also import the interactive-map abstraction but lets tweak it minimally, so that its read only (normal/fullscreen, still with teh read boundary)” → Shared React-Leaflet map for request and supplier editing, plus read-only supplier details. It marks the rectangular served-area boundary and shades the outside red; fullscreen editing saves on explicit close.
+- “1) Building, floor, description is set by user, remove the dependence to supplier 2) Rename "your pickup location" as just Location 3) Remove the extra info, make Deliver By and Credits into two separate lines” → The create-request dialog has supplier search, user-defined delivery details, map location, delivery time (default: 30 minutes ahead), credits, and client-side validation. Submission remains UI-only until the Order Service is connected.
+
+**Verification:** `npm run build` and lint passed; nginx configuration was validated with `nginx -t`. <!-- TODO(author): describe your own review and testing -->
+
+
+### Order Service AI Autofill
+
+**Tool and mode:** OpenAI Codex (GPT-6), planning, generation, debugging, and explanation (2026-10-17).
+
+**Prompt (verbatim):** "okay good, execute concisely and codebase aligned now"
+
+**Key response:** Added a database-free FastAPI order-service with authenticated `POST /autofill`, backend-only Groq structured extraction, active supplier matching, and gateway/Compose wiring. Connected the frontend AI Autofill view with a 20–500-character prompt, counter, blocking loading state, errors, and partial suggestions that replace existing values when non-null. Request creation remains a separate unimplemented operation. The preceding planning request specified these requirements.
+
+### Order Service (Nathan)
+
+**Tool and mode:** Claude Code (model: Claude Opus 5.5), review, explain and generate (2026-10-18 to 2026-10-19).
+
+**Decisions made by the team before or during AI assistance:**
+- The Order Service integrates with the Credit Service through the asynchronous credit-transaction workflow.
+- Only the requester cancels, and only while OPEN. Unfinished errands expire at their deadline; only the requester's confirmation gets a 5-minute grace period after it. The reserved credits are returned.
+- Supplier details are not copied onto errands.
+- Delivery locations move from supplier-service to order-service.
+- Supplier-name search runs on the server.
+- Errands whose supplier has been deactivated can't be accepted; the requester can still cancel them. Cancelling them automatically, by a sweeper or a supplier-service event, was rejected for this project's scope.
+- Edits can't move an errand's deadline more than 24 hours past when it was posted, so reserved credits can't be held indefinitely.
+- The work is built one reviewed task at a time.
+
+**Used for:**
+- **Reviewing** the other services against the D3 milestone and **planning** the Order Service in [`docs/order-service-plan.md`](docs/order-service-plan.md): schema, state machine, credit commands over RabbitMQ, API, and task order.
+- **Generating** the Order Service infrastructure and skeleton (Task 1):
+  - the `order-db`, `order-migrate` and `order-worker` Compose services and the exact-match `/api/orders` gateway route;
+  - Alembic, `db.py`, `auth.py`, `errors.py`, `broker.py`, `/health`, and a placeholder worker;
+  - autofill moved into `routes/autofill.py`;
+  - Testcontainers-based tests.
+- **Generating** the data layer (Tasks 2 and 3):
+  - the `errands` and `outbox` tables with CHECK constraints, the errand states and credit statuses, and the outbox relay generalised from user-service;
+  - delivery locations copied from supplier-service: personal locations private to their creator, predefined ones editable by admins, no edits while a courier is on the way, and a seed of the 100 predefined locations.
+- **Generating** the calls to other services (Tasks 4 and 5):
+  - one pooled client that forwards the user's token, for supplier details (batched through supplier-service's new `GET /lookup`), usernames and the advisory wallet check, each falling back to `null` when the service is down;
+  - user-service's internal `GET /internal/usernames`, which the gateway blocks, so only services can call it.
+- **Generating** errand creation, reading and listing (Task 6): create writes the errand, its delivery point and the `ReserveCredits` command in one short transaction, after the supplier and wallet checks; Explore, My Requests, My Tasks and an admin list search, sort and page. No database connection is held while another service is called.
+- **Generating** the errand lifecycle (Task 7): accept, pick up, deliver, complete, cancel and edit, each one conditional `UPDATE` with its credit command written to the outbox in the same transaction, and refusals explained as 404, 403 or 409.
+- **Generating** the Credit Service reply handling (Task 8): a reply is applied only while the errand's credits are PENDING, only if it reaches where the errand's state says the credits should end up, and only for the latest reward change, so duplicate and out-of-order replies never move credits backwards. A refused reserve cancels the errand.
+- **Generating** `order-worker` (Task 9): the outbox relay, the reply consumer (sender and type checked, acknowledged only after the transaction commits) and the sweeper, which expires errands past their deadline and resends credit commands stuck PENDING; `GET /admin/stuck` lists the stuck errands.
+- **Generating** the removal of delivery locations from supplier-service (Task 10): its routes, models, seed data and tests, and a migration that drops the table.
+- **Generating** the D3 demo script `order-service/scripts/demo.sh` and the D3 answers for the Order Service (Task 11): the errands and outbox tables, the state-transition and endpoint tables, the concurrency and failure answers, and the message design with sample payloads.
+- **Generating** the frontend's connection to the Order Service (Task 12), with UI choices checked with the author because the screens are another member's work:
+  - Explore, My Requests and My Tasks load real errands through one mapper and one list hook. The list searches 300 ms after typing stops, loads 10 more errands as you scroll, checks again every 2 seconds while any errand's credits are processing, and replaces the Pending tab with a "Credits processing" badge (D4);
+  - the details dialog's actions follow the service's rules: Accept, Picked up, Delivered, Cancel and Completed, with busy and error states. A deactivated supplier hides Accept and prompts the requester to cancel (D13);
+  - Create and Edit submit to the service and show its field errors on the form. Edit sends only the changed fields;
+  - a `campusrun:errands-changed` event reloads the lists and the credit banner after any change.
+- **Explaining** the code for the author's review: the delivery-location share lock, `Engine` versus `Connection` dependencies, the locked read in edit, and the request and response models. Explanations of the locks and transactions were added to the D3 document.
+
+**Verification:** 256 order-service tests pass, including concurrent accepts, accept against cancel, complete sent twice, the deadline guards and two sweepers at once; the race tests passed on six repeated runs. Task 1 also passed `docker compose config`, `nginx -t` and the image build. The demo script ran end to end against the full Compose stack, and the credit audit afterwards reported no problems. <!-- TODO(author): describe your own review and testing -->
+
+**Files affected:** Each changed source and configuration file carries an AI Assistance Disclosure header. Generated files that can't hold a comment are listed here instead: `order-service/uv.lock` (changed by AI through `uv add`) and `order-service/seed/delivery-locations.csv` (copied by AI from supplier-service's seed).
+
+### Session Management and Token Signing (Nathan)
+
+**Tool:** Claude Code (Claude Opus 5.5), 2026-11-09.
+
+- **Explaining** the current session mechanism (stateless JWT access tokens checked in each service, `sessionStorage` in the browser) and reviewing its gaps: tokens can't be revoked early, every service could create tokens with the shared HS256 secret, users are signed out mid-task when the token expires, and there's no login rate limit. The AI listed options; the team chose refresh tokens and asymmetric signing, and picked RS256 over EdDSA and environment variables over Compose secret files.
+- **Generating** the switch from HS256 to RS256: User Service signs with `JWT_PRIVATE_KEY`, and Supplier, Order and Credit services verify with `JWT_PUBLIC_KEY` and a pinned algorithm. Also `scripts/generate-jwt-keys.sh`, the Compose and `.env.example` changes, the credit demo and supplier token script, and test fixtures that use a fresh key pair per run, plus an algorithm-confusion test in each service's `tests/test_auth.py`.
+- **Generating** per-IP rate limits in the gateway (`limit_req`, JSON 429s): sign-in and registration (10 a minute, burst 20), AI autofill (6 a minute, burst 3) and every request (30 a second, burst 60). The team decided to add them; the AI proposed the numbers.
+- **Drafting** the session-management design notes for the D4 presentation (`docs/D4-presentation.md`), **including the trade-off analysis**, at the author's request. The team is to review and reword them before presenting.
+
+**Verification:** a script signed tokens with User Service's code and checked them in all four services, rejecting a token signed with another key and an HS256 token keyed with the public key. The key script's output was parsed by `docker compose config` and python-dotenv. All four test suites collect, and the new database-free order and credit auth tests pass. The full suites were **not** run, because the session's sandbox had no Docker access for the test databases. <!-- TODO(author): run the test suites and describe your own review -->
+
+**Files affected:** each carries an "AI Assistance Disclosure" header comment, except the four `uv.lock` files, which uv regenerates; the AI changed them through `uv add "pyjwt[crypto]"`.
+
+**Prompts and key exchanges:** see [`ai/usage-log.md`](ai/usage-log.md).
+
+### Admin Dashboard (Nathan)
+
+**Tool:** Claude Code (Claude Opus 5.5), 2026-11-09.
+
+- **Planning** the work (`docs/admin-dashboard-plan.md`) from the scope the team chose: an all-errands view, predefined delivery locations, promoting students to admin, and stepping down from your own admin role while another admin is left. The team approved the endpoint shapes.
+- **Generating** the User Service admin endpoints (Task 1): `GET /admin/users`, `POST /admin/users/{id}/promote` and `POST /admin/me/step-down`. The AI proposed two safeguards, which the team adopted: role changes are serialized with a Postgres advisory lock, so the last two admins can't both step down at once; and the caller's role is re-checked in the database, so an old admin token can't undo a step-down. Also the tests and doc updates.
+- **Generating** the admin page (Task 2): `/admin`, reachable only by admins (others are sent to Explore) from a header link only admins see. Its Users tab searches and filters accounts, promotes a student after a confirmation, and lets an admin step down while another admin is left, then refreshes their token so admin access ends at once. The shared toolbar's sort menu became optional.
+- **Generating** the admin page's Errands tab (Task 3): every errand, read-only, with search, a state filter, sorting and pages; an Errands menu on each user opens their errands as requester or courier. The errand card mapper gained an admin viewer that names both people and offers no actions.
+- **Generating** the admin page's Delivery locations tab (Task 4): the predefined locations, active or deactivated, with search and pages, and a form (adapted from the supplier form) to add or edit one on the map, or deactivate and reactivate it. The Order Service's existing endpoints are used unchanged; its refusals (a courier on the way, a duplicate name, a point outside the served area) are shown in the form.
+
+**Verification:** all 156 user-service tests pass. The concurrent step-down test was checked to fail with the lock removed (both requests succeeded, leaving no admin). <!-- TODO(author): describe your own review and testing -->
+
+**Files affected:** each carries an "AI Assistance Disclosure" header comment.
+
+### Setup Documentation (Nathan)
+
+**Tool:** Claude Code (Claude Opus 5.5), 2026-11-11.
+
+- **Reviewing** every README against `compose.yaml` and the `.env.example` files for gaps a new user would hit, and **rewriting** the root README's "Running the project" as a step-by-step guide: prerequisites, every required and optional root `.env` value, how to check the stack came up, stopping and resetting, and troubleshooting. The AI checked with `docker compose config` that Compose needs every required variable even to start one container, and that the duplicate `JWT_*` lines the key script appends are harmless.
+- **Updating** the service READMEs to match. Each now links to the root guide for the root `.env` and lists what goes in its own `.env`. Also fixed: user-service's Compose address (through the gateway, not `localhost:8001`), the user-service port in the credit and order `.env.example` files (8000, the `fastapi dev` default), credit-service's out-of-date demo section, and the frontend's missing `VITE_API_PROXY_TARGET` step, routes diagram and VS Code settings path.
+
+**Verification:** the setup steps were checked against `compose.yaml`, `rabbitmq/provision.sh` and the frontend's routes. The AI then followed the root guide on a fresh clone with new Docker volumes (2026-11-11): all 18 containers reached the described state, the first admin was created, signing in, a new student's wallet (pending, then 100 credits), the seeded supplier list, all four API docs pages and the RabbitMQ UI worked through the stated addresses, and `order-service/scripts/demo.sh` ran to a clean credit audit. The frontend dev server and running single services on the host were not tried. <!-- TODO(author): describe your own review -->

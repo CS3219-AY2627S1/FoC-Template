@@ -1,0 +1,298 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-09-25
+# Scope: AI-generated FastAPI app with engine lifespan and GET /health endpoint; AI-updated lifespan return type to AsyncGenerator and made API docs depend on ENABLE_DOCS;
+#        AI-completed the POST /auth/register endpoint from the author's draft; AI-renamed the user token type to "student" (Claude Code, 2026-09-27);
+#        AI-generated the PATCH /users/me endpoint (2026-09-27); AI-merged the admin login into /auth/login and removed /admins/me (2026-09-28);
+#        AI-added the validation error handler that leaves request input out of 422 responses (2026-09-29).
+#        AI-added the OpenWallet outbox message on registration and the outbox relay in the lifespan (Claude, claude.ai, 2026-10-17).
+#        AI-added GET /internal/usernames for the Order Service (Claude Code, 2026-10-19).
+#        AI-added the start-up check for JWT_PRIVATE_KEY (Claude Code, 2026-11-09).
+#        AI-added refresh sessions: login starts one, POST /auth/refresh and /auth/logout, and a password change ends
+#        every session (Claude Code, 2026-11-09).
+#        AI-included the admin user management router (Claude Code, 2026-11-09).
+# Author review: I tested the behaviour: the app starts and GET /health responds.
+
+import asyncio
+import contextlib
+import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from datetime import timedelta
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi.concurrency import run_in_threadpool
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import func, or_, select, text, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from pydantic import Field
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from user_service import admin
+from user_service.auth import CurrentUser, credentials_error
+from user_service.config import Settings, get_settings
+from user_service.db import Connection, create_engine, get_engine
+from user_service.outbox import OutboxRelay, RabbitPublisher, enqueue_open_wallet
+from user_service.sessions import Refused, end_all_sessions, end_session, rotate, start_session
+from user_service.schemas import (
+    PASSWORD_MAX_LENGTH,
+    RefreshTokenRequest,
+    RegisterRequest,
+    TokenResponse,
+    UpdateUserRequest,
+    UsernameResponse,
+    UserResponse,
+)
+from user_service.security import DUMMY_HASH, Role, create_access_token, password_hash
+from user_service.tables import users
+
+
+log = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    settings = get_settings()
+    app.state.engine = create_engine(settings)
+    if settings.rabbitmq_url is None:
+        log.warning("RABBITMQ_URL is not set: messages will wait in the outbox table until it is")
+        yield
+    else:
+        # Publishes queued messages (e.g. OpenWallet) in the background; registration never waits for RabbitMQ
+        publisher = RabbitPublisher(settings.rabbitmq_url)
+        relay = asyncio.create_task(OutboxRelay(app.state.engine, publisher, settings.outbox_poll_seconds).run())
+        yield
+        relay.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await relay
+        await publisher.close()
+    await app.state.engine.dispose()
+
+
+settings = get_settings()
+if settings.jwt_private_key is None:
+    raise RuntimeError("Set JWT_PRIVATE_KEY (the RSA key that signs access tokens) to run the API")
+SettingsDep =Annotated[Settings, Depends(get_settings)]
+LoginForm = Annotated[OAuth2PasswordRequestForm, Depends()]
+
+app = FastAPI(
+    title="CampusRun User Service",
+    lifespan=lifespan,
+    root_path=settings.root_path,  # empty when accessed directly; "/api/users" when behind the gateway    
+    # None turns each docs page off
+    docs_url="/docs" if settings.enable_docs else None,
+    redoc_url="/redoc" if settings.enable_docs else None,
+    openapi_url="/openapi.json" if settings.enable_docs else None,
+)
+app.include_router(admin.router)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # FastAPI's default 422 body echoes each error's input, which can be a password or the whole request body
+    errors = [{key: value for key, value in error.items() if key != "input"} for error in exc.errors()]
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content=jsonable_encoder({"detail": errors}),
+    )
+
+
+def login_failed() -> HTTPException:
+    # One message for unknown account and wrong password, so it doesn't reveal which accounts exist
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Incorrect login or password",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+async def check_password(password: str, stored_hash: str | None) -> bool:
+    # The form doesn't enforce RegisterRequest's limit, so cap the hashing work here too
+    if len(password) > PASSWORD_MAX_LENGTH:
+        return False
+    # Always run one Argon2 verify, even for unknown accounts, so timing doesn't reveal them
+    return await run_in_threadpool(password_hash.verify, password, stored_hash or DUMMY_HASH)
+
+
+@app.get("/health")
+async def health(engine: Annotated[AsyncEngine, Depends(get_engine)]) -> JSONResponse:
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except (SQLAlchemyError, OSError):
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "unavailable", "database": "unreachable"},
+        )
+    return JSONResponse(content={"status": "ok", "database": "ok"})
+
+
+@app.post("/auth/register", status_code=status.HTTP_201_CREATED)
+async def register(body: RegisterRequest, conn: Connection) -> UserResponse:
+    # Argon2 is deliberately slow; hashing in a thread keeps other requests responsive
+    hashed = await run_in_threadpool(password_hash.hash, body.password.get_secret_value())
+
+    # Relies on the case-insensitive unique indexes, so concurrent sign-ups can't both succeed
+    created = (
+        await conn.execute(
+            insert(users)
+            .values(email=body.email, username=body.username, password_hash=hashed)
+            .on_conflict_do_nothing()
+            .returning(
+                users.c.id,
+                users.c.email,
+                users.c.username,
+                users.c.email_verified_at,
+                users.c.role,
+                users.c.created_at,
+            )
+        )
+    ).one_or_none()
+    if created is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username or email is already in use",
+        )
+    # Same transaction as the insert: the credit service is asked for a wallet if and only if the user exists
+    await enqueue_open_wallet(conn, created.id)
+    return UserResponse.model_validate(created, from_attributes=True)
+
+
+@app.post("/auth/login")
+async def login(form: LoginForm, conn: Connection, settings: SettingsDep) -> TokenResponse:
+    # Usernames can't contain "@", so an email and a username never match the same input
+    identifier = form.username.strip().lower()
+    row = (
+        await conn.execute(
+            select(users.c.id, users.c.password_hash, users.c.role).where(
+                or_(func.lower(users.c.email) == identifier, func.lower(users.c.username) == identifier)
+            )
+        )
+    ).one_or_none()
+
+    # Check the password before testing row, so unknown accounts still pay for a hash
+    valid = await check_password(form.password, row.password_hash if row else None)
+    if row is None or not valid:
+        raise login_failed()
+    refresh_token = await start_session(conn, row.id, timedelta(seconds=settings.jwt_refresh_token_ttl_seconds))
+    return token_response(row.id, row.role, refresh_token, settings)
+
+
+def token_response(account_id: int, role: Role, refresh_token: str, settings: Settings) -> TokenResponse:
+    return TokenResponse(
+        access_token=create_access_token(account_id, role, settings),
+        expires_in=settings.jwt_access_token_ttl_seconds,
+        refresh_token=refresh_token,
+    )
+
+
+SESSION_ENDED = "Your session has ended. Sign in again."
+
+
+# Needs no access token: the client calls it when its access token is about to expire, or already has
+@app.post("/auth/refresh", response_model=TokenResponse)
+async def refresh(body: RefreshTokenRequest, conn: Connection, settings: SettingsDep) -> TokenResponse | JSONResponse:
+    result = await rotate(conn, body.refresh_token.get_secret_value())
+    if result is Refused.REUSED:
+        # Returned, not raised: raising would roll back the transaction, and with it the revocation
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": SESSION_ENDED},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if result is Refused.INVALID:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=SESSION_ENDED,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return token_response(result.user_id, result.role, result.refresh_token, settings)
+
+
+# Ends this tab's session only. Needs no access token, so a tab whose access token has run out can still log out.
+@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(body: RefreshTokenRequest, conn: Connection) -> None:
+    await end_session(conn, body.refresh_token.get_secret_value())
+
+# Useing the CurrentUser type annotation for the endpoint parameter makes FastAPI run require_user first, which returns 401/403 before the endpoint runs; the parameter name doesn't matter.
+@app.get("/users/me")
+async def read_current_user(account: CurrentUser, conn: Connection) -> UserResponse:
+    row = (
+        await conn.execute(
+            select(
+                users.c.id,
+                users.c.email,
+                users.c.username,
+                users.c.email_verified_at,
+                users.c.role,
+                users.c.created_at,
+            ).where(users.c.id == account.id)
+        )
+    ).one_or_none()
+    # The token can outlive the account, e.g. if the user was deleted after logging in
+    if row is None:
+        raise credentials_error()
+    return UserResponse.model_validate(row, from_attributes=True)
+
+
+@app.patch("/users/me")
+async def update_current_user(body: UpdateUserRequest, account: CurrentUser, conn: Connection) -> UserResponse:
+    changes: dict[str, str] = {}
+    if body.username is not None:
+        changes["username"] = body.username
+    if body.new_password is not None:
+        # FOR UPDATE, so a concurrent password change can't land between the check and the update
+        stored_hash = await conn.scalar(
+            select(users.c.password_hash).where(users.c.id == account.id).with_for_update()
+        )
+        if stored_hash is None:
+            raise credentials_error()
+        current_password = body.current_password.get_secret_value() if body.current_password else ""
+        if not await check_password(current_password, stored_hash):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+        changes["password_hash"] = await run_in_threadpool(password_hash.hash, body.new_password.get_secret_value())
+        # Every session ends, this one included, so a stolen session can't outlive the password. Access tokens already
+        # issued still work until they expire (at most JWT_ACCESS_TOKEN_TTL_SECONDS).
+        await end_all_sessions(conn, account.id)
+
+    columns = (users.c.id, users.c.email, users.c.username, users.c.email_verified_at, users.c.role, users.c.created_at)
+    if changes:
+        try:
+            row = (
+                await conn.execute(
+                    update(users).where(users.c.id == account.id).values(**changes).returning(*columns)
+                )
+            ).one_or_none()
+        except IntegrityError as exc:
+            # Relies on the case-insensitive unique index, so concurrent renames can't both succeed
+            if "uq_users_username_lower" not in str(exc.orig):
+                raise
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username is already in use") from None
+    else:
+        row = (await conn.execute(select(*columns).where(users.c.id == account.id))).one_or_none()
+    # The token can outlive the account, e.g. if the user was deleted after logging in
+    if row is None:
+        raise credentials_error()
+    return UserResponse.model_validate(row, from_attributes=True)
+
+
+# Internal: the gateway blocks /api/users/internal/, so only other services on the private network can call this.
+# The Order Service uses it to show requester and courier names on errands, forwarding the signed-in user's token.
+@app.get("/internal/usernames")
+async def lookup_usernames(
+    account: CurrentUser,
+    conn: Connection,
+    ids: Annotated[
+        list[Annotated[int, Field(ge=1)]],
+        Query(min_length=1, max_length=100, description="Repeat for each id: ?ids=1&ids=2. At most 100."),
+    ],
+) -> list[UsernameResponse]:
+    # Unknown ids are left out, e.g. an account deleted after it made an errand
+    rows = await conn.execute(
+        select(users.c.id, users.c.username).where(users.c.id.in_(set(ids))).order_by(users.c.id)
+    )
+    return [UsernameResponse.model_validate(row, from_attributes=True) for row in rows]

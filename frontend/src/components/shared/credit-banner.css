@@ -1,0 +1,127 @@
+/* AI Assistance Disclosure:
+ * Tool: Codex (OpenAI), date: 2026-10-15
+ * Scope: Added styles for the reusable responsive credit banner component.
+ * Tool: Claude (claude.ai, model: Claude Opus 5.5), date: 2026-10-17
+ * Scope: Added the pending pill, the pending note and the error line.
+ * Author review: I verified the UI: the pending pill, note and error line display correctly.
+ */
+
+.credit-banner {
+  display: flex;
+  align-items: center;
+  min-height: 132px;
+  padding: 24px clamp(28px, 3vw, 40px);
+  border-radius: 18px;
+  background: #e7f4ef center / cover;
+}
+
+.credit-banner-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.credit-banner-summary p {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.credit-banner-balance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+
+.credit-banner-balance > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.credit-banner-balance small {
+  align-self: flex-end;
+  margin-bottom: 2px;
+  color: #153941;
+  font-size: 14px;
+}
+
+.credit-banner-value {
+  color: #153941;
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.credit-banner-active svg {
+  color: #2d6f9e;
+}
+.credit-banner-reserved svg {
+  color: #c97820;
+}
+
+.credit-banner-summary p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Same orange as the reserved coin and the pending task badge */
+.credit-banner-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #fdf0e1;
+  color: #8a4f0f;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.credit-banner-pending-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #c97820;
+  animation: credit-banner-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes credit-banner-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .credit-banner-pending-dot {
+    animation: none;
+  }
+}
+
+.credit-banner-summary .credit-banner-note,
+.credit-banner-summary .credit-banner-error {
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: #153941;
+}
+
+.credit-banner-summary .credit-banner-error {
+  color: #a3261d;
+}
+
+@media (max-width: 640px) {
+  .credit-banner {
+    min-height: 124px;
+    padding-inline: 24px;
+    background-position: 60% center;
+  }
+
+  .credit-banner-balance {
+    flex-direction: column;
+    gap: 10px;
+  }
+}

@@ -1,0 +1,12 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-09-25
+# Scope: AI-generated ignore list to keep the local .venv, .env files and caches out of the image.
+# Author review: I reviewed the code; the virtualenv, caches and .env files stay out of the image.
+
+.venv
+__pycache__
+*.pyc
+.env
+.env.*
+.DS_Store
+.pytest_cache
