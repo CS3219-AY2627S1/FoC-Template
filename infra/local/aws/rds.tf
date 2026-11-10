@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-02
+# Scope: Terraform configuration (infra/local/aws), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # One Postgres instance for the local env, run by Floci as a real postgres:16
 # container behind a proxy on ports 7001-7099 (ADR-0010). Each service gets
 # its own database and login, created in the cluster by deploy/charts/foc-database.

@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+# Scope: GitHub Actions workflow, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Build changed services for dev, push them to ECR as foc/<service>:<git sha>,
 # then commit the new tags to deploy/values/envs/dev/services/; Argo CD syncs
 # dev from there (ADR-0005). Promotion to stg/prod copies a tag in a PR.

@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+# Scope: Terraform configuration (infra/nonprod/aws), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Each env's web app at https://<id>.cloudfront.net (infra/docs/frontend-s3-cloudfront.md;
 # no custom domain, so CloudFront's own name and certificate):
 # one CloudFront distribution, one origin for the page and the API, so the

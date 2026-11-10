@@ -1,4 +1,9 @@
 #!/bin/sh
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+# Scope: Terraform configuration (infra/local), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # kubectl/helm credential plugin for the LOCAL cluster only.
 #
 # `aws eks get-token` signs a token valid for 60 s but tells clients to reuse

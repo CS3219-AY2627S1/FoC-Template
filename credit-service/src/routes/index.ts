@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-19
+ * Scope: Credit Service source code, drafted and edited with Claude Code.
+ * Reviewed by Don Lee
+ */
+
 import type { FastifyInstance } from 'fastify';
 import { creditRoutes } from './credit.routes.js';
 import { healthRoutes } from './health.js';

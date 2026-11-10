@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+# Scope: Helm chart foc-namespace, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 apiVersion: v2
 name: foc-namespace
 description: Guard rails for one FoC environment namespace (quota, default limits, network isolation).

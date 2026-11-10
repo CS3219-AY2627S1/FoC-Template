@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+# Scope: Terraform configuration (infra/global/ecr), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # One registry shared by every cloud env (ADR-0005): an image is built once
 # and promoted by copying its tag between values files, never rebuilt.
 resource "aws_ecr_repository" "this" {

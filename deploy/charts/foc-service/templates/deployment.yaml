@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+Scope: Helm chart foc-service, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 {{- $dbCa := and .Values.database.enabled .Values.databaseCa.configMap }}
 apiVersion: apps/v1
 kind: Deployment

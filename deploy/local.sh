@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-19
+# Scope: Deployment script, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Deploy deploy/ into the LOCAL cluster (Floci k3s) straight from your working
 # copy with Helm. Cloud environments use Argo CD instead (ADR-0009); both use
 # the same charts and values.

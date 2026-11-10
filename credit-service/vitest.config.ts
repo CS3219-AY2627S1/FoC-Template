@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-11
+ * Scope: Credit Service build and container config, drafted and edited with Claude Code.
+ * Reviewed by Don Lee
+ */
+
 import { defineConfig } from 'vitest/config';
 import { TEST_DATABASE_URL } from './test/constants.ts';
 

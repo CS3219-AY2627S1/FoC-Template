@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-23
+# Scope: Deployment script, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Seed Supplier's database with the campus suppliers in
 # supplier-service/prisma/seed.ts (21 approved suppliers and their categories).
 # Runs it as a one-off Job in the service's `migrate` image, which has ts-node.

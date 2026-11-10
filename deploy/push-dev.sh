@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+# Scope: Deployment script, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Build FoC images for the dev env on AWS, push them to ECR as
 # foc/<service>:<git sha>, and commit the new tags to
 # deploy/values/envs/dev/services/; Argo CD deploys them once that commit is

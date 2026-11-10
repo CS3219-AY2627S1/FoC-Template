@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-06
+# Scope: Terraform configuration (infra/nonprod/aws), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # App secrets in Secrets Manager, one per Kubernetes Secret, named
 # foc/<env>/<Secret name> with the Secret's keys as JSON. External Secrets
 # copies each into namespace foc-<env> (deploy/charts/foc-database and

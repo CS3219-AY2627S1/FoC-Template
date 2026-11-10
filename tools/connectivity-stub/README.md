@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+Scope: Connectivity stub service, drafted and edited with Claude Code.
+Reviewed by Don Lee
+-->
+
 # connectivity-stub
 
 A placeholder HTTP service that stands in for FoC services that don't have an

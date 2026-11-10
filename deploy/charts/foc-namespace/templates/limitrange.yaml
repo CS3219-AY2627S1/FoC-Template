@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+Scope: Helm chart foc-namespace, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 apiVersion: v1
 kind: LimitRange
 metadata:

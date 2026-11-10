@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+Scope: Deployment documentation, drafted and edited with Claude Code.
+Reviewed by Don Lee
+-->
+
 # deploy/
 
 Everything that runs **inside** the clusters, as YAML in Git.

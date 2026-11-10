@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+# Scope: Deployment script, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Open a local tunnel to dev's RDS Postgres and print the connection details.
 # RDS is in private subnets (infra/nonprod/aws/rds.tf), so this runs a socat pod
 # in the cluster and `kubectl port-forward`s it to 127.0.0.1:<RELAY_PORT>. The

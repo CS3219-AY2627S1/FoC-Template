@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-08
+ * Scope: Credit Service source code, drafted and edited with Claude Code.
+ * Reviewed by Don Lee
+ */
+
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db, type Database } from '../database/index.js';
 import { creditLog, creditOrder, creditUser } from '../database/schema.js';

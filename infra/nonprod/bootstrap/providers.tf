@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+# Scope: Terraform configuration (infra/nonprod/bootstrap), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # The cluster comes from ../aws (separate state, ADR-0002): apply that first.
 data "terraform_remote_state" "aws" {
   backend = "s3"

@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-11-06
+Scope: Helm chart foc-service, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 {{- if .Values.mesh.enabled }}
 {{- $name := include "foc-service.name" . }}
 # ADR-0012: who may call this service, enforced by its Linkerd proxy.

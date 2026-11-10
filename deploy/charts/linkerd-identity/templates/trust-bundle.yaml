@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-19
+Scope: Helm chart linkerd-identity, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 # The trust anchor's public certificate, as the ConfigMap Linkerd reads when
 # identity.externalCA is true: linkerd-identity-trust-roots, key ca-bundle.crt.
 # To rotate the anchor, add the new root as a second source, roll out, then

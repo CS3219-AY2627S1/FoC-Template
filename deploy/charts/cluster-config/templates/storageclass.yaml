@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+Scope: Helm chart cluster-config, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 # gp3 (EBS CSI add-on, infra/<cluster>/aws/eks.tf): cheaper and faster than
 # EKS's gp2. WaitForFirstConsumer creates the volume in the pod's AZ.
 apiVersion: storage.k8s.io/v1

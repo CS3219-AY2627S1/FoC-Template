@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+# Scope: Helm chart foc-kafka, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Services connect to <clusterName>-kafka-bootstrap:9093 (TLS + SCRAM-SHA-512).
 clusterName: kafka
 

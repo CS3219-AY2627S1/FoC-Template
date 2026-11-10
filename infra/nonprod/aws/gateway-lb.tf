@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-23
+# Scope: Terraform configuration (infra/nonprod/aws), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Each env's API entry point: an INTERNAL NLB in front of that env's Envoy
 # gateway (ADR-0007), reachable only from CloudFront through a VPC origin
 # (frontend.tf). There is no public API endpoint and no certificate on the

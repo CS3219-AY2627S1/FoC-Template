@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-06
+# Scope: Helm values (deploy/values/clusters/nonprod), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # infra/nonprod/aws/secrets.tf; charts/cluster-config lets monitoring use this store.
 grafanaAdmin:
   secretStore: aws-secrets-dev

@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-19
+Scope: Helm chart foc-service, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 {{- if and .Values.mesh.enabled .Values.healthPath }}
 {{- range $client := list "meshed" "unmeshed" }}
 # `helm test <release>`: the mesh policy (ADR-0012) denies a caller that isn't

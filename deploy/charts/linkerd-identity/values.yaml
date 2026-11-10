@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-19
+# Scope: Helm chart linkerd-identity, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Namespace where cert-manager runs and trust-manager reads bundle sources
 # (charts/trust-manager app.trust.namespace). The trust anchor's Secret lives here.
 certManagerNamespace: cert-manager

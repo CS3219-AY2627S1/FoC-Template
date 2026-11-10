@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+Scope: Helm chart foc-service, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 {{- if .Values.migrate.enabled }}
 {{- if not .Values.database.enabled }}
 {{- fail "migrate.enabled needs database.enabled" }}

@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-07
+# Scope: Helm chart foc-service, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Short name, e.g. "credit". Becomes the Service name, so other services call
 # http://<name>:<port> in every environment.
 name: ""

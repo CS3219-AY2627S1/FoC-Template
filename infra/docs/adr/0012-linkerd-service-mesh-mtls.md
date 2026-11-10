@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+Scope: Infrastructure documentation, drafted and edited with Claude Code.
+Reviewed by Don Lee
+-->
+
 # ADR-0012: Linkerd secures service-to-service traffic with mTLS and per-service policy
 
 - **Status:** Accepted (2026-10-18). Spiked locally the same day (results
