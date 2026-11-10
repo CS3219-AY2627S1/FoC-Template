@@ -63,7 +63,7 @@ Paths are under `/api/v1`. Pages under `/admin` are owned by the admin frontend'
 | `/suppliers`, `/suppliers/{id}`, `/suppliers/new` | `GET /supplier?...`, `GET /supplier/{id}`, `POST /supplier` |
 | `/friends` | `GET /user/friends?page&pageSize`, `GET /user/friends/requests?direction=incoming\|outgoing&page&pageSize`, `POST /user/friends/{requestId}/accept\|reject`, `DELETE /user/friends/{friendUserId}`, `POST /user/friends/request` |
 | `/profile` | `GET /rating/{userId}`, `GET /badges/{userId}`, `GET /orders/delivery-points/my-locations`, `PATCH` and `DELETE /orders/delivery-points/{id}`, `PATCH /user/me/password`, `DELETE /user/me` |
-| `/admin` pages | `GET /admin/users`, `POST /admin/users/{id}/promote\|suspend\|reinstate`, `GET /admin/conflicts`, `GET /admin/conflicts/{caseId}`, `POST /admin/conflicts/{caseId}/review\|resolve`, `GET /admin/reports?status=open`, `POST /admin/reports/{id}/dismiss`, `GET /admin/appeals?status=open`, `POST /admin/appeals/{id}/reject`, `GET /supplier/admin`, `GET /supplier/admin/activity`, `PATCH /supplier/{id}/status`, `PATCH` and `DELETE /supplier/{id}`, `GET /rating/{userId}` |
+| `/admin` pages | `GET /admin/users`, `POST /admin/users/{id}/promote\|demote\|suspend\|reinstate`, `GET /admin/conflicts`, `GET /admin/conflicts/{caseId}`, `POST /admin/conflicts/{caseId}/review\|resolve`, `GET /admin/reports?status=open`, `POST /admin/reports/{id}/dismiss`, `GET /admin/appeals?status=open`, `POST /admin/appeals/{id}/reject`, `GET /supplier/admin`, `GET /supplier/admin/activity`, `PATCH /supplier/{id}/status`, `PATCH` and `DELETE /supplier/{id}`, `GET /rating/{userId}` |
 
 The browser never calls a `/internal` path. The gateway and nginx both block them.
 
