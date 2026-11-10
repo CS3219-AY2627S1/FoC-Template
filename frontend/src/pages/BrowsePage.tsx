@@ -2,7 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5), date: 2026-09-27
  * Scope: Generated the courier task pool from the desktop and mobile home
- *        mockups.
+ *        mockups. 2026-11-10: a Refresh button that re-runs the search.
  * Reviewed by Ngooi Jun Sen.
  *
  * Covers UI FR5, against order-service's open pool (GET /api/v1/orders).
@@ -67,7 +67,7 @@ export function BrowsePage() {
   }
 
   // Order F4.2.1: ranked once at search time; it reloads when the location
-  // changes, not as other couriers act.
+  // changes or the courier presses Refresh, not as other couriers act.
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -180,6 +180,15 @@ export function BrowsePage() {
     }
   }
 
+  // Re-runs the same search. The list stays on screen while it loads, so the
+  // page does not jump; filters and sort are applied to the new page as before.
+  function refresh() {
+    if (loading) return;
+    setBanner((current) => (current?.kind === 'conflict' ? null : current));
+    setAcceptError(null);
+    void load();
+  }
+
   const countLabel = `${visible.length} open request${visible.length === 1 ? '' : 's'}`;
 
   return (
@@ -276,14 +285,19 @@ export function BrowsePage() {
 
         <section className={styles.results}>
           <div className={styles.resultsHead}>
-            <h1 className={styles.count}>
-              {countLabel}
-              <span className={styles.countMeta}>
-                {sort === 'nearest' ? 'nearest first' : sort === 'reward' ? 'highest reward first' : 'most recent first'}
-                {' · refreshed '}
-                {formatElapsed(loadedAt)}
-              </span>
-            </h1>
+            <div className={styles.countRow}>
+              <h1 className={styles.count}>
+                {countLabel}
+                <span className={styles.countMeta}>
+                  {sort === 'nearest' ? 'nearest first' : sort === 'reward' ? 'highest reward first' : 'most recent first'}
+                  {' · refreshed '}
+                  {formatElapsed(loadedAt)}
+                </span>
+              </h1>
+              <button type="button" className={styles.refresh} disabled={loading} onClick={refresh}>
+                {loading ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </div>
 
             {banner?.kind === 'accepted' ? (
               <p className={styles.accepted} role="status">
