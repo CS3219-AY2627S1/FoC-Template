@@ -25,7 +25,6 @@ What a service gets:
 - JSON log formatting with ``request_id`` / ``user_id`` / ``order_id`` /
   ``task_id`` correlation
 - broker connection state shared with readiness
-- query helpers used by a service's own JSON summary endpoint
 
 Design notes:
 
@@ -43,7 +42,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import math
 import threading
 import time
 from collections.abc import Awaitable, Callable, Iterable
@@ -305,10 +303,6 @@ class Observability:
     def render(self) -> bytes:
         return generate_latest(self.registry)
 
-    def exposed_metrics(self) -> list[str]:
-        """Every metric family name exposed at ``/metrics`` (sorted)."""
-        return sorted(family.name for family in self.registry.collect())
-
     @staticmethod
     def value(metric, **labels: str) -> float:
         base = getattr(metric, "_name", "")
@@ -335,128 +329,6 @@ class Observability:
                 row["value"] = sample.value
                 rows.append(row)
         return rows
-
-    @staticmethod
-    def table_to_map(metric, key: str) -> dict[str, int]:
-        out: dict[str, int] = {}
-        for row in Observability.table(metric):
-            label = str(row.get(key, "unknown"))
-            out[label] = out.get(label, 0) + int(row["value"])
-        return out
-
-    @staticmethod
-    def _buckets(metric, **match: str) -> dict[float, float]:
-        base = getattr(metric, "_name", "")
-        bucket_name = f"{base}_bucket"
-        out: dict[float, float] = {}
-        for family in metric.collect():
-            for sample in family.samples:
-                if sample.name != bucket_name:
-                    continue
-                if not all(sample.labels.get(k) == v for k, v in match.items()):
-                    continue
-                le = sample.labels.get("le")
-                if le is None:
-                    continue
-                bound = float(le)
-                out[bound] = out.get(bound, 0.0) + sample.value
-        return out
-
-    @staticmethod
-    def _count_and_sum(metric, **match: str) -> tuple[float, float]:
-        base = getattr(metric, "_name", "")
-        count = total = 0.0
-        for family in metric.collect():
-            for sample in family.samples:
-                if sample.name not in (f"{base}_count", f"{base}_sum"):
-                    continue
-                if not all(sample.labels.get(k) == v for k, v in match.items()):
-                    continue
-                if sample.name.endswith("_count"):
-                    count += sample.value
-                else:
-                    total += sample.value
-        return count, total
-
-    @staticmethod
-    def percentile(buckets: dict[float, float], quantile: float) -> float | None:
-        total = buckets.get(math.inf, 0.0)
-        if total <= 0:
-            return None
-        bounds = sorted(bound for bound in buckets if not math.isinf(bound))
-        if not bounds:
-            return None
-        target = quantile * total
-        lower_bound, lower_count = 0.0, 0.0
-        for bound in bounds:
-            cumulative = buckets[bound]
-            if cumulative >= target:
-                span = bound - lower_bound
-                in_bucket = cumulative - lower_count
-                if in_bucket <= 0:
-                    return round(bound, 6)
-                return round(lower_bound + span * (target - lower_count) / in_bucket, 6)
-            lower_bound, lower_count = bound, cumulative
-        return round(bounds[-1], 6)
-
-    @classmethod
-    def histogram_stats(cls, metric, **match: str) -> dict[str, float | None]:
-        count, total = cls._count_and_sum(metric, **match)
-        buckets = cls._buckets(metric, **match)
-        return {
-            "count": count,
-            "sum_seconds": round(total, 6),
-            "mean_seconds": round(total / count, 6) if count else None,
-            "p50_seconds": cls.percentile(buckets, 0.50),
-            "p95_seconds": cls.percentile(buckets, 0.95),
-            "p99_seconds": cls.percentile(buckets, 0.99),
-        }
-
-    def http_summary(self) -> dict[str, object]:
-        by_class = {"2xx": 0.0, "3xx": 0.0, "4xx": 0.0, "5xx": 0.0, "other": 0.0}
-        per_route: dict[tuple[str, str], dict[str, float]] = {}
-        failures = 0.0
-        for row in self.table(self.http_requests):
-            value = float(row["value"])
-            status = str(row.get("status", ""))
-            key = status[:1] + "xx" if status[:1] in "2345" else "other"
-            by_class[key] = by_class.get(key, 0.0) + value
-            if status[:1] == "5":
-                failures += value
-            route_key = (str(row.get("method", "?")), str(row.get("route", "<unmatched>")))
-            entry = per_route.setdefault(route_key, {"requests": 0.0, "error_responses": 0.0})
-            entry["requests"] += value
-            if status[:1] in {"4", "5"}:
-                entry["error_responses"] += value
-
-        total = sum(by_class.values())
-        routes = []
-        for (method, route), counts in per_route.items():
-            stats = self.histogram_stats(self.http_duration, method=method, route=route)
-            routes.append(
-                {
-                    "method": method,
-                    "route": route,
-                    "requests": int(counts["requests"]),
-                    "error_responses": int(counts["error_responses"]),
-                    "p95_seconds": stats["p95_seconds"],
-                }
-            )
-        routes.sort(key=lambda item: item["requests"], reverse=True)
-        overall = self.histogram_stats(self.http_duration)
-        return {
-            "total_requests": int(total),
-            "requests_by_class": {k: int(v) for k, v in by_class.items() if v or k != "other"},
-            "server_error_rate": round(failures / total, 6) if total else 0.0,
-            "availability": round(1 - failures / total, 6) if total else None,
-            "latency_seconds": {
-                "p50": overall["p50_seconds"],
-                "p95": overall["p95_seconds"],
-                "p99": overall["p99_seconds"],
-                "mean": overall["mean_seconds"],
-            },
-            "routes": routes,
-        }
 
     # ── installation ────────────────────────────────────────────────────────
 

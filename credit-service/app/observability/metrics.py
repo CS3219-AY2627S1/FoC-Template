@@ -124,7 +124,6 @@ record_error_code = OBS.record_error_code
 metric_value = OBS.value
 counter_table = OBS.table
 render = OBS.render
-exposed_metrics = OBS.exposed_metrics
 
 
 def record_reservation(outcome: str) -> None:
