@@ -1,5 +1,8 @@
 <!--
 AI Assistance Disclosure:
+Additional AI assistance: OpenAI Codex, date: 2026-11-10.
+Scope: Recorded the approved local logging plan and implementation/verification for #66.
+Author review: Reviewed and approved by @ron on 2026-11-10.
 Additional AI assistance: OpenAI Codex (GPT-6), date: 2026-11-09.
 Scope: Recorded the exact issue #64 fix-and-push authorization and browser validation.
 Author review: PENDING.
@@ -97,6 +100,93 @@ Author review: Reviewed and approved by @mattis.
 -->
 
 # AI Usage Log
+
+## 2026-11-10 — Author approval of local logging PR #68
+
+- **Tool:** OpenAI Codex.
+- **Scope:** Recorded Ron's explicit approval in the PR #68 file disclosures,
+  README, approved plan and this usage log. Runtime configuration and executable
+  code are unchanged; other contributors' approvals and unrelated pending reviews
+  are preserved.
+- **Author review:** PR #68 implementation and disclosures reviewed and approved
+  by @ron on 2026-11-10. This records author approval, not a formal GitHub review.
+
+### Exact prompt
+
+> ok btw for this logging PR add my approval
+
+### Key response
+
+Updated only the local logging review records, verified the approval-only diff,
+and pushed the disclosure commit to the existing PR. The recorded visual-browser
+verification limitation remains unchanged; approval is not new test evidence.
+
+## 2026-11-10 — Optional local centralised logging (#66)
+
+- **Tool/mode:** OpenAI Codex; design interview, official-documentation research,
+  isolated implementation and local verification.
+- **Files:** The approved `docs/plans/local-centralised-logging.md`, optional
+  `observability/` stack, README summary and this usage log.
+- **Author review:** Ron selected Q1–Q9, approved the written plan, and subsequently
+  reviewed and approved the PR #68 implementation and disclosures on 2026-11-10.
+
+### Exact initiating prompt
+
+> $grill-with-docs could we draft a rough implementaiton plan for this
+
+### Exact implementation authorisation
+
+> agreed, i just looked through the local-centralised-logging spec, looks good proceed with implementation in a separate PR
+
+### Key response and scope
+
+The approved first increment reuses existing logs from the four backends and
+frontend nginx errors using an optional local Alloy/Loki/Grafana Compose stack.
+It excludes nginx access logs, application refactoring, metrics, distributed
+tracing, AWS and new CI jobs. Logs use persistent owned storage with a seven-day
+retention target; Grafana requires login on loopback port 3300. Direct Docker
+socket access is explicitly accepted for a trusted local collector. A bounded
+isolated smoke check and manual browser demonstration will provide evidence.
+
+An isolated worktree preserves the author's dirty main checkout and unrelated
+research/disclosures. The five core configuration files were implemented in a
+separate agent worktree and cherry-picked by a merger agent. Exact image pins are
+Alloy 1.21.3, Loki 3.7.9 and Grafana 13.3.0; image pulls, Compose validation,
+Alloy validation and Loki configuration verification passed. Grafana's automatic
+plugin preinstallation/update is disabled to preserve the pinned bundled plugins.
+
+The first expanded smoke run passed collection/privacy checks but failed its
+restart probe: Docker reassigns dynamically published host ports on restart.
+A tiny actual-nginx probe demonstrated a changed port. The smoke script now
+rediscovers its ephemeral Grafana port; the corrected complete smoke run passes,
+including all five sources, source/project exclusions, actual nginx streams,
+mixed/nested JSON, Bearer/PostgreSQL-URL masking, login enforcement, configured
+retention, restart persistence and independent application operation while logging
+is stopped. Its owned containers/network/volumes were removed. A seven-day
+deletion test is not claimed.
+
+Standards and spec reviews found two smoke-test gaps: three Node HTTP probes
+lacked explicit abort deadlines, and the privacy test did not assert exclusion of
+the actual nginx client IP. One implementer commit added five-second deadlines
+and a real extracted IP canary/masked-error-context assertion. A merger integrated
+that commit; the final full smoke passes and both re-reviews report no outstanding
+findings. Bash syntax, documentation links, ignore rules and whitespace checks pass.
+
+An isolated real FoC stack reused the four cached backend images and freshly built
+the frontend. A dummy administrator authenticated; Supplier GET returned 200 and
+PostgreSQL contained 21 seeded suppliers. Authenticated Grafana/Loki queries found
+actual logs from User, Supplier, Order and Credit, including the Supplier request
+ID and Credit account-status processing. After stopping only logging, frontend,
+User, Supplier and Order remained healthy. After logging restart, its data source
+health was OK and the documented nested-JSON query found the earlier Supplier
+record. All owned demo containers/networks/volumes and temporary secrets were removed.
+This is not a fresh backend-build result or a visual UI test.
+
+The interactive Grafana Explore check was not performed: computer-use inventory
+had no browser surfaces, and both in-app-browser and Chrome entry points reported
+unavailable. API verification is not presented as visual verification. Existing
+automatic PR checks passed 6/6 on implementation commit 8be4fe5; the final evidence
+commit triggers the normal workflow again. No CI jobs or application code changed.
 
 The Supplier UI entries for issues #29, #30, #31, and #34 continue the same workstream.
 To avoid duplicating prompt text, their initiating implementation request is quoted once

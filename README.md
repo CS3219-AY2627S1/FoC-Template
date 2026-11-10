@@ -1,5 +1,8 @@
 <!--
 AI Assistance Disclosure:
+Additional AI assistance: OpenAI Codex, date: 2026-11-10.
+Scope: Added optional local centralised logging instructions and AI summary for #66.
+Author review: Reviewed and approved by @ron on 2026-11-10.
 Additional AI assistance: OpenAI Codex (GPT-6), date: 2026-11-09.
 Scope: Recorded issue #64's Supplier browser assertion fix and verification.
 Author review: PENDING.
@@ -72,7 +75,20 @@ microservice (`user-service/`, `supplier-service/`, `order-service/`,
   may be added as needed, but must still **respect the
   one-service-per-folder skeleton** for core implementation.
 
+## Optional local logs
+
+The application can run with an independent local Alloy/Loki/Grafana logging stack.
+See [setup, searches and logging-only shutdown/reset](observability/README.md).
+Grafana uses loopback port 3300; existing application startup is unchanged.
+
 ## AI Use Summary
+
+OpenAI Codex assisted on 2026-11-10 with the author-approved local centralised
+logging plan and its optional configuration, isolated smoke checks and documentation
+for issue #66. No application source, root Compose, AWS or CI jobs were changed.
+The plan, implementation and disclosures were reviewed and approved by @ron on
+2026-11-10. Exact prompts,
+scope and verification are recorded in [the usage log](ai/usage-log.md).
 
 OpenAI Codex (GPT-6) assisted on 2026-09-25 and 2026-09-26 with implementing the first three Supplier backend increments from the author-approved specification: NestJS/Drizzle and PostgreSQL foundations; guarded, edit-preserving seed identities; least-privilege Compose setup; real User Service bearer verification; authenticated catalogue reads; request correlation and bundled assets; and administrator-only create/full-update/archive/restore with strict bodies, normalized race-safe duplicate creation rejection, and ETag concurrency. The isolated real-service integration runner now verifies API and SQL mutation state, concurrent stale-write rejection, lifecycle no-ops, repeat-migration/seed preservation, and fail-closed authentication. No Supplier frontend, User Service application changes, Order Service integration, or physical Supplier deletion were included. Project-author review of all three backend increments was completed and approved by @ron. [Strict-JSON disclosure details](supplier-service/AI-DISCLOSURES.md#strict-json-files) retain the pending course-owner exception approval; the exact prompts and key-response summaries are recorded in `ai/usage-log.md`.
 
