@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # AI Assistance Disclosure: OpenAI Codex, 2026-11-10.
 # Scope: Isolated real Docker/Alloy/Loki/Grafana checks for issue #66.
-# Author review: Implementation review pending; plan approved by Ron.
+# Author review: Reviewed and approved by @ron on 2026-11-10.
 set -euo pipefail
 
 if [[ ${1:-} == --help ]]; then

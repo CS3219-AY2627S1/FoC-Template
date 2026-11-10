@@ -3,13 +3,13 @@ AI Assistance Disclosure:
 Tool: OpenAI Codex, date: 2026-11-10
 Scope: Inspected repository logging and official Docker/Grafana documentation;
 drafted this local-only plan from Ron's nine design-interview answers for issue #66.
-Author review: Plan and shared understanding reviewed and approved by Ron on
-2026-11-10; implementation explicitly authorised in a separate PR.
+Author review: Plan, PR #68 implementation and disclosures reviewed and approved
+by @ron on 2026-11-10.
 -->
 
 # Optional local centralised logging: rough implementation plan
 
-Status: approved on 2026-11-10; implemented in [PR #68](https://github.com/Y2627S1-CS3219-P5/FoC/pull/68), pending human review. Tracking: [GitHub issue #66](https://github.com/Y2627S1-CS3219-P5/FoC/issues/66).
+Status: implemented in [PR #68](https://github.com/Y2627S1-CS3219-P5/FoC/pull/68); plan and implementation reviewed and approved by @ron on 2026-11-10, pending merge. Tracking: [GitHub issue #66](https://github.com/Y2627S1-CS3219-P5/FoC/issues/66).
 
 ## Goal and agreed boundary
 

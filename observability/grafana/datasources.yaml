@@ -1,6 +1,6 @@
 # AI Assistance Disclosure: OpenAI Codex, 2026-11-10.
 # Scope: Provision the local Loki data source for Grafana Explore (#66).
-# Author review: Plan approved by Ron; implementation review pending.
+# Author review: Reviewed and approved by @ron on 2026-11-10.
 apiVersion: 1
 
 datasources:

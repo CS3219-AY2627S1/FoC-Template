@@ -1,7 +1,7 @@
 <!--
 AI Assistance Disclosure: OpenAI Codex, 2026-11-10.
 Scope: Local logging setup, safe operations and verification instructions for #66.
-Author review: Plan approved by Ron; implementation/documentation review pending.
+Author review: Reviewed and approved by @ron on 2026-11-10.
 -->
 
 # Local centralised logs

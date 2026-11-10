@@ -2,7 +2,7 @@
 AI Assistance Disclosure:
 Additional AI assistance: OpenAI Codex, date: 2026-11-10.
 Scope: Recorded the approved local logging plan and implementation/verification for #66.
-Author review: Plan approved by Ron; implementation review pending.
+Author review: Reviewed and approved by @ron on 2026-11-10.
 Additional AI assistance: OpenAI Codex (GPT-6), date: 2026-11-09.
 Scope: Recorded the exact issue #64 fix-and-push authorization and browser validation.
 Author review: PENDING.
@@ -98,15 +98,34 @@ Author review: Reviewed and approved by @mattis.
 
 # AI Usage Log
 
+## 2026-11-10 — Author approval of local logging PR #68
+
+- **Tool:** OpenAI Codex.
+- **Scope:** Recorded Ron's explicit approval in the PR #68 file disclosures,
+  README, approved plan and this usage log. Runtime configuration and executable
+  code are unchanged; other contributors' approvals and unrelated pending reviews
+  are preserved.
+- **Author review:** PR #68 implementation and disclosures reviewed and approved
+  by @ron on 2026-11-10. This records author approval, not a formal GitHub review.
+
+### Exact prompt
+
+> ok btw for this logging PR add my approval
+
+### Key response
+
+Updated only the local logging review records, verified the approval-only diff,
+and pushed the disclosure commit to the existing PR. The recorded visual-browser
+verification limitation remains unchanged; approval is not new test evidence.
+
 ## 2026-11-10 — Optional local centralised logging (#66)
 
 - **Tool/mode:** OpenAI Codex; design interview, official-documentation research,
   isolated implementation and local verification.
 - **Files:** The approved `docs/plans/local-centralised-logging.md`, optional
   `observability/` stack, README summary and this usage log.
-- **Author review:** Ron selected Q1–Q9 and approved the written plan on 2026-11-10.
-  Implementation/disclosure review remains pending; plan approval is not attributed
-  as approval of code that had not yet been written.
+- **Author review:** Ron selected Q1–Q9, approved the written plan, and subsequently
+  reviewed and approved the PR #68 implementation and disclosures on 2026-11-10.
 
 ### Exact initiating prompt
 
