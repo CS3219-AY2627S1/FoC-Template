@@ -20,7 +20,7 @@ The form loads its choices in parallel: approved suppliers for the pickup, campu
 
 ![Courier flow](seq-courier.png)
 
-The pool is ranked by Order: nearest pickup first when the browser sends a location, by reward otherwise. A location is sent only when the courier allows it and is on campus, since every pickup is on campus. Accepting is first come, first served; a 409 means another courier won, and the task is removed from the list. Once accepted, the task page re-reads the order every 5 seconds, so an escalation by the requester or an admin decision shows up without a reload. Collect and deliver each upload one photo as multipart form data.
+The pool is ranked by Order: nearest pickup first when the browser sends a location, by reward otherwise. It is loaded when Browse opens, when the location changes, and when the courier presses Refresh; it is not polled. A location is sent only when the courier allows it and is on campus, since every pickup is on campus. Accepting is first come, first served; a 409 means another courier won, and the task is removed from the list. Once accepted, the task page re-reads the order every 5 seconds, so an escalation by the requester or an admin decision shows up without a reload. Collect and deliver each upload one photo as multipart form data.
 
 ## Acknowledge and rate
 

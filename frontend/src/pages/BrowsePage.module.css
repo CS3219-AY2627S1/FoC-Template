@@ -162,6 +162,32 @@
   color: var(--color-text-subtle);
 }
 
+.countRow {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* A text button, like "Update location". */
+.refresh {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.refresh:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.refresh:disabled {
+  color: var(--color-text-subtle);
+  cursor: default;
+}
+
 .accepted {
   display: flex;
   align-items: center;
@@ -236,6 +262,10 @@
   }
 
   .countMeta {
+    font-size: var(--font-size-xs);
+  }
+
+  .refresh {
     font-size: var(--font-size-xs);
   }
 

@@ -79,7 +79,7 @@ Nothing pushes to the browser; shared data is polled while something on screen r
 | Pending ratings | Every 30 s, on focus, and 1.5, 4 and 10 s after delivering or acknowledging | Grants reach Rating over Kafka a moment after the action |
 | Incoming friend requests count | On load and on focus | A hint only |
 | Friends' names on order pages | When an order page opens, and after a friend is added or removed | |
-| Browse list | On load, and when the location changes | Order F4.2.1 ranks once per search |
+| Browse list | On load, when the location changes, and when the courier presses Refresh | Order F4.2.1 ranks once per search, so the list is not polled: it would reorder under the courier. "Refreshed X ago" shows its age |
 
 Stores are cleared when nothing reads them, for example after signing out, so the next user never sees the previous user's balance, alerts or ratings.
 
