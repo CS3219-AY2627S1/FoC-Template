@@ -1355,3 +1355,35 @@ commit=False)` so the settlement and its task result commit once,
   and `npm run build` pass. Verified in Playwright that the supplier card has no
   map action, the detail button opens `/suppliers/:id/map`, and the red pin plus
   the recenter control render.
+
+## 09/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Order creation location helpers. Auto-fill Pickup location from the
+  selected supplier's building/floor/location, and add a locate action after
+  the Delivery location title that opens a map picker modal where clicking the
+  map places a pin. On confirm the point is reverse-geocoded through the public
+  OSM Nominatim service (coordinate fallback plus a warning when it is
+  unavailable) and the address fills the delivery field. The lookup pins
+  `accept-language=en` so addresses stay English regardless of the browser
+  locale. Extended `CampusMap` with a selectable mode, a responsive height
+  prop, modal-safe size invalidation, and a recenter control that does not leak
+  clicks to the map. Files: `frontend/src/pages/orders/CreateOrder.tsx`,
+  `frontend/src/components/LocationPickerModal.tsx`,
+  `frontend/src/lib/geocoding.ts`,
+  `frontend/src/components/CampusMap.tsx`.
+- Prompt(s):
+  1. "Now modify the order creation screen. Add: after a supplier is selected,
+     auto-fill the pickup location (the merchant's). For the delivery location,
+     add a locate icon after the title; clicking it opens a map to pick a point
+     and fill the address. If any part is impossible or hard to implement, pause
+     and tell me."
+  2. "No need to change order-service for now. The delivery field is filled in
+     Chinese — is that related to the system language or something? If possible,
+     change it to English."
+- Author review: `npx tsc --noEmit`, `npm run lint` (only pre-existing warnings)
+  and `npm run build` pass. Verified in Playwright that selecting a supplier
+  fills the pickup address, the locate icon opens the picker, clicking the map
+  moves the pin, and confirming fills the geocoded address. Confirmed with a
+  direct Nominatim call that `accept-language=en` returns an English
+  display_name.

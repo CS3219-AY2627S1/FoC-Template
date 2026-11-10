@@ -2,20 +2,27 @@
 // OpenStreetMap view centered on a campus location. Reviewed by authors.
 import { ActionIcon, Box, Text, Tooltip } from "@mantine/core";
 import { IconFocusCentered } from "@tabler/icons-react";
-import { divIcon } from "leaflet";
+import { divIcon, DomEvent } from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { useEffect, useRef } from "react";
 import {
   MapContainer,
   Marker,
   Popup,
   TileLayer,
   useMap,
+  useMapEvents,
 } from "react-leaflet";
 
 interface CampusMapProps {
   latitude: number;
   longitude: number;
   label?: string;
+  /** When true, clicking the map reports the clicked coordinates via onSelect. */
+  selectable?: boolean;
+  onSelect?: (latitude: number, longitude: number) => void;
+  /** Responsive map height; defaults to the full-height map view. */
+  height?: { base: number; sm: number };
 }
 
 const OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -33,9 +40,21 @@ function RecenterControl({
   longitude: number;
 }) {
   const map = useMap();
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Keep clicks on the control from reaching the map (which would move the
+  // selection pin in selectable mode).
+  useEffect(() => {
+    if (containerRef.current) {
+      DomEvent.disableClickPropagation(containerRef.current);
+    }
+  }, []);
 
   return (
-    <Box style={{ position: "absolute", top: 10, right: 10, zIndex: 1000 }}>
+    <Box
+      ref={containerRef}
+      style={{ position: "absolute", top: 10, right: 10, zIndex: 1000 }}
+    >
       <Tooltip label="Recenter map" withArrow>
         <ActionIcon
           aria-label="Recenter map"
@@ -53,6 +72,31 @@ function RecenterControl({
   );
 }
 
+// Reports map clicks so a parent can move a selection pin.
+function ClickToSelect({
+  onSelect,
+}: {
+  onSelect: (latitude: number, longitude: number) => void;
+}) {
+  useMapEvents({
+    click(event) {
+      onSelect(event.latlng.lat, event.latlng.lng);
+    },
+  });
+  return null;
+}
+
+// Leaflet measures its container on mount; inside modals the layout may settle
+// a moment later, so re-measure once to avoid grey/torn tiles.
+function InvalidateSizeOnMount() {
+  const map = useMap();
+  useEffect(() => {
+    const timer = window.setTimeout(() => map.invalidateSize(), 150);
+    return () => window.clearTimeout(timer);
+  }, [map]);
+  return null;
+}
+
 // Red teardrop pin drawn as inline SVG so no extra image assets are needed.
 // iconAnchor points at the bottom tip, so the tip marks the exact coordinate.
 const RED_PIN_ICON = divIcon({
@@ -66,13 +110,20 @@ const RED_PIN_ICON = divIcon({
   popupAnchor: [0, -40],
 });
 
-export function CampusMap({ latitude, longitude, label }: CampusMapProps) {
+export function CampusMap({
+  latitude,
+  longitude,
+  label,
+  selectable = false,
+  onSelect,
+  height = { base: 360, sm: 520 },
+}: CampusMapProps) {
   // Explicit tuple so Leaflet's LatLngExpression type narrows correctly.
   const position: [number, number] = [latitude, longitude];
 
   return (
     <Box
-      h={{ base: 360, sm: 520 }}
+      h={height}
       w="100%"
       style={{
         borderRadius: "var(--mantine-radius-md)",
@@ -84,9 +135,14 @@ export function CampusMap({ latitude, longitude, label }: CampusMapProps) {
         center={position}
         zoom={DEFAULT_ZOOM}
         scrollWheelZoom={false}
-        style={{ height: "100%", width: "100%" }}
+        style={{
+          height: "100%",
+          width: "100%",
+          cursor: selectable ? "crosshair" : undefined,
+        }}
       >
         <TileLayer url={OSM_TILE_URL} attribution={OSM_ATTRIBUTION} />
+        {selectable && onSelect ? <ClickToSelect onSelect={onSelect} /> : null}
         <Marker position={position} icon={RED_PIN_ICON}>
           {label ? (
             <Popup>
@@ -97,6 +153,7 @@ export function CampusMap({ latitude, longitude, label }: CampusMapProps) {
           ) : null}
         </Marker>
         <RecenterControl latitude={latitude} longitude={longitude} />
+        <InvalidateSizeOnMount />
       </MapContainer>
     </Box>
   );

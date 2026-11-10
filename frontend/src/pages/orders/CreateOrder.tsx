@@ -1,8 +1,11 @@
 // AI-assisted: create-order form with supplier select, deadline validation, and supplierId query param pre-selection.
 import {
+  ActionIcon,
   Alert,
   Button,
   Center,
+  Group,
+  Input,
   Loader,
   NumberInput,
   Select,
@@ -11,11 +14,23 @@ import {
   TextInput,
   Textarea,
   Title,
+  Tooltip,
 } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
+import { IconCurrentLocation } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { LocationPickerModal } from "../../components/LocationPickerModal";
 import { ApiError, type OrderCreate, ordersApi, suppliersApi } from "../../lib/api";
 import type { Supplier } from "../../lib/types";
+
+/** Builds the pickup address shown for a supplier from its location fields. */
+function supplierPickupLocation(supplier: Supplier): string {
+  const parts = [supplier.building, supplier.floor, supplier.locationDescription]
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join(", ") : supplier.name;
+}
 
 export default function CreateOrder() {
   const navigate = useNavigate();
@@ -36,6 +51,7 @@ export default function CreateOrder() {
   const [rewardError, setRewardError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pickerOpen, picker] = useDisclosure(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,6 +74,18 @@ export default function CreateOrder() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-fill the pickup address from the selected supplier's location.
+  useEffect(() => {
+    if (!supplierId) return;
+    const supplier = suppliers.find((s) => s.id === supplierId);
+    if (supplier) {
+      setPickupLocation(supplierPickupLocation(supplier));
+    }
+  }, [supplierId, suppliers]);
+
+  const selectedSupplier =
+    suppliers.find((s) => s.id === supplierId) ?? null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -172,13 +200,31 @@ export default function CreateOrder() {
             onChange={(e) => setPickupLocation(e.currentTarget.value)}
           />
 
-          <TextInput
-            label="Delivery location"
-            placeholder="Where to deliver"
-            required
-            value={deliveryLocation}
-            onChange={(e) => setDeliveryLocation(e.currentTarget.value)}
-          />
+          <Stack gap={4}>
+            <Group gap={4} wrap="nowrap">
+              <Input.Label htmlFor="delivery-location" required>
+                Delivery location
+              </Input.Label>
+              <Tooltip label="Pick on map" withArrow>
+                <ActionIcon
+                  type="button"
+                  size="xs"
+                  variant="subtle"
+                  aria-label="Pick delivery location on map"
+                  onClick={picker.open}
+                >
+                  <IconCurrentLocation size={14} />
+                </ActionIcon>
+              </Tooltip>
+            </Group>
+            <TextInput
+              id="delivery-location"
+              placeholder="Where to deliver"
+              required
+              value={deliveryLocation}
+              onChange={(e) => setDeliveryLocation(e.currentTarget.value)}
+            />
+          </Stack>
 
           {submitError && (
             <Alert color="red" title="Error">
@@ -191,6 +237,14 @@ export default function CreateOrder() {
           </Button>
         </Stack>
       </form>
+
+      <LocationPickerModal
+        opened={pickerOpen}
+        onClose={picker.close}
+        onPick={(picked) => setDeliveryLocation(picked.address)}
+        initialLatitude={selectedSupplier?.latitude ?? null}
+        initialLongitude={selectedSupplier?.longitude ?? null}
+      />
     </Stack>
   );
 }
