@@ -3,9 +3,19 @@
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: Tests for the Order Service request paths and bodies.
  * Author review: Reviewed and approved by @mattis.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
+ * Scope: N2 status and extract requests. Author review: Reviewed and approved by @mattis.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createErrand, getErrand, listMyErrands, listOpenErrands, runErrandAction } from './errandApi'
+import {
+  createErrand,
+  extractErrand,
+  getErrand,
+  getExtractionStatus,
+  listMyErrands,
+  listOpenErrands,
+  runErrandAction,
+} from './errandApi'
 
 describe('errand API', () => {
   beforeEach(() => {
@@ -36,6 +46,17 @@ describe('errand API', () => {
       '/api/v1/errands',
     ])
     expect(calls[4][1]).toMatchObject({ method: 'POST' })
+  })
+
+  it('asks for the extraction status and sends only the description to extract', async () => {
+    await getExtractionStatus()
+    await extractErrand('Two lattes to COM1')
+
+    const calls = vi.mocked(fetch).mock.calls
+    expect(calls.map(([url, init]) => [url, init?.method ?? 'GET', init?.body])).toEqual([
+      ['/api/v1/errands/extract/status', 'GET', undefined],
+      ['/api/v1/errands/extract', 'POST', JSON.stringify({ description: 'Two lattes to COM1' })],
+    ])
   })
 
   it('sends a body only for a reject with a reason', async () => {

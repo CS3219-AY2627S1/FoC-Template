@@ -25,6 +25,8 @@ tested Supplier form-control alignment and persistent navigation for PR #32.
 Author review: Reviewed and approved by @ron.
 Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: recorded
 the member errand pages below. Author review: Reviewed and approved by @mattis.
+Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: recorded
+the N2 description box below. Author review: Reviewed and approved by @mattis.
 -->
 
 # Frontend AI disclosures
@@ -230,3 +232,23 @@ of date filters and paging. Tool: OpenAI Codex (GPT-6), 2026-11-09; Author revie
 The balance display was revised at the user's request: large cards were removed,
 with small available/reserved amounts placed beside the username in the shared
 header. OpenAI Codex (GPT-6), 2026-11-09; Author review: Reviewed and approved by @phuc.
+## 2026-11-09 — N2: filling the create-errand form from a description
+
+- **Tool:** Claude Code (Claude Opus 5.5)
+- **Allowed-use scope:** Implementation, tests and documentation of the frontend part of the
+  author's approved N2 spec (`docs/superpowers/specs/2026-11-09-order-n2-natural-language-errand-creation.md`).
+- **Repository files affected:** `frontend/src/api/client.ts`, `frontend/src/api/errandApi.ts`,
+  `frontend/src/errands/{DescribeErrand.tsx,extractionCopy.ts,CreateErrandPage.tsx,errandFormModel.ts,types.ts}`,
+  their tests, `frontend/README.md` and this file.
+- **Author review:** Reviewed and approved by @mattis.
+
+Claude added the "Describe your errand" box above the create form. It checks the extraction status
+on load and shows one unavailable message for any reason, including a failed status call. It caps
+the description at 1000 characters with a counter, shows "Filling in…" while a request runs, fills
+only the fields that came back with a value (returned items replace the rows; a missing quantity
+shows 1), keeps any field the requester edits during the request, and labels filled fields "From
+your description" until they are edited. Failures show one message; a 429 shows a countdown from
+`Retry-After`. `ApiError` gained an optional `retryAfterSeconds`, read only from a whole-seconds
+`Retry-After` header; a test pins that Supplier errors are otherwise unchanged. No Supplier
+frontend file, `nginx.conf` or `vite.config.ts` was changed.
+

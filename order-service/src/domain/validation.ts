@@ -3,6 +3,10 @@
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-16
  * Scope: Pure validation of the create-errand request body, implementing the approved plan.
  * Author review: Reviewed and approved by @mattis.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
+ * Scope: moved the timestamp check into parseIsoTimestamp so N2 extraction checks deadlines with the
+ *        same rule; messages unchanged.
+ * Author review: Reviewed and approved by @mattis.
  */
 
 export interface CreateErrandInput {
@@ -32,13 +36,42 @@ const ALLOWED_FIELDS = new Set([
   "listingDeadline", "pickupDeadline", "deliveryDeadline",
 ]);
 
-const MAX_ITEMS = 20;
-const MAX_ITEM_NAME = 100;
-const MAX_ITEM_QUANTITY = 99;
-const MAX_DROPOFF = 200;
-const MAX_NOTES = 500;
-const MIN_CREDIT = 1;
-const MAX_CREDIT = 1000;
+/** The POST /errands limits; N2 extraction checks the model's reply against the same values. */
+export const CREATE_LIMITS = {
+  maxItems: 20,
+  maxItemName: 100,
+  maxItemQuantity: 99,
+  maxDropoff: 200,
+  maxNotes: 500,
+  minCredit: 1,
+  maxCredit: 1000,
+} as const;
+const {
+  maxItems: MAX_ITEMS, maxItemName: MAX_ITEM_NAME, maxItemQuantity: MAX_ITEM_QUANTITY, maxDropoff: MAX_DROPOFF,
+  maxNotes: MAX_NOTES, minCredit: MIN_CREDIT, maxCredit: MAX_CREDIT,
+} = CREATE_LIMITS;
+
+/**
+ * An ISO 8601 timestamp with a UTC offset, as POST /errands accepts it. "format" when the text has the wrong
+ * shape, "invalid" for an impossible date or time (Feb 31, hour 24), otherwise the instant.
+ */
+export function parseIsoTimestamp(v: unknown): Date | "format" | "invalid" {
+  if (typeof v !== "string" || !TIMESTAMP_RE.test(v)) return "format";
+  const d = new Date(v);
+  // Date silently rolls impossible values (Feb 31, hour 24) forward, so check the components too
+  const [, y, mo, da, h, mi, sec] = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(v)!;
+  const daysInMonth = new Date(Date.UTC(Number(y), Number(mo), 0)).getUTCDate();
+  const offset = /([+-])(\d{2}):(\d{2})$/.exec(v);
+  if (
+    Number(mo) < 1 || Number(mo) > 12 || Number(da) < 1 || Number(da) > daysInMonth ||
+    Number(h) > 23 || Number(mi) > 59 || Number(sec ?? 0) > 59 ||
+    (offset !== null && (Number(offset[2]) > 23 || Number(offset[3]) > 59)) ||
+    Number.isNaN(d.getTime())
+  ) {
+    return "invalid";
+  }
+  return d;
+}
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -107,22 +140,12 @@ export function validateCreateErrand(body: unknown, now: Date): CreateErrandVali
   }
 
   const parseDeadline = (field: string): Date | undefined => {
-    const v = body[field];
-    if (typeof v !== "string" || !TIMESTAMP_RE.test(v)) {
+    const d = parseIsoTimestamp(body[field]);
+    if (d === "format") {
       fail(field, `${field} must be an ISO 8601 timestamp with a UTC offset`);
       return undefined;
     }
-    const d = new Date(v);
-    // Date silently rolls impossible values (Feb 31, hour 24) forward, so check the components too
-    const [, y, mo, da, h, mi, sec] = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(v)!;
-    const daysInMonth = new Date(Date.UTC(Number(y), Number(mo), 0)).getUTCDate();
-    const offset = /([+-])(\d{2}):(\d{2})$/.exec(v);
-    if (
-      Number(mo) < 1 || Number(mo) > 12 || Number(da) < 1 || Number(da) > daysInMonth ||
-      Number(h) > 23 || Number(mi) > 59 || Number(sec ?? 0) > 59 ||
-      (offset !== null && (Number(offset[2]) > 23 || Number(offset[3]) > 59)) ||
-      Number.isNaN(d.getTime())
-    ) {
+    if (d === "invalid") {
       fail(field, `${field} is not a valid timestamp`);
       return undefined;
     }

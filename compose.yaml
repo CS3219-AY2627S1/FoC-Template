@@ -14,6 +14,7 @@
 # Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-16. Scope: credit-db and the one-off credit-migrate step, following the user-db pattern (credit-service/docs/implementation-proposal.md §4, §10). Author review: Reviewed and approved by @phuc
 # Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-18. Scope: order-service Kafka settings (CREDIT_MODE via ORDER_CREDIT_MODE, brokers, client id). Author review: Reviewed and approved by @phuc
 # Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-18. Scope: order-service session verification through user-service (AUTH_MODE via ORDER_AUTH_MODE). Author review: Reviewed and approved by @phuc
+# Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: order-service N2 extraction settings (LLM_MODE, LLM_API_KEY, LLM_MODEL, LLM_TIMEOUT_MS via ORDER_LLM_*). Author review: Reviewed and approved by @mattis.
 # Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-16. Scope: shared Kafka broker (KRaft, single node) and the one-off kafka-init step that creates the three topics (kafka/create-topics.sh), 1 partition each per the Credit Service author. Author review: Reviewed and approved by @phuc
 # Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-16. Scope: kafka-test, an on-demand smoke test of the broker and topics (kafka/test-topics.sh). Author review: Reviewed and approved by @phuc.
 # Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-16. Scope: credit-service (Kafka consumer and outbox publisher) and the two Credit Service DLQ topics. Author review: Reviewed and approved by @phuc.
@@ -126,6 +127,12 @@ services:
       RESERVATION_TIMEOUT_SECONDS: ${RESERVATION_TIMEOUT_SECONDS:-30}
       STUB_CREDIT_LIMIT: ${STUB_CREDIT_LIMIT:-100}
       STUB_CREDIT_SILENT_AMOUNT: ${STUB_CREDIT_SILENT_AMOUNT:-999}
+      # N2: fill the create-errand form from a description. anthropic (Claude), stub (fixed reply) or off.
+      # With anthropic and no key the feature reports NOT_CONFIGURED; the key comes only from .env
+      LLM_MODE: ${ORDER_LLM_MODE:-anthropic}
+      LLM_API_KEY: ${ORDER_LLM_API_KEY:-}
+      LLM_MODEL: ${ORDER_LLM_MODEL:-claude-haiku-5-5}
+      LLM_TIMEOUT_MS: ${ORDER_LLM_TIMEOUT_MS:-50000}
     depends_on:
       order-migrate:
         condition: service_completed_successfully

@@ -7,6 +7,8 @@
  * Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: tests
  * for Order Service field-error lists and currentState.
  * Author review: Reviewed and approved by @mattis.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09. Scope: tests
+ * for Retry-After, and that Supplier errors are unchanged. Author review: Reviewed and approved by @mattis.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -92,6 +94,51 @@ describe('API client', () => {
       },
     })
     expect(conflict).toMatchObject({ status: 409, code: 'INVALID_STATE', currentState: 'COMPLETED' })
+  })
+
+  it('keeps Retry-After seconds from a rate-limited reply', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        jsonResponse({ error: 'RATE_LIMITED', message: 'Too many' }, 429, { 'Retry-After': '42' }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ error: 'RATE_LIMITED', message: 'Too many' }, 429, { 'Retry-After': 'soon' }))
+
+    const limited = await apiRequest('/errands/extract').catch((caught: unknown) => caught)
+    const unreadable = await apiRequest('/errands/extract').catch((caught: unknown) => caught)
+
+    expect(limited).toMatchObject({ status: 429, code: 'RATE_LIMITED', retryAfterSeconds: 42 })
+    expect((unreadable as ApiError).retryAfterSeconds).toBeUndefined()
+  })
+
+  it('leaves Supplier errors exactly as they were', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse(
+        {
+          code: 'SUPPLIER_ALREADY_EXISTS',
+          message: 'A Supplier already exists at this location.',
+          fieldErrors: { name: 'Name is required.' },
+          existingSupplierId: 'existing-id',
+          requestId: 'request-id',
+        },
+        409,
+        { ETag: '"v3"' },
+      ),
+    )
+
+    const error = (await apiRequest('/suppliers').catch((caught: unknown) => caught)) as ApiError
+
+    expect({ ...error }).toEqual({
+      name: 'ApiError',
+      status: 409,
+      code: 'SUPPLIER_ALREADY_EXISTS',
+      details: { name: 'Name is required.' },
+      fieldErrors: { name: 'Name is required.' },
+      requestId: 'request-id',
+      existingSupplierId: 'existing-id',
+      currentState: undefined,
+      retryAfterSeconds: undefined,
+    })
+    expect(error.message).toBe('A Supplier already exists at this location.')
   })
 
   it('preserves the existing logged-in 401 handler', async () => {

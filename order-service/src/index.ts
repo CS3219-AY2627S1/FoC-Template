@@ -18,15 +18,22 @@
  * Scope: picks the HTTP or stub User and Supplier adapters by mode, per the User and Supplier
  *        integration plan.
  * Author review: Reviewed and approved by @mattis.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
+ * Scope: loads the N2 LLM settings, builds the extraction dependencies and logs the mode (never the key),
+ *        per the approved N2 spec.
+ * Author review: Reviewed and approved by @mattis.
  */
 import { StubCreditBus } from "./adapters/creditBus";
 import { HttpSessionVerifier, StubSessionVerifier, type SessionVerifier } from "./adapters/sessionVerifier";
 import { HttpSupplierDirectory, StubSupplierDirectory } from "./adapters/supplierDirectory";
-import { loadAdapterConfig, loadDatabaseConfig, loadKafkaConfig, loadOrderConfig, loadServerConfig, TOPICS } from "./config";
+import {
+  loadAdapterConfig, loadDatabaseConfig, loadKafkaConfig, loadLlmConfig, loadOrderConfig, loadServerConfig, TOPICS,
+} from "./config";
 import { createPool } from "./db";
 import { retryWhileDatabaseUnavailable } from "./dbAvailability";
 import { startDeadlineSweeper } from "./deadlines/sweeper";
 import { createApp } from "./http/app";
+import { extractionDeps } from "./http/extractionRoutes";
 import { createKafka, createProducer, SharedProducer } from "./kafka/client";
 import { KafkaCreditPublisher } from "./kafka/creditPublisher";
 import { startCreditResultsConsumer } from "./kafka/creditResultsConsumer";
@@ -46,6 +53,7 @@ async function main(): Promise<void> {
   const adapters = loadAdapterConfig();
   const kafkaConfig = adapters.creditMode === "kafka" ? loadKafkaConfig() : undefined;
   const { port } = loadServerConfig();
+  const llm = loadLlmConfig();
 
   const pool = createPool();
   await retryWhileDatabaseUnavailable("Startup", () => pool.query("SELECT 1"));
@@ -92,7 +100,8 @@ async function main(): Promise<void> {
     background.push({ name: "sweeper", stop: () => sweeper.stop() }, { name: "publisher", stop: () => publisher.stop() });
   }
 
-  const server = createApp({ pool, verifier, suppliers }).listen(port, () => {
+  const extraction = extractionDeps(llm, suppliers);
+  const server = createApp({ pool, verifier, suppliers, extraction }).listen(port, () => {
     log.info("order_service.started", {
       port,
       authMode: adapters.authMode,
@@ -101,6 +110,9 @@ async function main(): Promise<void> {
       kafkaBrokers: kafkaConfig?.brokers,
       confirmationWindowMinutes: order.confirmationWindowMinutes,
       reservationTimeoutSeconds: order.reservationTimeoutSeconds,
+      llmMode: llm.mode,
+      llmModel: llm.model,
+      extraction: extraction.status,
     });
   });
 

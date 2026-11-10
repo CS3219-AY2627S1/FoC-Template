@@ -4,8 +4,11 @@
  * Scope: Create-errand form values, defaults, and checks mirroring order-service validateCreateErrand,
  *        keyed by the same field names the server uses in its 400 details.
  * Author review: Reviewed and approved by @mattis.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
+ * Scope: N2 filling of the form from an extraction (only fields with a value, never ones the
+ *        requester edited meanwhile), per the approved N2 spec. Author review: Reviewed and approved by @mattis.
  */
-import { ERRAND_LIMITS, type CreateErrandRequest } from './types'
+import { ERRAND_LIMITS, type CreateErrandRequest, type ExtractedErrand } from './types'
 
 export interface ItemDraft {
   /** Stable React key; not sent */
@@ -109,6 +112,54 @@ export function validateErrandForm(values: ErrandFormValues, now: Date): ErrandF
       deliveryDeadline: delivery.toISOString(),
     },
   }
+}
+
+/** The form fields an extraction can fill; each gets its own "From your description" label. */
+export const FILLABLE_FIELDS = [
+  'supplierId',
+  'items',
+  'dropoffLocation',
+  'notes',
+  'creditAmount',
+  'listingDeadline',
+  'pickupDeadline',
+  'deliveryDeadline',
+] as const
+export type FillableField = (typeof FILLABLE_FIELDS)[number]
+
+/** The fields the extraction gave a value that will be filled, i.e. not ones in `skip` (edited by hand meanwhile). */
+export function fieldsToFill(extracted: ExtractedErrand, skip: ReadonlySet<FillableField>): Set<FillableField> {
+  return new Set(FILLABLE_FIELDS.filter((field) => extracted[field] !== null && !skip.has(field)))
+}
+
+/**
+ * Fills the form from an extraction. A null field leaves the form as it is (including its default deadlines
+ * and quantity); a field in `skip` is never touched. Returned items replace all item rows; an item with no
+ * quantity gets the form's default, 1. Deadlines are shown in the browser's time zone.
+ */
+export function applyExtraction(
+  values: ErrandFormValues,
+  extracted: ExtractedErrand,
+  skip: ReadonlySet<FillableField>,
+): ErrandFormValues {
+  const fill = fieldsToFill(extracted, skip)
+  const next = { ...values }
+  if (fill.has('supplierId')) next.supplierId = extracted.supplierId!
+  if (fill.has('items')) {
+    const firstKey = Math.max(-1, ...values.items.map((item) => item.key)) + 1
+    next.items = extracted.items!.map((item, index) => ({
+      key: firstKey + index,
+      name: item.name,
+      quantity: String(item.quantity ?? 1),
+    }))
+  }
+  if (fill.has('dropoffLocation')) next.dropoffLocation = extracted.dropoffLocation!
+  if (fill.has('notes')) next.notes = extracted.notes!
+  if (fill.has('creditAmount')) next.creditAmount = String(extracted.creditAmount)
+  for (const field of ['listingDeadline', 'pickupDeadline', 'deliveryDeadline'] as const) {
+    if (fill.has(field)) next[field] = toDateTimeLocal(new Date(extracted[field]!))
+  }
+  return next
 }
 
 /** "2026-11-09T14:30" in the browser's time zone */

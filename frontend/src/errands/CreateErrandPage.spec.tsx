@@ -3,6 +3,8 @@
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-09
  * Scope: Component tests for posting an errand: supplier choice, the request body, and server errors.
  * Author review: Reviewed and approved by @mattis.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
+ * Scope: the errand API mock gains the N2 status and extract calls. Author review: Reviewed and approved by @mattis.
  */
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -16,7 +18,11 @@ import type { Supplier } from '../suppliers/types'
 import { CreateErrandPage } from './CreateErrandPage'
 import { SUPPLIER_ID, makeErrand } from './testFixtures'
 
-vi.mock('../api/errandApi', () => ({ createErrand: vi.fn() }))
+vi.mock('../api/errandApi', () => ({
+  createErrand: vi.fn(),
+  getExtractionStatus: vi.fn(async () => ({ available: false, reason: 'DISABLED' })),
+  extractErrand: vi.fn(),
+}))
 vi.mock('../api/supplierApi', () => ({ getSupplier: vi.fn(), listSuppliers: vi.fn() }))
 
 const supplier: Supplier = {

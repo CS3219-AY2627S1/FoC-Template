@@ -8,6 +8,9 @@
  * Scope: POST /errands handles the archived, unavailable and unauthenticated supplier outcomes,
  *        per the User and Supplier integration plan.
  * Author review: Reviewed and approved by @mattis.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
+ * Scope: mounted the N2 extraction routes before /errands/:id, per the approved N2 spec.
+ * Author review: Reviewed and approved by @mattis.
  */
 import { Router, type Request, type Response } from "express";
 import type { Pool } from "pg";
@@ -19,6 +22,7 @@ import { validateCreateErrand, type FieldError } from "../domain/validation";
 import type { Errand } from "../errands/errand";
 import { adminListErrands, getErrandForViewer, listMine, listOpen, type HistoryEntry, type Page } from "../errands/queries";
 import { applyTransition, createErrand } from "../errands/repository";
+import { extractionRoutes, type ExtractionDeps } from "./extractionRoutes";
 import { requireRole } from "./auth";
 import { sendError, sendNotFound, sendTransitionFailure, sendValidation } from "./errors";
 
@@ -108,7 +112,12 @@ function optionalReason(body: unknown, errors: FieldError[]): string | undefined
 
 const user = (res: Response) => res.locals.user as Principal;
 
-export function errandRoutes(deps: { pool: Pool; verifier: SessionVerifier; suppliers: SupplierDirectory }): Router {
+export function errandRoutes(deps: {
+  pool: Pool;
+  verifier: SessionVerifier;
+  suppliers: SupplierDirectory;
+  extraction: ExtractionDeps;
+}): Router {
   const { pool, suppliers } = deps;
   const r = Router();
 
@@ -146,6 +155,9 @@ export function errandRoutes(deps: { pool: Pool; verifier: SessionVerifier; supp
     if (errors.length) return sendValidation(res, errors);
     res.json(serializePage(await listMine(pool, user(res).id, { ...p, as, state })));
   });
+
+  // N2: /errands/extract and /errands/extract/status, before /errands/:id
+  r.use(extractionRoutes(deps.extraction));
 
   r.get("/errands/:id", async (req, res) => {
     const id = String(req.params.id);

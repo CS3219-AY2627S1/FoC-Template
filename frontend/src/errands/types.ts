@@ -4,6 +4,9 @@
  * Scope: Errand API models copied from Order Service's serializeErrand, serializeDetail,
  *        serializePage and validateCreateErrand.
  * Author review: Reviewed and approved by @mattis.
+ * Additional AI assistance: Claude Code (Claude Opus 5.5), date: 2026-11-09
+ * Scope: N2 extraction models (status and the extracted fields), per the approved N2 spec.
+ * Author review: Reviewed and approved by @mattis.
  */
 
 // Same order as order-service/src/domain/states.ts
@@ -125,3 +128,24 @@ export const ERRAND_LIMITS = {
 } as const
 
 export const ERRAND_LIST_DEFAULT_SIZE = 20
+
+/** GET /errands/extract/status */
+export interface ExtractionStatus {
+  readonly available: boolean
+  readonly reason: null | 'DISABLED' | 'NOT_CONFIGURED'
+}
+
+/** POST /errands/extract: the POST /errands field names, each null when it couldn't be worked out. */
+export interface ExtractedErrand {
+  readonly supplierId: string | null
+  readonly items: readonly { readonly name: string; readonly quantity: number | null }[] | null
+  readonly dropoffLocation: string | null
+  readonly notes: string | null
+  readonly creditAmount: number | null
+  readonly listingDeadline: string | null
+  readonly pickupDeadline: string | null
+  readonly deliveryDeadline: string | null
+}
+
+/** At most this many characters (JavaScript string length) go to POST /errands/extract */
+export const MAX_DESCRIPTION = 1000
