@@ -36,5 +36,14 @@ class ReportSubmissionFingerprintTest {
         assertEquals("0-" + sha, ReportSubmissionFingerprint.attachmentId(0, sha));
         assertEquals("9f64a747e1b97f131fabb6b447296c9b6f0201e79fb3c5356e6c77e89b6a806a",
                 ReportSubmissionFingerprint.sha256(new byte[] {1, 2, 3, 4}));
+        assertThrows(IllegalArgumentException.class, () -> ReportSubmissionFingerprint.attachmentId(-1, sha));
+        assertThrows(IllegalArgumentException.class, () -> ReportSubmissionFingerprint.attachmentId(0, null));
+        assertThrows(IllegalArgumentException.class, () -> ReportSubmissionFingerprint.attachmentId(0, "bad"));
+    }
+
+    @Test
+    void canonicalFingerprintSupportsAbsentOptionalFields() {
+        assertEquals("", ReportSubmissionFingerprint.normalizeDescription(null));
+        assertDoesNotThrow(() -> ReportSubmissionFingerprint.create(null, null, null, null, List.of()));
     }
 }

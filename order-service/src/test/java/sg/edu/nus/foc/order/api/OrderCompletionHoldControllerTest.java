@@ -103,11 +103,12 @@ class OrderCompletionHoldControllerTest {
 
     @Test
     void requiresAuthenticationAndRequesterRole() throws Exception {
-        mvc.perform(put(PATH).contentType(MediaType.APPLICATION_JSON).content("{\"requireAssignedCourier\":false}"))
+        mvc.perform(put(PATH).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"requireAssignedCourier\":false,\"submissionId\":\"" + SUBMISSION + "\"}"))
                 .andExpect(status().isUnauthorized());
         for (String role : new String[] {"COURIER", "ADMIN"}) {
             mvc.perform(put(PATH).with(user("owner").roles(role)).contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"requireAssignedCourier\":false}"))
+                            .content("{\"requireAssignedCourier\":false,\"submissionId\":\"" + SUBMISSION + "\"}"))
                     .andExpect(status().isForbidden());
         }
     }

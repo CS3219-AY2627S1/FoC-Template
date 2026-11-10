@@ -49,4 +49,44 @@ class UnifiedOrderReportTest {
         assertEquals(NOW.plusSeconds(86400), responded.responseDeadlineAt());
         assertEquals(ReportStatus.READY_FOR_REVIEW, report.reconcile(NOW.plusSeconds(86400)).status());
     }
+
+    @Test void handlesLegacyConstructorParticipantAndResolutionBoundaries() {
+        Report legacyOrder = new Report("r", "requester", ReportCategory.ORDER, "Issue", "o", "courier",
+                ReportStatus.READY_FOR_REVIEW, NOW, null, null, null, null, null, null, null, null, null);
+        assertEquals("requester", legacyOrder.requesterId());
+        assertEquals("courier", legacyOrder.respondentId());
+        assertTrue(legacyOrder.participant("requester"));
+        assertTrue(legacyOrder.participant("courier"));
+        assertFalse(legacyOrder.participant("other"));
+        assertEquals(ReportStatus.RESOLVED, legacyOrder.resolved(NOW).status());
+        assertEquals(ReportStatus.RESOLVED, legacyOrder.resolved(NOW).resolved(NOW.plusSeconds(1)).status());
+
+        Report unlinked = new Report("u", "requester", ReportCategory.GENERAL, "Issue", null, null,
+                ReportStatus.READY_FOR_REVIEW, NOW, null, null, null, null, List.of(), List.of());
+        assertNull(unlinked.respondentId());
+        assertFalse(unlinked.participant("other"));
+
+        Report noCourier = new Report("n", "requester", ReportCategory.ORDER, "Issue", "o", null,
+                ReportStatus.READY_FOR_REVIEW, NOW, null, null, null, null, List.of(), List.of());
+        assertNull(noCourier.respondentId());
+
+        Report notUpgradeable = new Report("e", "courier", ReportCategory.ERRAND, "Issue", "o", "other",
+                ReportStatus.READY_FOR_REVIEW, NOW, null, null, null, null, List.of(), List.of(), null, null, "requester");
+        assertSame(notUpgradeable, notUpgradeable.reconcile(NOW));
+        Report alreadyResponded = new Report("e2", "courier", ReportCategory.ERRAND, "Issue", "o", "courier",
+                ReportStatus.READY_FOR_REVIEW, NOW, null, "answer", NOW, null, List.of(), List.of(), null, null, "requester");
+        assertSame(alreadyResponded, alreadyResponded.reconcile(NOW));
+
+        Report missingRequester = new Report("e3", "courier", ReportCategory.ERRAND, "Issue", "o", "courier",
+                ReportStatus.READY_FOR_REVIEW, NOW, null, null, null, null, List.of(), List.of(), null, null, null);
+        assertSame(missingRequester, missingRequester.reconcile(NOW));
+        Report awaitingWithoutDeadline = new Report("a", "requester", ReportCategory.ORDER, "Issue", "o", "courier",
+                ReportStatus.AWAITING_COURIER_RESPONSE, NOW, null, null, null, null, List.of(), List.of());
+        assertSame(awaitingWithoutDeadline, awaitingWithoutDeadline.reconcile(NOW));
+        assertThrows(ForbiddenException.class, () -> legacyOrder.respond(null, "No", NOW, List.of()));
+        assertThrows(ConflictException.class, () -> legacyOrder.respond("courier", "No", NOW, List.of()));
+        Report reviewWithFutureDeadline = new Report("f", "requester", ReportCategory.ORDER, "Issue", "o", "courier",
+                ReportStatus.READY_FOR_REVIEW, NOW, NOW.plusSeconds(60), null, null, null, List.of(), List.of());
+        assertThrows(ConflictException.class, () -> reviewWithFutureDeadline.respond("courier", "No", NOW, List.of()));
+    }
 }

@@ -3568,3 +3568,14 @@ gateway/shared environment and Pub/Sub provisioning records, CHANGE-184 and ADR-
 **Author verification:** User selected current `main`, rollback-only recovery,
 no owner cancellation or hold-query endpoint, and a one-hour inactive pre-hold
 expiry. Implementation is complete in the working tree.
+
+
+## CHANGE-184 Order test repair assistance (Order Service)
+
+- **Tool:** OpenAI Codex (GPT-6)
+- **Date:** 2026-11-10
+- **Mode:** Implementation, verification and documentation.
+- **Affected locations:** Order controller/configuration/migration tests; CHANGE-184 and Yao Xiang active-work records. No production source, migration, API, frontend, peer service, data, deployment, or infrastructure behavior changed.
+- **Prompt:** "yes fix the tests in the current branch"
+- **Key response:** Repaired the five stale V20-era assertions by supplying the required submission ID, expecting Flyway V20, and counting V20's added Order foreign key. The first complete run then exposed the 80% JaCoCo branch gate, so positive and negative `ReportCreationSettings` safety-gate scenarios were added without changing production behavior. The focused controller/PostgreSQL suite passes 24 tests. Final Order/common `verify` passes 714 Order and 13 common tests with zero failures, errors, or skips; OpenAPI, packaging, and coverage gates pass at 80.25% branch and 93.78% line coverage. The delayed Surefire shutdown/connection diagnostics are non-fatal.
+- **Author verification:** Automated verification is complete; human review complete.

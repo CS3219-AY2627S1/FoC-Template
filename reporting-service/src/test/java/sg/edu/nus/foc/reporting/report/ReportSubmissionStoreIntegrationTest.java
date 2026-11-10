@@ -89,6 +89,24 @@ class ReportSubmissionStoreIntegrationTest {
     }
 
     @Test
+    void definitiveHoldRejectionRejectsPendingLeaseAndReleasesReservation() {
+        String submission = UUID.randomUUID().toString();
+        var store = at(START);
+        store.begin(submission, "requester", "v1:one", ReportCategory.ORDER,
+                "order-1", "Damaged", List.of());
+        store.evidenceStored(submission, "requester");
+        store.acquireHoldLease(submission, "requester", START.plusSeconds(120));
+
+        var rejected = store.rejectPreHold(submission, "requester", "Order rejected the hold.");
+
+        assertEquals(ReportSubmissionState.REJECTED, rejected.state());
+        assertTrue(rejected.fenced());
+        assertEquals("Order rejected the hold.", rejected.lastError());
+        assertTrue(store.begin(UUID.randomUUID().toString(), "requester", "v1:replacement",
+                ReportCategory.ORDER, "order-1", "Replacement", List.of()).created());
+    }
+
+    @Test
     void safeCompensationResultRemovesReservationAndDuplicateResultIsIdempotent() {
         String submission = UUID.randomUUID().toString();
         var store = at(START);

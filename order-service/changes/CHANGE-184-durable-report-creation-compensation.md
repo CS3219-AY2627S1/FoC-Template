@@ -105,8 +105,9 @@ identity invoke the other's endpoint.
   same Order-first lock order. The existing resolution coordinator is unchanged.
 - NTH3 is covered by stable replay, caller binding, deterministic objects and
   lifecycle tombstones. NFR3.1.3 has positive/negative unit and integration
-  scenarios. NFR3.1.1 remains enforced by the existing Maven `verify` gates; the
-  complete Docker-backed gate could not run on this workstation.
+  scenarios. NFR3.1.1 remains enforced by the existing Maven `verify` gates;
+  the complete Docker-backed Order/common gate now passes after the test-fixture
+  follow-up described below.
 
 ## Verification evidence
 
@@ -115,10 +116,14 @@ identity invoke the other's endpoint.
   OpenAPI tests passed, including fully qualified Pub/Sub configuration startup.
 - Frontend: 358 tests across 57 files passed; ESLint and Next route generation /
   TypeScript passed.
-- Order/common test compilation and the exact-OIDC creation-push validator unit
-  test passed. The remaining Order Mockito runtime tests and PostgreSQL
-  migrations could not execute because Mockito cannot self-attach on this host
-  and Docker is unavailable; source/migration tests compile.
+- Order/common: the focused controller and PostgreSQL migration suite passes 24
+  tests. The complete `bash ./mvnw -B -ntp -pl order-service -am verify` run
+  passes 714 Order and 13 common tests with zero failures, errors, or skips;
+  OpenAPI, packaging, and JaCoCo gates pass (branch 80.25%, line 93.78%). The
+  follow-up only refreshed V20-era test fixtures and expanded positive/negative
+  configuration safety-gate coverage; production source and migrations did not
+  change. Surefire's delayed fork-shutdown and stopped-container connection
+  diagnostics occur after the successful test summaries and are non-fatal.
 - Pub/Sub provisioning static suite: 11 tests passed. Compose expansion, JSON,
   YAML, shell syntax and Python compilation checks passed.
 - The direct Next production build remained in native compilation without output

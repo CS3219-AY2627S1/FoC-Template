@@ -6,7 +6,9 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 import sg.edu.nus.foc.reporting.error.ConflictException;
+import sg.edu.nus.foc.reporting.error.BadRequestException;
 import sg.edu.nus.foc.reporting.error.DependencyUnavailableException;
+import sg.edu.nus.foc.reporting.error.ForbiddenException;
 import sg.edu.nus.foc.reporting.error.NotFoundException;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -85,5 +87,53 @@ class HttpOrderAssociationClientTest {
         down.expect(anything()).andRespond(withServerError());
         assertThrows(DependencyUnavailableException.class, () -> new HttpOrderAssociationClient(downBuilder.build())
                 .placeReportHold("id", "report", false, "Bearer x"));
+    }
+
+    @Test void rejectsEveryMalformedHoldResponse() {
+        for (String body : java.util.List.of(
+                "",
+                "{\"id\":\"other\",\"requesterId\":\"owner\",\"status\":\"DELIVERED\",\"reportId\":\"report\",\"isCompletionHold\":true}",
+                "{\"id\":\"order\",\"status\":\"DELIVERED\",\"reportId\":\"report\",\"isCompletionHold\":true}",
+                "{\"id\":\"order\",\"requesterId\":\"owner\",\"reportId\":\"report\",\"isCompletionHold\":true}",
+                "{\"id\":\"order\",\"requesterId\":\"owner\",\"status\":\"DELIVERED\",\"reportId\":\"other\",\"isCompletionHold\":true}",
+                "{\"id\":\"order\",\"requesterId\":\"owner\",\"status\":\"DELIVERED\",\"reportId\":\"report\",\"isCompletionHold\":false}")) {
+            var builder = RestClient.builder().baseUrl("http://orders");
+            var server = MockRestServiceServer.bindTo(builder).build();
+            server.expect(anything()).andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+            assertThrows(DependencyUnavailableException.class, () -> new HttpOrderAssociationClient(builder.build())
+                    .placeReportHold("order", "report", false, "Bearer x"));
+            server.verify();
+        }
+    }
+
+    @Test void mapsAllHoldAndReleaseErrorResponses() {
+        assertHoldFailure(org.springframework.http.HttpStatus.BAD_REQUEST, BadRequestException.class);
+        assertHoldFailure(org.springframework.http.HttpStatus.UNAUTHORIZED, ForbiddenException.class);
+        assertHoldFailure(org.springframework.http.HttpStatus.FORBIDDEN, ForbiddenException.class);
+        assertHoldFailure(org.springframework.http.HttpStatus.I_AM_A_TEAPOT, DependencyUnavailableException.class);
+
+        assertReleaseFailure(org.springframework.http.HttpStatus.NOT_FOUND, NotFoundException.class);
+        assertReleaseFailure(org.springframework.http.HttpStatus.CONFLICT, ConflictException.class);
+        assertReleaseFailure(org.springframework.http.HttpStatus.BAD_GATEWAY, DependencyUnavailableException.class);
+    }
+
+    private static void assertHoldFailure(org.springframework.http.HttpStatus status,
+            Class<? extends RuntimeException> expected) {
+        var builder = RestClient.builder().baseUrl("http://orders");
+        var server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(anything()).andRespond(withStatus(status));
+        assertThrows(expected, () -> new HttpOrderAssociationClient(builder.build())
+                .placeReportHold("order", "report", false, "Bearer x"));
+        server.verify();
+    }
+
+    private static void assertReleaseFailure(org.springframework.http.HttpStatus status,
+            Class<? extends RuntimeException> expected) {
+        var builder = RestClient.builder().baseUrl("http://orders");
+        var server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(anything()).andRespond(withStatus(status));
+        assertThrows(expected, () -> new HttpOrderAssociationClient(builder.build())
+                .releaseReportHold("order", "report", "Bearer x"));
+        server.verify();
     }
 }

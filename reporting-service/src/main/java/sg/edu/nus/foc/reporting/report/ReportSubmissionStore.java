@@ -345,7 +345,8 @@ public class ReportSubmissionStore {
         var ref = submissionRef(id); var row = tx.get(ref).get();
         if (!row.exists()) throw new NotFoundException("Report submission not found.");
         ReportSubmission current = fromDocument(row); requireCaller(current, caller);
-        if (!Set.of(ReportSubmissionState.RECEIVED, ReportSubmissionState.EVIDENCE_STORED).contains(current.state())) return current;
+        if (!Set.of(ReportSubmissionState.RECEIVED, ReportSubmissionState.EVIDENCE_STORED,
+                ReportSubmissionState.HOLD_PENDING).contains(current.state())) return current;
         ReportSubmission rejected = copy(current, ReportSubmissionState.REJECTED, true, null,
                 current.requesterId(), current.courierId(), current.orderStatus(), reason);
         removeSlot(tx, current); tx.set(ref, toDocument(rejected)); return rejected;
