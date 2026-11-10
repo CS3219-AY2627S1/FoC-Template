@@ -162,9 +162,7 @@ export function AdminUsersPage() {
               <tr>
                 <th scope="col">User</th>
                 <th scope="col">Status</th>
-                <th scope="col" className={styles.actionsHead}>
-                  Actions
-                </th>
+                <th scope="col">Actions</th>
               </tr>
             </thead>
             <tbody>
