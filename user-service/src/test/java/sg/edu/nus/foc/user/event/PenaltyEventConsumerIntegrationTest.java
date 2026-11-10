@@ -521,9 +521,9 @@ class PenaltyEventConsumerIntegrationTest {
     }
 
     @Test
-    void consumeAddition_deprecatedPenaltyReasonReturnsBadRequest()
+    void consumeAddition_unresponsiveAddsThreePointsOnce()
             throws Exception {
-
+        createCourier("courier-1", 0);
         PenaltyScoreEvent event = createAdditionEvent(
                 "event-invalid-6",
                 "courier-1",
@@ -531,17 +531,10 @@ class PenaltyEventConsumerIntegrationTest {
                 "COURIER_UNRESPONSIVE"
         );
 
-        ResponseStatusException exception = assertThrows(
-                ResponseStatusException.class,
-                () -> penaltyEventConsumer.consumeAddition(
-                        createRequest(event)
-                )
-        );
-
-        assertThat(exception.getStatusCode())
-                .isEqualTo(HttpStatus.BAD_REQUEST);
-
-        assertThat(processedEventCount()).isZero();
+        penaltyEventConsumer.consumeAddition(createRequest(event));
+        penaltyEventConsumer.consumeAddition(createRequest(event));
+        assertEquals(3, userRepository.findByUserId("courier-1").orElseThrow().getPenalty());
+        assertEquals(1, processedEventCount());
     }
 
     @Test
@@ -833,7 +826,7 @@ class PenaltyEventConsumerIntegrationTest {
     }
 
     @Test
-    void rejectsDeprecatedPenaltyReason() {
+    void rejectsIncorrectUnresponsivePenaltyAmount() {
         String json = validAdditionEventJson()
                 .replace(
                         "ACCEPTED_TASK_CANCELLATION",
@@ -844,7 +837,7 @@ class PenaltyEventConsumerIntegrationTest {
 
         assertBadRequest(
                 () -> penaltyEventConsumer.consumeAddition(request),
-                "Deprecated penalty reason cannot be published"
+                "Penalty amount does not match policy"
         );
     }
 
@@ -947,6 +940,15 @@ class PenaltyEventConsumerIntegrationTest {
         var message = new PubSubMessage(Base64.getEncoder().encodeToString(jsonMapper.writeValueAsBytes(event)),
                 Map.of("eventId",event.eventId(),"eventType",event.eventType(),"eventVersion","2"), "broker-"+event.eventId(), null);
         penaltyEventConsumer.consume(new PubSubPushRequest(message, push.penaltyEventSubscriptionPath()));
+    }
+
+    @Test void sequencedUnresponsiveAdditionAppliesThreePointsOnce() {
+        createCourier("unresponsive-courier", 0);
+        var event = new PenaltyScoreEvent("unresponsive-event", ADDITION_EVENT, "order-unresponsive",
+                "unresponsive-courier", 3, Instant.now(), "COURIER_UNRESPONSIVE", 1L);
+        deliver(event); deliver(event);
+        assertEquals(3, userRepository.findByUserId("unresponsive-courier").orElseThrow().getPenalty());
+        assertEquals(1, processedEventCount());
     }
 
     @Test void reversedArrivalRetainsRewardUntilEarlierAdditionAndAppliesDuplicatesOnce() {

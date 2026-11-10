@@ -2,14 +2,15 @@ asyncapi: 3.0.0
 id: urn:foc:order-service:pubsub
 info:
   title: Friend on Campus - Order Service Pub/Sub
-  version: 1.7.0
+  version: 1.8.0
   description: |
     Existing lifecycle/penalty contracts plus ADR-055 Credit and ADR-059 Report opt-in compensation request/result.
     Compensation transport is disabled by default; no cloud deployment is implied.
     Refund/completion use compact schema v2; penalty add/deduct use eight-field v2 on one sequenced courier topic.
     Accepted-cancellation publishing/replay is retired (CHANGE-155). Published history is retained.
     ADR-044 adds admin cancellation refunds and one highest optional addition;
-    addition reasons include report misconduct; retired COURIER_UNRESPONSIVE remains historical read compatibility only.
+    addition reasons include report misconduct and COURIER_UNRESPONSIVE at 3 points;
+    COURIER_BAD_ATTITUDE at 2 points remains wire compatibility for saved historical outcomes only.
     ADR-050 removes admin completion; requester and automatic completion remain.
     Topic suffix v1 is a resource name, NOT the payload schema version.
     Order state, checkpoint, receipt and outbox intent commit atomically. Publication is
@@ -379,9 +380,9 @@ components:
             eventType: PenaltyScoreAdditionEvent
             orderId: order-example
             courierId: courier-example
-            penaltyAmount: 2
+            penaltyAmount: 3
             occurredAt: '2026-10-16T08:00:00Z'
-            appliedReason: COURIER_BAD_ATTITUDE
+            appliedReason: COURIER_UNRESPONSIVE
             courierSequence: 2
     PenaltyScoreDeductionEvent:
       name: PenaltyScoreDeductionEvent
@@ -628,6 +629,7 @@ components:
           enum:
             - 1
             - 2
+            - 3
             - 4
             - 10
         occurredAt:
@@ -642,6 +644,7 @@ components:
             - ITEM_MISHANDLING_OR_DAMAGE
             - DELIBERATE_ITEM_RETENTION_OR_THEFT
             - COURIER_BAD_ATTITUDE
+            - COURIER_UNRESPONSIVE
         courierSequence:
           type: integer
           minimum: 1
@@ -676,6 +679,11 @@ components:
               const: COURIER_BAD_ATTITUDE
             penaltyAmount:
               const: 2
+        - properties:
+            appliedReason:
+              const: COURIER_UNRESPONSIVE
+            penaltyAmount:
+              const: 3
     PenaltyScoreDeductionEvent:
       type: object
       additionalProperties: false

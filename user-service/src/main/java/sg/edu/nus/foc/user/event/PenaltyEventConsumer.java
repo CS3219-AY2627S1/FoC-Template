@@ -188,10 +188,6 @@ public class PenaltyEventConsumer {
             throw badRequest("Unknown penalty reason");
         }
 
-        if (policy == PenaltySystemPolicy.COURIER_UNRESPONSIVE) {
-            throw badRequest("Deprecated penalty reason cannot be published");
-        }
-
         boolean isDeduction =
                 DEDUCTION_EVENT.equals(expectedEventType);
 

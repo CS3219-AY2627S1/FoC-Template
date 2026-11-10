@@ -46,7 +46,7 @@ import tools.jackson.databind.json.JsonMapper;
  */
 @WebMvcTest(controllers = {OrderController.class, AdminOrderController.class,
         OrderCommandController.class, OrderOutboxAdminController.class,
-        OrderCompletionHoldController.class, OrderCreditHistoryController.class, OrderInvolvementController.class,
+        OrderCompletionHoldController.class, InternalReportHoldController.class, OrderCreditHistoryController.class, OrderInvolvementController.class,
         CreditCompensationResultController.class, UserDeletionEligibilityController.class,
         AdminReportResolutionController.class, ReportCompensationResultController.class,
         ReportCreationCompensationController.class},
@@ -77,6 +77,7 @@ class OpenApiDocumentationTest {
     @MockitoBean private sg.edu.nus.foc.order.config.ReportResolutionSettings reportSettings;
     @MockitoBean private sg.edu.nus.foc.order.application.reportcreation.ReportCreationLifecycle reportCreationLifecycle;
     @MockitoBean private sg.edu.nus.foc.order.config.ReportCreationSettings reportCreationSettings;
+    @MockitoBean private sg.edu.nus.foc.order.security.ReportHoldCallerVerifier reportHoldCallerVerifier;
     @MockitoBean private sg.edu.nus.foc.order.application.recovery.OrderCompensationJournal compensationJournal;
     @MockitoBean private sg.edu.nus.foc.order.config.CompensationTransportSettings compensationSettings;
     @MockitoBean private sg.edu.nus.foc.order.application.AdminApplyPenaltyService penalties;
@@ -173,7 +174,7 @@ class OpenApiDocumentationTest {
         assertThat(paths.path("/api/orders/users/{userId}/active-involvement").path("get").path("responses").has("403")).isTrue();
         assertThat(paths.path("/api/orders/suppliers/{supplierId}/active-involvement").path("get").path("parameters").toString()).contains("supplierId");
         assertThat(paths.has("/api/orders/commands/{key}/resume")).isTrue();
-        JsonNode hold = paths.path("/api/orders/mine/active/{orderId}/report-holds/{reportId}").path("put");
+        JsonNode hold = paths.path("/api/orders/internal/report-holds/{orderId}/{reportId}").path("put");
         assertThat(hold.path("responses").has("403")).isTrue();
         assertThat(hold.path("responses").has("409")).isTrue();
         assertThat(paths.isEmpty()).as("OpenAPI document lists no paths").isFalse();

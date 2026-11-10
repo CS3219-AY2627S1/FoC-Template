@@ -198,3 +198,23 @@ Documented Report provider responsibilities retain ADR-059: synchronous callback
 ## CHANGE-182 - Order Supplier selection (2026-11-09)
 
 User-approved SupplierSelector stays under components/orders and reuses installed Base UI Combobox with existing Input/Button theme, h9 field sizing and normal-weight selected labels. Anchor-width/viewport-bounded popup, max-height scroll area and wrapping option labels suit mobile/desktop without changing shared design-system components. Search/browse/page controls are type=button and keyboard Enter/Escape use Base UI; selection carries the Supplier ID. Loading, no-results, minimum-query and retry explanations are near the list. Real responsive browser verification is separate from the passing component/keyboard tests; no new typography/palette/global layout conventions.
+## Effective CHANGE-187 - Navigation and copy controls (2026-11-10)
+
+Approved Yao Xiang: record navigation uses persistent underlining plus an internal
+right arrow. Copying uses a separate labelled copy-icon button with copied feedback;
+identifier text itself never copies. Optional linked IDs keep navigation and copy as
+sibling controls, never nested interactive elements. Reuse AdminRecordLink/CopyId,
+keep the full clipboard ID and title while truncating compact displays, and stop copy
+clicks from selecting rows. Report Order navigation is the explicit ID link to filtered
+Orders, not an entire clickable section. Existing theme/typography and profile-open
+behaviour remain. This supersedes earlier hover-only record/copy affordances below.
+
+## Effective CHANGE-188 - Context-specific underlines (2026-11-10)
+
+User-approved refinement superseding CHANGE-187's visual rules: table navigation
+underlines only on hover or keyboard focus; detail-view navigation has a permanent
+2px underline using the existing offset/theme. Navigation arrows are removed.
+Supplier card names are plain, with navigation through their existing View details
+button only. Related-supplier links in Order details remain valid detail links.
+CopyId text never copies; its separate copy icon is the sole copy action in tables,
+cards and details. Explicit Report Order ID navigation and full clipboard values stay.

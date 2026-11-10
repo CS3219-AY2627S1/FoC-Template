@@ -23,6 +23,20 @@ const report = { id: "report-1", reporterId: "owner", requesterId: "owner", cour
 beforeEach(() => { vi.clearAllMocks(); sessionStorage.clear(); mocks.resolution.mockResolvedValue({ status: "PENDING" }); mocks.mode = "mock"; mocks.uid = "courier"; mocks.detail.mockResolvedValue(report); mocks.list.mockImplementation(async (_user: string, _mode: string, _page: number, status: string) => ({ items: status === "RESOLVED" ? [] : [report], page: 1, totalPages: status === "RESOLVED" ? 0 : 1, totalItems: status === "RESOLVED" ? 0 : 1 })); mocks.resolve.mockResolvedValue({ ...report, status: "RESOLVED" }) })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 describe("Reports", () => {
+  it("makes the Order ID an explicit navigation link with a separate copy icon", async () => {
+    const copy = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: copy } })
+    render(<AdminReportsPage reportId="report-1" />)
+    const orderLink = await screen.findByRole("link", { name: /Open order order-1/ })
+    expect(orderLink).toHaveClass("underline")
+    expect(orderLink).toHaveTextContent("order-1")
+    expect(screen.getByRole("heading", { name: "Order" }).closest("a")).toBeNull()
+    const copyButton = screen.getByRole("button", { name: "Copy order-1 ID" })
+    expect(copyButton.closest("a")).toBeNull()
+    fireEvent.click(copyButton)
+    await waitFor(() => expect(copy).toHaveBeenCalledWith("order-1"))
+    expect(orderLink).toHaveAttribute("href", "/admin/orders?orderId=order-1")
+  })
   it("shows the recorded resolver's name, copyable ID, reply and time in account field order", async () => {
     mocks.mode = "live"
     mocks.recordName.mockResolvedValue("Yao Xiang")

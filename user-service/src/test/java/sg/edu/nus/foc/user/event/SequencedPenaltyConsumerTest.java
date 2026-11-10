@@ -14,9 +14,10 @@ import tools.jackson.databind.json.JsonMapper;
 class SequencedPenaltyConsumerTest {
     final JsonMapper json = JsonMapper.builder().build();
     final SequencedPenaltyProcessor processor = mock(SequencedPenaltyProcessor.class);
+    final PenaltyEventProcessingService legacy = mock(PenaltyEventProcessingService.class);
     final UserPushProperties push = new UserPushProperties("demo-foc-local", null, null, null, null, "unified");
     final PenaltyEventConsumer consumer = new PenaltyEventConsumer(json, mock(UserService.class),
-            mock(PenaltyEventProcessingService.class), processor, push);
+            legacy, processor, push);
 
     PenaltyScoreEvent event(String type, String reason, int amount, Long sequence) {
         return new PenaltyScoreEvent("id", type, "order", "courier", amount, Instant.EPOCH, reason, sequence);
@@ -27,6 +28,7 @@ class SequencedPenaltyConsumerTest {
     }
     @Test void acceptsBothDirectionsOnTheConfiguredUnifiedSubscription() {
         for (var event:List.of(event("PenaltyScoreAdditionEvent","COURIER_BAD_ATTITUDE",2,1L),
+                event("PenaltyScoreAdditionEvent","COURIER_UNRESPONSIVE",3,2L),
                 event("PenaltyScoreDeductionEvent","SUCCESSFUL_DELIVERY",1,2L))) {
             consumer.consume(request(event,"2",push.penaltyEventSubscriptionPath()));
             verify(processor).receive(event);
@@ -48,5 +50,21 @@ class SequencedPenaltyConsumerTest {
         var event=event("PenaltyScoreAdditionEvent","COURIER_BAD_ATTITUDE",2,1L);
         doThrow(new IllegalStateException("Mongo unavailable")).when(processor).receive(event);
         assertThrows(IllegalStateException.class,()->consumer.consume(request(event,"2",push.penaltyEventSubscriptionPath())));
+    }
+    @Test void legacyConcurrentDuplicateIsAcknowledgedOnlyAfterItsProcessedIdExists() {
+        doThrow(new org.springframework.dao.DuplicateKeyException("concurrent receipt")).when(legacy).process(any(),anyInt());
+        when(legacy.wasProcessed("id")).thenReturn(true);
+        var addition=event("PenaltyScoreAdditionEvent","COURIER_UNRESPONSIVE",3,null);
+        var deduction=event("PenaltyScoreDeductionEvent","SUCCESSFUL_DELIVERY",1,null);
+        assertDoesNotThrow(()->consumer.consumeAddition(request(addition,"1",push.penaltyAdditionSubscriptionPath())));
+        assertDoesNotThrow(()->consumer.consumeDeduction(request(deduction,"1",push.penaltyDeductionSubscriptionPath())));
+    }
+    @Test void unrelatedLegacyDuplicateKeyFailureMustNotAcknowledgeALostScore() {
+        doThrow(new org.springframework.dao.DuplicateKeyException("unrelated key conflict")).when(legacy).process(any(),anyInt());
+        when(legacy.wasProcessed("id")).thenReturn(false);
+        var addition=event("PenaltyScoreAdditionEvent","COURIER_UNRESPONSIVE",3,null);
+        var deduction=event("PenaltyScoreDeductionEvent","SUCCESSFUL_DELIVERY",1,null);
+        assertThrows(org.springframework.dao.DuplicateKeyException.class,()->consumer.consumeAddition(request(addition,"1",push.penaltyAdditionSubscriptionPath())));
+        assertThrows(org.springframework.dao.DuplicateKeyException.class,()->consumer.consumeDeduction(request(deduction,"1",push.penaltyDeductionSubscriptionPath())));
     }
 }

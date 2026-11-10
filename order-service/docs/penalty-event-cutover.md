@@ -24,9 +24,9 @@ outside the explicitly local emulator. The envelope subscription must match conf
   "eventType": "PenaltyScoreAdditionEvent",
   "orderId": "order-example",
   "courierId": "courier-example",
-  "penaltyAmount": 2,
+  "penaltyAmount": 3,
   "occurredAt": "2026-11-10T10:00:00.123456789Z",
-  "appliedReason": "COURIER_BAD_ATTITUDE",
+  "appliedReason": "COURIER_UNRESPONSIVE",
   "courierSequence": 1
 }
 ```
@@ -106,11 +106,11 @@ topic/endpoint/OIDC/ordering settings. No live cloud resource was created here.
    Drain legacy SQL outbox PENDING/IN_PROGRESS/FAILED rows and both old subscription
    backlogs/dead-letter work. PUBLISHED proves broker acceptance, not User processing:
    reconcile processed IDs against expected outcomes before activating v2.
-   Inspect provisional stored policies too: historical `COURIER_UNRESPONSIVE` values
-   remain readable in Order, but User already rejects that retired publication reason.
-   Resolve any such legacy outcome with the owners before cutover; this patch does
-   not silently waive it or change penalty policy. An invalid numbered event would
-   leave subsequent events for that courier waiting for reconciliation.
+   Inspect provisional stored policies too. CHANGE-186 reactivates
+   `COURIER_UNRESPONSIVE` at 3 points and retires bad attitude from new selections;
+   User accepts saved bad-attitude2 outcomes for compatibility. Deploy the compatible
+   User build before the new policy is used. An invalid numbered event would leave
+   subsequent events for that courier waiting for reconciliation.
 3. Provision unified topics/subscriptions, deploy Order V21/new producer and resume
    scoring operations only when the old stream is reconciled. An automatic main
    deployment must not be used to bypass this coordinated cutover.

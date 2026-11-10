@@ -41,7 +41,7 @@ const policyLabels: Record<string, string> = {
   ACCEPTED_TASK_CANCELLATION: "Accepted task cancellation",
   OVERDUE_DELIVERY: "Overdue delivery",
   WRONG_LOCATION_DELIVERY: "Wrong location delivery",
-  COURIER_BAD_ATTITUDE: "Courier bad attitude",
+  COURIER_UNRESPONSIVE: "Courier unresponsive",
   ITEM_MISHANDLING_OR_DAMAGE: "Item mishandling or damage",
   DELIBERATE_ITEM_RETENTION_OR_THEFT: "Deliberate item retention or theft",
 }
@@ -110,7 +110,7 @@ export function AdminOrderResolutionDialog({ order, action, onClose, onResolved 
           {!order.courierId && <p className="text-sm text-muted-foreground">No courier is assigned, so a courier penalty cannot be applied.</p>}
           {choice === "apply" && <div className="space-y-3 rounded-lg border p-3">
             <AdminLoadState loading={loading} error={error} empty={policies?.length === 0} retry={refresh} />
-            {policies?.map(({ policy, penaltyAmount }) => <label key={policy} className="flex items-start justify-between gap-3 text-sm">
+            {policies && [...policies].sort((a, b) => a.penaltyAmount - b.penaltyAmount).map(({ policy, penaltyAmount }) => <label key={policy} className="flex items-start justify-between gap-3 text-sm">
               <span className="flex items-start gap-2"><input className="mt-1" type="radio" name="cancellation-policy" checked={selected === policy}
                 onChange={() => setSelected(policy)} />
                 {policyLabels[policy] ?? policy.replaceAll("_", " ").toLowerCase()}</span>

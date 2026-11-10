@@ -1,5 +1,11 @@
 # Shared penalty policy library
 
+Effective CHANGE-186 (2026-11-10), approved Yao Xiang: reactivate COURIER_UNRESPONSIVE(3)
+and retire COURIER_BAD_ATTITUDE(2) from new selections. Keep bad-attitude enum/data/event
+compatibility. Report policies are immutable and sorted ascending by amount; full
+active list retains declaration order. This supersedes the active/retired selections
+below. Existing deferred highest-penalty and sequencing rules do not change.
+
 Effective CHANGE-170 (2026-11-01), approved Yao Xiang: COURIER_BAD_ATTITUDE adds 2 points and belongs to the selectable report subset and full active list. Seven active policies; four report cases. Preserve all older values and the retired unresponsive compatibility constant. No new score consumer or topic is implied.
 
 CHANGE-134, approved2026-10-16: add COURIER_UNRESPONSIVE(3). Full policy now7;

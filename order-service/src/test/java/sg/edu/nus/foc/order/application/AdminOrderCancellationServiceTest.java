@@ -126,9 +126,21 @@ class AdminOrderCancellationServiceTest {
     @Test
     void retiredCaseIsRejectedBeforeAnyFundingIntent() {
         assertThrows(OrderProblem.class, () -> service.cancel(order.getId(), "requester", null,
-                List.of(PenaltySystemPolicy.COURIER_UNRESPONSIVE), "admin"));
+                List.of(PenaltySystemPolicy.COURIER_BAD_ATTITUDE), "admin"));
         verify(outbox, never()).enqueue(any());
         assertEquals(OrderStatus.OPEN, order.getStatus());
+    }
+
+    @Test
+    void cancellationCanSelectTheThreePointUnresponsiveCase() {
+        order.accept("courier", 0, order.getCreatedAt().plusSeconds(1));
+        service.cancel(order.getId(), "requester", "courier", List.of(PenaltySystemPolicy.COURIER_UNRESPONSIVE), "admin");
+        ArgumentCaptor<OrderTaskEvent> captured = ArgumentCaptor.forClass(OrderTaskEvent.class);
+        verify(outbox, org.mockito.Mockito.times(2)).enqueue(captured.capture());
+        PenaltyScoreAdditionEvent addition = (PenaltyScoreAdditionEvent) captured.getAllValues().stream()
+                .filter(PenaltyScoreAdditionEvent.class::isInstance).findFirst().orElseThrow();
+        assertEquals(PenaltySystemPolicy.COURIER_UNRESPONSIVE, addition.getAppliedReason());
+        assertEquals(3, addition.getPenaltyAmount());
     }
 
     @Test

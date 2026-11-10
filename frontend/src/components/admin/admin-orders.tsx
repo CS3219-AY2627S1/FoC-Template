@@ -18,7 +18,7 @@ import { useOrderDisplayNames } from "@/hooks/use-order-display-names"
 import { useAdminPage } from "@/hooks/use-admin-page"
 import { ADMIN_ACTION_ELIGIBLE_STATUSES, ADMIN_ORDER_STATUSES, type AdminOrder, type AdminOrderQuery, type AdminOrderAction } from "@/lib/admin-api"
 import { formatOrderStatus, type OrderStatus } from "@/lib/orders"
-import { AdminDetails, AdminFilterActions, AdminFilterForm, AdminHeading, AdminLoadState, AdminPagination, CopyId, adminDate } from "./admin-ui"
+import { AdminDetails, AdminFilterActions, AdminFilterForm, AdminHeading, AdminLoadState, AdminPagination, AdminRecordLink, CopyId, adminDate } from "./admin-ui"
 import { AdminOrderActionBar, AdminOrderResolutionDialog } from "./admin-order-actions"
 import { ApplyPenaltyDialog } from "./apply-penalty-dialog"
 import { AdminOrderDateRange } from "./admin-order-date-range"
@@ -68,11 +68,11 @@ function OrderDetails({ order }: { order: AdminOrder }) {
   </div>
 }
 
-function RecordLink({ id, name, kind }: { id: string | null; name: string | null; kind: "users" | "suppliers" }) {
+function RecordLink({ id, name, kind, underlineOnHover = false }: { id: string | null; name: string | null; kind: "users" | "suppliers"; underlineOnHover?: boolean }) {
   if (!id) return <span className="text-muted-foreground">Unassigned</span>
-  return <Link href={"/admin/" + kind + "/" + encodeURIComponent(id)} className="block max-w-44 truncate font-normal underline-offset-4 hover:underline" title={name || id}>
+  return <AdminRecordLink href={"/admin/" + kind + "/" + encodeURIComponent(id)} underlineOnHover={underlineOnHover} className="max-w-44" title={name || id}>
     {name || (kind === "users" ? "User unavailable" : "Supplier unavailable")}
-  </Link>
+  </AdminRecordLink>
 }
 
 function AdminOrderDetails({ orderId, onBack }: { orderId: string; onBack: () => void }) {
@@ -174,10 +174,10 @@ function AdminOrderList({ initialSearchOrderId }: { initialSearchOrderId: string
             <TableCell><input type="radio" name="selected-order" checked={selectedId === order.id} onChange={() => setSelectedId(order.id)} aria-label={"Select order " + order.id} /></TableCell>
             <TableCell className="w-48 min-w-48 whitespace-nowrap"><CopyId id={order.id} compact /></TableCell>
             <TableCell><Badge variant="outline" className="h-6 text-sm font-normal">{formatOrderStatus(order.status)}</Badge></TableCell>
-            <TableCell><RecordLink kind="users" id={order.requesterId} name={displayName("users", order.requesterId, order.requesterName)} /></TableCell>
-            <TableCell><RecordLink kind="users" id={order.courierId} name={displayName("users", order.courierId, order.courierName)} /></TableCell>
-            <TableCell><RecordLink kind="suppliers" id={order.pickupSupplierId} name={displayName("suppliers", order.pickupSupplierId, order.pickupSupplierName)} /></TableCell>
-            <TableCell><RecordLink kind="suppliers" id={order.deliverySupplierId} name={displayName("suppliers", order.deliverySupplierId, order.deliverySupplierName)} /></TableCell>
+            <TableCell><RecordLink underlineOnHover kind="users" id={order.requesterId} name={displayName("users", order.requesterId, order.requesterName)} /></TableCell>
+            <TableCell><RecordLink underlineOnHover kind="users" id={order.courierId} name={displayName("users", order.courierId, order.courierName)} /></TableCell>
+            <TableCell><RecordLink underlineOnHover kind="suppliers" id={order.pickupSupplierId} name={displayName("suppliers", order.pickupSupplierId, order.pickupSupplierName)} /></TableCell>
+            <TableCell><RecordLink underlineOnHover kind="suppliers" id={order.deliverySupplierId} name={displayName("suppliers", order.deliverySupplierId, order.deliverySupplierName)} /></TableCell>
             <TableCell>{order.offeredCredits}</TableCell>
             <TableCell>{order.isCompletionHold ? "Yes" : "No"}</TableCell>
             <TableCell>{order.isOverdue == null ? "Unknown" : order.isOverdue ? "Yes" : "No"}</TableCell>

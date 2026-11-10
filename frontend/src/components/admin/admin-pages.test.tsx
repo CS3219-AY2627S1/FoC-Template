@@ -229,10 +229,12 @@ describe("Admin pages", () => {
     ))
   })
 
-  it("copies the underlying supplier ID when its display name is clicked", async () => {
+  it("copies the underlying supplier ID only from the copy icon", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
     render(<CopyId id="supplier-1" name="The Deck" />)
+    fireEvent.click(screen.getByText("The Deck"))
+    expect(writeText).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole("button", { name: "Copy The Deck ID" }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("supplier-1"))
   })
@@ -456,12 +458,28 @@ describe("Admin pages", () => {
   it("links each related record to its Admin detail route and keeps descriptions in View only", async () => {
     render(<AdminOrders />)
     expect(await screen.findByRole("link", { name: "Alex" })).toHaveAttribute("href", "/admin/users/user-1")
+    expect(screen.getByRole("link", { name: "Alex" })).toHaveClass("hover:underline", "focus-visible:underline")
+    expect(screen.getByRole("link", { name: "Alex" })).not.toHaveClass("underline")
     expect(screen.getByRole("link", { name: "The Deck" })).toHaveAttribute("href", "/admin/suppliers/supplier-1")
     expect(screen.queryByText("Lunch delivery")).not.toBeInTheDocument()
     for (const name of ["Requester", "Courier", "Pickup", "Delivery", "Created", "Expires"]) {
       expect(screen.getByRole("columnheader", { name })).toBeInTheDocument()
     }
     expect(screen.getByRole("link", { name: "View order order-1" })).toHaveAttribute("href", "/admin/orders/order-1")
+  })
+
+  it("keeps supplier card titles plain and navigates through View details", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
+    render(<AdminSuppliers />)
+    const name = await screen.findByText("The Deck")
+    expect(name.closest("a")).toBeNull()
+    expect(name.closest("button")).toBeNull()
+    fireEvent.click(name)
+    expect(writeText).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Copy The Deck ID" }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("supplier-1"))
+    expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/admin/suppliers/supplier-1")
   })
 
   it("renders the profile in the Users tab with its own transaction history and copyable ID", async () => {

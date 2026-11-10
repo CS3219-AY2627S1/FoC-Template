@@ -139,3 +139,8 @@ The Admin UI uses GET /api/users/admin/search with active-admin authorization an
 ## Unified penalty stream - CHANGE-185 (2026-11-10)
 
 New score outcomes use courier-penalty-event-{local,dev,prod}-v1, eventVersion2 and courierSequence. Separate addition/deduction topics/routes remain only for unsequenced historical backlog drain. User durably buffers out-of-order events and applies contiguous positions. See [cutover and API contract](../order-service/docs/penalty-event-cutover.md). Do not mix old first deliveries after activation; no automatic data/cloud cutover is performed by this patch.
+
+
+## CHANGE-186 - Active unresponsiveness and ordered admin choices (2026-11-10)
+
+Approved Yao Xiang: unresponsive3 replaces bad-attitude2 for new Admin apply/cancel selections. Report policy API and both existing Admin dialogs sort ascending (3,4,4,10), preserving ties. Old bad-attitude enum/orders/attempts/events remain readable; User accepts both historical2 and restored3 without changing scoring timing. No new component, schema/migration, topic, env, auth or live data/cloud change. Shared policy14 tests, affected Order37 tests, User287 tests and coverage/verify pass; frontend360 tests across57 files, lint/typecheck and AsyncAPI pass. Full Order suite was not repeated for this policy-only amendment; CHANGE-185 has the prior full run. Human/browser/deployed verification pending. See [CHANGE-186](../order-service/changes/CHANGE-186-unresponsive-penalty-ordering.md) and ADR-070. Report hyperlink/copy consistency remains a proposal only.

@@ -42,6 +42,7 @@ describe("Admin Order row actions", () => {
     expect(policies.map(item => item.penaltyAmount)).toEqual([10, 4, 3, 4])
     fireEvent.click(unresponsive)
     fireEvent.click(within(dialog).getByRole("combobox", { name: "Admin reason" }))
+    fireEvent.pointerDown(await screen.findByRole("option", { name: "Report investigation resolved" }), { pointerType: "mouse" })
     fireEvent.click(await screen.findByRole("option", { name: "Report investigation resolved" }))
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirm cancellation" }))
     await waitFor(() => expect(api.resolveOrder).toHaveBeenCalledWith(order.id, "cancel",

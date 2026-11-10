@@ -750,3 +750,35 @@ owner = "Yao Xiang"
 branch = "hfix/penalty-event-ordering"
 status = "implemented; local verify/coverage/contracts/wiring pass; human review and coordinated cloud cutover pending"
 contract = "courier-penalty-event; eventVersion2; courierSequence; legacy drain retained"
+
+[penalty_policy_186]
+owner = "Yao Xiang"
+branch = "hfix/penalty-event-ordering"
+status = "implemented; focused Order/common/User verify, frontend tests/lint/types and AsyncAPI pass"
+active = "unresponsive3,wrong-location4,damage4,theft10; ascending admin choices"
+compatibility = "bad-attitude2 retained for saved data/events; no migration or cloud/data mutation"
+report_link_design = "proposed only: visible navigation link plus separate copy icon; no report UI edits"
+
+[admin_identifiers_report_review_187]
+owner = "Yao Xiang"
+branch = "hfix/penalty-event-ordering"
+status = "implemented;363 frontend tests,lint/types and23 isolated Reporting review checks pass"
+ui = "navigation underlined with arrow; copy icon separate; explicit Report Order ID link"
+report_findings = "resolved reservation reuse fixed; stale upload/hold race persists; trusted hold proof missing"
+scope = "Admin frontend plus read-only backend review; no backend behaviour/data/cloud changes"
+
+[admin_link_context_188]
+owner = "Yao Xiang"
+branch = "hfix/penalty-event-ordering"
+status = "implemented;74focused frontend tests,lint,route typegen/TypeScript pass"
+ui = "table hover/focus underline;detail permanent2px underline;no arrows;plain supplier titles;icon-only copy"
+scope = "Admin frontend styling only;backend/API/schema/auth/config unchanged"
+
+[internal_reporting_hold_189]
+owner = "Yao Xiang"
+branch = "hfix/penalty-event-ordering"
+status = "implemented;full Order734/common14/Report111 verify and coverage pass;21 wiring checks pass"
+contract = "PUT /api/orders/internal/report-holds/{orderId}/{reportId};Firebase user plus Reporting Google service proof"
+public_placement = "removed;eligible Order GET unchanged;gateway blocks internal path"
+local = "explicit guarded demo-emulator credential;no Google ADC lookup"
+remaining = "coordinated deploy/IAM smoke;separate stale-upload retry race"
