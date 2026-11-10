@@ -104,16 +104,21 @@ docker run -d --name "$frontend" --network "$network" \
 
 # Real nginx: successful access goes to stdout; a missing file writes stderr too.
 for ((attempt=0; attempt<20; attempt++)); do
-  if docker exec "$run_id-user-service" node -e "fetch('http://$frontend/?private=$run_id-access').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"; then break; fi
+  if docker exec "$run_id-user-service" node -e "fetch('http://$frontend/?private=$run_id-access', {signal:AbortSignal.timeout(5000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"; then break; fi
   sleep 1
 done
-docker exec "$run_id-user-service" node -e "fetch('http://$frontend/$run_id-missing').then(r=>{if(r.status!==404)process.exit(1)}).catch(()=>process.exit(1))"
+docker exec "$run_id-user-service" node -e "fetch('http://$frontend/$run_id-missing', {signal:AbortSignal.timeout(5000)}).then(r=>{if(r.status!==404)process.exit(1)}).catch(()=>process.exit(1))"
 docker logs "$frontend" > "$temp_dir/nginx-stdout" 2> "$temp_dir/nginx-stderr"
 node - "$temp_dir" "$run_id" <<'NODE'
-const fs = require('node:fs'), assert = require('node:assert/strict');
+const fs = require('node:fs'), assert = require('node:assert/strict'), net = require('node:net');
 const [dir, id] = process.argv.slice(2);
-assert.ok(fs.readFileSync(`${dir}/nginx-stdout`, 'utf8').includes(`${id}-access`));
-assert.ok(fs.readFileSync(`${dir}/nginx-stderr`, 'utf8').includes(`${id}-missing`));
+const access = fs.readFileSync(`${dir}/nginx-stdout`, 'utf8').split('\n').find(line => line.includes(`${id}-access`));
+const diagnostic = fs.readFileSync(`${dir}/nginx-stderr`, 'utf8').split('\n').find(line => line.includes(`${id}-missing`));
+assert.ok(access, 'nginx access canary must appear on stdout');
+assert.ok(diagnostic, 'nginx missing-file diagnostic must appear on stderr');
+const clientIp = access.split(/\s+/)[0];
+assert.ok(net.isIP(clientIp), 'nginx access canary must contain a real client IP');
+fs.writeFileSync(`${dir}/nginx-privacy.json`, JSON.stringify({clientIp, hasClientContext:diagnostic.includes(`, client: ${clientIp}`)}));
 NODE
 
 query() {
@@ -122,9 +127,10 @@ query() {
     "$grafana_url/api/datasources/proxy/uid/foc-loki/loki/api/v1/query_range" > "$temp_dir/records.json"
 }
 check_records() {
-  node - "$temp_dir/records.json" "$run_id" <<'NODE'
+  node - "$temp_dir/records.json" "$run_id" "$temp_dir/nginx-privacy.json" <<'NODE'
 const fs = require('node:fs'), assert = require('node:assert/strict');
-const [file, id] = process.argv.slice(2), report = JSON.parse(fs.readFileSync(file, 'utf8'));
+const [file, id, privacyFile] = process.argv.slice(2), report = JSON.parse(fs.readFileSync(file, 'utf8'));
+const privacy = JSON.parse(fs.readFileSync(privacyFile, 'utf8'));
 assert.equal(report.status, 'success');
 const rows = report.data.result.flatMap(s => s.values.map(v => ({labels:s.stream,line:v[1]})));
 for (const name of ['user-service','supplier-service','order-service','credit-service','frontend']) {
@@ -137,6 +143,8 @@ assert.ok(rows.some(r => r.labels.service_name === 'user-service' && r.line.incl
 assert.ok(rows.some(r => r.labels.service_name === 'frontend' && r.line.includes(`${id}-missing`)));
 assert.ok(rows.some(r => r.line.includes(`${id}-credentials`)), 'credential record must be retained with masking');
 const all = JSON.stringify(report);
+assert.ok(!all.includes(privacy.clientIp), 'nginx client IP leaked into collected logs');
+if (privacy.hasClientContext) assert.ok(rows.some(r => r.labels.service_name === 'frontend' && r.line.includes(`${id}-missing`) && r.line.includes(', client: [REDACTED]')), 'nginx diagnostic client/request context was not masked');
 for (const forbidden of [`${id}-access`, `${id}-token`, `${id}-secret`, `${id}-unrelated`, 'user-migrate']) assert.ok(!all.includes(forbidden), `leaked ${forbidden}`);
 assert.ok(rows.every(r => r.labels.project === `${id}-app`));
 assert.ok(rows.filter(r => r.labels.service_name === 'frontend').every(r => r.labels.stream === 'stderr'));
@@ -169,5 +177,5 @@ grafana_url="http://$(compose port grafana 3000)"
 wait_grafana
 wait_records
 compose stop --timeout 10
-docker exec "$run_id-user-service" node -e "fetch('http://$frontend/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+docker exec "$run_id-user-service" node -e "fetch('http://$frontend/', {signal:AbortSignal.timeout(5000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 printf 'Disposable application still serves requests while logging is stopped.\n'
