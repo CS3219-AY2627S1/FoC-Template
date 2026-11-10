@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: OpenAI Codex (GPT-5.6 Luna, GPT-5.6 Sol, GPT-6 Sol and GPT-6.1 Sol), 2026-09-25 to 2026-11-11.
+ * Scope: Implementation and test assistance under author-finalized User Service requirements and architecture.
+ * Author review: Josh Wang Kai Kiat validated correctness, edited where needed, and verified behavior/tests.
+ */
+
 // Domain events published by the user service. This mirrors the EmailSender
 // abstraction in src/email.ts: a small interface with a dev/no-op default and a
 // Kafka-backed implementation (src/kafka.ts), injected into the router the same

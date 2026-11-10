@@ -1,3 +1,9 @@
+<!--
+AI Assistance Disclosure
+Tool: OpenAI Codex (GPT-5.6 Luna, GPT-5.6 Sol, GPT-6 Sol and GPT-6.1 Sol), 2026-09-25 to 2026-11-11.
+Scope: Documentation wording under author-finalized User Service requirements and architecture.
+Author review: Josh Wang Kai Kiat validated correctness, edited where needed, and verified behavior/tests.
+-->
 # User Service
 
 Friends on Campus account management: signup, email/Telegram verification, sessions, passwords, profiles, deletion, friendships and Admin integration.
@@ -131,3 +137,33 @@ Remaining work: record User load-test results (60,000 accounts; 95% auth/lookups
 - [Architecture](docs/architecture.md): service boundaries, flows and design choices.
 - [Database schema](docs/schema.md): tables, relationships and constraints.
 - [Executable schema](prisma/schema.prisma) and [migrations](prisma/migrations).
+
+## AI Use Summary
+
+**Owner:** Josh Wang Kai Kiat
+
+**Tools:** OpenAI Codex (GPT-5.6 Luna, GPT-5.6 Sol, GPT-6 Sol and
+GPT-6.1 Sol), used from 2026-09-25 to 2026-11-11.
+
+Josh Wang Kai Kiat finalized User Service requirements and architecture,
+including service boundaries, interfaces, schema, security and reliability
+choices. Codex assisted with implementation code, unit/integration tests,
+boilerplate and configuration, debugging, refactoring, and documentation
+wording after those decisions were made. It was not used to prioritize the
+backlog, choose the architecture or design, or draft decision rationales.
+
+AI-influenced files have `AI Assistance Disclosure` headers where their
+format supports comments. Applied Prisma migration SQL is covered by the
+[migration collection disclosure](prisma/migrations/AI_ASSISTANCE.md) rather
+than modified. Comment-incompatible JSON/package metadata and generated
+files are covered by the [shared usage log](../ai/usage-log.md#8-user-service).
+
+**Author review:** Josh Wang Kai Kiat reviewed and edited the generated work,
+validated it against the project requirements and service contracts, and
+verified it with the recorded build, test and manual checks. The team remains
+responsible for correctness, security, licensing and final acceptance.
+
+Exact prompts and key responses are recorded in
+[`../ai/usage-log.md`](../ai/usage-log.md#8-user-service). The author-owned
+implementation plan is recorded in
+[`../ai/plans/user_service_plan.md`](../ai/plans/user_service_plan.md).

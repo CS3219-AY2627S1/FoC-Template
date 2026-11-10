@@ -49,7 +49,8 @@ microservice (`user-service/`, `supplier-service/`, `order-service/`,
 
 ## AI Use Summary
 
-**Tools:** Cursor (Auto)
+**Tools:** Cursor (Auto); OpenAI Codex (GPT-5.6 Luna, GPT-5.6 Sol,
+GPT-6 Sol and GPT-6.1 Sol)
 
 **Prohibited phases avoided:** requirements elicitation and prioritization;
 architecture and design decisions (service boundaries, order state machine,
@@ -59,8 +60,9 @@ moderation design); idea generation for product features; drafting of
 decision rationales and trade-off justifications. Those were done by the
 authors. For Order Service and Load test, **Varun Sivakumar** owns those
 decisions. For Admin Service and Supplier Service, **Sahana Avantika** owns
-those decisions. Cursor plans under [`ai/plans/`](ai/plans/) are author
-design notes reworded for execution, not AI-originated architecture.
+those decisions. For User Service, **Josh Wang Kai Kiat** owns those
+decisions. Plans under [`ai/plans/`](ai/plans/) are author design notes
+reworded for execution, not AI-originated architecture.
 
 **Used for:**
 
@@ -73,9 +75,10 @@ design notes reworded for execution, not AI-originated architecture.
 **Verification:** AI outputs for Order Service and Load test were reviewed,
 edited where needed, and tested by **Varun Sivakumar**. AI outputs for Admin
 Service and Supplier Service were reviewed, edited where needed, and tested
-by **Sahana Avantika**. Each generated the ideas and designed the
-implementation for their services. The team remains accountable for
-correctness, security, and licensing.
+by **Sahana Avantika**. User Service outputs were reviewed, edited where
+needed, and tested by **Josh Wang Kai Kiat**. Each owner generated the ideas
+and designed the implementation for their services. The team remains
+accountable for correctness, security, and licensing.
 
 **Prompts / key exchanges:** see [`ai/usage-log.md`](ai/usage-log.md).
 Author design plans: [`ai/plans/`](ai/plans/).
@@ -137,6 +140,26 @@ deploy safety). Collection disclosure:
 
 Plan: [`ai/plans/supplier_service_plan.md`](ai/plans/supplier_service_plan.md).
 Usage log: [`ai/usage-log.md`](ai/usage-log.md).
+
+### User Service
+
+**Owner:** Josh Wang Kai Kiat
+
+Josh Wang Kai Kiat defined User Service requirements and architecture
+(account lifecycle, opaque sessions, email/Telegram verification, password
+recovery, Admin integration, friendships, deletion, PostgreSQL schema and
+Kafka outboxes). OpenAI Codex assisted with implementation code, tests,
+boilerplate/configuration, debugging, refactoring and documentation under
+that design. Per-file `AI Assistance Disclosure` headers are on AI-influenced
+TypeScript sources, tests, scripts, Prisma schema, Docker/Compose and
+supported configuration/documentation files.
+
+Prisma migration SQL files are **not** edited with in-file headers to avoid
+changing applied migrations. Collection disclosure:
+[`user-service/prisma/migrations/AI_ASSISTANCE.md`](user-service/prisma/migrations/AI_ASSISTANCE.md).
+
+Plan: [`ai/plans/user_service_plan.md`](ai/plans/user_service_plan.md).
+Usage log: [`ai/usage-log.md`](ai/usage-log.md#8-user-service).
 
 ### Load test
 

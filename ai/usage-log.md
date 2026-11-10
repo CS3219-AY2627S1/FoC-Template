@@ -1,19 +1,23 @@
-# AI usage log (Order Service + Load test + Admin Service + Badges + Rating + Frontend)
+# AI usage log (Order Service + Load test + Admin Service + Badges + Rating + Frontend + User Service)
 
 Shared FoC log. **Order Service** and **Load test** work is owned by
 **Varun Sivakumar**. **Admin Service** work is owned by **Sahana Avantika**.
 **Badges Service**, **Rating Service** and the **Frontend** are owned by
-**Ngooi Jun Sen**.
+**Ngooi Jun Sen**. **User Service** is owned by **Josh Wang Kai Kiat**.
 
 **Tool:** Cursor (Auto) for Order, Load test and Admin. Claude Code (Claude
 Opus 5 until 2026-09-28, Claude Opus 5.5 from 2026-10-01) for Badges, Rating
-and the Frontend.
+and the Frontend. OpenAI Codex (GPT-5.6 Luna, GPT-5.6 Sol, GPT-6 Sol and
+GPT-6.1 Sol) for User Service.
 
 **Author review:** For Order / Load test entries, Varun Sivakumar generated
 ideas, designed implementation, validated correctness, edited where needed,
 and verified behavior/tests. For Admin Service entries, Sahana Avantika did
 the same for that service. For Badges, Rating and Frontend entries, Ngooi Jun
-Sen did the same, and per-file headers read "Reviewed by Ngooi Jun Sen".
+Sen did the same, and per-file headers read "Reviewed by Ngooi Jun Sen". For
+User Service entries, Josh Wang Kai Kiat generated the ideas, finalized the
+requirements and design, reviewed and edited the implementation, and verified
+the recorded behavior/tests.
 
 **Plans:** Cursor plan files under [`plans/`](plans/) are **author design
 notes** reworded for agent execution. They are not AI-originated architecture
@@ -242,6 +246,51 @@ part along the expressway".
 
 ---
 
+## 8. User Service
+
+| Field | Detail |
+| --- | --- |
+| Owner | Josh Wang Kai Kiat |
+| Dates | 2026-09-25 to 2026-11-11 |
+| Tool | OpenAI Codex (GPT-5.6 Luna, GPT-5.6 Sol, GPT-6 Sol and GPT-6.1 Sol) |
+| Mode | generate / implement / test / debug / refactor / docs / explain |
+| Plan | [`plans/user_service_plan.md`](plans/user_service_plan.md) |
+
+**Already decided by author:** User Service ownership and boundaries;
+Node.js/Express/TypeScript with Prisma/PostgreSQL; opaque server-side
+sessions; salted `scrypt` password hashes; email and Telegram verification;
+account status, lockout, password recovery and six-month deletion behavior;
+Admin report/appeal and user-management contracts; bidirectional friendship
+rules; durable Kafka outboxes for user lifecycle events; endpoint shapes,
+validation rules, security boundaries and failure behavior.
+
+**What Codex produced:** TypeScript/Express implementation and refactoring;
+Prisma schema and migration drafts under the author-decided schema; unit and
+integration tests; OpenAPI definitions; Docker/Compose and configuration
+boilerplate; debugging fixes; documentation wording and diagrams. Applied
+Prisma migration SQL files have no in-file headers; see
+`user-service/prisma/migrations/AI_ASSISTANCE.md`.
+
+**Verification recorded:** TypeScript builds, Prisma validation, unit tests
+and isolated PostgreSQL integration suites were run throughout development.
+The latest recorded User Service checks before this disclosure included the
+build, 97 unit tests, and isolated friendship, Admin-user and account-support
+integration suites. The author also manually verified signup, email OTP,
+Telegram verification, login and password reset through the frontend.
+Historical results apply to the revisions tested; they do not replace final
+submission acceptance or the outstanding load-test evidence noted in the
+User Service README.
+
+**Sample prompt scenario (summarized):** Implement and test the User Service
+according to the author-finalized requirements and architecture: authentication
+with opaque sessions, email/Telegram verification, password recovery, Admin integration,
+friendships, scheduled account deletion and Kafka lifecycle events. Generate implementation code,
+migration drafts, OpenAPI documentation, tests and configuration without changing service boundaries,
+interfaces, schema decisions, requirement priorities or security trade-offs. Explain the changes and
+report the verification results.
+
+---
+
 ## File attribution map
 
 | Location | How disclosed |
@@ -264,3 +313,6 @@ part along the expressway".
 | `frontend/README.md` and `docs/` | README "AI assistance" section |
 | Rating and Badges entries in shared deploy files: `deploy/values/services/{rating,badges}.yaml` and their `envs/local` overrides, routes in `deploy/charts/foc-gateway/values.yaml`, topics and users in `deploy/charts/foc-kafka/values.yaml`, the databases in `infra/local/aws/variables.tf`, `RATING_SERVICE_URL` in `deploy/values/services/order.yaml`, Rating in `.env.example` | This log only (shared files; no header added) |
 | Rating and Badges jobs in `.github/workflows/ci.yml` | This log only |
+| AI-influenced `user-service/src/**/*.ts`, `scripts/*.cjs`, Prisma schema, Docker/Compose and comment-capable config/docs | Per-file header |
+| `user-service/prisma/migrations/*.sql` | `user-service/prisma/migrations/AI_ASSISTANCE.md` only; applied SQL unchanged |
+| `user-service/package*.json` and generated artifacts | This log and User Service README; format does not support comments or content is generated |

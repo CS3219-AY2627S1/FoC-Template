@@ -1,3 +1,9 @@
+<!--
+AI Assistance Disclosure
+Tool: OpenAI Codex (GPT-5.6 Luna, GPT-5.6 Sol, GPT-6 Sol and GPT-6.1 Sol), 2026-09-25 to 2026-11-11.
+Scope: Documentation wording assistance under author-finalized User Service requirements and architecture.
+Author review: Josh Wang Kai Kiat validated correctness, edited where needed, and verified behavior/tests.
+-->
 # User Service database schema
 
 [schema.prisma](../prisma/schema.prisma) is authoritative for stored fields, types, defaults, relations and ordinary indexes; [migration SQL](../prisma/migrations) also defines custom database constraints. This guide explains the nine models for debugging. See [architecture](architecture.md) for flows, the [README](../README.md) for commands and [API_CONTRACT_UPDATES.txt](../API_CONTRACT_UPDATES.txt) for wire formats.
