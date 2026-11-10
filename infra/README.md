@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-23
+Scope: Infrastructure documentation, drafted and edited with Claude Code.
+Reviewed by Don Lee
+-->
+
 # FoC Infrastructure
 
 How Friend on Campus is provisioned and deployed across **local**, **dev**,

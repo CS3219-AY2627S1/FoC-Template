@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+ * Scope: Credit Service tests, drafted and edited with Claude Code.
+ * Reviewed by Don Lee
+ */
+
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeEach } from 'vitest';
 import { config } from '../src/config.js';

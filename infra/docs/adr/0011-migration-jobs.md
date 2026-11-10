@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-02
+Scope: Infrastructure documentation, drafted and edited with Claude Code.
+Reviewed by Don Lee
+-->
+
 # ADR-0011: Schema migrations run as a per-service pre-deploy Job
 
 - **Status:** Accepted. Local chart and images built and tested; cloud (Argo CD) untested.

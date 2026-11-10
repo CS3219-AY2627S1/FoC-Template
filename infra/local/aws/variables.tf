@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+# Scope: Terraform configuration (infra/local/aws), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 variable "floci_endpoint" {
   description = "Floci URL that stands in for every AWS endpoint."
   type        = string

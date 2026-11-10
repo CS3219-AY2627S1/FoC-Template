@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+Scope: Helm chart cluster-config, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 {{- range .Values.envs }}
 # The AWS Load Balancer Controller keeps env {{ .name }}'s Envoy proxy pods
 # registered in its NLB's target group (infra/<cluster>/aws/gateway-lb.tf),

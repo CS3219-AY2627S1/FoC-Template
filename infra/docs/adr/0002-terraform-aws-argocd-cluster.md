@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+Scope: Infrastructure documentation, drafted and edited with Claude Code.
+Reviewed by Don Lee
+-->
+
 # ADR-0002: Terraform owns AWS; Argo CD owns everything inside clusters
 
 - **Status:** Accepted

@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+# Scope: Helm chart cluster-autoscaler, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Cluster name and region: values/clusters/<cluster>/cluster-autoscaler.yaml.
 # AWS credentials: the node role (ADR-0013).
 cluster-autoscaler:

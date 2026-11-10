@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+Scope: Helm chart foc-service, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 {{- if .Values.autoscaling.enabled }}
 {{- if not (dig "requests" "cpu" "" .Values.resources) }}
 {{- fail "autoscaling.enabled needs resources.requests.cpu (utilisation is measured against it)" }}

@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-11-07
+Scope: Helm chart foc-service, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 {{- define "foc-service.name" -}}
 {{- required "name is required" .Values.name -}}
 {{- end }}

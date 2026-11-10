@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-07
+# Scope: Argo CD applications and projects, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Argo CD objects for the NON-PROD EKS cluster. The root Application
 # created by infra/nonprod/bootstrap applies this file plus projects/.
 #

@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-07
+# Scope: Terraform configuration (infra/nonprod/aws), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # One EKS cluster for dev and stg (ADR-0001). Access is through EKS access
 # entries (no aws-auth ConfigMap). Pods get AWS permissions from the node's
 # role (node-permissions.tf): the NUS organization's service control policy

@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+Scope: Helm chart foc-kafka, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 {{- if gt (int .Values.replication.factor) (int .Values.brokers.replicas) }}
 {{- fail "replication.factor cannot exceed brokers.replicas" }}
 {{- end }}

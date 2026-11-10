@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+Scope: Infrastructure documentation, drafted and edited with Claude Code.
+Reviewed by Don Lee
+-->
+
 # ADR-0007: Envoy Gateway checks auth once at the edge
 
 - **Status:** Accepted. Implemented and tested locally on 2026-10-01. Cloud

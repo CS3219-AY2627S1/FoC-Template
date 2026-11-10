@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+Scope: Infrastructure documentation, drafted and edited with Claude Code.
+Reviewed by Don Lee
+-->
+
 # ADR-0006: Floci as the local AWS environment
 
 - **Status:** Accepted (spike passed 2026-09-29)

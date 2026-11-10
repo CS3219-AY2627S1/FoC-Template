@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-19
+Scope: Helm chart linkerd-identity, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 # Linkerd's identity issuer: the intermediate CA that signs every proxy's
 # certificate. Linkerd reads Secret linkerd-identity-issuer (scheme
 # kubernetes.io/tls, charts/linkerd) and reloads it when cert-manager renews it.

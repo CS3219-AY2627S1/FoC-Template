@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+# Scope: Terraform configuration (infra/nonprod/bootstrap), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Terraform's only action inside the cluster (ADR-0002): install Argo CD and
 # the root app. From then on Argo CD creates everything from deploy/argocd.
 module "argocd" {

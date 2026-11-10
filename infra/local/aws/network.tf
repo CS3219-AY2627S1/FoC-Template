@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+# Scope: Terraform configuration (infra/local/aws), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Floci records these but k3s ignores them; they exist because EKS requires
 # subnets and so the local cluster is declared the same way as the cloud one.
 resource "aws_vpc" "this" {

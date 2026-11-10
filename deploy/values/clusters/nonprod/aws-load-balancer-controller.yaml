@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+# Scope: Helm values (deploy/values/clusters/nonprod), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # TF:<output> values are filled by deploy/cloud-values.sh. Set explicitly so the
 # controller doesn't need the node's instance metadata to find them.
 aws-load-balancer-controller:

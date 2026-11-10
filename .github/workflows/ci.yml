@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+# Scope: GitHub Actions workflow, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Checks on every pull request: each service's tests (only when it changed),
 # the frontend build, and the Terraform/Helm config the cloud deploy uses.
 name: ci

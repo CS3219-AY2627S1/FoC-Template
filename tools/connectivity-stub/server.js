@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+ * Scope: Connectivity stub service, drafted and edited with Claude Code.
+ * Reviewed by Don Lee
+ */
+
 // Connectivity stub: stands in for a FoC service that has no image yet, so
 // the platform (DNS, network policy, gateway, auth, Kafka credentials, image
 // pulls) can be tested end to end. It has no business logic.

@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+ * Scope: Credit Service source code, drafted and edited with Claude Code.
+ * Reviewed by Don Lee
+ */
+
 import { type Static, Type } from '@sinclair/typebox';
 
 // Each schema is both the runtime JSON Schema and, via Static<>, the TS type.

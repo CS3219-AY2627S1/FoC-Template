@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+# Scope: Deployment script, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Fill the TF:<output> placeholders in the cloud values files (and the CI env
 # file) from `terraform output`, after the Terraform roots are applied. Run it
 # once per new AWS account/cluster, review the diff, commit.

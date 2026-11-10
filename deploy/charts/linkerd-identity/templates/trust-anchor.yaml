@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-19
+Scope: Helm chart linkerd-identity, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 # Linkerd's trust anchor: a self-signed root CA kept by cert-manager.
 #   ClusterIssuer linkerd-selfsigned  → Certificate linkerd-trust-anchor (root)
 #   ClusterIssuer linkerd-trust-anchor (CA backed by that root) → issuer.yaml

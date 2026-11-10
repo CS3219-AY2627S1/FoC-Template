@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+Scope: Infrastructure documentation, drafted and edited with Claude Code.
+Reviewed by Don Lee
+-->
+
 # ADR-0013: CloudFront reaches the gateway through a VPC origin; Secrets Manager feeds the cluster through External Secrets
 
 - **Status:** Accepted (2026-10-21). Amended 2026-10-22: pods use the node

@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-11
+ * Scope: Credit Service source code, drafted and edited with Claude Code.
+ * Reviewed by Don Lee
+ */
+
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
 import Fastify, { type FastifyInstance } from 'fastify';

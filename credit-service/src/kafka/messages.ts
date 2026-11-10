@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-11
+ * Scope: Credit Service source code, drafted and edited with Claude Code.
+ * Reviewed by Don Lee
+ */
+
 // Parsing shared by the Kafka handlers. Messages come from other services, so
 // nothing is trusted: a value that isn't the expected shape is skipped.
 

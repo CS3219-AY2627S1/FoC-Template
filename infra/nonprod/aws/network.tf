@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+# Scope: Terraform configuration (infra/nonprod/aws), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Two AZs (EKS and RDS both require it). Nodes, pods, RDS and the gateway's
 # NLB sit in the private subnets; only the NAT instance is public. The private
 # subnets are large because the VPC CNI gives every pod a VPC address.

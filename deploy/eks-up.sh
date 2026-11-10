@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-23
+# Scope: Deployment script, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Bring dev back after deploy/eks-down.sh: recreate the EKS cluster, install
 # Argo CD, wait for it to deploy everything from `main`, then restart the pods
 # so they all join the Linkerd mesh. Same IDs as before, so nothing to commit.

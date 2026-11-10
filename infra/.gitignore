@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+# Scope: Terraform configuration (infra), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Terraform working dirs and state (local env keeps state on disk;
 # cloud envs will use the S3 backend). Commit .terraform.lock.hcl.
 **/.terraform/

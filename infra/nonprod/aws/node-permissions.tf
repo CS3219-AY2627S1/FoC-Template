@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+# Scope: Terraform configuration (infra/nonprod/aws), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Everything pods need from AWS, granted to the node role (ADR-0013). Every
 # pod on a node shares these permissions: the NUS organization's service
 # control policy explicitly denies the per-pod alternatives (EKS Pod Identity's

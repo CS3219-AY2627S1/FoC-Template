@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-11-06
+Scope: Helm chart kube-prometheus-stack, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:

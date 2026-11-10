@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-11
+# Scope: Deployment script, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Open a local TCP relay to Floci's RDS Postgres and print the connection
 # details for <pg-user>. Floci's RDS listens on a Docker-internal address that a
 # Mac host can't route to directly (ADR-0010), so this runs a socat container on

@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+# Scope: Helm chart foc-database, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # One FoC environment's databases on a Postgres instance that Terraform created
 # (ADR-0010). Locally deploy/local.sh passes `terraform output -json database`
 # from infra/local/aws as a values file, which is where the snake_case keys
