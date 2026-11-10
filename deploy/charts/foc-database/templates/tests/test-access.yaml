@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-02
+Scope: Helm chart foc-database, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 # `helm test <release>`: each service's login can use its own database and is
 # refused by every other service's database. Argo CD ignores Helm test hooks.
 apiVersion: v1

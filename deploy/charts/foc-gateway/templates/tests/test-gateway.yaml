@@ -1,4 +1,10 @@
 {{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-18
+Scope: Helm chart foc-gateway, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
+{{- /*
 `helm test <release>`: real requests through this env's Envoy proxy, without
 logging in: every protected prefix demands a token, bad or missing tokens get
 401, spoofed identity headers don't get a request through, public routes reach

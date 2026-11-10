@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+# Scope: Terraform configuration (infra/modules/argocd), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 output "namespace" {
   description = "Namespace Argo CD runs in."
   value       = helm_release.argocd.namespace

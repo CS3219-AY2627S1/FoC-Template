@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+# Scope: Deployment script, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Build the frontend and publish it to dev's S3 bucket behind CloudFront
 # (infra/nonprod/aws/frontend.tf). The laptop fallback for
 # .github/workflows/frontend-dev.yml.

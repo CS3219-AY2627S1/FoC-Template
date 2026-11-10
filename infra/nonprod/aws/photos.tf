@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+# Scope: Terraform configuration (infra/nonprod/aws), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Order photos (collection, delivery, dispute; up to 10 MB each). Private.
 # The node role writes them (order) and reads them (admin). The frontend
 # only shows whether a photo exists.

@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+Scope: Infrastructure documentation, drafted and edited with Claude Code.
+Reviewed by Don Lee
+-->
+
 # Dev environment: AWS cost estimate
 
 > **Estimate as of 2026-10-18**, `ap-southeast-1`, on-demand list prices from

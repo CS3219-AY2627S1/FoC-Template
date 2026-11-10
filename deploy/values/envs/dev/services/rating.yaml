@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+# Scope: Helm values (deploy/values/envs/dev/services), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 image:
   tag: "32e6e6b322f9f74974245dab017016f5a83abcda" # git SHA, set by deploy/push-dev.sh
 autoscaling:

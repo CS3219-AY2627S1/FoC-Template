@@ -1,5 +1,10 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+# Scope: Helm values (deploy/values/envs/dev/services), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 image:
-  tag: "462739498fb0afa8571088622cd08268c690f877" # git SHA, set by deploy/push-dev.sh
+  tag: "50bc6649d7fa3edd8ca3e820850b8cb284dbf278" # git SHA, set by deploy/push-dev.sh
 autoscaling:
   enabled: true
   # Idle/dev. Full-run peak needs min=max=8 — see load-test/README.md

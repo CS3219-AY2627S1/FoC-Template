@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+# Scope: Terraform configuration (infra/state), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # S3 bucket for every cloud root's state (ADR-0002). Locking uses S3 itself
 # (backend use_lockfile = true), so there is no DynamoDB table. The account ID
 # in the name keeps it globally unique.

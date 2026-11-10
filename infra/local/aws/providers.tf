@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-02
+# Scope: Terraform configuration (infra/local/aws), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Every AWS call goes to Floci (../compose.yaml). Each service Terraform uses
 # must be listed under `endpoints`, or the provider would call real AWS.
 provider "aws" {

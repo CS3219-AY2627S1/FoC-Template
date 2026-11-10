@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-04
+# Scope: Helm chart foc-gateway, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # GatewayClass from charts/envoy-gateway.
 gatewayClassName: envoy
 

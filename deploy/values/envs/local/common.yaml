@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-02
+# Scope: Helm values (deploy/values/envs/local), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Applied to every service in the local environment.
 image:
   registry: 000000000000.dkr.ecr.ap-southeast-1.localhost:4566 # Floci ECR

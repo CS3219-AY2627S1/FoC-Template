@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-02
+Scope: Helm chart foc-database, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 # Creates (or updates) each service's login and database, as the admin. Safe to
 # rerun: existing logins get their password reset to the one in the Secret,
 # existing databases are left as they are. Runs after every install/upgrade

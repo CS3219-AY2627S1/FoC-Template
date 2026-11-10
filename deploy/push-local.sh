@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-19
+# Scope: Deployment script, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Build FoC images and push them to the LOCAL ECR (Floci), then restart what
 # runs them in the local cluster. Cloud images are pushed by CI instead.
 #

@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-07
+# Scope: Helm values (deploy/values/envs/dev), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # dev and stg share the non-prod nodes; each gets half-ish of them.
 # Fits every HPA at maxReplicas plus Kafka, proxies, Jobs and rollout surge.
 # Raise a maxReplicas → raise these, or the extra pods are refused.

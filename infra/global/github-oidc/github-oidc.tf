@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+# Scope: Terraform configuration (infra/global/github-oidc), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # GitHub Actions gets short-lived AWS credentials through OIDC: no access keys
 # stored in GitHub. The workflow asks for role foc-ci with
 # aws-actions/configure-aws-credentials; AWS checks the token's repo and branch.

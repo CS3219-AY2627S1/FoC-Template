@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+# Scope: Deployment script, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Mark a dev user's Telegram as verified, for while dev has no Telegram bot
 # (infra/docs/cloud-dev.md, step 9). Runs a throwaway psql pod with user's own
 # database login (Secret user-db) against RDS.

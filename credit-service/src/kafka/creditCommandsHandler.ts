@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-08
+ * Scope: Credit Service source code, drafted and edited with Claude Code.
+ * Reviewed by Don Lee
+ */
+
 import { cancelOrder, completeOrder, type Settlement } from '../services/credit.service.js';
 import { asUuid, parseObject } from './messages.js';
 

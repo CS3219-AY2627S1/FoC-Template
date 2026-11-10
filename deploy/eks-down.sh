@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-06
+# Scope: Deployment script, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Pause dev: remove the EKS cluster and its nodes (most of dev's cost), keep
 # everything else. RDS and its data, Secrets Manager, the NLB, CloudFront (same
 # URL), the S3 buckets and ECR stay, so deploy/eks-up.sh brings dev back with

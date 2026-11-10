@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+Scope: Credit Service documentation, drafted and edited with Claude Code.
+Reviewed by Don Lee
+-->
+
 # Credit Service
 
 Manages the closed credit economy for Friend on Campus (FoC): per-user balances,

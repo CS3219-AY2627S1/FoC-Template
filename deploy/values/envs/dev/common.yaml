@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-06
+# Scope: Helm values (deploy/values/envs/dev), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Applied to every service in the dev environment.
 image:
   registry: 474265880628.dkr.ecr.ap-southeast-1.amazonaws.com # infra/global/ecr

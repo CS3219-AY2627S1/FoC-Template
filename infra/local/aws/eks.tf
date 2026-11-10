@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+# Scope: Terraform configuration (infra/local/aws), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
 # Floci runs a real k3s cluster behind this.
 data "aws_iam_policy_document" "eks_assume" {
   statement {

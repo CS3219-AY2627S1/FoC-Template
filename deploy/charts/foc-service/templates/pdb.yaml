@@ -1,3 +1,9 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+Scope: Helm chart foc-service, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
 {{- if .Values.autoscaling.enabled }}
 # maxUnavailable so a single replica can still move off a node.
 apiVersion: policy/v1
