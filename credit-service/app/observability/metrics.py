@@ -123,9 +123,6 @@ observe_http_request = OBS.observe_http_request
 record_error_code = OBS.record_error_code
 metric_value = OBS.value
 counter_table = OBS.table
-table_to_map = OBS.table_to_map
-histogram_stats = OBS.histogram_stats
-percentile = OBS.percentile
 render = OBS.render
 exposed_metrics = OBS.exposed_metrics
 
