@@ -34,3 +34,10 @@ grafana:
     limits:
       cpu: 500m
       memory: 256Mi
+  ingress:
+    enabled: false
+    host: ""
+    className: traefik
+    tls:
+      enabled: false
+      issuer: letsencrypt-prod

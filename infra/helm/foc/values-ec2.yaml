@@ -51,3 +51,11 @@ frontend:
     tls:
       enabled: true
       issuer: letsencrypt-prod
+observability:
+  grafana:
+    ingress:
+      enabled: true
+      host: grafana.13.215.134.195.nip.io
+      tls:
+        enabled: true
+        issuer: letsencrypt-prod
