@@ -1,5 +1,16 @@
 # Vincent - Active Work
 
+## Automatic repost rejection policy - 2026-11-09 [~]
+
+- Vincent explicitly confirms auto-repost-fix and approves stopping definite business rejections instead of retrying the saved plan. CHANGE-183 supersedes that part of CHANGE-164 only.
+- Clean baseline; D1/selected Overall hashes match. NTH4/ADR-055 recovery context loaded under ADR-033 scoped-context exception. No peer, schema, JWT, topic or deployment change.
+- TDD: insufficient funds stays stopped after balance restoration; requester/location/details rejection stops; temporary retries, pending compensation barrier, concurrency and manual repost remain.
+- Docker27.5.1 recovered after hidden startup; Java21 available. No application database or Compose mutation. Verification and one replacement editable slide/scripts pending.
+- User reprioritized the replacement slide first. Draft rendered in PowerPoint: one slide,29 native shapes,2755 note characters; same template fonts/colors. Final file validation in progress in an identical temp copy because Python cannot read OneDrive files directly.
+- TDD RED completed:6 new business-stop integration cases fail exactly because old automaticRetrySafe returns true;0 errors/skips. Real Order/Credit/PostgreSQL/PubSub emulator exercised; User/Supplier eligibility reads are fixtures. Log target/change183-red.log. No production policy edit yet; implementation/GREEN/full regression remains next after the slide handoff.
+- Slide handoff [x]: output/d4-auto-repost-policy/deliverables/Automatic-Repost-Updated.pptx plus Automatic-Repost-Speaker-Notes.txt (paths relative to workspace above checkout). One native editable slide; PowerPoint visual check; finalizer zero findings/warnings, first-party import passed. SHA256 e6e5eb8bbe3bdf886e571dbb378bf1b3dba41c4b3441fc8ef3c1df6e49b3d270. Replace section5/combined10, do not append. Revised intended policy is explicit; production code/deployment remains unchanged.
+- Uncommitted feature tests and CHANGE-183/task/disclosure records remain intentionally in progress after user requests slide first. Next: implement business-rejection exclusion in OrderCommandStore/JpaOrderRepository and automatic failure messages in the journal, then GREEN/integration/full regression. No commit/push.
+
 ## Real compensation integration - 2026-10-27 [x] local / [~] rollout
 
 - Baseline ba27147 clean; profile/allocation/branch match Vincent. User authorizes

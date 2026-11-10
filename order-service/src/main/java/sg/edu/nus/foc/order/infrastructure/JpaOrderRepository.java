@@ -27,7 +27,9 @@ public interface JpaOrderRepository extends JpaRepository<Order, UUID>, JpaSpeci
             + "and o.reposted_order_id is null and not exists "
             + "(select 1 from order_commands c where c.actor_id=o.requester_id and c.order_id=o.id "
             + "and c.automatic_execution and not (c.status='COMPLETED' and c.outcome='REJECTED' "
-            + "and c.final_stage_status='FULLY_COMPENSATED' and c.credit_step_status in ('FAILED','COMPENSATED'))) "
+            + "and c.final_stage_status='FULLY_COMPENSATED' and c.credit_step_status in ('FAILED','COMPENSATED') "
+            + "and c.reason not in ('INSUFFICIENT_CREDITS','FORBIDDEN','ACCOUNT_NOT_FOUND',"
+            + "'NOT_FOUND','VALIDATION_ERROR','REPOST_EXPIRED'))) "
             + "and not exists(select 1 from order_commands c where c.order_id=o.id and c.status='PENDING') "
             + "and not exists(select 1 from order_user_deletion_guards g where g.user_id=o.requester_id and g.blocked) "
             + "order by coalesce(o.repost_failure_at,o.due_at),o.due_at,o.id limit 100", nativeQuery = true)
