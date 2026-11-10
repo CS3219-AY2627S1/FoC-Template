@@ -1,6 +1,14 @@
 // AI-assisted (GitHub Copilot Chat, DeepSeek V4.1 Flash): modal that lets the
 // user pick a delivery point on the campus map and resolves its address.
-import { Button, Group, Modal, Stack, Text } from "@mantine/core";
+import {
+  Button,
+  Center,
+  Group,
+  Loader,
+  Modal,
+  Stack,
+  Text,
+} from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useEffect, useState } from "react";
 import { formatCoordinates, reverseGeocode } from "../lib/geocoding";
@@ -22,6 +30,25 @@ interface LocationPickerModalProps {
 
 // NUS campus centre, used when the supplier has no coordinates.
 const CAMPUS_CENTER: [number, number] = [1.296622, 103.776447];
+const PICKER_MAP_HEIGHT = { base: 280, sm: 380 };
+const GEOLOCATION_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  timeout: 8000,
+  maximumAge: 0,
+};
+
+function geolocationErrorMessage(error: GeolocationPositionError): string {
+  switch (error.code) {
+    case error.PERMISSION_DENIED:
+      return "Location permission was denied.";
+    case error.POSITION_UNAVAILABLE:
+      return "Your current location is unavailable.";
+    case error.TIMEOUT:
+      return "Timed out while getting your current location.";
+    default:
+      return "Could not access your current location.";
+  }
+}
 
 export function LocationPickerModal({
   opened,
@@ -37,12 +64,47 @@ export function LocationPickerModal({
     initialLongitude ?? CAMPUS_CENTER[1],
   );
   const [resolving, setResolving] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [geoError, setGeoError] = useState<string | null>(null);
 
-  // Reset the pin to the supplier's location every time the modal opens.
+  // Each time the modal opens, ask the browser for the current position first.
+  // On success that becomes the default pin; otherwise fall back to the
+  // supplier location (or the campus centre) as before.
   useEffect(() => {
     if (!opened) return;
+
     setLatitude(initialLatitude ?? CAMPUS_CENTER[0]);
     setLongitude(initialLongitude ?? CAMPUS_CENTER[1]);
+    setAccuracy(null);
+    setGeoError(null);
+
+    if (!("geolocation" in navigator)) {
+      setGeoError("Geolocation is not supported by this browser.");
+      return;
+    }
+
+    let cancelled = false;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (cancelled) return;
+        setLatitude(position.coords.latitude);
+        setLongitude(position.coords.longitude);
+        setAccuracy(position.coords.accuracy);
+        setLocating(false);
+      },
+      (error) => {
+        if (cancelled) return;
+        setGeoError(geolocationErrorMessage(error));
+        setLocating(false);
+      },
+      GEOLOCATION_OPTIONS,
+    );
+
+    return () => {
+      cancelled = true;
+    };
   }, [opened, initialLatitude, initialLongitude]);
 
   async function handleConfirm() {
@@ -67,6 +129,12 @@ export function LocationPickerModal({
     onClose();
   }
 
+  const hint = locating
+    ? null
+    : accuracy != null
+      ? `Using your current location (accuracy ±${Math.round(accuracy)} m). Click the map to adjust.`
+      : `${geoError ?? "Click the map to place the delivery pin."} Click the map to adjust.`;
+
   return (
     <Modal
       opened={opened}
@@ -76,20 +144,32 @@ export function LocationPickerModal({
       centered
     >
       <Stack gap="md">
-        <Text size="sm" c="dimmed">
-          Tap or click the map to place the delivery pin, then confirm.
-        </Text>
-
-        <CampusMap
-          latitude={latitude}
-          longitude={longitude}
-          selectable
-          height={{ base: 280, sm: 380 }}
-          onSelect={(lat, lng) => {
-            setLatitude(lat);
-            setLongitude(lng);
-          }}
-        />
+        {locating ? (
+          <Center h={PICKER_MAP_HEIGHT}>
+            <Stack align="center" gap="xs">
+              <Loader size="sm" />
+              <Text size="sm" c="dimmed">
+                Getting your current location…
+              </Text>
+            </Stack>
+          </Center>
+        ) : (
+          <>
+            <Text size="sm" c="dimmed">
+              {hint}
+            </Text>
+            <CampusMap
+              latitude={latitude}
+              longitude={longitude}
+              selectable
+              height={PICKER_MAP_HEIGHT}
+              onSelect={(lat, lng) => {
+                setLatitude(lat);
+                setLongitude(lng);
+              }}
+            />
+          </>
+        )}
 
         <Group justify="space-between" wrap="wrap">
           <Text size="sm" c="dimmed">
@@ -99,7 +179,11 @@ export function LocationPickerModal({
             <Button variant="default" onClick={onClose}>
               Cancel
             </Button>
-            <Button onClick={handleConfirm} loading={resolving}>
+            <Button
+              onClick={handleConfirm}
+              loading={resolving}
+              disabled={locating}
+            >
               Use this location
             </Button>
           </Group>

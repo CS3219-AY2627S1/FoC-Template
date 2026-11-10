@@ -1333,12 +1333,14 @@ commit=False)` so the settlement and its task result commit once,
 - Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
 - Scope: N2H campus map. Added the `CampusMap` component (Leaflet +
   OpenStreetMap via react-leaflet) with a red teardrop SVG pin anchored at its
-  bottom tip and a recenter control that restores the supplier position and
-  default zoom, the `/suppliers/:id/map` page, and a "View on map" button after
-  Location on the supplier detail page. Registered the lazy-loaded route in
-  `App.tsx`. Files: `frontend/src/components/CampusMap.tsx`,
-  `frontend/src/pages/suppliers/SupplierMap.tsx`,
-  `frontend/src/pages/suppliers/SupplierDetail.tsx`, `frontend/src/App.tsx`.
+  bottom tip and a recenter control that restores the location and default
+  zoom, plus a "View on map" button after Location on the supplier detail
+  page. The supplier map opens in a `SupplierMapModal` using the same map style
+  as the order location picker, so no separate page or route is needed. Files:
+  `frontend/src/components/CampusMap.tsx`,
+  `frontend/src/components/SupplierMapModal.tsx`,
+  `frontend/src/pages/suppliers/SupplierDetail.tsx`,
+  `frontend/src/App.tsx`.
 - Prompt(s):
   1. "I am going to use the Leaflet + OpenStreetMap approach. I have already
      installed leaflet, react-leaflet and the related packages. Create a new
@@ -1351,10 +1353,12 @@ commit=False)` so the settlement and its task result commit once,
      again after Location. Also add a recenter button to the map view that
      moves the supplier to the center and restores the default size. When done,
      make the first commit, with the message matching the other commits."
+  4. "Change the supplier map to use the same modal form as the order create
+     screen instead of navigating to a new page."
 - Author review: `npx tsc --noEmit`, `npm run lint` (only pre-existing warnings)
-  and `npm run build` pass. Verified in Playwright that the supplier card has no
-  map action, the detail button opens `/suppliers/:id/map`, and the red pin plus
-  the recenter control render.
+  and `npm run build` pass. Verified in Playwright that View on map opens the
+  modal in place (URL unchanged), shows the supplier pin and location text, and
+  closes with Escape.
 
 ## 09/11/2026 — zhoushiyao02200059
 
@@ -1366,7 +1370,10 @@ commit=False)` so the settlement and its task result commit once,
   OSM Nominatim service (coordinate fallback plus a warning when it is
   unavailable) and the address fills the delivery field. The lookup pins
   `accept-language=en` so addresses stay English regardless of the browser
-  locale. Extended `CampusMap` with a selectable mode, a responsive height
+  locale. Opening the picker first requests the browser's current position
+  with `navigator.geolocation.getCurrentPosition()` and uses it as the default
+  pin when available, falling back to the supplier location otherwise.
+  Extended `CampusMap` with a selectable mode, a responsive height
   prop, modal-safe size invalidation, and a recenter control that does not leak
   clicks to the map. Files: `frontend/src/pages/orders/CreateOrder.tsx`,
   `frontend/src/components/LocationPickerModal.tsx`,
@@ -1381,9 +1388,15 @@ commit=False)` so the settlement and its task result commit once,
   2. "No need to change order-service for now. The delivery field is filled in
      Chinese — is that related to the system language or something? If possible,
      change it to English."
+  3. "When picking an address, request the current position first, e.g. via
+     navigator.geolocation.getCurrentPosition(); if it succeeds use that as the
+     default and wait for confirmation and edits, otherwise keep the previous
+     picker-confirmation flow."
 - Author review: `npx tsc --noEmit`, `npm run lint` (only pre-existing warnings)
   and `npm run build` pass. Verified in Playwright that selecting a supplier
   fills the pickup address, the locate icon opens the picker, clicking the map
   moves the pin, and confirming fills the geocoded address. Confirmed with a
   direct Nominatim call that `accept-language=en` returns an English
-  display_name.
+  display_name. Verified in Playwright that granting geolocation defaults the
+  pin to the current position and denying it falls back to the supplier
+  coordinates.

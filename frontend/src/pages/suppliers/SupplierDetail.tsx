@@ -15,9 +15,11 @@ import {
   Title,
 } from "@mantine/core";
 import { IconArrowLeft, IconEdit, IconMap } from "@tabler/icons-react";
+import { useDisclosure } from "@mantine/hooks";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ActiveBadge } from "../../components/StatusPill";
+import { SupplierMapModal } from "../../components/SupplierMapModal";
 import { ApiError, suppliersApi } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import type { Supplier } from "../../lib/types";
@@ -41,6 +43,7 @@ export default function SupplierDetail() {
   const [supplier, setSupplier] = useState<Supplier | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [mapOpen, mapModal] = useDisclosure(false);
 
   useEffect(() => {
     if (!id) return;
@@ -141,11 +144,10 @@ export default function SupplierDetail() {
             <Field label="Location" value={supplier.locationDescription} />
             {supplier.latitude != null && supplier.longitude != null ? (
               <Button
-                component={Link}
-                to={`/suppliers/${supplier.id}/map`}
                 variant="light"
                 leftSection={<IconMap size={16} />}
                 w="fit-content"
+                onClick={mapModal.open}
               >
                 View on map
               </Button>
@@ -161,6 +163,12 @@ export default function SupplierDetail() {
           </Button>
         </Stack>
       </Card>
+
+      <SupplierMapModal
+        opened={mapOpen}
+        onClose={mapModal.close}
+        supplier={supplier}
+      />
     </Stack>
   );
 }

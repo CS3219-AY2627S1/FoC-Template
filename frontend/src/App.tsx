@@ -20,7 +20,6 @@ const MyRequests = React.lazy(() => import("./pages/orders/MyRequests"));
 const MyDeliveries = React.lazy(() => import("./pages/deliveries/MyDeliveries"));
 const OrderDetail = React.lazy(() => import("./pages/orders/OrderDetail"));
 const Notifications = React.lazy(() => import("./pages/notifications/Notifications"));
-const SupplierMap = React.lazy(() => import("./pages/suppliers/SupplierMap"));
 
 export default function App() {
   return (
@@ -38,7 +37,6 @@ export default function App() {
             <Route path="/" element={<Navigate to="/suppliers" replace />} />
             <Route path="/suppliers" element={<SupplierList />} />
             <Route path="/suppliers/:id" element={<SupplierDetail />} />
-            <Route path="/suppliers/:id/map" element={<SupplierMap />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/errands" element={<BrowseErrands />} />
             <Route path="/orders/new" element={<CreateOrder />} />
