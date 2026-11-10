@@ -1,11 +1,10 @@
 # Observability (system-wide N2H)
 
-Goal: use **measurement** to answer "what would make this service more
-available", instead of guessing. The implementation is shared — one library,
-one set of conventions — and today it is installed in every backend service
-(credit, user, supplier, order, notification and chat) and in the API gateway;
-the broker metrics they depend on are scraped too. No frontend work: everything below is reachable with `curl`,
-Postman, Prometheus and Grafana.
+Goal: use **measurement** to answer "what would make this service more available", instead of guessing.
+The implementation is shared (one library, one set of conventions).
+It is installed in all seven services: credit, user, supplier, order, notification, chat and the API gateway.
+The broker metrics they depend on are scraped too.
+No frontend work is needed: everything below is reachable with `curl`, Postman, Prometheus and Grafana.
 
 ```python
 # onboarding a service (see shared/foc_shared/observability.py)
@@ -43,14 +42,18 @@ Services with an error envelope additionally call
 
 ### Adding a service
 
-1. `app/observability.py` — `OBS = Observability("<service>", prefix="<prefix>")`
-2. `app/main.py` — `OBS.install(app, readiness_session_dep=get_session, check_broker=<True only if the service maintains broker state>)`
-3. `requirements.txt` — `prometheus-client>=0.20`
-4. `tests/test_observability.py` — assert `OBS.service` and that the prefixed
+1. `app/observability.py` - `OBS = Observability("<service>", prefix="<prefix>")`
+2. `app/main.py` - `OBS.install(app, readiness_session_dep=get_session, check_broker=<True only if the service maintains broker state>)`
+3. `requirements.txt` - `prometheus-client>=0.20`
+4. `tests/test_observability.py` - assert `OBS.service` and that the prefixed
    family appears in `OBS.render()`
 
-No dashboard edit is needed: "All services — Overview" groups by the `service`
-label, and each service's metric names carry its prefix.
+5. `infra/helm/foc/charts/<service>/values.yaml` - `metrics: {enabled: true}` so the cluster Prometheus scrapes it
+6. `observability/prometheus/prometheus.yml` - a static compose scrape job named after the service
+7. `infra/helm/foc/charts/observability/files/dashboards/services-overview.json` - add the job name to the `job=~"..."` regexes and the prefix to the `__name__=~"(...)_http_..."` regexes
+8. `infra/helm/foc/charts/observability/values.yaml` - add the service's namespace to `prometheus.scrapeNamespaces` if it is new
+
+"All services - Overview" groups by the `service` label, and each service's metric names carry its prefix.
 
 ---
 
@@ -81,7 +84,7 @@ Two design decisions worth knowing:
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| `GET` | `/metrics` | none — internal only, scraped over `foc-net` | Prometheus exposition |
+| `GET` | `/metrics` | none - internal only, scraped over `foc-net` | Prometheus exposition |
 | `GET` | `/health` | none | unchanged: `{"status": "ok"}` (compose healthcheck) |
 | `GET` | `/health/ready` | none | readiness; `503` when degraded (DB, plus broker for services that maintain broker state) |
 
@@ -117,8 +120,8 @@ routes listed there, so metrics stay an internal operational surface.
 | `credit_consumer_requeues_total` | counter | `queue, reason` |
 | `credit_consumer_last_message_unixtime` | gauge | `queue` |
 | `credit_consumer_connected` | gauge | `queue` |
-| `credit_db_pool_in_use` / `_size` / `_overflow` | gauge | — |
-| `credit_reserved_balance_sum` / `credit_available_balance_sum` / `credit_accounts_total` | gauge | — |
+| `credit_db_pool_in_use` / `_size` / `_overflow` | gauge | - |
+| `credit_reserved_balance_sum` / `credit_available_balance_sum` / `credit_accounts_total` | gauge | - |
 
 **Outcome values.** `reservation`: `accepted`, `rejected_insufficient_credits`,
 `conflict`. `transfer`: `ok`, `already_transferred`, `conflict`,
@@ -135,7 +138,7 @@ routes listed there, so metrics stay an internal operational surface.
 These are the point of the exercise: a metric is only useful if it changes an
 action.
 
-### Story 1 — the consumer that is alive but not consuming
+### Story 1 - the consumer that is alive but not consuming
 
 ```bash
 # stop only the broker; the consumer keeps logging, connections drop
@@ -146,7 +149,7 @@ curl -s localhost:8000/metrics | grep -E 'credit_(event_publish|consumer)'
 
 - `credit_event_publish_total{result="failed"}` climbs, and
   `POST /credits/reservations` p95 jumps to ≈ 3 s while its **5xx rate stays 0**
-  — the publisher connects with `timeout=3` *after* the reservation committed, so
+  - the publisher connects with `timeout=3` *after* the reservation committed, so
   a broker outage becomes latency, not an error. Status-code monitoring alone
   would never see this.
 - `credit_consumer_last_message_unixtime` stops advancing.
@@ -155,7 +158,7 @@ curl -s localhost:8000/metrics | grep -E 'credit_(event_publish|consumer)'
   off the critical path. Also: prefer a short publish timeout + retry over a
   3 s stall.
 
-### Story 2 — latency that adding replicas will not fix
+### Story 2 - latency that adding replicas will not fix
 
 ```bash
 scripts/load-credit.sh          # same user, concurrent reservations
@@ -165,13 +168,13 @@ scripts/load-credit.sh          # same user, concurrent reservations
   host CPU stays low and `credit_db_pool_in_use` stays at/below `size`.
 - The cause is the row lock on that one account (`SELECT ... FOR UPDATE`):
   requests queue, they do not compete for CPU.
-- **Decision:** scaling credit-service horizontally does *not* help — the queue
+- **Decision:** scaling credit-service horizontally does *not* help - the queue
   is in Postgres, not in the app. Shorten the critical section, serialise per
   user, or accept the queue and raise the SLO. `credit_db_pool_in_use` is the
   discriminator: if it is pinned at `size`, you need connections; if it is
   low while p95 rises, you need to look at locks.
 
-### Story 3 — business errors are not availability errors
+### Story 3 - business errors are not availability errors
 
 ```bash
 # 409s from insufficient funds are an economy signal, not an outage
@@ -184,7 +187,7 @@ curl -s localhost:8000/metrics | grep credit_http_errors_total
   `credit_saga_retries_exhausted_total` are **RabbitMQ-only** rejections: they
   never touch HTTP, so gateway-level dashboards cannot see them at all.
 - **Decision:** put business codes on their own panel (they have their own
-  owner), and alert on the *saga* failures separately — a saga that gives up is
+  owner), and alert on the *saga* failures separately - a saga that gives up is
   a user-visible broken order, not a slow request.
 
 ---
@@ -231,18 +234,38 @@ Local (compose):
 
 Compose binds Grafana to `127.0.0.1` only.
 
+Local k3d cluster:
+
+1. Run `kubectl -n foc-observability port-forward svc/grafana 3000:3000`.
+2. Open http://localhost:3000 and log in as `admin`.
+
 EC2 cluster:
 
 Grafana runs in the `foc-observability` namespace as a ClusterIP service with no ingress.
-Reach it through an SSH tunnel to a kubectl port-forward:
+The EC2 node does not open port 22 (the security group allows 80/443 only and there is no key pair), so admins reach it through SSM:
 
-```bash
-ssh -L 3000:localhost:3000 <host> -t 'sudo k3s kubectl -n foc-observability port-forward svc/grafana 3000:3000'
-```
+1. Open a session on the node and start the port-forward there:
 
-Then open http://localhost:3000.
+   ```bash
+   aws ssm start-session --target <instance-id>
+   sudo k3s kubectl -n foc-observability port-forward svc/grafana 3000:3000
+   ```
+
+2. In a second terminal, forward local port 3000 to the node:
+
+   ```bash
+   aws ssm start-session --target <instance-id> \
+     --document-name AWS-StartPortForwardingSession \
+     --parameters '{"portNumber":["3000"],"localPortNumber":["3000"]}'
+   ```
+
+3. Open http://localhost:3000.
+
+A host with SSH access can do the same in one step with `ssh -L 3000:localhost:3000 <host> -t 'sudo k3s kubectl -n foc-observability port-forward svc/grafana 3000:3000'`.
+
 The admin password comes from an optional `grafana-admin` secret, key `admin-password`.
 Without that secret, Grafana uses the default `admin` user and forces a password change on first login.
+See [`infra/argocd/README.md`](../infra/argocd/README.md) for how to seal the secret.
 
 ### Self-test without Docker
 
@@ -261,14 +284,39 @@ credit-service/.venv/bin/python     scripts/observability-demo.py   # POSIX
 It exits non-zero if an error code is missing or if credits are not conserved
 (`available + reserved == allocation × accounts`).
 
-Provisioned dashboard: `observability/grafana/dashboards/credit-service.json`
-(7 rows: availability & latency, async/economy KPIs, route latency, error codes,
-business outcomes, async path, resources). Datasource and dashboard provider are
-provisioned from `observability/grafana/provisioning/`.
+### Where the config lives
 
-Alert rules: `observability/prometheus/alerts.yml` — 5xx rate, route p95, DB pool
-saturation, consumer stalled (`time() - last_message > 300`), publish failures,
-saga retries exhausted.
+Dashboards, alert rules and Grafana provisioning live in the Helm chart, so compose and the cluster share one copy.
+Helm can only read files inside a chart, which is why the chart is the single source.
+
+| File | Purpose |
+| --- | --- |
+| `infra/helm/foc/charts/observability/files/dashboards/credit-service.json` | Credit Service dashboard (availability and latency, async and economy KPIs, route latency, error codes, business outcomes, async path, resources) |
+| `infra/helm/foc/charts/observability/files/dashboards/services-overview.json` | All services overview, including chat-service and the gateway edge |
+| `infra/helm/foc/charts/observability/files/alerts.yml` | Alert rules: 5xx rate, route p95, DB pool saturation, consumer stalled (`time() - last_message > 300`), publish failures, saga retries exhausted |
+| `infra/helm/foc/charts/observability/files/grafana-datasource.yml` | Grafana datasource (`http://prometheus:9090`, valid in compose and in the cluster) |
+| `infra/helm/foc/charts/observability/files/grafana-dashboards.yml` | Grafana dashboard provider (reads `/var/lib/grafana/dashboards`) |
+| `observability/prometheus/prometheus.yml` | Compose-only Prometheus config with static targets |
+
+compose mounts these files read-only into the `prometheus` and `grafana` containers.
+Most of them are single-file bind mounts, so after editing one run `docker compose restart prometheus grafana` (or recreate the containers) to pick up the change.
+
+### In the cluster (k3d and EC2)
+
+The `observability` subchart of `infra/helm/foc` deploys Prometheus and Grafana into the `foc-observability` namespace.
+It is enabled by `observability.enabled: true` in `infra/helm/foc/values.yaml`, so ArgoCD deploys it with the rest of the `foc` app.
+Both Services are `ClusterIP`.
+There is no Ingress, NodePort, LoadBalancer or hostPort, so neither UI is reachable from outside the node, and the EC2 security group stays 80/443 only.
+
+Prometheus discovers pods with `kubernetes_sd_configs` (role `pod`), limited to the app namespaces listed in `prometheus.scrapeNamespaces` of the observability chart.
+It scrapes every running pod there that is annotated with `prometheus.io/scrape: "true"`.
+The shared `foc-lib` deployment template adds `prometheus.io/scrape`, `prometheus.io/port` and `prometheus.io/path` when a service sets `metrics.enabled: true`.
+The `job` and `service` labels come from the pod's `app.kubernetes.io/name`, so they match the compose job names and the dashboards work unchanged.
+Backend services are scraped on port 8000.
+The gateway is scraped on its internal-only metrics port 9100 (`GATEWAY_METRICS_PORT`), which is not part of its Service or Ingress, so `/metrics` is never reachable through Traefik.
+RabbitMQ is scraped on 15692 (the `rabbitmq_prometheus` plugin), which is also not on its Service.
+Retention is 24h on a 2Gi `local-path` volume, and Grafana keeps its state on a 1Gi volume.
+See [Access](#access) for how to reach Grafana.
 
 > Note: `docker compose` healthchecks still use `GET /health`. `GET
 > /health/ready` is for humans and for orchestration that can tolerate a 503:
