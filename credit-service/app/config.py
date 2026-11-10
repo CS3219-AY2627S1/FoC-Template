@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +22,7 @@ class Settings(BaseSettings):
     # Observability: emit one JSON log line per record (containers) instead of a
     # human-readable line (local dev). See docs/observability.md.
     log_json: bool = False
+    metrics_refresh_timeout_seconds: float = Field(default=1.0, gt=0)
 
     @property
     def consumer_queues(self) -> list[str]:

@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 
 from app.api.routes import credits, health
+from app.config import settings
 from app.db import get_session, init_db
 from app.errors import register_exception_handlers
 from app.observability import metrics
@@ -32,6 +33,7 @@ metrics.OBS.install(
     app,
     readiness_session_dep=get_session,
     metrics_refresh=refresh_scrape_gauges,
+    metrics_refresh_timeout=settings.metrics_refresh_timeout_seconds,
 )
 register_exception_handlers(app)
 app.include_router(health.router)

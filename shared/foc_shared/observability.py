@@ -37,6 +37,7 @@ Design notes:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
@@ -457,6 +458,7 @@ class Observability:
         readiness_extra: Callable[[], dict[str, str]] | None = None,
         check_broker: bool = True,
         metrics_refresh: Callable[[], Awaitable[None]] | None = None,
+        metrics_refresh_timeout: float = 1.0,
         route_labeler: Callable[[str], str] | None = None,
     ) -> None:
         """Mount ``/metrics`` and ``/health/ready`` and add the middleware.
@@ -469,7 +471,9 @@ class Observability:
         ``metrics_refresh`` runs before every ``/metrics`` scrape so gauges that
         come from the database or the connection pool are fresh without a
         background task. Prometheus scrapes are the only trigger, so a scrape
-        must never fail because of it (errors are logged and swallowed).
+        must never fail because of it (errors are logged and swallowed), and a
+        slow refresh is abandoned after ``metrics_refresh_timeout`` seconds so the
+        scrape still answers with the current registry.
 
         ``route_labeler`` maps a raw request path to the ``route`` label for
         services whose only route is a catch-all proxy (the gateway); every
@@ -477,19 +481,30 @@ class Observability:
         """
         self.route_labeler = route_labeler
         app.add_middleware(ObservabilityMiddleware, observability=self)
-        app.include_router(self._metrics_router(metrics_refresh))
+        app.include_router(self._metrics_router(metrics_refresh, metrics_refresh_timeout))
         app.include_router(
             self._readiness_router(readiness_session_dep, readiness_extra, check_broker)
         )
 
-    def _metrics_router(self, refresh: Callable[[], Awaitable[None]] | None = None) -> APIRouter:
+    def _metrics_router(
+        self, refresh: Callable[[], Awaitable[None]] | None, timeout: float
+    ) -> APIRouter:
         router = APIRouter(tags=["observability"])
 
         @router.get("/metrics", include_in_schema=False)
         async def prometheus_metrics() -> Response:
             if refresh is not None:
+                deadline = asyncio.timeout(timeout)
                 try:
-                    await refresh()
+                    async with deadline:
+                        await refresh()
+                except TimeoutError:
+                    if not deadline.expired():
+                        logging.getLogger("app").exception("Metrics refresh failed.")
+                    else:
+                        logging.getLogger("app").warning(
+                            "Metrics refresh timed out after %ss; serving current values.", timeout
+                        )
                 except Exception:
                     logging.getLogger("app").exception("Metrics refresh failed.")
             return Response(content=self.render(), media_type=CONTENT_TYPE_LATEST)

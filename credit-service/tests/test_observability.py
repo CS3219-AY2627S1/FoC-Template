@@ -14,8 +14,10 @@ from datetime import UTC, datetime
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.config import Settings
 from app.db import Base, get_session
 from app.main import app
 from app.models.task_result import CreditTaskResult, TaskResultKind, TaskResultOutcome
@@ -462,3 +464,17 @@ def test_readiness_is_ready_when_broker_is_connected(client):
         assert resp.json()["status"] == "ready"
     finally:
         broker_health.set_broker_state(False, "test finished")
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_metrics_refresh_timeout_must_be_positive(monkeypatch, value):
+    monkeypatch.setenv("METRICS_REFRESH_TIMEOUT_SECONDS", value)
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_metrics_refresh_timeout_reads_the_environment(monkeypatch):
+    monkeypatch.setenv("METRICS_REFRESH_TIMEOUT_SECONDS", "2.5")
+
+    assert Settings().metrics_refresh_timeout_seconds == 2.5
