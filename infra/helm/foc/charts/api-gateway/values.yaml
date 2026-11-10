@@ -3,12 +3,17 @@ replicas: 1
 port: 8000
 healthPath: /health
 
+metrics:
+  enabled: true
+  port: 9100
+
 image:
   repository: foc/api-gateway
   tag: dev
 
 env:
   LOG_LEVEL: info
+  GATEWAY_METRICS_PORT: "9100"
   USER_SERVICE_URL: http://user-service.foc-user.svc.cluster.local:8000
   SUPPLIER_SERVICE_URL: http://supplier-service.foc-supplier.svc.cluster.local:8000
   ORDER_SERVICE_URL: http://order-service.foc-order.svc.cluster.local:8000

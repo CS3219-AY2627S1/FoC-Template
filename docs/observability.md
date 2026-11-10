@@ -1,0 +1,373 @@
+# Observability (system-wide N2H)
+
+Goal: use **measurement** to answer "what would make this service more available", instead of guessing.
+The implementation is shared (one library, one set of conventions).
+It is installed in all seven services: credit, user, supplier, order, notification, chat and the API gateway.
+The broker metrics they depend on are scraped too.
+No frontend work is needed: everything below is reachable with `curl` inside the network, Prometheus and Grafana.
+
+```python
+# onboarding a service (see shared/foc_shared/observability.py)
+from foc_shared.observability import Observability
+
+OBS = Observability("supplier-service", prefix="supplier")
+OBS.install(app, readiness_session_dep=get_session)
+```
+
+That single call adds `/metrics`, `/health/ready`, the HTTP middleware
+(route-template labels + `X-Request-Id`), and the request/log correlation.
+Services with an error envelope additionally call
+`OBS.record_error_code(route, code)` from their exception handlers.
+
+| Service | Status | Prefix |
+| --- | --- | --- |
+| credit-service | ✅ metrics + readiness + all business/saga/consumer counters | `credit` |
+| supplier-service | ✅ metrics + readiness | `supplier` |
+| user-service | ✅ metrics + readiness (envelope codes on the user-service roadmap) | `user` |
+| order-service | ✅ metrics + readiness | `order` |
+| notification-service | ✅ metrics + readiness | `notification` |
+| chat-service | ✅ metrics + readiness | `chat` |
+| api-gateway | ✅ edge metrics on internal port 9100, route collapsed to `/api/<service>/*` | `gateway` |
+
+> Status: every backend service, including chat-service, is instrumented.
+> Grafana is the only viewing surface and it is admin-only, see [Access](#access).
+> `/metrics` stays on the internal network and Prometheus is never published.
+> The gateway serves its own metrics on a separate internal-only port, 9100 (`GATEWAY_METRICS_PORT`), which is never published.
+> `curl localhost:8080/metrics` does not return metrics.
+> The gateway is instrumented for **edge** signals only (401/403/404/5xx that never reach a backend).
+> Its route label is collapsed per downstream service, so it does not duplicate the per-service numbers.
+> Tracing is deliberately out of scope, see [§7 Known gaps](#7-known-gaps).
+
+### Adding a service
+
+1. `app/observability.py` - `OBS = Observability("<service>", prefix="<prefix>")`
+2. `app/main.py` - `OBS.install(app, readiness_session_dep=get_session, check_broker=<True only if the service maintains broker state>)`
+3. `requirements.txt` - `prometheus-client>=0.20`
+4. `tests/test_observability.py` - assert `OBS.service` and that the prefixed
+   family appears in `OBS.render()`
+
+5. `infra/helm/foc/charts/<service>/values.yaml` - `metrics: {enabled: true}` so the cluster Prometheus scrapes it
+6. `observability/prometheus/prometheus.yml` - a static compose scrape job named after the service
+7. `infra/helm/foc/charts/observability/files/dashboards/services-overview.json` - add the job name to the `job=~"..."` regexes and the prefix to the `__name__=~"(...)_http_..."` regexes
+8. `infra/helm/foc/charts/observability/values.yaml` - add the service's namespace to `prometheus.scrapeNamespaces` if it is new
+
+"All services - Overview" groups by the `service` label, and each service's metric names carry its prefix.
+
+---
+
+## 1. What is instrumented
+
+| Layer | Signal | Where |
+| --- | --- | --- |
+| HTTP | request count, latency histogram, status, `service` label | `foc_shared/observability.py` (shared middleware) |
+| HTTP errors | error-envelope `code` (`insufficient_credits`, `conflict`, ...) | service `errors.py` (the only layer that knows the code) |
+| Business | reserve/amend/transfer/release outcomes, duplicate suppression | credit `app/services/credit_service.py` |
+| Saga | Order Service task outcomes, retries exhausted | same (task happy/failure paths) |
+| Events | publish count/latency per routing key, success vs failure | credit `app/services/publisher.py` |
+| Consumer | messages by queue+result, requeue reasons, last-message timestamp, connection state | credit `app/services/consumer.py` |
+| Resources | DB pool in-use/size/overflow, reserved & available credit totals, account count | credit `app/db.py` |
+
+Two design decisions worth knowing:
+
+1. **Route templates, never raw paths.** `scope["route"].path` yields
+   `/credits/{user_id}/balance`; using the request path would create one time
+   series per user id and eventually kill Prometheus.
+2. **`/metrics` and `/health*` are excluded** from HTTP metrics. Otherwise the
+   docker healthcheck (every 10 s) and the scrape would show up as traffic and
+   silently inflate QPS and availability.
+
+---
+
+## 2. Endpoints
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/metrics` | none - internal only, scraped over `foc-net` | Prometheus exposition |
+| `GET` | `/health` | none | unchanged: `{"status": "ok"}` (compose healthcheck) |
+| `GET` | `/health/ready` | none | readiness; `503` when degraded (DB, plus broker for services that maintain broker state) |
+
+The broker check is **opt-in** (`install(..., check_broker=False)`): only a
+service with a long-lived consumer keeps `set_broker_state()` up to date.
+credit-service checks broker + DB; user-service (outbox publisher) and
+supplier-service (no broker use) check the DB only, so they do not report
+`degraded` forever.
+
+`/metrics` is not published through the API gateway on purpose: the gateway is
+default-deny (`app/exposed_routes.py`) and only forwards the client-facing
+routes listed there, so metrics stay an internal operational surface.
+
+---
+
+## 3. Metric reference
+
+| Metric | Type | Labels |
+| --- | --- | --- |
+| `credit_http_requests_total` | counter | `method, route, status` |
+| `credit_http_request_duration_seconds` | histogram | `method, route, status` |
+| `credit_http_errors_total` | counter | `route, code` |
+| `credit_reservation_ops_total` | counter | `outcome` |
+| `credit_amendment_ops_total` | counter | `outcome` |
+| `credit_transfer_ops_total` | counter | `outcome` |
+| `credit_release_ops_total` | counter | `outcome` |
+| `credit_duplicate_suppressed_total` | counter | `op` |
+| `credit_saga_tasks_total` | counter | `kind, outcome` |
+| `credit_saga_retries_exhausted_total` | counter | `kind` |
+| `credit_event_publish_total` | counter | `routing_key, result` |
+| `credit_event_publish_duration_seconds` | histogram | `routing_key` |
+| `credit_consumer_messages_total` | counter | `queue, result` |
+| `credit_consumer_requeues_total` | counter | `queue, reason` |
+| `credit_consumer_last_message_unixtime` | gauge | `queue` |
+| `credit_consumer_connected` | gauge | `queue` |
+| `credit_db_pool_in_use` / `_size` / `_overflow` | gauge | - |
+| `credit_reserved_balance_sum` / `credit_available_balance_sum` / `credit_accounts_total` | gauge | - |
+
+**Outcome values.** `reservation`: `accepted`, `rejected_insufficient_credits`,
+`conflict`. `transfer`: `ok`, `already_transferred`, `conflict`,
+`rejected_no_courier_account`. `release`: `ok`, `already_released`, `conflict`.
+`amendment`: `amended`, `unchanged`, `rejected_insufficient_credits`, `conflict`.
+`duplicate_suppressed.op`: `reservation`, `transfer`, `release`, `release_task`,
+`amend_task`, `task_result`. `consumer.result`: `ok`, `validation_error`,
+`business_error`, `transient_error`, `routing_key_mismatch`.
+
+---
+
+## 4. The three "measurement → decision" stories
+
+These are the point of the exercise: a metric is only useful if it changes an
+action.
+
+### Story 1 - the consumer that is alive but not consuming
+
+```bash
+# stop only the broker; the consumer keeps logging, connections drop
+docker compose stop rabbitmq
+# watch the async-path signals
+docker compose exec prometheus wget -qO- http://credit-service:8000/metrics | grep -E 'credit_(event_publish|consumer)'
+```
+
+- `credit_event_publish_total{result="failed"}` climbs, and
+  `POST /credits/reservations` p95 jumps to ≈ 3 s while its **5xx rate stays 0**
+  - the publisher connects with `timeout=3` *after* the reservation committed, so
+  a broker outage becomes latency, not an error. Status-code monitoring alone
+  would never see this.
+- `credit_consumer_last_message_unixtime` stops advancing.
+- **Decision:** publishing does not belong on the request path. Either add an
+  outbox (as user-service already does for `UserRegistered`) or move the publish
+  off the critical path. Also: prefer a short publish timeout + retry over a
+  3 s stall.
+
+### Story 2 - latency that adding replicas will not fix
+
+```bash
+scripts/load-credit.sh          # same user, concurrent reservations
+```
+
+- p95 on `POST /credits/reservations` rises, while `rate(process_cpu...)`-style
+  host CPU stays low and `credit_db_pool_in_use` stays at/below `size`.
+- The cause is the row lock on that one account (`SELECT ... FOR UPDATE`):
+  requests queue, they do not compete for CPU.
+- **Decision:** scaling credit-service horizontally does *not* help - the queue
+  is in Postgres, not in the app. Shorten the critical section, serialise per
+  user, or accept the queue and raise the SLO. `credit_db_pool_in_use` is the
+  discriminator: if it is pinned at `size`, you need connections; if it is
+  low while p95 rises, you need to look at locks.
+
+### Story 3 - business errors are not availability errors
+
+```bash
+# 409s from insufficient funds are an economy signal, not an outage
+docker compose exec prometheus wget -qO- http://credit-service:8000/metrics | grep credit_http_errors_total
+```
+
+- `insufficient_credits` climbing means the 100-credit allocation or the reward
+  pricing is unrealistic for real order values.
+- `credit_saga_tasks_total{outcome="release_failed"}` and
+  `credit_saga_retries_exhausted_total` are **RabbitMQ-only** rejections: they
+  never touch HTTP, so gateway-level dashboards cannot see them at all.
+- **Decision:** put business codes on their own panel (they have their own
+  owner), and alert on the *saga* failures separately - a saga that gives up is
+  a user-visible broken order, not a slow request.
+
+---
+
+## 5. Running it
+
+```bash
+# 1. the stack as usual
+make up
+
+# 2. optional observability profile (does not change `make up`)
+make obs-up
+#    Grafana  http://localhost:3000  (login required, see "Access" below)
+#    Prometheus is NOT published: Grafana proxies its queries, so the metric
+#    store is not reachable from the host at all.
+
+# 3. generate traffic
+TOKEN=$(curl -s -X POST localhost:8080/api/users/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"alice@u.nus.edu","password":"Passw0rd!"}' | jq -r .access_token)
+UID_=$(curl -s localhost:8080/api/users/me -H "Authorization: Bearer $TOKEN" | jq -r .id)
+FOC_TOKEN=$TOKEN FOC_USER_ID=$UID_ make obs-load
+
+# 4. read the numbers without Grafana (internal surfaces: run inside the net)
+docker compose exec -T credit-service python -c \
+  "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/metrics').read().decode()[:400])"
+```
+
+### Access
+
+Services expose `/metrics` only on the internal network.
+That is compose `foc-net` locally and the pod network in the cluster.
+Prometheus scrapes them internally and is never published.
+Grafana is the only viewing surface.
+It is admin-only: login is required, anonymous access is off and sign-up is off.
+It is never routed through the API gateway and has no ingress and no security-group port.
+
+Local (compose):
+
+1. Run `make obs-up`.
+2. Open http://localhost:3000.
+3. Log in as `admin` with `$GRAFANA_ADMIN_PASSWORD`.
+   The default is `admin`, and Grafana asks you to change it.
+
+Compose binds Grafana to `127.0.0.1` only.
+
+Local k3d cluster:
+
+1. Run `kubectl -n foc-observability port-forward svc/grafana 3000:3000`.
+2. Open http://localhost:3000 and log in as `admin`.
+
+EC2 cluster:
+
+Grafana runs in the `foc-observability` namespace as a ClusterIP service with no ingress.
+The EC2 node does not open port 22 (the security group allows 80/443 only and there is no key pair), so admins reach it through SSM:
+
+1. Open a session on the node and start the port-forward there:
+
+   ```bash
+   aws ssm start-session --target <instance-id>
+   sudo k3s kubectl -n foc-observability port-forward svc/grafana 3000:3000
+   ```
+
+2. In a second terminal, forward local port 3000 to the node:
+
+   ```bash
+   aws ssm start-session --target <instance-id> \
+     --document-name AWS-StartPortForwardingSession \
+     --parameters '{"portNumber":["3000"],"localPortNumber":["3000"]}'
+   ```
+
+3. Open http://localhost:3000.
+
+A host with SSH access can do the same in one step with `ssh -L 3000:localhost:3000 <host> -t 'sudo k3s kubectl -n foc-observability port-forward svc/grafana 3000:3000'`.
+
+The admin password comes from an optional `grafana-admin` secret, key `admin-password`.
+Without that secret, Grafana starts with `admin` / `admin`.
+Grafana prompts for a password change on first login, but the prompt can be skipped, so admins should set the password on first login.
+For EC2, create the sealed `grafana-admin` secret before the first sync.
+See [`infra/argocd/README.md`](../infra/argocd/README.md) for the sealing steps.
+
+### Self-test without Docker
+
+`scripts/observability-demo.py` runs the real app in-process (sqlite + a stubbed
+AMQP transport) and drives every metric family to a non-zero value: all HTTP
+error-envelope codes, every business outcome label, all six duplicate-suppression
+OPS, all four saga outcomes, both retry-exhausted counters, all six event routing
+keys (including publish failures), and every consumer branch. It then prints
+the non-zero `/metrics` samples.
+
+```bash
+credit-service/.venv/Scripts/python scripts/observability-demo.py   # Windows
+credit-service/.venv/bin/python     scripts/observability-demo.py   # POSIX
+```
+
+It exits non-zero if an error code is missing or if credits are not conserved
+(`available + reserved == allocation × accounts`).
+
+### Where the config lives
+
+Dashboards, alert rules and Grafana provisioning live in the Helm chart, so compose and the cluster share one copy.
+Helm can only read files inside a chart, which is why the chart is the single source.
+
+| File | Purpose |
+| --- | --- |
+| `infra/helm/foc/charts/observability/files/dashboards/credit-service.json` | Credit Service dashboard (availability and latency, async and economy KPIs, route latency, error codes, business outcomes, async path, resources) |
+| `infra/helm/foc/charts/observability/files/dashboards/services-overview.json` | All services overview, including chat-service and the gateway edge |
+| `infra/helm/foc/charts/observability/files/alerts.yml` | Alert rules: 5xx rate, route p95, DB pool saturation, consumer stalled (`time() - last_message > 300`), publish failures, saga retries exhausted |
+| `infra/helm/foc/charts/observability/files/grafana-datasource.yml` | Grafana datasource (`http://prometheus:9090`, valid in compose and in the cluster) |
+| `infra/helm/foc/charts/observability/files/grafana-dashboards.yml` | Grafana dashboard provider (reads `/var/lib/grafana/dashboards`) |
+| `observability/prometheus/prometheus.yml` | Compose-only Prometheus config with static targets |
+
+compose mounts these files read-only into the `prometheus` and `grafana` containers.
+Most of them are single-file bind mounts, so after editing one run `docker compose restart prometheus grafana` (or recreate the containers) to pick up the change.
+
+### In the cluster (k3d and EC2)
+
+The `observability` subchart of `infra/helm/foc` deploys Prometheus and Grafana into the `foc-observability` namespace.
+It is enabled by `observability.enabled: true` in `infra/helm/foc/values.yaml`, so ArgoCD deploys it with the rest of the `foc` app.
+Both Services are `ClusterIP`.
+There is no Ingress, NodePort, LoadBalancer or hostPort, so neither UI is reachable from outside the node, and the EC2 security group stays 80/443 only.
+
+Prometheus discovers pods with `kubernetes_sd_configs` (role `pod`), limited to the app namespaces listed in `prometheus.scrapeNamespaces` of the observability chart.
+It scrapes every running pod there that is annotated with `prometheus.io/scrape: "true"`.
+The shared `foc-lib` deployment template adds `prometheus.io/scrape`, `prometheus.io/port` and `prometheus.io/path` when a service sets `metrics.enabled: true`.
+The `job` and `service` labels come from the pod's `app.kubernetes.io/name`, so they match the compose job names and the dashboards work unchanged.
+Backend services are scraped on port 8000.
+The gateway is scraped on its internal-only metrics port 9100 (`GATEWAY_METRICS_PORT`), which is not part of its Service or Ingress, so `/metrics` is never reachable through Traefik.
+RabbitMQ is scraped on 15692 (the `rabbitmq_prometheus` plugin), which is also not on its Service.
+Retention is 24h on a 2Gi `local-path` volume, and Grafana keeps its state on a 1Gi volume.
+See [Access](#access) for how to reach Grafana.
+
+> Note: `docker compose` healthchecks still use `GET /health`. `GET
+> /health/ready` is for humans and for orchestration that can tolerate a 503:
+> it reports the database, plus the broker state for services that maintain it
+> (`check_broker=True`, currently credit-service only).
+
+---
+
+## 6. Structured logs
+
+`LOG_JSON=true` switches the `app` logger tree to one JSON object per line with
+`ts, level, logger, message` plus the correlation context:
+
+```json
+{"ts":"2026-10-18T06:24:10.412+00:00","level":"INFO","logger":"app.services.credit_service",
+ "message":"Provisioned credit account for user_id=u-1 with 100 credits",
+ "request_id":"b1f0c0f4...","user_id":"u-1"}
+```
+
+`request_id` comes from the incoming `X-Request-Id` (generated if absent) and is
+echoed back in the response header, so a metric spike → Grafana → log line is a
+single grep. Consumer records additionally carry `order_id` / `task_id`, which is
+how a saga failure is traced back to one order without touching the database.
+
+Only the `app` logger is reconfigured: uvicorn keeps its own handlers, so
+startup/access output is unchanged and nothing is duplicated.
+
+---
+
+## 7. Known gaps
+
+- **No distributed tracing.** FastAPI + aio-pika can be instrumented
+  (`opentelemetry-instrumentation-*`) and OTLP exported to a collector, but
+  propagation lives in the *clients*: a span reaches the consumer only if the
+  publisher injects `traceparent`. `user-service` / `order-service` do not, so a
+  credit-only rollout would produce root-only consumer spans. RabbitMQ itself
+  emits **broker metrics** (enabled here via `rabbitmq_prometheus`), not traces.
+  Adding tracing means either instrumenting the other services too, or accepting
+  single-service traces and documenting the cut.
+- **credit-service has no outbox.** Reservation events are published
+  best-effort (`publish_reservation_event` swallows failures), so a broker
+  outage loses them; the new `failed` counter and `ConsumerLastMessage` gauge
+  make that visible, but nothing retries it. A transactional outbox (like
+  user-service's `event_outbox` + relay) is a separate backlog item.
+- **Counters are process-lifetime.** They reset on restart and are not
+  persisted; Grafana queries therefore use `rate(...)` / `increase(...)` over a
+  window rather than raw totals.
+- **Scrape-time gauges.** `credit_reserved_balance_sum`, `credit_available_balance_sum`,
+  `credit_accounts_total` and the DB-pool gauges are recomputed by the
+  `metrics_refresh` hook on every `/metrics` scrape (one aggregate query), so
+  Prometheus never sees a stale zero. The single-instance caveat is only about
+  the (cheap) redundancy of each replica computing the same aggregate.
+- **No tracing UI.** No Jaeger/Tempo in the profile, deliberately: metrics first,
+  traces only once propagation exists end-to-end.

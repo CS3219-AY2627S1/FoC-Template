@@ -362,7 +362,7 @@ jobs:
       - name: Wait for workloads
         run: |
           set -euo pipefail
-          namespaces="foc-supplier foc-user foc-credit foc-order foc-notification foc-chat foc-messaging foc-gateway foc-frontend"
+          namespaces="foc-supplier foc-user foc-credit foc-order foc-notification foc-chat foc-messaging foc-gateway foc-frontend foc-observability"
           for ns in $namespaces; do
             for sts in $(kubectl get statefulset -n "$ns" -o name); do
               kubectl rollout status "$sts" -n "$ns" --timeout=300s
@@ -390,7 +390,7 @@ jobs:
         if: failure()
         run: |
           kubectl get pods -A -o wide > k3d-diag.txt 2>&1 || true
-          for ns in foc-supplier foc-user foc-credit foc-order foc-notification foc-chat foc-messaging foc-gateway foc-frontend; do
+          for ns in foc-supplier foc-user foc-credit foc-order foc-notification foc-chat foc-messaging foc-gateway foc-frontend foc-observability; do
             kubectl describe pods -n "$ns" >> k3d-diag.txt 2>&1 || true
           done
           kubectl get events -A --sort-by=.lastTimestamp >> k3d-diag.txt 2>&1 || true

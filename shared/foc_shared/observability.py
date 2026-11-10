@@ -1,0 +1,495 @@
+# AI-influenced: implemented with AI assistance; see ai/usage-log.md.
+"""Shared observability layer for the FoC backend services.
+
+One implementation, one set of conventions, installed per service:
+
+```python
+from foc_shared.observability import Observability
+
+obs = Observability("credit-service", prefix="credit")
+obs.install(app, readiness_session_dep=get_session)
+```
+
+What a service gets:
+
+- ``GET /metrics`` - Prometheus exposition from its own registry, or the same
+  registry on a separate internal port via :meth:`Observability.serve_metrics`
+  for a public-facing service (the gateway)
+- ``GET /health/ready`` - database (when a session dependency is given) and
+  broker readiness; ``GET /health`` is left untouched
+- HTTP request/latency/status metrics labelled by **route template** and by
+  ``service``, so one Grafana dashboard can compare services; unknown HTTP
+  methods are labelled ``OTHER`` so clients cannot grow the label set
+- error-envelope ``code`` counters (call ``record_error_code`` from the service
+  exception handlers, which are the only layer that knows the code)
+- JSON log formatting with ``request_id`` / ``user_id`` / ``order_id`` /
+  ``task_id`` correlation
+- broker connection state shared with readiness
+
+Design notes:
+
+- Every service owns a :class:`CollectorRegistry`; nothing is global, so two
+  services (or two test apps) can coexist in one process.
+- Metric names are prefixed with ``prefix``; business metrics a service adds via
+  :meth:`Observability.counter` live in the same registry and are discovered by
+  ``/metrics`` automatically.
+- ``/metrics`` and the health endpoints are excluded from the HTTP metrics so
+  probes and scrapes never distort QPS or availability.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import threading
+import time
+from collections.abc import Awaitable, Callable, Iterable
+from contextvars import ContextVar, Token
+from uuid import uuid4
+from wsgiref.simple_server import WSGIServer
+
+from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+    start_http_server,
+)
+from sqlalchemy import text
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+
+from foc_shared.auth import HEADER_USER_ID
+
+__all__ = [
+    "DEFAULT_EXCLUDED_PATHS",
+    "Observability",
+    "ObservabilityMiddleware",
+    "bind",
+    "broker_state",
+    "configure_logging",
+    "context",
+    "current",
+    "reset",
+    "set_broker_state",
+]
+
+DEFAULT_EXCLUDED_PATHS: frozenset[str] = frozenset(
+    {
+        # Operational endpoints: scrape + probes must not distort the numbers.
+        "/metrics",
+        "/health",
+        "/health/ready",
+        # Framework endpoints, not business traffic.
+        "/openapi.json",
+        "/docs",
+        "/docs/oauth2-redirect",
+        "/redoc",
+    }
+)
+
+HTTP_METHODS: frozenset[str] = frozenset(
+    {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+)
+
+HTTP_BUCKETS: tuple[float, ...] = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
+
+_STARTED_AT = time.time()
+
+# ── log context ──────────────────────────────────────────────────────────────
+
+_LOG_CONTEXT: ContextVar[dict[str, str] | None] = ContextVar("foc_log_context", default=None)
+
+
+def bind(**values: str | None) -> Token:
+    """Merge non-empty ``values`` into the current task/thread log context."""
+    merged = {**(_LOG_CONTEXT.get() or {}), **{k: v for k, v in values.items() if v}}
+    return _LOG_CONTEXT.set(merged)
+
+
+def reset(token: Token) -> None:
+    _LOG_CONTEXT.reset(token)
+
+
+def current() -> dict[str, str]:
+    return dict(_LOG_CONTEXT.get() or {})
+
+
+class _ContextProxy:
+    """``from foc_shared.observability import context`` convenience namespace."""
+
+    bind = staticmethod(bind)
+    reset = staticmethod(reset)
+    current = staticmethod(current)
+
+
+context = _ContextProxy()
+
+# ── broker state ─────────────────────────────────────────────────────────────
+
+_broker: dict[str, object] = {"connected": False, "error": None, "changed_at": None}
+
+
+def set_broker_state(connected: bool, error: str | None = None) -> None:
+    _broker["connected"] = connected
+    _broker["error"] = error
+    _broker["changed_at"] = time.time()
+
+
+def broker_state() -> dict[str, object]:
+    return dict(_broker)
+
+
+# ── structured logging ───────────────────────────────────────────────────────
+
+_PROMOTED_EXTRA_KEYS = (
+    "order_id",
+    "task_id",
+    "user_id",
+    "queue",
+    "routing_key",
+    "event_type",
+    "outcome",
+    "code",
+)
+
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, object] = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(record.created))
+            + f".{int(record.msecs):03d}Z",
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        payload.update(current())
+        for key in _PROMOTED_EXTRA_KEYS:
+            value = record.__dict__.get(key)
+            if value:
+                payload[key] = value
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+class TextFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        stamp = time.strftime("%H:%M:%S", time.localtime(record.created))
+        extra = " ".join(f"{k}={v}" for k, v in current().items())
+        line = f"{stamp} {record.levelname:<7} {record.name}: {record.getMessage()}"
+        if extra:
+            line = f"{line} [{extra}]"
+        if record.exc_info:
+            line = f"{line}\n{self.formatException(record.exc_info)}"
+        return line
+
+
+def configure_logging(
+    *, level: str = "info", json_output: bool = False, logger_name: str = "app"
+) -> None:
+    """Attach one handler to ``logger_name`` (idempotent; uvicorn untouched)."""
+    resolved = getattr(logging, level.upper(), logging.INFO)
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(resolved)
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+    handler = logging.StreamHandler()
+    handler.setFormatter(JsonFormatter() if json_output else TextFormatter())
+    logger.addHandler(handler)
+    # Root never sees these records, so uvicorn's own output stays as configured.
+    logger.propagate = False
+
+
+# ── HTTP instrumentation ─────────────────────────────────────────────────────
+
+
+class Observability:
+    """Per-service metrics registry, HTTP instrumentation and readiness."""
+
+    def __init__(
+        self,
+        service: str,
+        *,
+        prefix: str | None = None,
+        excluded_paths: Iterable[str] | None = None,
+    ) -> None:
+        self.service = service
+        self.prefix = prefix or service.replace("-service", "").replace("-", "_")
+        self.excluded_paths = frozenset(excluded_paths or DEFAULT_EXCLUDED_PATHS)
+        # Set by ``install()`` for services whose only route is a catch-all
+        # proxy (the gateway): maps a raw path to a bounded route label.
+        self.route_labeler: Callable[[str], str] | None = None
+        self.started_at = _STARTED_AT
+        self.registry = CollectorRegistry(auto_describe=False)
+
+        self.http_requests = Counter(
+            f"{self.prefix}_http_requests_total",
+            "HTTP requests handled by the service.",
+            ["service", "method", "route", "status"],
+            registry=self.registry,
+        )
+        self.http_duration = Histogram(
+            f"{self.prefix}_http_request_duration_seconds",
+            "HTTP request latency observed by the service.",
+            ["service", "method", "route", "status"],
+            buckets=HTTP_BUCKETS,
+            registry=self.registry,
+        )
+        self.http_errors = Counter(
+            f"{self.prefix}_http_errors_total",
+            "Error responses by error-envelope code.",
+            ["service", "route", "code"],
+            registry=self.registry,
+        )
+
+    # ── service-specific metrics ─────────────────────────────────────────────
+
+    def counter(self, name: str, documentation: str, labels: Iterable[str] = ()) -> Counter:
+        return Counter(name, documentation, list(labels), registry=self.registry)
+
+    def histogram(
+        self,
+        name: str,
+        documentation: str,
+        labels: Iterable[str] = (),
+        *,
+        buckets: Iterable[float] = HTTP_BUCKETS,
+    ) -> Histogram:
+        return Histogram(
+            name, documentation, list(labels), buckets=tuple(buckets), registry=self.registry
+        )
+
+    def gauge(self, name: str, documentation: str, labels: Iterable[str] = ()) -> Gauge:
+        return Gauge(name, documentation, list(labels), registry=self.registry)
+
+    # ── recording ────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def route_template(scope: dict) -> str:
+        """The matched route template, or ``<unmatched>`` (bounded cardinality)."""
+        route = scope.get("route")
+        return getattr(route, "path", None) or "<unmatched>"
+
+    def observe_http_request(
+        self, *, method: str, route: str, status: str, duration: float
+    ) -> None:
+        self.http_requests.labels(
+            service=self.service, method=method, route=route, status=status
+        ).inc()
+        self.http_duration.labels(
+            service=self.service, method=method, route=route, status=status
+        ).observe(duration)
+
+    def record_error_code(self, route: str, code: str) -> None:
+        self.http_errors.labels(service=self.service, route=route, code=code).inc()
+
+    def route_label(self, scope: dict) -> str:
+        """Route label for the ``route`` dimension.
+
+        Defaults to the FastAPI route template; the gateway installs a
+        ``route_labeler`` because its only route is a catch-all proxy.
+        """
+        if self.route_labeler is not None:
+            return self.route_labeler(scope.get("path", ""))
+        return self.route_template(scope)
+
+    # ── exposition / queries ────────────────────────────────────────────────
+
+    def render(self) -> bytes:
+        return generate_latest(self.registry)
+
+    @staticmethod
+    def value(metric, **labels: str) -> float:
+        base = getattr(metric, "_name", "")
+        wanted = {base, f"{base}_total"}
+        total = 0.0
+        for family in metric.collect():
+            for sample in family.samples:
+                if sample.name not in wanted:
+                    continue
+                if all(sample.labels.get(k) == v for k, v in labels.items()):
+                    total += sample.value
+        return total
+
+    @staticmethod
+    def table(metric) -> list[dict[str, object]]:
+        base = getattr(metric, "_name", "")
+        wanted = {base, f"{base}_total"}
+        rows: list[dict[str, object]] = []
+        for family in metric.collect():
+            for sample in family.samples:
+                if sample.name not in wanted:
+                    continue
+                row: dict[str, object] = dict(sample.labels)
+                row["value"] = sample.value
+                rows.append(row)
+        return rows
+
+    # ── installation ────────────────────────────────────────────────────────
+
+    def install(
+        self,
+        app: FastAPI,
+        *,
+        readiness_session_dep: Callable | None = None,
+        readiness_extra: Callable[[], dict[str, str]] | None = None,
+        check_broker: bool = True,
+        metrics_refresh: Callable[[], Awaitable[None]] | None = None,
+        metrics_refresh_timeout: float = 1.0,
+        route_labeler: Callable[[str], str] | None = None,
+        metrics_route: bool = True,
+        readiness_route: bool = True,
+    ) -> None:
+        """Mount ``/metrics`` and ``/health/ready`` and add the middleware.
+
+        ``metrics_route=False`` keeps ``/metrics`` off the app (serve it with
+        :meth:`serve_metrics` on an internal port instead); ``readiness_route=False``
+        leaves ``/health/ready`` to the service.
+
+        ``check_broker`` should stay ``True`` only for a service that keeps
+        :func:`set_broker_state` up to date (a long-lived consumer). Services
+        that merely publish through an outbox, or do not use the broker at all,
+        would otherwise report ``degraded`` forever.
+
+        ``metrics_refresh`` runs before every ``/metrics`` scrape so gauges that
+        come from the database or the connection pool are fresh without a
+        background task. Prometheus scrapes are the only trigger, so a scrape
+        must never fail because of it (errors are logged and swallowed), and a
+        slow refresh is abandoned after ``metrics_refresh_timeout`` seconds so the
+        scrape still answers with the current registry.
+
+        ``route_labeler`` maps a raw request path to the ``route`` label for
+        services whose only route is a catch-all proxy (the gateway); every
+        other service gets route templates from FastAPI for free.
+        """
+        self.route_labeler = route_labeler
+        app.add_middleware(ObservabilityMiddleware, observability=self)
+        if metrics_route:
+            app.include_router(self._metrics_router(metrics_refresh, metrics_refresh_timeout))
+        if readiness_route:
+            app.include_router(
+                self._readiness_router(readiness_session_dep, readiness_extra, check_broker)
+            )
+
+    def serve_metrics(
+        self, port: int, addr: str = "0.0.0.0"
+    ) -> tuple[WSGIServer, threading.Thread]:
+        """Serve this registry on its own port; returns ``(server, thread)``."""
+        return start_http_server(port, addr=addr, registry=self.registry)
+
+    def _metrics_router(
+        self, refresh: Callable[[], Awaitable[None]] | None, timeout: float
+    ) -> APIRouter:
+        router = APIRouter(tags=["observability"])
+
+        @router.get("/metrics", include_in_schema=False)
+        async def prometheus_metrics() -> Response:
+            if refresh is not None:
+                deadline = asyncio.timeout(timeout)
+                try:
+                    async with deadline:
+                        await refresh()
+                except TimeoutError:
+                    if not deadline.expired():
+                        logging.getLogger("app").exception("Metrics refresh failed.")
+                    else:
+                        logging.getLogger("app").warning(
+                            "Metrics refresh timed out after %ss; serving current values.", timeout
+                        )
+                except Exception:
+                    logging.getLogger("app").exception("Metrics refresh failed.")
+            return Response(content=self.render(), media_type=CONTENT_TYPE_LATEST)
+
+        return router
+
+    def _readiness_router(
+        self,
+        session_dep: Callable | None,
+        extra: Callable[[], dict[str, str]] | None,
+        check_broker: bool,
+    ) -> APIRouter:
+        router = APIRouter(tags=["observability"])
+
+        async def _payload(session) -> tuple[int, dict[str, object]]:
+            checks: dict[str, str] = {}
+            if session is not None:
+                try:
+                    await session.execute(text("SELECT 1"))
+                    checks["database"] = "ok"
+                except Exception:
+                    logging.getLogger("app").exception("Readiness: database check failed.")
+                    checks["database"] = "unavailable"
+            if extra is not None:
+                try:
+                    checks.update(extra())
+                except Exception:
+                    logging.getLogger("app").exception("Readiness: extra check failed.")
+                    checks["extra"] = "unavailable"
+            broker = broker_state()
+            if check_broker:
+                checks["broker"] = "ok" if broker["connected"] else "unavailable"
+            ready = all(value == "ok" for value in checks.values())
+            return (
+                200 if ready else 503,
+                {
+                    "status": "ready" if ready else "degraded",
+                    "checks": checks,
+                    "broker_error": broker["error"] if check_broker else None,
+                    "uptime_seconds": round(time.time() - self.started_at, 3),
+                },
+            )
+
+        if session_dep is None:
+
+            @router.get("/health/ready")
+            async def readiness() -> JSONResponse:
+                status, payload = await _payload(None)
+                return JSONResponse(status_code=status, content=payload)
+
+        else:
+
+            @router.get("/health/ready")
+            async def readiness(
+                session=Depends(session_dep),  # noqa: B008 - chosen at install time
+            ) -> JSONResponse:
+                status, payload = await _payload(session)
+                return JSONResponse(status_code=status, content=payload)
+
+        return router
+
+
+class ObservabilityMiddleware(BaseHTTPMiddleware):
+    """Records one HTTP sample per request and propagates ``X-Request-Id``."""
+
+    def __init__(self, app, *, observability: Observability) -> None:
+        super().__init__(app)
+        self.obs = observability
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        if request.url.path in self.obs.excluded_paths:
+            return await call_next(request)
+
+        request_id = request.headers.get("x-request-id") or uuid4().hex
+        token = bind(request_id=request_id, user_id=request.headers.get(HEADER_USER_ID))
+
+        started = time.perf_counter()
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+        finally:
+            self.obs.observe_http_request(
+                method=request.method if request.method in HTTP_METHODS else "OTHER",
+                route=self.obs.route_label(request.scope),
+                status=str(status),
+                duration=time.perf_counter() - started,
+            )
+            reset(token)
+
+        response.headers["X-Request-Id"] = request_id
+        return response

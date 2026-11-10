@@ -17,6 +17,7 @@ from app.config import Settings, get_settings
 from app.db import create_schema, make_engine, make_sessionmaker
 from app.errors import ChatError
 from app.integrations.order_events import OrderEventConsumer, prune_processed_events
+from app.observability import OBS
 from app.realtime import ws
 from app.realtime.broker import AmqpBroker, Broker, LocalBroker
 from app.realtime.hub import Hub
@@ -130,8 +131,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="FoC Chat Service", version="0.1.0", lifespan=lifespan)
 
     @app.exception_handler(ChatError)
-    async def chat_error_handler(_: Request, exc: ChatError) -> JSONResponse:
+    async def chat_error_handler(request: Request, exc: ChatError) -> JSONResponse:
+        OBS.record_error_code(OBS.route_template(request.scope), exc.code)
         return JSONResponse({"code": exc.code, "message": exc.message}, status_code=exc.http_status)
+
+    OBS.install(app, check_broker=False, readiness_route=False)
 
     app.include_router(health.router)
     app.include_router(tickets.router)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +19,15 @@ class Settings(BaseSettings):
     # How many times a transiently failing order event is redelivered before the
     # consumer publishes a definitive failure reply (request/reply events only).
     event_retry_limit: int = 5
+    # Observability: emit one JSON log line per record (containers) instead of a
+    # human-readable line (local dev). See docs/observability.md.
+    log_json: bool = False
+    metrics_refresh_timeout_seconds: float = Field(default=1.0, gt=0)
+
+    @property
+    def consumer_queues(self) -> list[str]:
+        """The queues this service consumes (used for consumer metrics)."""
+        return [self.order_events_queue, self.user_events_queue]
 
 
 settings = Settings()
