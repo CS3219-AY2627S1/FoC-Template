@@ -3,7 +3,7 @@
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-02
  * Scope: Generated the admin.case.resolved handler that counts a disputed order again
  *        for whoever was not at fault.
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { Value } from '@sinclair/typebox/value';

@@ -12,23 +12,23 @@
   },
   {
     "badgeId": "ten_deliveries",
-    "title": "Ten runs",
+    "title": "Double digits",
     "description": "Complete 10 deliveries as a courier.",
     "targetRole": "courier",
     "displayOrder": 2,
-    "iconEarnedUrl": "/badges/ten-runs.svg",
-    "iconUnearnedUrl": "/badges/ten-runs-locked.svg",
+    "iconEarnedUrl": "/badges/double-digits.svg",
+    "iconUnearnedUrl": "/badges/double-digits-locked.svg",
     "conditions": [{ "metric": "completedDeliveries", "op": "gte", "value": 10 }],
     "progressMetric": "completedDeliveries"
   },
   {
     "badgeId": "century_courier",
-    "title": "Century courier",
+    "title": "Marathon runner",
     "description": "Complete 100 deliveries as a courier.",
     "targetRole": "courier",
     "displayOrder": 3,
-    "iconEarnedUrl": "/badges/century.svg",
-    "iconUnearnedUrl": "/badges/century-locked.svg",
+    "iconEarnedUrl": "/badges/marathon-runner.svg",
+    "iconUnearnedUrl": "/badges/marathon-runner-locked.svg",
     "conditions": [{ "metric": "completedDeliveries", "op": "gte", "value": 100 }],
     "progressMetric": "completedDeliveries"
   },
@@ -55,11 +55,22 @@
     "progressMetric": "completedOrders"
   },
   {
+    "badgeId": "hundred_orders",
+    "title": "Veteran",
+    "description": "Have 100 errand requests completed.",
+    "targetRole": "requester",
+    "displayOrder": 6,
+    "iconEarnedUrl": "/badges/veteran.svg",
+    "iconUnearnedUrl": "/badges/veteran-locked.svg",
+    "conditions": [{ "metric": "completedOrders", "op": "gte", "value": 100 }],
+    "progressMetric": "completedOrders"
+  },
+  {
     "badgeId": "trusted_user",
     "title": "Well rated",
     "description": "Hold an average rating of 4.5 or higher across at least 10 ratings.",
     "targetRole": "any",
-    "displayOrder": 6,
+    "displayOrder": 7,
     "iconEarnedUrl": "/badges/well-rated.svg",
     "iconUnearnedUrl": "/badges/well-rated-locked.svg",
     "conditions": [

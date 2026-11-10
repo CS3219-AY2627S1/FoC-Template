@@ -1,0 +1,9 @@
+stateDiagram-v2
+    direction LR
+    [*] --> NotHeld: no user_badge row
+    NotHeld --> Earned: every condition holds
+    Earned --> Revoked: a condition stops holding
+    Revoked --> Earned: conditions hold again
+    NotHeld: Not earned
+    Earned: earned, earned_at set
+    Revoked: revoked, revoked_at set

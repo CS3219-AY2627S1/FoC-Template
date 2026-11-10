@@ -1,16 +1,17 @@
 # dev and stg share the non-prod nodes; each gets half-ish of them.
+# Fits every HPA at maxReplicas plus Kafka, proxies, Jobs and rollout surge.
+# Raise a maxReplicas → raise these, or the extra pods are refused.
+# Sized for a full-run peak (Order×32 + peers×8); idle floors are lower — see
+# load-test/README.md. 28/40Gi refused the 32-pod Order floor; keep headroom.
 quota:
-  requests.cpu: "2"
-  requests.memory: 5Gi
-  # Limits don't reserve node CPU (requests do), so this can exceed the nodes.
-  # Steady state is ~7.4: 7 services (4.0) + their Linkerd proxies (7 × 200m,
-  # ADR-0012) + Kafka broker (1) + entity operator (1). The rest covers
-  # migrate Jobs and rollout surge. At 6 the entity operator was refused, so
-  # no KafkaUser Secrets were made and every Kafka client failed to start.
-  limits.cpu: "12"
-  limits.memory: 10Gi
+  requests.cpu: "40"
+  requests.memory: 64Gi
+  limits.cpu: "120"
+  limits.memory: 120Gi
   persistentvolumeclaims: "10"
-  pods: "40"
+  pods: "100"
 networkPolicy:
   # Envoy proxies (charts/foc-gateway) route traffic in and call User's /authorize.
-  allowFromNamespaces: [envoy-gateway-system]
+  # Prometheus scrapes the Linkerd proxies (charts/kube-prometheus-stack).
+  # k6 calls Order (load-test/).
+  allowFromNamespaces: [envoy-gateway-system, monitoring, foc-load]

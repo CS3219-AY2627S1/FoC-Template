@@ -21,7 +21,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
 import { EditSupplierDialog } from '../components/supplier/EditSupplierDialog';
-import { ConfirmDialog } from '../components/ui/Dialog';
+import { ConfirmDialog, Dialog } from '../components/ui/Dialog';
+import { TextAreaField } from '../components/ui/Inputs';
 import { adminCountsChanged } from '../lib/adminCounts';
 import { errorMessage } from '../lib/api';
 import {
@@ -48,9 +49,9 @@ export function AdminSuppliersPage() {
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState<number | null>(null);
   // NFR9.1.1: a decision on someone's submission asks first.
-  const [pendingDecision, setPendingDecision] = useState<
-    { supplier: Supplier; status: Supplier['status'] } | null
-  >(null);
+  const [pendingDecision, setPendingDecision] = useState<Supplier | null>(null);
+  const [rejecting, setRejecting] = useState<Supplier | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
   const [editing, setEditing] = useState<Supplier | null>(null);
   // NFR9.1.1: deleting is irreversible, so it asks first.
   const [deleting, setDeleting] = useState<Supplier | null>(null);
@@ -79,21 +80,39 @@ export function AdminSuppliersPage() {
 
   async function decide() {
     if (pendingDecision === null) return;
-    const { supplier, status } = pendingDecision;
+    const supplier = pendingDecision;
 
     setWorking(supplier.id);
     setError(null);
     setNotice(null);
     try {
-      await setSupplierStatus(supplier.id, status);
+      await setSupplierStatus(supplier.id, 'approved');
       adminCountsChanged();
-      // Re-read rather than patching locally, so the list reflects what the
-      // service actually stored.
       await load();
       setPendingDecision(null);
     } catch (error) {
-      // A denied request (Supplier F1.3.1 is admin only) says so, rather than
-      // reading as an outage.
+      setError(
+        errorMessage(error, `Could not reach the Supplier Service, so ${supplier.name} is unchanged.`),
+      );
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  async function rejectListing() {
+    if (rejecting === null || rejectReason.trim() === '') return;
+    const supplier = rejecting;
+
+    setWorking(supplier.id);
+    setError(null);
+    setNotice(null);
+    try {
+      await setSupplierStatus(supplier.id, 'rejected', rejectReason.trim());
+      adminCountsChanged();
+      await load();
+      setRejecting(null);
+      setRejectReason('');
+    } catch (error) {
       setError(
         errorMessage(error, `Could not reach the Supplier Service, so ${supplier.name} is unchanged.`),
       );
@@ -196,13 +215,16 @@ export function AdminSuppliersPage() {
                   <td className={styles.mono} data-label="Hours">{formatHours(supplier)}</td>
                   <td data-label="Status">
                     <span className={styles[supplier.status]}>{supplier.status}</span>
+                    {supplier.rejectionReason ? (
+                      <span className={styles.sub}>{supplier.rejectionReason}</span>
+                    ) : null}
                   </td>
                   <td>
                     <div className={styles.rowActions}>
                       {supplier.status !== 'approved' ? (
                         <Button
                           variant="secondary"
-                          onClick={() => setPendingDecision({ supplier, status: 'approved' })}
+                          onClick={() => setPendingDecision(supplier)}
                         >
                           Approve
                         </Button>
@@ -210,7 +232,10 @@ export function AdminSuppliersPage() {
                       {supplier.status !== 'rejected' ? (
                         <Button
                           variant="danger"
-                          onClick={() => setPendingDecision({ supplier, status: 'rejected' })}
+                          onClick={() => {
+                            setRejectReason('');
+                            setRejecting(supplier);
+                          }}
                         >
                           Reject
                         </Button>
@@ -241,28 +266,57 @@ export function AdminSuppliersPage() {
 
       <ConfirmDialog
         open={pendingDecision !== null}
-        title={
-          pendingDecision?.status === 'rejected' ? 'Reject this listing?' : 'Approve this listing?'
-        }
+        title="Approve this listing?"
         consequence={
-          pendingDecision === null ? null : pendingDecision.status === 'rejected' ? (
+          pendingDecision === null ? null : (
             <>
-              {pendingDecision.supplier.name} stays out of the catalogue and cannot be chosen as a
-              pickup or delivery point.
-            </>
-          ) : (
-            <>
-              {pendingDecision.supplier.name} becomes visible in the catalogue straight away and
-              can be chosen as a pickup or delivery point.
+              {pendingDecision.name} becomes visible in the catalogue straight away and can be
+              chosen as a pickup or delivery point.
             </>
           )
         }
-        confirmLabel={pendingDecision?.status === 'rejected' ? 'Reject' : 'Approve'}
-        destructive={pendingDecision?.status === 'rejected'}
+        confirmLabel="Approve"
         busy={working !== null}
         onConfirm={decide}
         onCancel={() => setPendingDecision(null)}
       />
+
+      <Dialog
+        open={rejecting !== null}
+        title="Reject this listing?"
+        onClose={() => {
+          if (working === null) setRejecting(null);
+        }}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setRejecting(null)} disabled={working !== null}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={rejectReason.trim() === '' || rejectReason.trim().length > 4000}
+              loading={working !== null}
+              onClick={() => void rejectListing()}
+            >
+              Reject
+            </Button>
+          </>
+        }
+      >
+        <div className={styles.rejectBody}>
+          <p className={styles.rejectCopy}>
+            {rejecting?.name} stays out of the catalogue. The reason is stored with the listing.
+            The person who submitted it is not emailed.
+          </p>
+          <TextAreaField
+            label="Reason"
+            rows={4}
+            maxLength={4000}
+            value={rejectReason}
+            onChange={(event) => setRejectReason(event.target.value)}
+          />
+        </div>
+      </Dialog>
 
       <EditSupplierDialog
         supplier={editing}
@@ -298,9 +352,8 @@ export function AdminSuppliersPage() {
       />
 
       {/*
-        Supplier NFR2.2.1 requires the submitter to be told the outcome, with
-        a reason when rejected. Neither the service nor this screen does that,
-        and there is no field to type a reason into.
+        Supplier NFR2.2.1 still requires the submitter to be told the outcome.
+        The reason is stored, but no email is sent.
       */}
     </div>
   );

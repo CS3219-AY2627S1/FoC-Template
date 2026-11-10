@@ -172,6 +172,36 @@ test("friendship HTTP lifecycle, privacy, concurrency and constraints in disposa
     assert.equal(first.items.length, 2); assert.equal(second.items.length, 1); assert.equal(first.total, 3);
     assert.equal(new Set([...first.items, ...second.items].map((u) => u.id)).size, 3);
     for (const item of [...first.items, ...second.items]) assert.deepEqual(Object.keys(item).sort(), ["id", "name"]);
+    const searchOwner = await user({ name: "Lim owner should not match peers" });
+    const searchPeers = [await user({ name: "Alice LIM" }), await user({ name: "Lim Wei" }),
+      await user({ name: "Unrelated" }), await user({ name: "Literal 50%_\\ marker" })];
+    for (const [i, peer] of searchPeers.entries()) {
+      // Cover both sender and recipient roles in the filtered relation.
+      const invitation = i % 2 ? await send(peer, searchOwner) : await send(searchOwner, peer);
+      assert.equal((await respond(i % 2 ? searchOwner : peer, invitation.body.requestId)).status, 200);
+    }
+    const filtered1 = await friends(searchOwner, "?q=LiM&page=1&pageSize=1");
+    const filtered2 = await friends(searchOwner, "?q=%20lim%20&page=2&pageSize=1");
+    assert.equal(filtered1.status, 200); assert.equal(filtered1.cache, "no-store");
+    assert.equal(filtered1.body.total, 2); assert.equal(filtered2.body.total, 2);
+    assert.deepEqual(new Set([...filtered1.body.items, ...filtered2.body.items].map((u) => u.id)), new Set(searchPeers.slice(0, 2).map((u) => u.id)));
+    assert.deepEqual(Object.keys(filtered1.body).sort(), ["items", "page", "pageSize", "total"]);
+    for (const q of ["", "   "]) assert.equal((await friends(searchOwner, "?q=" + encodeURIComponent(q))).body.total, 4);
+    assert.equal((await friends(searchOwner, "?q=no-such-friend")).body.total, 0);
+    for (const q of ["%", "_", "\\", "50%_\\"]) {
+      const result = await friends(searchOwner, "?q=" + encodeURIComponent(q));
+      assert.deepEqual(result.body.items, [{ id: searchPeers[3].id, name: searchPeers[3].name }]);
+      assert.equal(result.body.total, 1);
+    }
+    for (const query of ["?q=lim&q=wei", "?q[name]=lim", "?q=" + "x".repeat(101)]) {
+      const invalid = await friends(searchOwner, query);
+      assert.equal(invalid.status, 400); assert.equal(invalid.body.code, "INVALID_PAGINATION");
+    }
+    assert.equal((await friends(searchOwner, "?q=" + "x".repeat(100))).status, 200);
+    await prisma.user.update({ where: { id: searchPeers[0].id }, data: { accessStatus: "SUSPENDED" } });
+    await prisma.user.update({ where: { id: searchPeers[1].id }, data: { deletionRequestedAt: new Date(), scheduledDeletionAt: new Date(Date.now() + 60000) } });
+    assert.equal((await friends(searchOwner, "?q=lim")).body.total, 0);
+    console.log("PASS: bounded optional name search filters both friendship roles, counts before paging, matches case-insensitively and treats SQL wildcards literally");
     const toDelete = await user();
     const outgoingDeleted = await send(toDelete, pageOwner);
     const incomingDeleted = await send(b, toDelete);

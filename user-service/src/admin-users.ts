@@ -8,6 +8,7 @@ import { isUuid } from "./integration-access";
 import { hashSessionToken } from "./security";
 import { accountStatus } from "./status";
 import { lockVerificationUser } from "./verification-events";
+import { deletionIsDue } from "./account-lifecycle";
 
 export const ADMIN_SEARCH_PAGE_SIZE = 20;
 const hidden = () => new AppError(404, "NOT_FOUND", "Endpoint not found");
@@ -38,26 +39,38 @@ async function assertCurrentAdministrator(transaction: Prisma.TransactionClient,
     || session.revokedAt || session.expiresAt <= new Date()) throw hidden();
 }
 
-export function parseAdminSearch(q: unknown, page: unknown): { q: string; page: number } {
+type SearchStatus = "Created" | "Verified" | "Suspended";
+type SearchOptions = { q: string; page: number; status?: SearchStatus };
+
+export function parseAdminSearch(q: unknown, page: unknown, status?: unknown): SearchOptions {
   if (q !== undefined && (typeof q !== "string" || q.length > 100)) {
     throw new AppError(400, "INVALID_QUERY", "q must be a string of at most 100 characters");
   }
   if (page !== undefined && (typeof page !== "string" || !/^[1-9]\d{0,5}$/.test(page) || Number(page) > 100_000)) {
     throw new AppError(400, "INVALID_PAGE", "page must be an integer between 1 and 100000");
   }
-  return { q: typeof q === "string" ? q.trim() : "", page: page === undefined ? 1 : Number(page) };
+  if (status !== undefined && status !== "Created" && status !== "Verified" && status !== "Suspended") {
+    throw new AppError(400, "INVALID_STATUS", "status must be Created, Verified or Suspended");
+  }
+  return { q: typeof q === "string" ? q.trim() : "", page: page === undefined ? 1 : Number(page),
+    ...(status !== undefined ? { status } : {}) };
 }
 
 function summary(user: User) {
   return { id: user.id, name: user.name, email: user.email, role: user.role.toLowerCase(), status: accountStatus(user) };
 }
 
-export async function searchUsers(actor: Administrator, options: { q: string; page: number }) {
+export async function searchUsers(actor: Administrator, options: SearchOptions) {
   return prisma.$transaction(async (transaction) => {
     await assertCurrentAdministrator(transaction, actor);
     const where: Prisma.UserWhereInput = {
       AND: [
         { OR: [{ scheduledDeletionAt: null }, { scheduledDeletionAt: { gt: new Date() } }] },
+        ...(options.status === "Suspended" ? [{ accessStatus: "SUSPENDED" as const }]
+          : options.status === "Verified" ? [{ accessStatus: "ACTIVE" as const,
+            emailVerifiedAt: { not: null }, telegramVerifiedAt: { not: null } }]
+          : options.status === "Created" ? [{ accessStatus: "ACTIVE" as const,
+            OR: [{ emailVerifiedAt: null }, { telegramVerifiedAt: null }] }] : []),
         ...(options.q ? [{ OR: [
           { name: { contains: options.q, mode: "insensitive" as const } },
           { email: { contains: options.q, mode: "insensitive" as const } },
@@ -70,6 +83,26 @@ export async function searchUsers(actor: Administrator, options: { q: string; pa
     const total = await transaction.user.count({ where });
     return { items: users.map(summary), page: options.page, total };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+}
+
+export function parseAppealRejectionReason(value: unknown): string {
+  const reason = typeof value === "string" ? value.trim() : "";
+  if (!reason || reason.length > 4000) {
+    throw new AppError(400, "INVALID_REASON", "reason must contain 1 to 4000 characters");
+  }
+  return reason;
+}
+
+export async function appealRejectionRecipient(actor: Administrator, targetId: string): Promise<string> {
+  if (!isUuid(targetId)) throw new AppError(400, "INVALID_USER_ID", "A valid user UUID is required");
+  const userId = targetId.toLowerCase();
+  return prisma.$transaction(async (transaction) => {
+    for (const id of [...new Set([actor.userId, userId])].sort()) await lockVerificationUser(transaction, id);
+    await assertCurrentAdministrator(transaction, actor);
+    const target = await transaction.user.findUnique({ where: { id: userId } });
+    if (!target || deletionIsDue(target)) throw new AppError(404, "USER_NOT_FOUND", "User not found");
+    return target.email;
+  });
 }
 
 export type AdminChange = { kind: "role"; value: "admin" | "user" } | { kind: "status"; value: "suspended" | "verified" };

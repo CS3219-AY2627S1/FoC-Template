@@ -1,6 +1,25 @@
 image:
-  tag: "7aaf9d5f1beb52bfb3af2eb4e2565484ffda46dc" # git SHA, set by deploy/push-dev.sh
-replicas: 1
+  tag: "b6303c18c4a763fd3fa6322070d4edb26db6fea4" # git SHA, set by deploy/push-dev.sh
+mesh:
+  # k6 (load-test/) calls Order directly with the identity headers.
+  callers: [gateway, foc-load/k6]
+  # Full-run k6 OOMs the default ~64Mi sidecar; keep this durable for Argo.
+  proxy:
+    memoryRequest: 256Mi
+    memoryLimit: 512Mi
+autoscaling:
+  enabled: true
+  # Idle/dev pin (cheap). A 9600 VU full run needs min=max=32 first — see
+  # load-test/README.md "Scale up / scale down". CPU HPA is blind to create-path
+  # I/O and will shed pods mid-run if min < max under load.
+  minReplicas: 2
+  maxReplicas: 2
+  targetCPUUtilization: 70
+resources:
+  # 500m keeps a high peak floor schedulable without waiting on burst nodes
+  # (1 CPU × N often hit Insufficient cpu). Limit stays 2 for spikes.
+  requests: {cpu: 500m, memory: 1Gi}
+  limits: {cpu: "2", memory: 2Gi}
 env:
   # Photos in S3 instead of the pod's disk; the node role may write to this
   # bucket only (infra/nonprod/aws/photos.tf, node-permissions.tf). No keys:
@@ -9,6 +28,3 @@ env:
   ORDER_PHOTOS_BUCKET: foc-dev-order-photos-474265880628
   ORDER_PHOTOS_REGION: ap-southeast-1
   ORDER_PHOTOS_PATH_STYLE: "false"
-# Shared with user, which checks it on the Telegram lookup.
-externalSecrets:
-  order-user-lookup: [ORDER_USER_LOOKUP_TOKEN]

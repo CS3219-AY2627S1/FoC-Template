@@ -138,7 +138,7 @@ describe("request validation before database access", () => {
     }
   });
   it("hides admin search and mutations from missing credentials and spoofed headers", async () => {
-    for (const [endpoint, method] of [["search", "GET"], ["not-a-uuid/role", "POST"], ["not-a-uuid/status", "POST"]]) {
+    for (const [endpoint, method] of [["search", "GET"], ["not-a-uuid/role", "POST"], ["not-a-uuid/status", "POST"], ["not-a-uuid/appeal-rejected", "POST"]]) {
       const response = await fetch(`${baseUrl}/api/v1/user/${endpoint}`, { method,
         headers: { "x-user-id": "5999fc1e-1496-45a0-af8e-53ebf70669ba", "x-is-admin": "true", "x-permitted-action": "true" } });
       assert.equal(response.status, 404);

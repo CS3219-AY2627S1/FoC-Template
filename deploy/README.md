@@ -20,7 +20,7 @@ deploy/
   charts/                          # LEVEL 1: plain Helm charts (work without Argo CD)
     foc-namespace/                 #   ResourceQuota, LimitRange, NetworkPolicy for one env
     strimzi/                       #   wrapper: vendored strimzi-kafka-operator 1.2.0 (charts/*.tgz)
-    foc-kafka/                     #   Kafka 4.3.1 + node pool + 7 topics + 5 users with ACLs
+    foc-kafka/                     #   Kafka 4.3.1 + node pool + 7 topics + 6 users with ACLs
     foc-database/                  #   one env's Postgres databases: setup Job, <svc>-db Secrets (ADR-0010)
     foc-service/                   #   generic chart for any of the 7 services
     envoy-gateway/                 #   wrapper: vendored Envoy Gateway 1.9.2 + GatewayClass (one per cluster)
@@ -111,10 +111,9 @@ hard-coding hosts or ports:
 | Service | Gets |
 |---|---|
 | order | `CREDIT_SERVICE_URL`, `SUPPLIER_SERVICE_URL`, `RATING_SERVICE_URL`, `ADMIN_SERVICE_URL`, `USER_SERVICE_URL` |
-| admin | `USER_SERVICE_BASE_URL`, `ORDER_SERVICE_BASE_URL` (its own names, `app/config.py`) |
-| credit | `USER_SERVICE_URL` |
-| badges | `USER_SERVICE_URL`, `ORDER_SERVICE_URL` |
-| user, supplier, rating | none (rating only uses Kafka) |
+| admin | `USER_SERVICE_BASE_URL` (its own name, `app/config.py`) |
+| user | `ADMIN_SERVICE_BASE_URL` (report and appeal intake) |
+| credit, supplier, rating, badges | none (they call no peers over HTTP) |
 
 Values look like `http://credit:3000`, the same in every environment. Calls
 between services go **directly**, not through the gateway, so the caller
@@ -311,11 +310,8 @@ still shows the last result.
   `createSecrets: false`, `foc-service` `externalSecrets`), the RDS CA bundle
   (`databaseCa`), and CI building each image's `migrate` stage. admin still
   runs the stub in dev, since its database settings aren't wired up.
-- Kafka clients: user publishes `UserVerified` (credit onboards the user);
-  order publishes its four topics and consumes `foc.admin.events`; credit
-  settles `foc.credit.commands`. Until rating and admin exist,
-  `foc.rating.commands` and `foc.admin.commands` have no consumer and
-  `foc.admin.events` no producer; nothing reads `foc.order.status` yet.
+- Kafka clients: see the ACL table in ADR-0004. `foc.admin.commands` has no
+  producer or consumer (escalations go to admin over HTTP), so no ACL grants it.
 - `stg` and `prod` have no `common.yaml` or service values yet. dev's are
   filled from Terraform by `deploy/cloud-values.sh`.
 - prod's cluster (`infra/prod`), with its `gp3` StorageClass and the API

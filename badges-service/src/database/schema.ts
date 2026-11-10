@@ -3,7 +3,7 @@
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
  * Scope: Generated the Drizzle schema (ported from the scaffold's 001_init.sql, plus the
  *        tables the event path needs: counted_order and disputed_order).
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { sql } from 'drizzle-orm';
@@ -108,6 +108,14 @@ export const userBadge = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.badgeId] })],
 );
+
+// Users whose account was deleted (UserDeleted on foc.user.status). Their other
+// rows are removed; this one stays so a late or replayed event for them is
+// ignored instead of bringing their badges back (User F5, decision 2026-11-09).
+export const deletedUser = pgTable('deleted_user', {
+  userId: uuid('user_id').primaryKey(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export type CatalogRow = typeof badgeCatalog.$inferSelect;
 export type UserMetricsRow = typeof userMetrics.$inferSelect;

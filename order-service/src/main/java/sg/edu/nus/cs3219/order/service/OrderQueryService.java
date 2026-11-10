@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Cursor (Auto), date: 2026-10-15
+ * Scope: Implementation assistance for Order Service application services under author-fixed requirements and architecture.
+ * Author review: Varun Sivakumar generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+ */
+
 package sg.edu.nus.cs3219.order.service;
 
 import org.springframework.data.domain.Page;
@@ -180,10 +187,7 @@ public class OrderQueryService {
         if (size == 0) {
             return PageResponse.empty(page, size);
         }
-        Page<AlertEntity> result = alerts.findByRequesterIdAndNotifyRequesterTrueOrderByCreatedAtDesc(
-                actor.userId(),
-                PageRequest.of(page, size)
-        );
+        Page<AlertEntity> result = alerts.findVisibleToUser(actor.userId(), PageRequest.of(page, size));
         return PageResponse.of(result.getContent(), page, size, result.getTotalElements());
     }
 

@@ -37,6 +37,16 @@ describes the persistence model backing requirements F1–F5.
     RETURNING requester_id, reserved_credits`, and apply the balance change
     **only if a row was returned**. Duplicate deliveries delete 0 rows → no-op;
     a stray completed-vs-cancelled collision resolves to whoever deletes first.
+- **Deleted users are revoked, not deleted.** On User Service's `UserDeleted`
+  the balance goes to 0, `deleted_at` is set and a `REVOCATION` log row records
+  what was removed. The row stays: the FKs from `credit_order` and `credit_log`
+  need it, the history is kept, and events that arrive late find it instead of
+  failing forever. A revoked account is treated as not found (balance, reserve,
+  return), and a late `UserVerified` for it is a no-op, so it is never
+  re-granted. Signing up again gives a new user id, so a new account and a new
+  grant of 20. The user's open reservations stay: a courier who completes one
+  is still paid. A payout or refund **to** a revoked account is forfeited: the
+  reservation is settled and nothing is credited or logged.
 
 ## Entity–Relationship Diagram
 
@@ -51,6 +61,7 @@ erDiagram
         int         balance        "NOT NULL, DEFAULT 20, CHECK (balance >= 0)"
         timestamptz created_at      "NOT NULL, DEFAULT now()"
         timestamptz updated_at      "bumped on every balance change"
+        timestamptz deleted_at      "nullable; set once on UserDeleted (revoked)"
     }
 
     credit_order {
@@ -62,7 +73,7 @@ erDiagram
 
     credit_log {
         bigserial   log_id          PK "append-only, never UPDATE or DELETE"
-        enum        operation_type     "ONBOARDING|RESERVATION|CANCELLATION|EXPIRY|COMPLETION|RETURN"
+        enum        operation_type     "ONBOARDING|RESERVATION|CANCELLATION|EXPIRY|COMPLETION|RETURN|REVOCATION"
         int         amount             "NOT NULL, CHECK (amount > 0); magnitude moved"
         uuid        actor_id        FK "FK to credit_user.user_id; user whose balance changed"
         uuid        order_id           "nullable soft ref; NULL for onboarding"
@@ -95,6 +106,7 @@ couriers are the same entity here; roles live in User Service.
 | `balance` | `INTEGER` | `NOT NULL`, `DEFAULT 20`, `CHECK (balance >= 0)` | Balance floor (F1.1.1); default onboarding grant (F2.2.2). |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT now()` | |
 | `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT now()` | Bump on every balance change. |
+| `deleted_at` | `TIMESTAMPTZ` | `NULL` | Set once when User Service deletes the user; the account is then revoked. |
 
 ### `credit_order` — active reservations only
 
@@ -127,9 +139,10 @@ One row per state-changing transaction (F1.3.2).
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT now()` | |
 
 **`operation_type` enum** — `ONBOARDING`, `RESERVATION`, `CANCELLATION`,
-`EXPIRY`, `COMPLETION`, `RETURN`. The requester-side ops
+`EXPIRY`, `COMPLETION`, `RETURN`, `REVOCATION`. The requester-side ops
 (`CANCELLATION` / `EXPIRY` / `RETURN`) credit the requester; `COMPLETION` credits
-the courier. F1.3.1's list is illustrative — collapse to a single
+the courier; `REVOCATION` removes a deleted user's remaining balance (no log row
+when it was already 0, since `amount` must be > 0). F1.3.1's list is illustrative — collapse to a single
 `CANCELLATION` value if per-cause reporting is not needed.
 
 ## Transaction boundaries
@@ -143,4 +156,5 @@ back (F3.3.3, F4.2, F4.3, F5.2).
 | Reserve (HTTP, order create) | F3.3 | `UPDATE credit_user SET balance = balance - n` (row `CHECK` guards F3.2.1) + `INSERT credit_order` + `INSERT credit_log (RESERVATION)`. |
 | Complete (event) | F4.3 | `DELETE credit_order RETURNING ...` (validates existence, F4.1.2) + `UPDATE credit_user SET balance = balance + n` for courier + `INSERT credit_log (COMPLETION)`. |
 | Cancel / expire (event) | F4.2 | `DELETE credit_order RETURNING ...` + `UPDATE credit_user SET balance = balance + n` for requester + `INSERT credit_log (CANCELLATION\|EXPIRY)`. |
+| Revoke (`UserDeleted` event) | — | `SELECT credit_user FOR UPDATE` → if present and not yet deleted: `UPDATE credit_user SET balance = 0, deleted_at = now()` + `INSERT credit_log (REVOCATION)` when the balance was > 0. |
 | Return (HTTP endpoint) | F5.2 | `DELETE credit_order RETURNING ...` (F5.1.1) + `UPDATE credit_user SET balance = balance + n` for requester + `INSERT credit_log (RETURN)`. |

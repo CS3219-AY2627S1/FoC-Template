@@ -60,11 +60,11 @@ fi
 log "Removing the cluster (infra/nonprod/aws, eks_enabled=false)"
 terraform -chdir="$TF_AWS" apply -auto-approve -input=false "${VARS[@]}" -var eks_enabled=false
 
-# 3. Kafka's disk: made by the EBS CSI driver, not Terraform, so nothing else
+# 3. Kafka's and Prometheus's disks: made by the EBS CSI driver, not Terraform, so nothing else
 #    deletes it. Once the nodes are gone it is "available" (detached).
-log "Deleting leftover dev disks (Kafka's PVC)"
+log "Deleting leftover disks (Kafka's and Prometheus's PVCs)"
 vols="$(aws ec2 describe-volumes --region "$REGION" \
-  --filters "Name=tag:kubernetes.io/created-for/pvc/namespace,Values=foc-dev" "Name=status,Values=available" \
+  --filters "Name=tag:kubernetes.io/created-for/pvc/namespace,Values=foc-dev,monitoring" "Name=status,Values=available" \
   --query 'Volumes[].VolumeId' --output text)"
 for v in $vols; do
   echo "deleting $v"

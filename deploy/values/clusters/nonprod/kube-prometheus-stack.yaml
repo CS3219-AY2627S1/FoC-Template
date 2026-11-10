@@ -1,0 +1,4 @@
+# infra/nonprod/aws/secrets.tf; charts/cluster-config lets monitoring use this store.
+grafanaAdmin:
+  secretStore: aws-secrets-dev
+  remoteKey: foc/dev/grafana-admin

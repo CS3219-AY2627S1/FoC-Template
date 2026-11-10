@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Cursor (Auto), date: 2026-10-15
+ * Scope: Implementation assistance for Order Service configuration under author-fixed requirements and architecture.
+ * Author review: Varun Sivakumar generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+ */
+
 package sg.edu.nus.cs3219.order.config;
 
 import jakarta.validation.Valid;
@@ -194,6 +201,10 @@ public class OrderProperties {
         private String supplierBaseUrl = "http://supplier-service:8080";
         private String ratingBaseUrl = "http://rating-service:8085";
         private String adminBaseUrl = "http://admin-service:8080";
+        /** Zero disables. Approved pickup lookups change rarely. */
+        private Duration supplierCacheTtl = Duration.ofMinutes(5);
+        /** Zero disables. Telegram is fixed after signup; long TTL is safe. */
+        private Duration telegramCacheTtl = Duration.ofHours(1);
 
         public Duration getTimeout() {
             return timeout;
@@ -241,6 +252,22 @@ public class OrderProperties {
 
         public void setAdminBaseUrl(String adminBaseUrl) {
             this.adminBaseUrl = adminBaseUrl;
+        }
+
+        public Duration getSupplierCacheTtl() {
+            return supplierCacheTtl;
+        }
+
+        public void setSupplierCacheTtl(Duration supplierCacheTtl) {
+            this.supplierCacheTtl = supplierCacheTtl;
+        }
+
+        public Duration getTelegramCacheTtl() {
+            return telegramCacheTtl;
+        }
+
+        public void setTelegramCacheTtl(Duration telegramCacheTtl) {
+            this.telegramCacheTtl = telegramCacheTtl;
         }
     }
 

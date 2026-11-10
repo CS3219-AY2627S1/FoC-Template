@@ -5,37 +5,41 @@
  * Reviewed by Ngooi Jun Sen, removed unnecessary column for user roles.
  *
  * Covers UI FR17.1.1 (search, with role and status shown), FR17.1.2 (suspend
- * and promote), FR17.1.3 (the adjust-credits modal with balance, amount and
- * reason) and NFR11.1.2 (the table scrolls in its own box on a narrow
+ * and promote) and NFR11.1.2 (the table scrolls in its own box on a narrow
  * screen).
  *
  * Reads and acts through the Admin Service (GET /api/v1/admin/users and the
- * promote, suspend and reinstate endpoints). Adjusting credits is still inert:
- * no contract has an endpoint for it.
+ * promote, suspend and reinstate endpoints).
  *
  * The open reports and appeals queues sit above the table
  * (components/admin/ModerationQueues).
  */
 
 import { useCallback, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { ModerationQueues } from '../components/admin/ModerationQueues';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
-import { ConfirmDialog, Dialog } from '../components/ui/Dialog';
-import { Field } from '../components/ui/Field';
+import { ConfirmDialog } from '../components/ui/Dialog';
 import { Icon } from '../components/ui/Icon';
-import { TextField } from '../components/ui/TextField';
-import { TextAreaField } from '../components/ui/Inputs';
 import { errorMessage } from '../lib/api';
 import { useAdminUserSearch } from '../lib/useAdminUserSearch';
 import {
   promoteUser,
   reinstateUser,
   suspendUser,
+  type AdminAccountStatus,
   type AdminUser,
 } from '../lib/adminUsers';
 import styles from './AdminUsersPage.module.css';
+
+const STATUS_FILTERS: { value: '' | AdminAccountStatus; label: string }[] = [
+  { value: '', label: 'All' },
+  { value: 'Created', label: 'Created' },
+  { value: 'Verified', label: 'Verified' },
+  { value: 'Suspended', label: 'Suspended' },
+];
 
 type Pending =
   | { kind: 'suspend'; user: AdminUser }
@@ -48,23 +52,30 @@ export function AdminUsersPage() {
 
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [params, setParams] = useSearchParams();
+  const requested = params.get('status');
+  const status: '' | AdminAccountStatus =
+    requested === 'Created' || requested === 'Verified' || requested === 'Suspended' ? requested : '';
   const [actionError, setActionError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   const [pending, setPending] = useState<Pending>(null);
   const [working, setWorking] = useState(false);
-  const [adjusting, setAdjusting] = useState<AdminUser | null>(null);
-  const [amount, setAmount] = useState('');
-  const [reason, setReason] = useState('');
 
   // Admin F1: search runs on the service, so it covers every user, not just
   // the page on screen. Rows on screen narrow as you type meanwhile.
-  const { users, hasMore, loadError, search } = useAdminUserSearch(
+  const { users, hasMore, total, loadError, search } = useAdminUserSearch(
     query,
     page,
     reloadKey,
     'Could not reach the Admin Service. Start it and reload.',
+    status,
   );
+
+  function chooseStatus(next: '' | AdminAccountStatus) {
+    setPage(1);
+    setParams(next === '' ? {} : { status: next }, { replace: true });
+  }
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
 
@@ -92,27 +103,6 @@ export function AdminUsersPage() {
     }
   }
 
-  function closeAdjust() {
-    setAdjusting(null);
-    setAmount('');
-    setReason('');
-  }
-
-  function submitAdjustment() {
-    // TODO(credit): there is no endpoint. Credit NFR2.1 refers to
-    // "Admin-initiated credit adjustments (Admin F5)", but the Admin
-    // requirements stop at F3 and Admin NFR3.1 forbids Admin from calling
-    // Credit directly.
-    closeAdjust();
-  }
-
-  const parsedAmount = Number.parseInt(amount, 10);
-  const adjustmentValid =
-    adjusting !== null &&
-    !Number.isNaN(parsedAmount) &&
-    parsedAmount !== 0 &&
-    reason.trim().length > 0;
-
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -125,6 +115,20 @@ export function AdminUsersPage() {
       {/* The search filters this table only, so it sits with it, below the queues. */}
       <div className={`${styles.header} ${styles.sectionHeader}`}>
         <h2 className={styles.sectionTitle}>All users</h2>
+
+        <div className={styles.filters} role="group" aria-label="Filter by status">
+          {STATUS_FILTERS.map((option) => (
+            <button
+              key={option.label}
+              type="button"
+              className={status === option.value ? styles.filterActive : styles.filter}
+              aria-pressed={status === option.value}
+              onClick={() => chooseStatus(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
 
         <label className={styles.search}>
           <Icon name="search" size={16} />
@@ -140,9 +144,8 @@ export function AdminUsersPage() {
           />
         </label>
 
-        {/* The contract's list carries no total, so only the page is counted. */}
         <p className={styles.totals}>
-          {users === null ? 'Loading' : `${users.length} on this page`}
+          {users === null || total === null ? 'Loading' : `${total} matching`}
         </p>
       </div>
 
@@ -188,9 +191,6 @@ export function AdminUsersPage() {
                     </td>
                     <td>
                       <div className={styles.actions}>
-                        <Button variant="secondary" onClick={() => setAdjusting(user)}>
-                          Adjust credits
-                        </Button>
                         {/* A suspended account cannot be promoted, and an
                             admin has nothing to be promoted to. */}
                         {suspended || user.isAdmin ? null : (
@@ -228,7 +228,7 @@ export function AdminUsersPage() {
 
       {users !== null && users.length === 0 && loadError === null ? (
         <p className={styles.empty}>
-          {search.trim() === '' ? 'No users yet.' : 'No user matches that search.'}
+          {search.trim() === '' && status === '' ? 'No users yet.' : 'No user matches that filter.'}
         </p>
       ) : null}
 
@@ -285,49 +285,6 @@ export function AdminUsersPage() {
         onConfirm={confirmPending}
         onCancel={() => setPending(null)}
       />
-
-      {/* FR17.1.3: balance, an amount, and a reason. */}
-      <Dialog
-        open={adjusting !== null}
-        title={`Adjust credits for ${adjusting?.name ?? ''}`}
-        onClose={closeAdjust}
-        footer={
-          <>
-            <Button variant="secondary" onClick={closeAdjust}>
-              Cancel
-            </Button>
-            <Button disabled={!adjustmentValid} onClick={submitAdjustment}>
-              Apply adjustment
-            </Button>
-          </>
-        }
-      >
-        <div className={styles.adjustBody}>
-          <Field label="Current balance">
-            <p className={styles.currentBalance}>
-              {adjusting?.credits === undefined ? 'Unknown' : `${adjusting.credits} credits`}
-            </p>
-          </Field>
-
-          <TextField
-            label="Adjustment"
-            name="amount"
-            inputMode="numeric"
-            placeholder="e.g. 5 or -3"
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-            hint="Positive adds credits, negative removes them."
-          />
-
-          <TextAreaField
-            label="Reason"
-            placeholder="Escalation refund for order #1035"
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            hint="Recorded against the adjustment in the ledger (Credit NFR2.1)."
-          />
-        </div>
-      </Dialog>
     </div>
   );
 }

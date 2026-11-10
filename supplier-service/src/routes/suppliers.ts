@@ -280,11 +280,18 @@ router.patch("/:id/status", requireAdmin, async (req: Request, res: Response) =>
   const id = parseInt(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid supplier id" });
 
-  const { status } = req.body;
+  const { status } = req.body ?? {};
   const action = STATUS_ACTION[status];
   if (!action) {
     return res.status(400).json({ error: "Invalid status value" });
   }
+
+  const rawReason = req.body?.reason;
+  const reason = typeof rawReason === "string" ? rawReason.trim() : "";
+  if (status === "rejected" && (reason.length < 1 || reason.length > 4000)) {
+    return res.status(400).json({ error: "A rejection reason of 1 to 4000 characters is required" });
+  }
+  const rejectionReason = status === "rejected" ? reason : null;
 
   const userId = actor(req, res);
   if (!userId) return;
@@ -293,7 +300,7 @@ router.patch("/:id/status", requireAdmin, async (req: Request, res: Response) =>
     const supplier = await prisma.$transaction(async (tx) => {
       const updated = await tx.supplier.update({
         where: { id },
-        data: { status },
+        data: { status, rejectionReason },
       });
       await tx.supplierAction.create({
         data: {
@@ -301,6 +308,7 @@ router.patch("/:id/status", requireAdmin, async (req: Request, res: Response) =>
           supplierName: updated.name,
           action,
           actorUserId: userId,
+          detail: rejectionReason,
         },
       });
       return updated;

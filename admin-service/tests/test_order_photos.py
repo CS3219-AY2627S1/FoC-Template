@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Cursor (Auto), date: 2026-11-09
+# Scope: Implementation assistance for Admin Service tests under author-fixed requirements and architecture.
+# Author review: Sahana Avantika generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+
 """Photo fetch and Gemini part layout. No running S3 or Gemini."""
 
 import base64
@@ -7,6 +12,15 @@ from botocore.exceptions import ClientError
 
 from app.services import ai_client, order_photos
 from app.services.order_photos import EvidencePhoto
+
+
+def test_key_for_role_rejects_anything_not_stored_on_the_case():
+    refs = ["order-1/collection.jpg", "order-1/dispute.webp"]
+    assert order_photos.key_for_role(refs, "collection") == "order-1/collection.jpg"
+    assert order_photos.key_for_role(refs, "dispute") == "order-1/dispute.webp"
+    assert order_photos.key_for_role(refs, "delivery") is None
+    assert order_photos.key_for_role(refs, "../secrets") is None
+    assert order_photos.key_for_role(None, "collection") is None
 
 
 def test_role_comes_from_the_object_key():

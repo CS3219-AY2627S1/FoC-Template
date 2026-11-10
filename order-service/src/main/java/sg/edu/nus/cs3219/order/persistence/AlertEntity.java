@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Cursor (Auto), date: 2026-10-15
+ * Scope: Implementation assistance for Order Service persistence under author-fixed requirements and architecture.
+ * Author review: Varun Sivakumar generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+ */
+
 package sg.edu.nus.cs3219.order.persistence;
 
 import jakarta.persistence.Column;
@@ -21,6 +28,9 @@ public class AlertEntity {
     @Column(name = "requester_id", nullable = false)
     private String requesterId;
 
+    @Column(name = "courier_id")
+    private String courierId;
+
     @Column(name = "from_status")
     private String fromStatus;
 
@@ -29,6 +39,9 @@ public class AlertEntity {
 
     @Column(name = "notify_requester", nullable = false)
     private boolean notifyRequester;
+
+    @Column(name = "notify_courier", nullable = false)
+    private boolean notifyCourier;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -57,6 +70,14 @@ public class AlertEntity {
         this.requesterId = requesterId;
     }
 
+    public String getCourierId() {
+        return courierId;
+    }
+
+    public void setCourierId(String courierId) {
+        this.courierId = courierId;
+    }
+
     public String getFromStatus() {
         return fromStatus;
     }
@@ -79,6 +100,14 @@ public class AlertEntity {
 
     public void setNotifyRequester(boolean notifyRequester) {
         this.notifyRequester = notifyRequester;
+    }
+
+    public boolean isNotifyCourier() {
+        return notifyCourier;
+    }
+
+    public void setNotifyCourier(boolean notifyCourier) {
+        this.notifyCourier = notifyCourier;
     }
 
     public Instant getCreatedAt() {

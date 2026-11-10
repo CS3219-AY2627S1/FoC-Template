@@ -8,6 +8,13 @@
       "when": 1790090309784,
       "tag": "0000_add_initial_setup",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794151275150,
+      "tag": "0001_revoke_deleted_users",
+      "breakpoints": true
     }
   ]
 }

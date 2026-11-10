@@ -71,8 +71,9 @@ export const friendshipPaths = {
     } } } } },
   } },
   "/api/v1/user/friends": { get: {
-    tags: ["Friendships"], summary: "List your accepted friends", description: `${policy} Returns only each friend's ID and name. Unavailable counterpart accounts are excluded. A single accepted row appears in both users' lists.`,
-    security: bearer, parameters: pageParameters,
+    tags: ["Friendships"], summary: "List your accepted friends", description: `${policy} Returns only each friend's ID and name. Unavailable counterpart accounts are excluded. A single accepted row appears in both users' lists. Optional q filters the friend's name by a case-insensitive literal substring before pagination; total is the filtered count. Missing/blank q returns all friends. Invalid q returns 400 INVALID_PAGINATION.`,
+    security: bearer, parameters: [...pageParameters, { name: "q", in: "query", schema: { type: "string", maxLength: 100 },
+      description: "Single string, at most 100 characters before trimming. Blank means no filter; repeated or nested values are invalid." }],
     responses: { "400": errors["400"], "401": errors["401"], "200": { description: "Friends", content: { "application/json": { schema: {
       type: "object", required: ["items", "page", "pageSize", "total"], properties: {
         ...pageFields, items: { type: "array", items: { $ref: "#/components/schemas/PublicFriend" } },

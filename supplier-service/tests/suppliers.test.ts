@@ -217,12 +217,20 @@ describe("gateway identity on supplier routes", () => {
     }, listing);
     assert.equal(created.body.createdByUserId, USER_ID);
 
-    const rejected = await send("PATCH", "/api/v1/supplier/1/status", {
+    const missingReason = await send("PATCH", "/api/v1/supplier/1/status", {
       "x-user-id": ADMIN_ID,
       "x-is-admin": "true",
       "x-permitted-action": "true",
     }, { status: "rejected" });
+    assert.equal(missingReason.status, 400);
+
+    const rejected = await send("PATCH", "/api/v1/supplier/1/status", {
+      "x-user-id": ADMIN_ID,
+      "x-is-admin": "true",
+      "x-permitted-action": "true",
+    }, { status: "rejected", reason: "  Outside campus  " });
     assert.equal(rejected.status, 200);
+    assert.equal(rejected.body.rejectionReason, "Outside campus");
 
     const denied = await send("GET", "/api/v1/supplier/admin/activity", {
       "x-user-id": USER_ID,
@@ -239,8 +247,8 @@ describe("gateway identity on supplier routes", () => {
     assert.equal(listed.status, 200);
     assert.ok(listed.body.some((entry: { action: string; actorUserId: string }) =>
       entry.action === "created" && entry.actorUserId === USER_ID));
-    assert.ok(listed.body.some((entry: { action: string; actorUserId: string }) =>
-      entry.action === "rejected" && entry.actorUserId === ADMIN_ID));
+    assert.ok(listed.body.some((entry: { action: string; actorUserId: string; detail: string | null }) =>
+      entry.action === "rejected" && entry.actorUserId === ADMIN_ID && entry.detail === "Outside campus"));
   });
 
   it("leaves the public catalogue and the order-service lookup open", async () => {

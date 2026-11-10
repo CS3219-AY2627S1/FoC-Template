@@ -11,14 +11,13 @@
  * Escalation count and supplier activity added with Claude Code (Claude Opus
  * 5.5) on 2026-11-02.
  *
- * Suspended users are not counted: the Admin user list has no status filter,
- * so counting would mean reading every page of users. The activity feed
- * covers supplier changes only, the one service that logs them for admins.
+ * Suspended users are the `total` from GET /api/v1/admin/users?status=Suspended.
+ * The activity feed covers supplier changes only.
  */
 
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchAdminUser } from '../lib/adminUsers';
+import { fetchAdminUser, fetchAdminUsers } from '../lib/adminUsers';
 import { fetchConflicts, isOpen } from '../lib/conflicts';
 import { formatElapsed, formatWhen } from '../lib/format';
 import {
@@ -38,6 +37,8 @@ type EscalationState =
   | { kind: 'loading' }
   | { kind: 'ready'; count: number; soonest: Date | null }
   | { kind: 'failed' };
+
+type SuspendedState = { kind: 'loading' } | { kind: 'ready'; count: number } | { kind: 'failed' };
 
 type ActivityState =
   | { kind: 'loading' }
@@ -63,6 +64,7 @@ function daysSince(date: Date): number {
 export function AdminDashboardPage() {
   const [pending, setPending] = useState<PendingState>({ kind: 'loading' });
   const [escalations, setEscalations] = useState<EscalationState>({ kind: 'loading' });
+  const [suspended, setSuspended] = useState<SuspendedState>({ kind: 'loading' });
   const [activity, setActivity] = useState<ActivityState>({ kind: 'loading' });
 
   useEffect(() => {
@@ -83,6 +85,14 @@ export function AdminDashboardPage() {
       })
       .catch(() => {
         if (!cancelled) setPending({ kind: 'failed' });
+      });
+
+    fetchAdminUsers('', 1, 'Suspended')
+      .then((result) => {
+        if (!cancelled) setSuspended({ kind: 'ready', count: result.total });
+      })
+      .catch(() => {
+        if (!cancelled) setSuspended({ kind: 'failed' });
       });
 
     fetchConflicts()
@@ -188,16 +198,23 @@ export function AdminDashboardPage() {
         </section>
 
         <section className={styles.card}>
-          <div className={styles.soonHead}>
-            <h2 className={styles.cardTitle}>Suspended users</h2>
-            <span className={styles.soonTag}>Not counted</span>
-          </div>
-          <p className={styles.metricMuted}>&mdash;</p>
-          <p className={styles.cardNote}>
-            The user list has no status filter, so suspended accounts cannot be counted without
-            reading every user.
-          </p>
-          <Link to="/admin/users" className={styles.secondaryAction}>
+          <h2 className={styles.cardTitle}>Suspended users</h2>
+          {suspended.kind === 'loading' ? (
+            <p className={styles.metricMuted}>&mdash;</p>
+          ) : suspended.kind === 'failed' ? (
+            <>
+              <p className={styles.metricMuted}>&mdash;</p>
+              <p className={styles.cardNote}>Admin Service unreachable</p>
+            </>
+          ) : (
+            <>
+              <p className={styles.metric}>{suspended.count}</p>
+              <p className={styles.cardNote}>
+                {suspended.count === 0 ? 'No suspended accounts' : 'Blocked from logging in'}
+              </p>
+            </>
+          )}
+          <Link to="/admin/users?status=Suspended" className={styles.secondaryAction}>
             User management
           </Link>
         </section>

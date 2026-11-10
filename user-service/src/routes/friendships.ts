@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { asyncHandler } from "../http";
-import { friendshipActor, listFriendRequests, listFriends, parseFriendPage, parseRequestDirection,
+import { friendshipActor, listFriendRequests, listFriends, parseFriendPage, parseFriendQuery, parseRequestDirection,
   removeFriend, respondToFriendRequest, sendFriendRequest } from "../friendships";
 
 export function createFriendshipsRouter(): Router {
@@ -17,7 +17,7 @@ export function createFriendshipsRouter(): Router {
   }));
   router.get("/", asyncHandler(async (request, response) => {
     const actor = await friendshipActor(request);
-    response.json(await listFriends(actor, parseFriendPage(request.query.page, request.query.pageSize)));
+    response.json(await listFriends(actor, parseFriendPage(request.query.page, request.query.pageSize), parseFriendQuery(request.query.q)));
   }));
   for (const action of ["accept", "reject"] as const) {
     router.post(`/:requestId/${action}`, asyncHandler(async (request, response) => {

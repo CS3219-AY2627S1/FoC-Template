@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { friendshipAccountAvailable, parseFriendPage, parseFriendshipId, parseRequestDirection } from "./friendships";
+import { friendshipAccountAvailable, parseFriendPage, parseFriendQuery, parseFriendshipId, parseRequestDirection } from "./friendships";
 import { AppError } from "./errors";
 import { openApiDocument } from "./openapi";
 
@@ -49,6 +49,15 @@ describe("friendship validation and account availability", () => {
     assert.equal(parseRequestDirection(undefined), "incoming");
     assert.equal(parseRequestDirection("outgoing"), "outgoing");
     for (const value of ["accepted", "INCOMING", "", ["incoming"]]) assert.throws(() => parseRequestDirection(value));
+  });
+  it("accepts a bounded optional friend-name query and uses pagination-style errors for invalid values", () => {
+    for (const value of [undefined, "", "   "]) assert.equal(parseFriendQuery(value), "");
+    assert.equal(parseFriendQuery(" LiM "), "LiM");
+    assert.equal(parseFriendQuery("x".repeat(100)).length, 100);
+    for (const value of ["x".repeat(101), " ".repeat(101), ["lim"], {}, null, 1]) {
+      assert.throws(() => parseFriendQuery(value), (e: unknown) => e instanceof AppError
+        && e.status === 400 && e.code === "INVALID_PAGINATION");
+    }
   });
   it("excludes suspended and deletion-pending accounts without adding a verification requirement", () => {
     const active = { accessStatus: "ACTIVE" as const, deletionRequestedAt: null, scheduledDeletionAt: null };

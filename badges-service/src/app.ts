@@ -2,7 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
  * Scope: Fastify app with the team's { error, code } error handler, copied from rating-service.
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';

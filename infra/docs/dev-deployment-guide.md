@@ -31,9 +31,9 @@ file is the most common way to end up talking to the wrong cluster (section 3).
 
 | I want to… | Run | Then |
 |---|---|---|
-| Deploy a **service** code change | commit it, then `deploy/push-dev.sh <svc>` | `git push`, merge to `main`, **Refresh** in Argo CD |
+| Deploy a **service** code change | merge it to `main` (deploy-dev builds it); fallback `deploy/push-dev.sh <svc>` | pull `main` (the bot commits the tag) |
 | Deploy **every** changed service | `deploy/push-dev.sh` | same |
-| Publish the **frontend** | `deploy/push-frontend-dev.sh` | nothing: live in 1–2 min (no merge) |
+| Publish the **frontend** | merge to `main` (frontend-dev publishes it); fallback `deploy/push-frontend-dev.sh` | live in 1–2 min |
 | Change **config** (env vars, replicas, quota, mesh) | edit `deploy/values/...`, commit | push, merge to `main`, Refresh |
 | Change **AWS resources** | edit `infra/nonprod/aws`, then the apply below | commit the `.tf` |
 | Let a tester sign up | SES console → Identities → Create identity → their email | they click the link |
@@ -42,7 +42,7 @@ file is the most common way to end up talking to the wrong cluster (section 3).
 | Seed suppliers (**wipes them first**) | `deploy/seed-supplier.sh dev` | type `dev` to confirm |
 | **Pause dev** (remove EKS, ~$100/month of ~$140) | `deploy/eks-down.sh` | type `down`; ~15 min |
 | **Resume dev** | `deploy/eks-up.sh` | ~25 min; same URL, IDs and RDS data, nothing to commit |
-| Query RDS from your laptop (psql / DBeaver) | `deploy/db-relay-dev.sh [admin\|<svc>] [database]` | connect to 127.0.0.1:15433, `sslmode=require`; Ctrl-C closes |
+| Query RDS from your laptop (psql / DBeaver) | `deploy/db-relay-dev.sh [master\|<svc>] [database]` (`master` sees every `dev_*` database; `admin` is admin-service's login) | connect to 127.0.0.1:15433, `sslmode=require`; Ctrl-C closes |
 | Add the Gemini key | paste into Secrets Manager `foc/dev/admin-ai` | wait ≤1 h (or restart admin) |
 | Turn on the Telegram bot | paste `TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_USERNAME` into Secrets Manager `foc/dev/user-telegram` | `kubectl -n foc-dev annotate externalsecret user-telegram force-sync=$(date +%s) --overwrite` (or wait ≤1 h), then `kubectl -n foc-dev rollout restart deploy/user` |
 | Open Argo CD | `kubectl -n argocd port-forward svc/argocd-server 8081:80` | http://localhost:8081, user `admin` |
@@ -138,16 +138,15 @@ browser ─HTTPS─▶ CloudFront ─┬─ /*      ─▶ S3 (frontend bucket, 
 
 ### The NUS account rules (why things are unusual)
 
-The NUS organisation denies `AssumeRoleForPodIdentity`,
-`AssumeRoleWithWebIdentity`, role chaining and `iam:CreateUser`. So:
+The NUS organisation denies `AssumeRoleForPodIdentity`, role chaining and
+`iam:CreateUser`. So:
 
 - **Pods use the node role** (`foc-nonprod-node`, policy `foc-workloads`) for
   SES, S3 photos, Secrets Manager and load-balancer targets. Every pod shares
   those permissions; each is limited to its resources.
-- **GitHub Actions can't reach AWS**: no OIDC and no access keys. Images and
-  the frontend are pushed from a laptop with the scripts above;
-  `deploy-dev.yml` and `frontend-dev.yml` are manual-only. `ci.yml` (tests)
-  still runs on PRs.
+- **GitHub Actions uses OIDC** (role `foc-ci`, no keys), which works. Its trust
+  policy must name the repo's immutable subject
+  (`repo:junngithub@127373610/AY2627S1-CS3219-P15@1357933367:…`).
 
 ### Email (SES)
 
@@ -158,13 +157,34 @@ The NUS organisation denies `AssumeRoleForPodIdentity`,
 - The account is in the **SES sandbox**: every recipient must be a verified
   identity, at most 200 emails a day. Request production access to lift both.
 
-### Sizing
+### Monitoring (Prometheus and Grafana)
 
-- 2 × `t4g.large` Spot (arm64): one node fits only 29 pods (one VPC IP each),
-  and a steady dev runs ~39.
-- `foc-dev` quota: `limits.cpu: 12`. The steady state needs ~7.4 (7 services,
-  their Linkerd proxies, Kafka broker and entity operator); the rest covers
-  migrate Jobs and rollouts.
+`charts/kube-prometheus-stack`, namespace `monitoring`, private to the cluster. There is no gateway or CloudFront route.
+
+```bash
+aws secretsmanager get-secret-value --secret-id foc/dev/grafana-admin --query SecretString --output text   # user: admin
+kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80        # http://localhost:3000
+kubectl -n monitoring port-forward svc/kps-prometheus 9090:9090   # http://localhost:9090
+```
+
+- The services expose no metrics of their own. Per-service request rate, success rate and latency come from their Linkerd proxies, e.g. `sum by (app_kubernetes_io_name) (rate(response_total{direction="inbound"}[1m]))`.
+- `all-authenticated` also covers the proxy's admin port, so `foc-service` opens `/metrics` to Prometheus's mesh identity only, and `/live` and `/ready` to the kubelet (`mesh.metrics`). An unmeshed scraper gets 403.
+- Prometheus keeps 7 days on a 10 GiB `gp3` disk. `eks-down.sh` deletes the disk, so history doesn't survive a pause.
+- k6 can push to `http://kps-prometheus.monitoring:9090/api/v1/write`. Give every request a fixed `name` tag first: `load.js` has order IDs in its URLs, which would create a series per order.
+
+### Sizing and autoscaling
+
+- Nodes: `default` group, 2 × `t4g.large` Spot (29 pods each). Cluster
+  Autoscaler adds `burst` nodes (4 vCPU, 0–5) for Pending pods and removes them
+  after 10 idle minutes.
+- Pods: HPA at 70% CPU on order (2–16), user and rating (1–6), supplier and
+  credit (1–4). admin and badges stay at 1.
+- The `foc-dev` quota fits every HPA at its max; raise both together.
+- RDS `db.t4g.micro` (~80–90 connections) is the ceiling: resize it before a
+  full-size load test (`-var rds_instance_class=db.m7g.xlarge`, see
+  `load-test/README.md`, "Testing in EKS").
+- Watch: `kubectl -n foc-dev get hpa` · `kubectl top pods -n foc-dev` ·
+  `kubectl get nodes -L eks.amazonaws.com/nodegroup`.
 
 ## 3. Mistakes and lessons
 
@@ -177,7 +197,7 @@ something similar happens.
 |---|---|---|
 | `backend "s3"`: *value cannot be empty* | `bucket=$B` with `$B` unset (it only lives in the terminal that set it) | Pass the bucket name literally, or `B=$(terraform -chdir=infra/state output -raw bucket)` |
 | EBS CSI add-on stuck `CREATING`; `AssumeRoleForPodIdentity … explicit deny` | NUS policy blocks Pod Identity, IRSA and OIDC | All pod permissions moved to the node role; IMDS hop limit 2 so pods can reach it (ADR-0013 amendment) |
-| CI can't log in to AWS | Same policy (OIDC denied, no IAM users) | Laptop scripts; workflows manual-only |
+| CI couldn't log in to AWS (`Not authorized to perform sts:AssumeRoleWithWebIdentity`) | Assumed the NUS policy; really the trust policy expected `repo:owner/name:…`, but the repo sends GitHub's immutable subject | Trust both forms (`infra/global/github-oidc`); workflows deploy on merge |
 | Pods `Pending`, `Too many pods` | One `t4g.large` = 29 pod IPs; dev needs ~39 | 2 nodes |
 | `frontend_url` output missing | An earlier edit silently didn't apply | After scripted edits, check the result (`grep`), not just "no error" |
 | `cloud-values.sh` put JSON into a header comment | Its pattern matched the bare `TF:` in `TF:<output>` | Pattern needs ≥1 character after `TF:` |

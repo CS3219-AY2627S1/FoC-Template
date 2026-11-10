@@ -2,7 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-11-02
  * Scope: Generated the one-off re-check of every known user after a catalog change.
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { asc, gt } from 'drizzle-orm';
@@ -11,7 +11,7 @@ import { db } from '../database/index.js';
 import { userMetrics } from '../database/schema.js';
 import type { BadgeChanges } from '../types.js';
 import { evaluateUser } from './badges.service.js';
-import { loadCatalog } from './catalog.service.js';
+import { getCatalog } from './catalog.service.js';
 
 export interface RecheckSummary extends BadgeChanges {
   users: number;
@@ -24,7 +24,7 @@ export interface RecheckSummary extends BadgeChanges {
  * itself changed (decision 2026-11-02: events only, no polling).
  */
 export async function recheckAll(): Promise<RecheckSummary> {
-  const catalog = await loadCatalog();
+  const catalog = await getCatalog();
   const summary: RecheckSummary = { users: 0, awarded: 0, revoked: 0 };
 
   for (let after: string | null = null; ; ) {

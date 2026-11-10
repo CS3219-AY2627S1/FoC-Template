@@ -93,6 +93,65 @@ spec:
       limit: 10
       backoff: { duration: 10s, factor: 2, maxDuration: 5m }
 ---
+# Adds nodes for Pending pods, removes idle ones.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-autoscaler
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: foc-platform
+  source:
+    repoURL: https://github.com/junngithub/AY2627S1-CS3219-P15.git
+    targetRevision: main
+    path: deploy/charts/cluster-autoscaler
+    helm:
+      valueFiles:
+        - ../../values/clusters/nonprod/cluster-autoscaler.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff: { duration: 10s, factor: 2, maxDuration: 5m }
+---
+# Prometheus and Grafana. Grafana waits for its password from External Secrets;
+# Prometheus's webhook certificate needs cert-manager. Retries until both exist.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: foc-platform
+  source:
+    repoURL: https://github.com/junngithub/AY2627S1-CS3219-P15.git
+    targetRevision: main
+    path: deploy/charts/kube-prometheus-stack
+    helm:
+      valueFiles:
+        - ../../values/clusters/nonprod/kube-prometheus-stack.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true # the Prometheus CRDs exceed the client-side apply annotation limit
+      - SkipDryRunOnMissingResource=true # cert-manager and ExternalSecret CRDs may not exist yet
+    retry:
+      limit: 10
+      backoff: { duration: 10s, factor: 2, maxDuration: 5m }
+---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -491,3 +550,32 @@ spec:
         retry:
           limit: 10
           backoff: { duration: 10s, factor: 2, maxDuration: 5m }
+---
+# Seed and k6 Jobs against dev (load-test/README.md). Only suspended CronJobs;
+# Jobs are started by hand and aren't tracked by Argo CD.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: load-test-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: foc
+  source:
+    repoURL: https://github.com/junngithub/AY2627S1-CS3219-P15.git
+    targetRevision: main
+    path: load-test
+    helm:
+      valueFiles:
+        - ../deploy/values/envs/dev/load-test.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: foc-load
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+    retry: # the secret store admits foc-load once cluster-config syncs
+      limit: 10
+      backoff: { duration: 10s, factor: 2, maxDuration: 5m }

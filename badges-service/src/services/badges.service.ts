@@ -3,7 +3,8 @@
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
  * Scope: Generated per-user evaluation (award and revoke) and the profile read, ported from
  *        the scaffold's evaluationJob.ts and badgeRoutes.ts.
- * Author review: Ngooi Jun Sen to validate before merge.
+ *        2026-11-09: reads the cached catalog (catalog.service.ts getCatalog).
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -11,7 +12,7 @@ import { db, type Executor } from '../database/index.js';
 import { userBadge, userMetrics } from '../database/schema.js';
 import { evaluateAll, evaluateBadge } from '../rules/evaluator.js';
 import type { BadgeChanges, BadgeDefinition, UserMetrics } from '../types.js';
-import { loadCatalog } from './catalog.service.js';
+import { getCatalog } from './catalog.service.js';
 
 export async function readMetrics(userId: string, executor: Executor = db): Promise<UserMetrics> {
   const [row] = await executor.select().from(userMetrics).where(eq(userMetrics.userId, userId));
@@ -35,7 +36,7 @@ export async function evaluateUser(
   executor: Executor = db,
   catalog?: BadgeDefinition[],
 ): Promise<BadgeChanges> {
-  const definitions = catalog ?? (await loadCatalog(executor));
+  const definitions = catalog ?? (await getCatalog());
   const metrics = await readMetrics(userId, executor);
   const held = new Set(
     (
@@ -76,7 +77,7 @@ export async function evaluateUser(
  */
 export async function getUserBadges(userId: string) {
   const [catalog, metricsRows, badgeRows] = await Promise.all([
-    loadCatalog(),
+    getCatalog(),
     db.select().from(userMetrics).where(eq(userMetrics.userId, userId)),
     db.select().from(userBadge).where(eq(userBadge.userId, userId)),
   ]);

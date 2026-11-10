@@ -1,3 +1,12 @@
 image:
-  tag: "7aaf9d5f1beb52bfb3af2eb4e2565484ffda46dc" # git SHA, set by deploy/push-dev.sh
-replicas: 1
+  tag: "462739498fb0afa8571088622cd08268c690f877" # git SHA, set by deploy/push-dev.sh
+autoscaling:
+  enabled: true
+  # Idle/dev. Full-run peak needs min=max=8 — see load-test/README.md
+  # "Scale up / scale down". Create reserves credit; CPU HPA is blind to that.
+  minReplicas: 1
+  maxReplicas: 1
+  targetCPUUtilization: 70
+resources:
+  requests: {cpu: 250m}
+  limits: {cpu: "1"}

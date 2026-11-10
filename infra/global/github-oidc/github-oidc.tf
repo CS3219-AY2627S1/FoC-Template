@@ -21,7 +21,10 @@ data "aws_iam_policy_document" "ci_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:ref:refs/heads/${var.deploy_branch}"]
+      # The repo sends the immutable form (owner@id/name@id); the plain one stays
+      # accepted in case that setting is turned off.
+      values = [for repo in [var.github_repository_immutable, var.github_repository] :
+      "repo:${repo}:ref:refs/heads/${var.deploy_branch}"]
     }
   }
 }

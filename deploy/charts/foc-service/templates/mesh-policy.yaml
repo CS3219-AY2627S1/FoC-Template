@@ -5,6 +5,7 @@
 #   <name>-mesh-probes     GET on the health paths, open to the kubelet's probes
 #   <name>-mesh-internal-N each mesh.internal prefix, its own callers only
 #   <name>-mesh-api        every other path, mesh.callers
+#   <name>-admin*          the proxy's admin port, if mesh.metrics.enabled
 # Policies attach to routes only: a policy on the Server would be unioned with
 # them and widen every route. Routes are parented to the Server, never to the
 # Envoy Gateway (charts/foc-gateway owns ingress routes).
@@ -22,7 +23,10 @@ spec:
   proxyProtocol: HTTP/1
 {{- $probePaths := list }}
 {{- with .Values.healthPath }}{{ $probePaths = append $probePaths . }}{{ end }}
+{{- with .Values.readinessPath }}{{ $probePaths = append $probePaths . }}{{ end }}
+{{- with .Values.livenessPath }}{{ $probePaths = append $probePaths . }}{{ end }}
 {{- if and .Values.database.enabled .Values.database.healthPath }}{{ $probePaths = append $probePaths .Values.database.healthPath }}{{ end }}
+{{- $probePaths = $probePaths | uniq }}
 {{- if $probePaths }}
 ---
 apiVersion: gateway.networking.k8s.io/v1
@@ -63,6 +67,96 @@ spec:
   targetRef: { group: gateway.networking.k8s.io, kind: HTTPRoute, name: {{ $name }}-mesh-probes }
   requiredAuthenticationRefs:
     - { group: policy.linkerd.io, kind: NetworkAuthentication, name: {{ $name }}-mesh-probes }
+{{- end }}
+{{- if .Values.mesh.metrics.enabled }}
+---
+# The proxy's admin port. all-authenticated covers it too, so Prometheus needs
+# its own route. Once routes exist the kubelet's probes of the proxy need one as
+# well, or every proxy goes unready. Nothing else on this port is reachable.
+apiVersion: policy.linkerd.io/v1beta3
+kind: Server
+metadata:
+  name: {{ $name }}-admin
+  labels:
+    {{- include "foc-service.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "foc-service.selectorLabels" . | nindent 6 }}
+  port: linkerd-admin
+  proxyProtocol: HTTP/1
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $name }}-admin-probes
+  labels:
+    {{- include "foc-service.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - { group: policy.linkerd.io, kind: Server, name: {{ $name }}-admin }
+  rules:
+    - matches:
+        - { path: { type: Exact, value: /live }, method: GET }
+        - { path: { type: Exact, value: /ready }, method: GET }
+---
+apiVersion: policy.linkerd.io/v1alpha1
+kind: NetworkAuthentication
+metadata:
+  name: {{ $name }}-admin-probes
+  labels:
+    {{- include "foc-service.labels" . | nindent 4 }}
+spec:
+  networks:
+    - cidr: 0.0.0.0/0
+    - cidr: ::/0
+---
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ $name }}-admin-probes
+  labels:
+    {{- include "foc-service.labels" . | nindent 4 }}
+spec:
+  targetRef: { group: gateway.networking.k8s.io, kind: HTTPRoute, name: {{ $name }}-admin-probes }
+  requiredAuthenticationRefs:
+    - { group: policy.linkerd.io, kind: NetworkAuthentication, name: {{ $name }}-admin-probes }
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $name }}-admin-metrics
+  labels:
+    {{- include "foc-service.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - { group: policy.linkerd.io, kind: Server, name: {{ $name }}-admin }
+  rules:
+    - matches:
+        - { path: { type: Exact, value: /metrics }, method: GET }
+---
+apiVersion: policy.linkerd.io/v1alpha1
+kind: MeshTLSAuthentication
+metadata:
+  name: {{ $name }}-admin-metrics
+  labels:
+    {{- include "foc-service.labels" . | nindent 4 }}
+spec:
+  identityRefs:
+    - kind: ServiceAccount
+      name: {{ .Values.mesh.metrics.serviceAccount }}
+      namespace: {{ .Values.mesh.metrics.namespace }}
+---
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ $name }}-admin-metrics
+  labels:
+    {{- include "foc-service.labels" . | nindent 4 }}
+spec:
+  targetRef: { group: gateway.networking.k8s.io, kind: HTTPRoute, name: {{ $name }}-admin-metrics }
+  requiredAuthenticationRefs:
+    - { group: policy.linkerd.io, kind: MeshTLSAuthentication, name: {{ $name }}-admin-metrics }
 {{- end }}
 {{- $routes := list }}
 {{- range $i, $r := .Values.mesh.internal }}

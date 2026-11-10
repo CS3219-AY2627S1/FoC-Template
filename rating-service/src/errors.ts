@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated the domain errors for a missing grant and a repeat rating.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
 import createError from '@fastify/error';
 
 // Domain errors (@fastify/error): stable code + message template + HTTP status.

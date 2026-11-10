@@ -11,8 +11,6 @@ kafka:
   user: credit # reads foc.user.status, foc.credit.commands (ADR-0004)
 env:
   LOG_LEVEL: info
-  # Peers this service calls over HTTP (short names resolve within the env's namespace).
-  USER_SERVICE_URL: http://user:8080 # validate a verified user
 migrate:
   enabled: true # runs before each deploy (ADR-0011); image: the Dockerfile's `migrate` stage
   command: ["npm", "run", "db:migrate"]

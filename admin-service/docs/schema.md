@@ -1,3 +1,9 @@
+<!--
+AI Assistance Disclosure
+Tool: Cursor (Auto), date: 2026-11-09
+Scope: Documentation wording for Admin Service under author-fixed design.
+Author review: Sahana Avantika generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+-->
 # Admin Service — Database Schema
 
 **Datastore:** PostgreSQL · **Model:** one conflict case per order, one open user report per pair, one open suspension appeal per user, plus an append-only audit log
@@ -8,7 +14,7 @@ document describes the persistence model backing user administration (F1),
 conflict intake, AI evaluation, claim, and resolution (F3), and the report and appeal queues.
 
 The executable schema is the Alembic chain under `alembic/versions/`
-(`b84b9a872e82` → `0002_conflict_stages` → `0003_audit_logs_append_only` → `0004_user_reports_and_appeals`).
+(`b84b9a872e82` → `0002_conflict_stages` → `0003_audit_logs_append_only` → `0004_user_reports_and_appeals` → `0005_appeal_rejection_reason` → `0006_appeal_ai` → `0007_report_ai`).
 SQLAlchemy models live in `app/models/`.
 
 ## Design decisions
@@ -30,8 +36,8 @@ SQLAlchemy models live in `app/models/`.
   those statements for every role, including the table owner.
 - **`target_id` is a soft reference, not a foreign key.** A row may point at a
   user id (`promote`, `demote`, `suspend`, `reinstate`), a conflict case id
-  (`review_conflict`, `resolve_conflict`), a report id (`dismiss_report`), or
-  an appeal id (`reject_appeal`). The log must stay readable if the
+  (`review_conflict`, `reassess_conflict`, `resolve_conflict`), a report id
+  (`dismiss_report`, `reassess_report`), or an appeal id (`reject_appeal`, `reassess_appeal`). The log must stay readable if the
   case row is ever removed, and it must be able to name a user that lives in
   another database.
 - **Photos are names, not bytes.** `evidence_photo_urls` holds Order's object
@@ -50,6 +56,12 @@ SQLAlchemy models live in `app/models/`.
   a case removes its reminder and deadline jobs.
 
 ## Entity–Relationship Diagram
+
+Taken from the Alembic migrations (`b84b9a872e82` through `0007_report_ai`), not from a live `psql` dump. There is no foreign key. An admin id is a User Service user id stored as `varchar`.
+
+Source: [schema.mmd](schema.mmd). Rendered figure: [schema.png](schema.png).
+
+![Admin database schema](schema.png)
 
 ```mermaid
 erDiagram
@@ -82,7 +94,7 @@ erDiagram
     audit_logs {
         uuid        id            PK
         varchar     admin_id         "indexed; system-auto-resolve for the deadline job"
-        varchar     action           "promote|demote|suspend|reinstate|review_conflict|resolve_conflict|dismiss_report|reject_appeal"
+        varchar     action           "includes review_conflict, reassess_conflict, resolve_conflict"
         varchar     target_id        "indexed; user, case, report, or appeal id, no FK"
         text        detail           "nullable"
         timestamptz created_at
@@ -93,6 +105,10 @@ erDiagram
         varchar     reporter_user_id
         varchar     reported_user_id        "indexed"
         text        comment
+        reportrecommendation ai_recommendation "nullable; dismiss|suspend|unsure"
+        float       ai_confidence           "nullable"
+        text        ai_reasoning            "nullable"
+        timestamptz ai_completed_at         "nullable; set even when the model fails"
         enum        status                  "open|dismissed|actioned"
         timestamptz created_at
         timestamptz closed_at               "nullable"
@@ -103,6 +119,11 @@ erDiagram
         uuid        id                   PK
         varchar     user_id                 "indexed"
         text        message
+        text        rejection_reason        "nullable; set only when rejected"
+        appealrecommendation ai_recommendation "nullable; uphold|reinstate|unsure"
+        float       ai_confidence           "nullable"
+        text        ai_reasoning            "nullable"
+        timestamptz ai_completed_at         "nullable; set even when the model fails"
         enum        status                  "open|rejected|reinstated"
         timestamptz created_at
         timestamptz closed_at               "nullable"
@@ -170,15 +191,15 @@ Deadline auto-resolve can also go `ai_evaluated` → `resolved`, and
 
 ### `audit_logs` — append-only record of privileged actions
 
-One row per promote, demote, suspend, reinstate, claim, resolve, report dismiss, and appeal reject.
+One row per promote, demote, suspend, reinstate, claim, resolve, conflict reassessment, report dismiss, appeal reject, and appeal reassessment.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | `UUID` | **PK** | |
 | `admin_id` | `VARCHAR` | `NOT NULL`, index `ix_audit_logs_admin_id` | Calling admin, or `system-auto-resolve` for the deadline job. |
-| `action` | `VARCHAR` | `NOT NULL` | `promote`, `demote`, `suspend`, `reinstate`, `review_conflict`, `resolve_conflict`, `dismiss_report`, `reject_appeal`. Not a database enum. |
+| `action` | `VARCHAR` | `NOT NULL` | `promote`, `demote`, `suspend`, `reinstate`, `review_conflict`, `reassess_conflict`, `resolve_conflict`, `dismiss_report`, `reassess_report`, `reject_appeal`, `reassess_appeal`. Not a database enum. |
 | `target_id` | `VARCHAR` | `NOT NULL`, index `ix_audit_logs_target_id` | User id, conflict case id, report id, or appeal id. Not a foreign key. |
-| `detail` | `TEXT` | `NULL` | Resolve rows store `decision=accept\|reject, fault_party=...` or `auto-resolved, fault_party=...`. |
+| `detail` | `TEXT` | `NULL` | Resolve rows store `decision=accept\|reject, fault_party=...` or `auto-resolved, fault_party=...`. `reject_appeal` stores the rejection reason. |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL` | |
 
 Triggers `audit_logs_no_update`, `audit_logs_no_delete`, and
@@ -189,7 +210,8 @@ Triggers `audit_logs_no_update`, `audit_logs_no_delete`, and
 
 Saved when User Service calls intake. The reported account stays unchanged
 until an admin suspends them through the existing user route, or dismisses
-the report.
+the report. A background job may attach an advisory verdict. That verdict
+does not close the row.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
@@ -197,7 +219,11 @@ the report.
 | `reporter_user_id` | `VARCHAR` | `NOT NULL` | External id from User Service. |
 | `reported_user_id` | `VARCHAR` | `NOT NULL`, index `ix_user_reports_reported_user_id` | The user an admin may suspend. |
 | `comment` | `TEXT` | `NOT NULL` | The reporter's text. A retry does not replace it. |
-| `status` | `reportstatus` | `NOT NULL` | `open`, `dismissed`, `actioned`. |
+| `ai_recommendation` | `reportrecommendation` | `NULL` | Advisory: `dismiss`, `suspend`, or `unsure`. Null when the model has not produced a usable verdict. Added in `0007_report_ai`. |
+| `ai_confidence` | `FLOAT` | `NULL` | Model score in `0.0`–`1.0`. Checked in the app, not by a `CHECK`. |
+| `ai_reasoning` | `TEXT` | `NULL` | Short model explanation. |
+| `ai_completed_at` | `TIMESTAMPTZ` | `NULL` | Set when the assessment finishes, including a failure that leaves `ai_recommendation` null. |
+| `status` | `reportstatus` | `NOT NULL` | `open`, `dismissed`, `actioned`. The assessment does not change this. |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL` | |
 | `closed_at` | `TIMESTAMPTZ` | `NULL` | Set on dismiss or when suspend actions the row. |
 | `closed_by_admin_id` | `VARCHAR` | `NULL` | Admin who dismissed it, or who suspended the reported user. |
@@ -214,14 +240,20 @@ open  →  dismissed   (dismiss, no suspension)
 
 Saved when User Service calls intake after it has checked the password.
 The account stays suspended until an admin reinstates them, or rejects
-the appeal.
+the appeal. A background job may attach an advisory verdict. That verdict
+does not close the row.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | `UUID` | **PK** | Generated by this service. |
 | `user_id` | `VARCHAR` | `NOT NULL`, index `ix_suspension_appeals_user_id` | The suspended user. |
 | `message` | `TEXT` | `NOT NULL` | The appeal text. A retry does not replace it. |
-| `status` | `appealstatus` | `NOT NULL` | `open`, `rejected`, `reinstated`. |
+| `rejection_reason` | `TEXT` | `NULL` | Set when an admin rejects that appeal. A new open appeal is stored as `NULL`; the earlier rejected row keeps its reason. JSON name `rejectionReason`. Added in `0005_appeal_rejection_reason`. |
+| `ai_recommendation` | `appealrecommendation` | `NULL` | Advisory: `uphold`, `reinstate`, or `unsure`. Null when the model has not produced a usable verdict. Added in `0006_appeal_ai`. |
+| `ai_confidence` | `FLOAT` | `NULL` | Model score in `0.0`–`1.0`. Checked in the app, not by a `CHECK`. |
+| `ai_reasoning` | `TEXT` | `NULL` | Short model explanation. |
+| `ai_completed_at` | `TIMESTAMPTZ` | `NULL` | Set when the assessment finishes, including a failure that leaves `ai_recommendation` null. |
+| `status` | `appealstatus` | `NOT NULL` | `open`, `rejected`, `reinstated`. The assessment does not change this. |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL` | |
 | `closed_at` | `TIMESTAMPTZ` | `NULL` | Set on reject or when reinstate closes the row. |
 | `closed_by_admin_id` | `VARCHAR` | `NULL` | Admin who rejected it, or who reinstated the user. |
@@ -248,7 +280,9 @@ and does not roll back the row. There is no outbox.
 | Manual resolve | F3.4.2 | `UPDATE ... SET status = resolved WHERE status = under_review` plus `INSERT audit_logs (resolve_conflict)`. Any admin may resolve; the claim check is not repeated. `admin.case.resolved` is after commit and includes `faultParty`. |
 | Auto-resolve | F3.5 | Same resolve update, allowed from `ai_evaluated` (and `under_review` when configured), only when `ai_fault_party` is set and `ai_confidence` meets the floor. `resolved_by_admin_id` stays null. |
 | Promote / demote / suspend / reinstate | F1 | User Service is called **before** this transaction. Then `INSERT audit_logs` and commit. Suspend also sets every open `user_reports` row for that user to `actioned`. Reinstate sets that user's open `suspension_appeals` row to `reinstated`. The matching user event is after commit. A User Service failure writes nothing here. |
-| Report intake | — | `INSERT user_reports`. On the partial unique index, roll back and return the open row. No audit row and no user-status change. |
+| Report intake | — | `INSERT user_reports`. On the partial unique index, roll back and return the open row. No audit row and no user-status change. A new row queues the assessment after commit. A repeat does not. |
+| Report AI | — | No transaction across the Gemini call. Then `UPDATE` the AI columns `WHERE status = open`. A failed first pass sets `ai_completed_at` only. A failed rerun writes nothing. The report is not closed. |
 | Dismiss report | — | `UPDATE user_reports SET status = dismissed WHERE status = open` plus `INSERT audit_logs (dismiss_report)`. |
-| Appeal intake | — | `INSERT suspension_appeals`. On the partial unique index, roll back and return the open row. No audit row and no user-status change. |
-| Reject appeal | — | `UPDATE suspension_appeals SET status = rejected WHERE status = open` plus `INSERT audit_logs (reject_appeal)`. |
+| Appeal intake | — | `INSERT suspension_appeals`. On the partial unique index, roll back and return the open row. No audit row and no user-status change. A new row queues the assessment after commit. A repeat does not. |
+| Appeal AI | — | No transaction across the Gemini call. Then `UPDATE` the AI columns `WHERE status = open`. A failed first pass sets `ai_completed_at` only. A failed rerun writes nothing. The appeal is not closed. |
+| Reject appeal | — | `UPDATE suspension_appeals SET status = rejected, rejection_reason = ... WHERE status = open` plus `INSERT audit_logs (reject_appeal)` with that reason in `detail`. After commit, User Service is asked to email the reason. That call is not part of the transaction. |

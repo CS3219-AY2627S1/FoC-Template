@@ -110,6 +110,18 @@
   color: var(--color-text);
 }
 
+.rejectBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.rejectCopy {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
 .sub {
   display: block;
   margin-top: 2px;

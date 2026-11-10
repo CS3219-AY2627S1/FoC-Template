@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure
+Tool: Cursor (Auto), date: 2026-10-15
+Scope: Documentation wording for Order Service under author-fixed design.
+Author review: Varun Sivakumar generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+-->
+
 # Sequence diagrams
 
 Each diagram is the interaction as the service implements it. The state diagram is [order-state.png](order-state.png). Table shapes are in [schema.md](schema.md). Routes, headers, and event fields are in [interfaces.md](interfaces.md). Planned dropoff catalogue (Order-owned delivery points) is in [delivery-points.md](delivery-points.md).
@@ -38,7 +45,7 @@ Only a requester cancel of a CREATED order returns credits, and that HTTP releas
 
 ![Requester escalation](seq-escalate.png)
 
-The admin call is synchronous HTTP to `POST /api/v1/admin/conflicts`. It must succeed before the status becomes ESCALATED. A missed delivery deadline uses the same Admin call from the sweeper, then commits ESCALATED.
+The admin call is synchronous HTTP to `POST /api/v1/admin/internal/conflicts`. It must succeed before the status becomes ESCALATED. A missed delivery deadline uses the same Admin call from the sweeper, then commits ESCALATED.
 
 ## Deadlines
 

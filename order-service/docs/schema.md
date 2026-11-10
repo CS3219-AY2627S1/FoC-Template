@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure
+Tool: Cursor (Auto), date: 2026-10-15
+Scope: Documentation wording for Order Service under author-fixed design.
+Author review: Varun Sivakumar generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+-->
+
 # Database schema
 
 Flyway owns the schema. Hibernate validates it and does not create or alter tables. Migrations `V1` through `V5` in `src/main/resources/db/migration` produce the tables below. There are no foreign keys: `order_id` columns are plain UUIDs.
@@ -74,19 +81,21 @@ Actions: `CREATED`, `ACCEPTED`, `CANCELLED`, `RELEASED`, `COLLECTED`, `DELIVERED
 
 ## alerts
 
-A notification row for the requester, written with every status change. `GET /alerts` returns only rows with `notify_requester = true`. The 7-day completion writes `notify_requester = false`, so that transition does not appear in the requester's alert list.
+A notification row written with every status change. `GET /alerts` returns rows where the caller is the requester and `notify_requester` is true, **or** the caller is the courier and `notify_courier` is true. Couriers are notified for the dispute lifecycle only: `ESCALATED`, `UNDER_REVIEW`, and case-resolved `COMPLETED` (when `faultParty` is set). The 7-day completion writes `notify_requester = false` and does not notify the courier.
 
 | Column | Type | Notes |
 | --- | --- | --- |
 | id | UUID | Primary key |
 | order_id | UUID | |
 | requester_id | VARCHAR(320) | |
+| courier_id | VARCHAR(320) | Null until a courier has accepted |
 | from_status | VARCHAR(32) | Null on create |
 | to_status | VARCHAR(32) | |
 | notify_requester | BOOLEAN | |
+| notify_courier | BOOLEAN | |
 | created_at | TIMESTAMPTZ | |
 
-Index: `alerts_requester_id_created_idx` on `(requester_id, created_at DESC)`.
+Indexes: `alerts_requester_id_created_idx` on `(requester_id, created_at DESC)`; `alerts_courier_id_created_idx` on `(courier_id, created_at DESC)` where `notify_courier`.
 
 ## outbox
 

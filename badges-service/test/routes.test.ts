@@ -2,7 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
  * Scope: Route tests through fastify.inject.
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -38,7 +38,7 @@ describe('GET /api/v1/badges/:userId', () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body).toMatchObject({ userId: courierId, earnedCount: 1, totalCount: 6 });
+    expect(body).toMatchObject({ userId: courierId, earnedCount: 1, totalCount: 7 });
     expect(body.metricsAsOf).not.toBeNull();
 
     const first = body.badges.find((b: { badgeId: string }) => b.badgeId === 'first_delivery');
@@ -51,14 +51,14 @@ describe('GET /api/v1/badges/:userId', () => {
       earnedAt: null,
       progress: { current: 1, target: 10 },
       criteria: [{ metric: 'completedDeliveries', op: 'gte', value: 10 }],
-      iconUrl: '/badges/ten-runs-locked.svg',
+      iconUrl: '/badges/double-digits-locked.svg',
     });
   });
 
   it('shows an empty profile for a user with no activity yet', async () => {
     const userId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
     const body = (await app.inject({ url: `/api/v1/badges/${userId}`, headers: { 'x-user-id': userId } })).json();
-    expect(body).toMatchObject({ metricsAsOf: null, earnedCount: 0, totalCount: 6 });
+    expect(body).toMatchObject({ metricsAsOf: null, earnedCount: 0, totalCount: 7 });
   });
 
   it("answers 404 for someone else's badges or a missing identity", async () => {

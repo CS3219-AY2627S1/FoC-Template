@@ -20,6 +20,7 @@ rdsCa:
 # One entry per env in this cluster:
 #   - name: dev
 #     namespace: foc-dev
+#     extraNamespaces: [] # other namespaces that may use this env's secrets
 #     secretsRoleArn: ""  # optional role to assume; "" = the node role
 #     gatewayTargetGroupArn: <terraform output envs.dev.gateway_target_group>
 envs: []

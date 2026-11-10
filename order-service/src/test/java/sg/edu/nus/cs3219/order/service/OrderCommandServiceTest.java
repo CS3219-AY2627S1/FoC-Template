@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Cursor (Auto), date: 2026-10-15
+ * Scope: Implementation assistance for Order Service tests under author-fixed requirements and architecture.
+ * Author review: Varun Sivakumar generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+ */
+
 package sg.edu.nus.cs3219.order.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -54,6 +61,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.lenient;
@@ -356,6 +364,12 @@ class OrderCommandServiceTest {
         OrderEntity escalated = service.escalate(requester, id, "wrong item", photo);
         assertEquals(id + "/dispute.png", escalated.getDisputePhotoRef());
         verify(admins).openConflict(id, requester.userId(), "wrong item", java.util.List.of(id + "/dispute.png"));
+        ArgumentCaptor<AlertEntity> alertCaptor = ArgumentCaptor.forClass(AlertEntity.class);
+        verify(alerts, atLeastOnce()).save(alertCaptor.capture());
+        AlertEntity disputeAlert = alertCaptor.getAllValues().getLast();
+        assertTrue(disputeAlert.isNotifyRequester());
+        assertTrue(disputeAlert.isNotifyCourier());
+        assertEquals("22222222-2222-2222-2222-222222222222", disputeAlert.getCourierId());
     }
 
     @Test
@@ -484,12 +498,20 @@ class OrderCommandServiceTest {
 
         OrderEntity escalated = openOrder();
         escalated.setStatus(OrderStatus.ESCALATED);
+        escalated.setCourierId(courier.userId());
         escalated.setCollectionPhotoRef("photo");
         when(processedEvents.existsById("event-4")).thenReturn(false);
         when(orders.lockById(id)).thenReturn(Optional.of(escalated));
         service.applyAdminEvent("event-4", "admin.review.started", id, "case-1", null);
         assertEquals(OrderStatus.UNDER_REVIEW, escalated.getStatus());
         assertEquals("case-1", escalated.getCaseId());
+        ArgumentCaptor<AlertEntity> reviewAlert = ArgumentCaptor.forClass(AlertEntity.class);
+        verify(alerts, atLeastOnce()).save(reviewAlert.capture());
+        AlertEntity underReview = reviewAlert.getAllValues().getLast();
+        assertEquals("UNDER_REVIEW", underReview.getToStatus());
+        assertTrue(underReview.isNotifyRequester());
+        assertTrue(underReview.isNotifyCourier());
+        assertEquals(courier.userId(), underReview.getCourierId());
 
         OrderEntity created = openOrder();
         when(processedEvents.existsById("event-5")).thenReturn(false);

@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Cursor (Auto), date: 2026-11-09
+# Scope: Implementation assistance for Admin Service application services under author-fixed requirements and architecture.
+# Author review: Sahana Avantika generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+
 """User reports and suspension appeals.
 
 User Service opens a row. An admin dismisses or rejects it here, or closes it
@@ -37,11 +42,15 @@ async def _open_report(db: AsyncSession, reporter: str, reported: str) -> UserRe
     )
 
 
-async def create_report(db: AsyncSession, reporter: str, reported: str, comment: str) -> UserReport:
-    """The open report for this pair. A repeat returns that row and keeps its comment."""
+async def create_report(db: AsyncSession, reporter: str, reported: str, comment: str) -> tuple[UserReport, bool]:
+    """The open report for this pair, and whether this call inserted it.
+
+    A repeat returns the existing row and keeps its comment. Only a new row
+    should queue an AI assessment.
+    """
     existing = await _open_report(db, reporter, reported)
     if existing:
-        return existing
+        return existing, False
 
     row = UserReport(
         reporter_user_id=reporter,
@@ -57,13 +66,17 @@ async def create_report(db: AsyncSession, reporter: str, reported: str, comment:
         await db.rollback()
         existing = await _open_report(db, reporter, reported)
         if existing:
-            return existing
+            return existing, False
         raise
-    return row
+    return row, True
 
 
-async def create_appeal(db: AsyncSession, user_id: str, message: str) -> SuspensionAppeal:
-    """The open appeal for this user. A repeat returns that row and keeps its message."""
+async def create_appeal(db: AsyncSession, user_id: str, message: str) -> tuple[SuspensionAppeal, bool]:
+    """The open appeal for this user, and whether this call inserted it.
+
+    A repeat returns the existing row and keeps its message. Only a new row
+    should queue an AI assessment.
+    """
     existing = await db.scalar(
         select(SuspensionAppeal).where(
             SuspensionAppeal.user_id == user_id,
@@ -71,11 +84,12 @@ async def create_appeal(db: AsyncSession, user_id: str, message: str) -> Suspens
         )
     )
     if existing:
-        return existing
+        return existing, False
 
     row = SuspensionAppeal(
         user_id=user_id,
         message=message,
+        rejection_reason=None,
         status=AppealStatus.open,
         created_at=_now(),
     )
@@ -91,9 +105,9 @@ async def create_appeal(db: AsyncSession, user_id: str, message: str) -> Suspens
             )
         )
         if existing:
-            return existing
+            return existing, False
         raise
-    return row
+    return row, True
 
 
 async def dismiss_report(db: AsyncSession, report_id: uuid.UUID, admin_id: str) -> tuple[CloseOutcome, UserReport | None]:
@@ -118,13 +132,20 @@ async def dismiss_report(db: AsyncSession, report_id: uuid.UUID, admin_id: str) 
     return CloseOutcome.closed, await db.get(UserReport, report_id)
 
 
-async def reject_appeal(db: AsyncSession, appeal_id: uuid.UUID, admin_id: str) -> tuple[CloseOutcome, SuspensionAppeal | None]:
+async def reject_appeal(
+    db: AsyncSession, appeal_id: uuid.UUID, admin_id: str, reason: str
+) -> tuple[CloseOutcome, SuspensionAppeal | None]:
     now = _now()
     row = (
         await db.execute(
             update(SuspensionAppeal)
             .where(SuspensionAppeal.id == appeal_id, SuspensionAppeal.status == AppealStatus.open)
-            .values(status=AppealStatus.rejected, closed_at=now, closed_by_admin_id=admin_id)
+            .values(
+                status=AppealStatus.rejected,
+                rejection_reason=reason,
+                closed_at=now,
+                closed_by_admin_id=admin_id,
+            )
             .returning(SuspensionAppeal.id)
         )
     ).first()
@@ -135,7 +156,7 @@ async def reject_appeal(db: AsyncSession, appeal_id: uuid.UUID, admin_id: str) -
             return CloseOutcome.missing, None
         return CloseOutcome.not_open, current
 
-    await audit.record(db, admin_id=admin_id, action="reject_appeal", target_id=str(appeal_id))
+    await audit.record(db, admin_id=admin_id, action="reject_appeal", target_id=str(appeal_id), detail=reason)
     await db.commit()
     return CloseOutcome.closed, await db.get(SuspensionAppeal, appeal_id)
 

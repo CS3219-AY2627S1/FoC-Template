@@ -1,3 +1,10 @@
+<!--
+AI Assistance Disclosure
+Tool: Cursor (Auto), date: 2026-10-15
+Scope: Documentation wording for Order Service under author-fixed design.
+Author review: Varun Sivakumar generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+-->
+
 # Interfaces
 
 Every order and alert route sits under `order.api.base-path`, which is `/api/v1/orders`. Swagger is at `/swagger-ui.html`. Health is at `/actuator/health`.
@@ -38,7 +45,7 @@ Errors use `{ "error": "...", "code": "<HTTP status name>" }`.
 | GET | `/deliveries/active` | courier | That courier's in-progress deliveries: `ACCEPTED`, `COLLECTED`, `ESCALATED`, `UNDER_REVIEW`, newest `requestTime` first |
 | GET | `/requests/active` | requester | That requester's open requests: `CREATED`, `ACCEPTED`, `COLLECTED`, `DELIVERED`, `ESCALATED`, `UNDER_REVIEW`, newest `requestTime` first |
 | GET | `/requests/past` | requester | That requester's past requests: `ACKNOWLEDGED`, `UNACKNOWLEDGED`, `COMPLETED`, `EXPIRED`, `CANCELLED`, newest `requestTime` first |
-| GET | `/alerts` | requester | Alerts with `notifyRequester` true |
+| GET | `/alerts` | any | Alerts visible to the caller: `notifyRequester` as requester, or `notifyCourier` as courier (dispute lifecycle). Each row includes `asCourier` |
 
 `page` and `size` default to 0 and 20. `page < 0`, `size < 0`, or `size > 1000` returns 400 `Page size must be between 0 and 1000`. `size = 0` returns an empty page and does not query.
 
@@ -65,7 +72,7 @@ These HTTP calls finish before the order row changes. A failure leaves the previ
 | Accept | `GET /api/v1/rating/{userId}` for the courier snapshot, then `GET /api/v1/user/internal/users/{userId}/telegram` before the order is claimed |
 | Create, if the insert fails | `POST /api/v1/credit/internal/release` with `{ orderId }` |
 | Requester cancels CREATED | `POST /api/v1/credit/internal/release` before the status becomes CANCELLED |
-| Requester escalates, and a collected order that misses its delivery deadline | `POST /api/v1/admin/conflicts` with `{ orderId, reporterUserId, comment, photos }` before the status becomes ESCALATED. A repeat for the same order is accepted |
+| Requester escalates, and a collected order that misses its delivery deadline | `POST /api/v1/admin/internal/conflicts` with `{ orderId, reporterUserId, comment, photos }` before the status becomes ESCALATED. A repeat for the same order is accepted |
 
 Courier release does not call Credit. The reservation stays with the order.
 
@@ -77,7 +84,7 @@ Every published payload has `eventId`, `eventType`, `schemaVersion` (1), `occurr
 
 | Topic | eventType | When |
 | --- | --- | --- |
-| foc.order.status | order.status.changed | Every successful transition. Fields: `requesterId`, `courierId`, `fromStatus`, `toStatus`, `notifyRequester`, `faultParty` (set only on case resolve → `COMPLETED`; otherwise null). Values: `requester` \| `courier` \| `no-fault` |
+| foc.order.status | order.status.changed | Every successful transition. Fields: `requesterId`, `courierId`, `fromStatus`, `toStatus`, `notifyRequester`, `notifyCourier`, `faultParty` (set only on case resolve → `COMPLETED`; otherwise null). Values: `requester` \| `courier` \| `no-fault`. `notifyCourier` is true for Escalated / Under review / case-resolved Completed when a courier is set |
 | foc.credit.commands | credit.reservation.return | Acceptance expiry (`EXPIRED`) or case resolve when `faultParty` is `courier` (`CASE_RESOLVED`) |
 | foc.credit.commands | credit.reservation.release | Acknowledge / unacknowledge (`ACKNOWLEDGED` / `UNACKNOWLEDGED`), or case resolve when `faultParty` is `requester` or `no-fault` (`CASE_RESOLVED`). Includes `courierId` and `amount` |
 | foc.rating.commands | rating.permission.granted | Deliver: courier rates requester. Acknowledge / unacknowledge: requester rates courier. Case resolve: requester rates courier; when courier is paid (`requester` / `no-fault`) also courier rates requester. Fields: `raterId`, `raterRole`, `rateeId`, `rateeRole` |

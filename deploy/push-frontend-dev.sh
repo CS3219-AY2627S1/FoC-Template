@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Build the frontend and publish it to dev's S3 bucket behind CloudFront
-# (infra/nonprod/aws/frontend.tf). The laptop version of
-# .github/workflows/frontend-dev.yml, which can't log in to the NUS account
-# (infra/docs/cloud-dev.md, "NUS AWS account limits").
+# (infra/nonprod/aws/frontend.tf). The laptop fallback for
+# .github/workflows/frontend-dev.yml.
 #
 #   export AWS_PROFILE=cs3219-dev     # `aws sso login` if the session expired
 #   deploy/push-frontend-dev.sh

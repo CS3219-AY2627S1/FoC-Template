@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Cursor (Auto), date: 2026-11-09
+# Scope: Implementation assistance for Admin Service application services under author-fixed requirements and architecture.
+# Author review: Sahana Avantika generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+
 """Load dispute photos from Order's S3 bucket.
 
 Conflict intake stores object keys (`{orderId}/collection.jpg`), not bytes.
@@ -46,6 +51,16 @@ def role_of(ref: str) -> str | None:
     return None
 
 
+def key_for_role(refs: list[str] | None, role: str) -> str | None:
+    """The stored object key for one role. None unless that role is on this case."""
+    if role not in ROLES:
+        return None
+    for ref in refs or []:
+        if ref and ref.strip() and role_of(ref) == role:
+            return ref.strip()
+    return None
+
+
 def _mime_type(content_type: str | None, ref: str) -> str:
     header = (content_type or "").split(";", 1)[0].strip().lower()
     if header in _MIME_BY_EXT.values():
@@ -89,6 +104,17 @@ def _load(chosen: list[tuple[str, str]]) -> list[EvidencePhoto] | None:
             return None
         photos.append(EvidencePhoto(role, mime, data))
     return photos
+
+
+async def fetch_one(key: str) -> EvidencePhoto | None:
+    """One object, for the admin review page. None if it cannot be loaded."""
+    role = role_of(key)
+    if role is None:
+        return None
+    loaded = await asyncio.to_thread(_load, [(role, key.strip())])
+    if not loaded:
+        return None
+    return loaded[0]
 
 
 async def fetch_evidence(order_id: str, refs: list[str]) -> list[EvidencePhoto] | None:

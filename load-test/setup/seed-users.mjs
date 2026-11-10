@@ -3,8 +3,10 @@
 //   node load-test/setup/seed-users.mjs
 //   node load-test/setup/seed-users.mjs --apply
 //
-// VUS (default 9600) and REQUESTER_SHARE (default 0.3) must match the k6 run.
-// CREDIT_BALANCE (default 5000) is the requester balance. Each order spends 1.
+// VUS sizes the roster (k8s load-setup sets 60000; local default 9600).
+// Everyone can request and deliver in k6 (REQUEST_PROBABILITY); seed still
+// builds two label lists for stable ids. k6 may run with fewer VUs than seeded.
+// CREDIT_BALANCE (default 5000) for every user — each order spends 1.
 // Local --apply pipes SQL into Docker Postgres. Against EKS, generate the files
 // here, then apply users.sql and credits.sql to the User and Credit databases.
 
@@ -16,27 +18,33 @@ import { fileURLToPath } from "node:url";
 import { positiveInt, rosterFromEnv } from "./roster.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "data");
-const requesterBalance = positiveInt(process.env.CREDIT_BALANCE, 5000);
-const courierBalance = positiveInt(process.env.COURIER_BALANCE, 100);
+const balance = positiveInt(process.env.CREDIT_BALANCE, 5000);
 const apply = process.argv.includes("--apply");
 const { total, share, requesters, couriers } = rosterFromEnv();
-for (const row of [...requesters, ...couriers]) {
+const allUsers = [...requesters, ...couriers];
+for (const row of allUsers) {
   row.id = uuid(`${row.role}-${row.email}`);
 }
 
 mkdirSync(root, { recursive: true });
 writeFileSync(
   join(root, "users.json"),
-  JSON.stringify({ vus: total, requesterShare: share, requesters, couriers }),
+  JSON.stringify({
+    vus: total,
+    requestProbability: share,
+    users: allUsers,
+    // Kept for older tooling; k6 prefers `users`.
+    requesterShare: share,
+    requesters,
+    couriers,
+  }),
 );
 const userSql = join(root, "users.sql");
 const creditSql = join(root, "credits.sql");
-writeFileSync(userSql, userInserts([...requesters, ...couriers]));
-writeFileSync(creditSql, creditInserts(requesters, requesterBalance) + creditInserts(couriers, courierBalance));
+writeFileSync(userSql, userInserts(allUsers));
+writeFileSync(creditSql, creditInserts(allUsers, balance));
 
-console.log(
-  `Wrote ${requesters.length} requesters and ${couriers.length} couriers to ${root}`,
-);
+console.log(`Wrote ${allUsers.length} dual-role users to ${root}`);
 
 if (apply) {
   const userDb = process.env.USER_DB_CONTAINER ?? "user-service-db-1";

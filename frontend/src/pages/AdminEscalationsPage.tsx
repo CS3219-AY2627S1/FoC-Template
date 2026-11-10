@@ -11,11 +11,11 @@
  *
  * What a case does not carry, and the page therefore cannot show: the order
  * itself (Order returns an order to its requester and courier only, not to
- * admins) and the evidence photos (private keys in Order's bucket that
- * nothing serves to a browser).
+ * admins). Evidence photos are loaded from the Admin Service while the case
+ * is open. Resolving the case deletes them.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
 import { Chip } from '../components/ui/Chip';
@@ -27,11 +27,15 @@ import { fetchAdminUser } from '../lib/adminUsers';
 import {
   FAULT_PARTIES,
   claimConflict,
+  evidenceRoles,
   faultLabel,
   fetchConflict,
+  fetchConflictPhoto,
   fetchConflicts,
   isOpen,
+  reassessConflict,
   resolveConflict,
+  type EvidenceRole,
   type ConflictDetail,
   type ConflictStatus,
   type ConflictSummary,
@@ -176,14 +180,80 @@ interface CaseDialogProps {
   onChanged: () => void;
 }
 
+const PHOTO_LABELS: Record<EvidenceRole, string> = {
+  collection: 'Collection',
+  delivery: 'Delivery',
+  dispute: 'Dispute',
+};
+
+/** Gemini's own timeout is 60s and it retries twice, so wait past that. */
+const REASSESS_WAIT_MS = 200_000;
+
+function EvidencePhotos({ caseId, keys }: { caseId: string; keys: string[] }) {
+  const roles = evidenceRoles(keys);
+  const roleKey = roles.join('|');
+  const [photos, setPhotos] = useState<{ role: EvidenceRole; url: string | null }[] | null>(null);
+
+  useEffect(() => {
+    const loading = roleKey.length === 0 ? [] : (roleKey.split('|') as EvidenceRole[]);
+    let cancelled = false;
+    const created: string[] = [];
+    setPhotos(loading.length === 0 ? [] : null);
+    void (async () => {
+      const loaded = await Promise.all(
+        loading.map(async (role) => {
+          try {
+            const blob = await fetchConflictPhoto(caseId, role);
+            const url = URL.createObjectURL(blob);
+            if (cancelled) {
+              URL.revokeObjectURL(url);
+              return { role, url: null };
+            }
+            created.push(url);
+            return { role, url };
+          } catch {
+            return { role, url: null };
+          }
+        }),
+      );
+      if (!cancelled) setPhotos(loaded);
+    })();
+    return () => {
+      cancelled = true;
+      for (const url of created) URL.revokeObjectURL(url);
+    };
+  }, [caseId, roleKey]);
+
+  if (roles.length === 0) return null;
+  if (photos === null) return <p className={styles.note}>Loading photos…</p>;
+
+  return (
+    <div className={styles.photos}>
+      {photos.map((photo) => (
+        <figure key={photo.role} className={styles.photo}>
+          <figcaption className={styles.label}>{PHOTO_LABELS[photo.role]}</figcaption>
+          {photo.url ? (
+            <img src={photo.url} alt={`${PHOTO_LABELS[photo.role]} photo`} />
+          ) : (
+            <p className={styles.note}>This photo is no longer available.</p>
+          )}
+        </figure>
+      ))}
+    </div>
+  );
+}
+
 function CaseDialog({ caseId, myUserId, onClose, onChanged }: CaseDialogProps) {
   const [detail, setDetail] = useState<ConflictDetail | null>(null);
   const [reporterName, setReporterName] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [reassessNote, setReassessNote] = useState<string | null>(null);
   const [fault, setFault] = useState<FaultParty | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [working, setWorking] = useState(false);
+  const [reassessing, setReassessing] = useState(false);
+  const pollToken = useRef(0);
 
   const load = useCallback(async (id: string) => {
     setLoadError(null);
@@ -203,9 +273,55 @@ function CaseDialog({ caseId, myUserId, onClose, onChanged }: CaseDialogProps) {
     setDetail(null);
     setReporterName(null);
     setActionError(null);
+    setReassessNote(null);
     setConfirming(false);
+    setReassessing(false);
+    pollToken.current += 1;
     if (caseId !== null) void load(caseId);
   }, [caseId, load]);
+
+  async function rerun() {
+    if (detail === null) return;
+    const startedAt = detail.aiCompletedAt;
+    const token = ++pollToken.current;
+    setReassessing(true);
+    setReassessNote(null);
+    setActionError(null);
+    try {
+      await reassessConflict(detail.id);
+    } catch (error) {
+      if (pollToken.current !== token) return;
+      setReassessing(false);
+      setActionError(
+        error instanceof ApiError && error.status === 409
+          ? 'This case changed before your action went through. It has been refreshed.'
+          : errorMessage(error, 'Could not reach the Admin Service, so nothing changed.'),
+      );
+      return;
+    }
+
+    const deadline = Date.now() + REASSESS_WAIT_MS;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (pollToken.current !== token) return;
+      try {
+        const next = await fetchConflict(detail.id);
+        if (pollToken.current !== token) return;
+        if (next.aiCompletedAt !== startedAt) {
+          setDetail(next);
+          setFault(next.resolvedFaultParty ?? next.aiFaultParty);
+          setReassessing(false);
+          onChanged();
+          return;
+        }
+      } catch {
+        // Keep the last verdict on screen and try again until the wait ends.
+      }
+    }
+    if (pollToken.current !== token) return;
+    setReassessing(false);
+    setReassessNote('The AI could not assess this case again. The previous verdict is unchanged.');
+  }
 
   async function act(action: () => Promise<void>) {
     if (detail === null) return;
@@ -262,7 +378,15 @@ function CaseDialog({ caseId, myUserId, onClose, onChanged }: CaseDialogProps) {
         <Button variant="secondary" onClick={onClose}>
           Close
         </Button>
-        <Button disabled={fault === null} onClick={() => setConfirming(true)}>
+        <Button
+          variant="secondary"
+          loading={reassessing}
+          disabled={confirming}
+          onClick={() => void rerun()}
+        >
+          Run AI again
+        </Button>
+        <Button disabled={fault === null || reassessing} onClick={() => setConfirming(true)}>
           Resolve
         </Button>
       </>
@@ -280,6 +404,7 @@ function CaseDialog({ caseId, myUserId, onClose, onChanged }: CaseDialogProps) {
       open={caseId !== null}
       title={detail === null ? 'Escalation' : `Order #${orderReference(detail.orderId)}`}
       onClose={onClose}
+      wide
       footer={footer}
     >
       {loadError ? <Alert variant="danger">{loadError}</Alert> : null}
@@ -294,16 +419,20 @@ function CaseDialog({ caseId, myUserId, onClose, onChanged }: CaseDialogProps) {
               Reported by {reporterName ?? '…'} · {formatElapsed(new Date(detail.createdAt))}
             </p>
             <p className={styles.comment}>{detail.comment}</p>
-            <p className={styles.note}>
-              {detail.evidencePhotoUrls.length === 0
-                ? 'No photos attached.'
-                : `${detail.evidencePhotoUrls.length} photo${detail.evidencePhotoUrls.length === 1 ? '' : 's'} attached. The AI has seen them; this page cannot open them.`}
-            </p>
+            {detail.evidencePhotoUrls.length === 0 ? (
+              <p className={styles.note}>No photos attached.</p>
+            ) : detail.status === 'resolved' ? (
+              <p className={styles.note}>Photos were removed when this case was resolved.</p>
+            ) : (
+              <EvidencePhotos caseId={detail.id} keys={detail.evidencePhotoUrls} />
+            )}
           </section>
 
           <section className={styles.block}>
             <p className={styles.label}>AI assessment</p>
             <p className={styles.verdict}>{verdictLine(detail)}</p>
+            {reassessing ? <p className={styles.note}>Running the AI again. This can take a minute.</p> : null}
+            {reassessNote ? <Alert variant="warning">{reassessNote}</Alert> : null}
             {detail.aiReasoning ? <p className={styles.note}>{detail.aiReasoning}</p> : null}
           </section>
 

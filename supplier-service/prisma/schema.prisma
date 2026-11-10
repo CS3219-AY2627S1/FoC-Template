@@ -33,6 +33,7 @@ model Supplier {
   startingTime        String
   closingTime         String
   status              SupplierStatus @default(pending)
+  rejectionReason     String?
   createdByUserId     String?
   createdAt           DateTime       @default(now())
   categories          Category[]     @relation("SupplierCategories")

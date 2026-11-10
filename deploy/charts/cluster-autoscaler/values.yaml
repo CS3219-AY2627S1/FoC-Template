@@ -1,0 +1,24 @@
+# Cluster name and region: values/clusters/<cluster>/cluster-autoscaler.yaml.
+# AWS credentials: the node role (ADR-0013).
+cluster-autoscaler:
+  cloudProvider: aws
+  autoDiscovery:
+    clusterName: ""
+  awsRegion: ""
+  rbac:
+    serviceAccount:
+      name: cluster-autoscaler
+  extraArgs:
+    logtostderr: true
+    stderrthreshold: info
+    v: 2
+    expander: least-waste
+    balance-similar-node-groups: true
+    # emptyDir (Linkerd proxies) would otherwise pin every node; Kafka opts out itself.
+    skip-nodes-with-local-storage: false
+    skip-nodes-with-system-pods: false
+    scale-down-unneeded-time: 10m
+    scale-down-delay-after-add: 10m
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }

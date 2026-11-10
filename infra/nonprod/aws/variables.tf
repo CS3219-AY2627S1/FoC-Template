@@ -54,10 +54,37 @@ variable "node_count" {
   default     = { min = 2, desired = 2, max = 3 }
 }
 
+variable "burst_instance_types" {
+  description = "Spot pools for the burst node group (eks.tf), all arm64 with 4 vCPU / 16 GiB."
+  type        = list(string)
+  default     = ["m7g.xlarge", "m6g.xlarge", "t4g.xlarge"]
+}
+
+variable "burst_node_max" {
+  # Idle default (original). A 9600 VU full run (Order×32 + peers×8) needs ~8 —
+  # apply with -var burst_node_max=8, then apply again without it after the run.
+  # See load-test/README.md "Scale up / scale down".
+  description = "Most burst nodes Cluster Autoscaler may add (mind the Spot vCPU quota)."
+  type        = number
+  default     = 5
+}
+
+variable "loadgen_instance_types" {
+  description = "Spot pools for the loadgen node group (eks.tf), all arm64 with 8 vCPU / 32 GiB."
+  type        = list(string)
+  default     = ["m7g.2xlarge", "m6g.2xlarge"]
+}
+
+variable "rds_instance_class" {
+  description = "RDS size. For a full load test (load-test/README.md) apply with db.m7g.xlarge (~$0.47/h, ~1,800 connections), then apply again without it."
+  type        = string
+  default     = "db.t4g.micro"
+}
+
 variable "databases" {
   description = "Services that get their own Postgres database and login (ADR-0010). Same as infra/local/aws."
   type        = list(string)
-  default     = ["user", "supplier", "credit", "order", "admin"]
+  default     = ["user", "supplier", "credit", "order", "admin", "rating", "badges"]
 }
 
 variable "gateway_target_port" {

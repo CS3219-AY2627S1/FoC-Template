@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { handleUserStatusMessage } from '../src/kafka/userStatusHandler.js';
-import { creditLog, creditUser, db } from './helpers.js';
+import { creditLog, creditOrder, creditUser, db, seedOrder, seedUser } from './helpers.js';
 
 function userVerified(userId: string, eventId: string = randomUUID()): string {
   return JSON.stringify({
@@ -10,6 +10,15 @@ function userVerified(userId: string, eventId: string = randomUUID()): string {
     type: 'UserVerified',
     occurredAt: new Date().toISOString(),
     data: { userId, email: 'student@u.nus.edu' },
+  });
+}
+
+function userDeleted(userId: string, eventId: string = randomUUID()): string {
+  return JSON.stringify({
+    eventId,
+    type: 'UserDeleted',
+    occurredAt: new Date().toISOString(),
+    data: { userId },
   });
 }
 
@@ -98,5 +107,94 @@ describe('handleUserStatusMessage (UserVerified → onboarding)', () => {
       silent,
     );
     expect(await db.select().from(creditUser)).toHaveLength(0);
+  });
+});
+
+describe('handleUserStatusMessage (UserDeleted → revocation)', () => {
+  const accountOf = async (userId: string) =>
+    (await db.select().from(creditUser).where(eq(creditUser.userId, userId)))[0];
+  const logsOf = (userId: string) =>
+    db.select().from(creditLog).where(eq(creditLog.actorId, userId));
+
+  it('revokes the balance to 0, marks the account deleted and writes a REVOCATION log', async () => {
+    const userId = await seedUser(15);
+    const eventId = randomUUID();
+
+    await handleUserStatusMessage(userDeleted(userId, eventId));
+
+    const account = await accountOf(userId);
+    expect(account?.balance).toBe(0);
+    expect(account?.deletedAt).toBeInstanceOf(Date);
+    const logs = await logsOf(userId);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({
+      operationType: 'REVOCATION',
+      amount: 15,
+      balanceAfter: 0,
+      orderId: null,
+      eventId,
+    });
+  });
+
+  it('is idempotent: a redelivery revokes once', async () => {
+    const userId = await seedUser(15);
+    const message = userDeleted(userId);
+
+    await handleUserStatusMessage(message);
+    const firstDeletedAt = (await accountOf(userId))?.deletedAt;
+    await handleUserStatusMessage(message);
+    await handleUserStatusMessage(userDeleted(userId)); // new eventId
+
+    expect(await logsOf(userId)).toHaveLength(1);
+    expect((await accountOf(userId))?.deletedAt).toEqual(firstDeletedAt);
+  });
+
+  it('marks an empty account deleted without a log (amount must be > 0)', async () => {
+    const userId = await seedUser(0);
+
+    await handleUserStatusMessage(userDeleted(userId));
+
+    expect((await accountOf(userId))?.deletedAt).toBeInstanceOf(Date);
+    expect(await logsOf(userId)).toHaveLength(0);
+  });
+
+  it('keeps the open reservations, so their couriers can still be paid', async () => {
+    const userId = await seedUser(15);
+    const orderId = await seedOrder(userId, 5);
+
+    await handleUserStatusMessage(userDeleted(userId));
+
+    const reservations = await db.select().from(creditOrder).where(eq(creditOrder.orderId, orderId));
+    expect(reservations).toHaveLength(1);
+  });
+
+  it('skips a user with no credit account (never verified)', async () => {
+    const log = vi.fn();
+    const userId = randomUUID();
+
+    await handleUserStatusMessage(userDeleted(userId), log);
+
+    expect(await db.select().from(creditUser)).toHaveLength(0);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('has no credit account'));
+  });
+
+  it('does not re-grant a revoked account on a late UserVerified', async () => {
+    const userId = await seedUser(15);
+    await handleUserStatusMessage(userDeleted(userId));
+
+    await handleUserStatusMessage(userVerified(userId));
+
+    expect((await accountOf(userId))?.balance).toBe(0);
+    expect((await logsOf(userId)).map((l) => l.operationType)).toEqual(['REVOCATION']);
+  });
+
+  it('skips a UserDeleted with a missing or malformed userId', async () => {
+    const log = vi.fn();
+    await handleUserStatusMessage(JSON.stringify({ type: 'UserDeleted', data: {} }), log);
+    await handleUserStatusMessage(
+      JSON.stringify({ type: 'UserDeleted', data: { userId: 'nope' } }),
+      log,
+    );
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('UserDeleted with missing/invalid userId'));
   });
 });

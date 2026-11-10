@@ -1,6 +1,12 @@
-# No rating-service image that runs in the cloud yet: run the connectivity stub
-# under this name (same as local). CI pushes foc/connectivity-stub.
 image:
-  name: foc/connectivity-stub
-  tag: "0.2.0"
-replicas: 1
+  tag: "32e6e6b322f9f74974245dab017016f5a83abcda" # git SHA, set by deploy/push-dev.sh
+autoscaling:
+  enabled: true
+  # Idle/dev. Full-run peak needs min=max=8 — see load-test/README.md
+  # "Scale up / scale down". Create/accept read rating (soft-null on failure).
+  minReplicas: 1
+  maxReplicas: 1
+  targetCPUUtilization: 70
+resources:
+  requests: {cpu: 250m}
+  limits: {cpu: "1"}

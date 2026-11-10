@@ -1,0 +1,62 @@
+full-1019
+
+  █ THRESHOLDS
+
+    http_req_failed{op:close}
+    ✓ 'rate<0.05' rate=1.35%
+
+    http_req_failed{op:create}
+    ✓ 'rate<0.05' rate=0.25%
+
+    http_req_failed{op:fulfill}
+    ✓ 'rate<0.05' rate=0.00%
+
+    http_req_failed{op:read}
+    ✓ 'rate<0.05' rate=1.02%
+
+
+  █ TOTAL RESULTS
+
+    checks_total.......................: 886854 1448.460171/s
+    checks_succeeded...................: 99.22% 880024 out of 886854
+    checks_failed......................: 0.77%  6830 out of 886854
+
+    ✗ read ok
+      ↳  98% — ✓ 651805 / ✗ 6732
+    ✗ order created
+      ↳  99% — ✓ 5760 / ✗ 15
+    ✗ accept claimed or already taken
+      ↳  99% — ✓ 205260 / ✗ 2
+    ✗ collect stored a photo
+      ↳  99% — ✓ 5758 / ✗ 2
+    ✗ deliver stored a photo
+      ↳  99% — ✓ 5759 / ✗ 1
+    ✗ escalated or already closed
+      ↳  47% — ✓ 71 / ✗ 78
+    ✓ acknowledged or already closed
+
+    HTTP
+    http_req_duration.......................................................: avg=5.96s  min=0s     med=5.57s max=30s    p(90)=9.11s  p(95)=10.4s
+      { expected_response:true }............................................: avg=5.99s  min=3.33ms med=5.58s max=29.29s p(90)=9.12s  p(95)=10.41s
+    http_req_failed.........................................................: 0.77%  6830 out of 886854
+      { op:close }..........................................................: 1.35%  78 out of 5760
+      { op:create }.........................................................: 0.25%  15 out of 5775
+      { op:fulfill }........................................................: 0.00%  5 out of 216782
+      { op:read }...........................................................: 1.02%  6732 out of 658537
+    http_reqs...............................................................: 886854 1448.460171/s
+
+    EXECUTION
+    iteration_duration......................................................: avg=11.27s min=1s     med=8.97s max=1m25s  p(90)=27.68s p(95)=37.16s
+    iterations..............................................................: 516199 843.085437/s
+    vus.....................................................................: 8      min=0              max=9600
+    vus_max.................................................................: 9600   min=9122           max=9600
+
+    NETWORK
+    data_received...........................................................: 6.7 GB 11 MB/s
+    data_sent...............................................................: 224 MB 366 kB/s
+
+
+
+
+running (10m12.3s), 0000/9600 VUs, 516199 complete and 0 interrupted iterations
+traffic ✓ [ 100% ] 9600 VUs  10m0s

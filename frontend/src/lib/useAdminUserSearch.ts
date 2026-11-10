@@ -14,7 +14,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { errorMessage } from './api';
-import { fetchAdminUsers, type AdminUser } from './adminUsers';
+import { fetchAdminUsers, type AdminAccountStatus, type AdminUser } from './adminUsers';
 import { byMatch, matchRank } from './search';
 
 const SEARCH_DELAY_MS = 300;
@@ -28,6 +28,7 @@ interface AdminUserSearch {
   /** Null until the first answer. */
   users: AdminUser[] | null;
   hasMore: boolean;
+  total: number | null;
   loadError: string | null;
   /** The text last sent to the service, for "no match" wording. */
   search: string;
@@ -39,10 +40,12 @@ export function useAdminUserSearch(
   /** Bump to read the service again, e.g. after an action. */
   reloadKey: number,
   failMessage: string,
+  status: '' | AdminAccountStatus = '',
 ): AdminUserSearch {
   const [search, setSearch] = useState(query);
   const [fetched, setFetched] = useState<{ search: string; users: AdminUser[] } | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -53,22 +56,24 @@ export function useAdminUserSearch(
   useEffect(() => {
     let cancelled = false;
     setLoadError(null);
-    fetchAdminUsers(search, page)
+    fetchAdminUsers(search, page, status || undefined)
       .then((result) => {
         if (cancelled) return;
         setFetched({ search, users: result.items });
         setHasMore(result.hasMore);
+        setTotal(result.total);
       })
       .catch((error: unknown) => {
         if (cancelled) return;
         setFetched({ search, users: [] });
         setHasMore(false);
+        setTotal(null);
         setLoadError(errorMessage(error, failMessage));
       });
     return () => {
       cancelled = true;
     };
-  }, [search, page, reloadKey, failMessage]);
+  }, [search, page, reloadKey, failMessage, status]);
 
   const users = useMemo(() => {
     if (fetched === null) return null;
@@ -82,5 +87,5 @@ export function useAdminUserSearch(
     return byMatch(narrowed, typed.startsWith(loadedFor) ? typed : loadedFor, rankUser);
   }, [fetched, query]);
 
-  return { users, hasMore, loadError, search };
+  return { users, hasMore, total, loadError, search };
 }

@@ -13,9 +13,10 @@ export const accountSupportSchemas = {
     properties: { id: { type: "string", format: "uuid" }, reporterUserId: { type: "string", format: "uuid" },
       reportedUserId: { type: "string", format: "uuid" }, comment: { type: "string", maxLength: 4000 },
       status: { type: "string", enum: ["open", "dismissed", "actioned"] }, ...closedFields } },
-  SuspensionAppealRecord: { type: "object", required: ["id", "userId", "message", "status", "createdAt", "closedAt", "closedByAdminId"],
+  SuspensionAppealRecord: { type: "object", required: ["id", "userId", "message", "status", "rejectionReason", "createdAt", "closedAt", "closedByAdminId"],
     properties: { id: { type: "string", format: "uuid" }, userId: { type: "string", format: "uuid" },
-      message: { type: "string", maxLength: 4000 }, status: { type: "string", enum: ["open", "rejected", "reinstated"] }, ...closedFields } },
+      message: { type: "string", maxLength: 4000 }, status: { type: "string", enum: ["open", "rejected", "reinstated"] },
+      rejectionReason: { type: "string", nullable: true, minLength: 1, maxLength: 4000, description: "Admin's rejection reason; null while open" }, ...closedFields } },
 };
 export const accountSupportPaths = {
   "/api/v1/user/reports": { post: {

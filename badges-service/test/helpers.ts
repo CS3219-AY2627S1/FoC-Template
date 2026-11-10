@@ -2,7 +2,7 @@
  * AI Assistance Disclosure
  * Tool: Claude Code (Claude Opus 5.5), date: 2026-10-30
  * Scope: Test helpers: message builders and badge lookups.
- * Author review: Ngooi Jun Sen to validate before merge.
+ * Reviewed by Ngooi Jun Sen
  */
 
 import { randomUUID } from 'node:crypto';
@@ -11,7 +11,7 @@ import { db } from '../src/database/index.js';
 import { userBadge, userMetrics } from '../src/database/schema.js';
 
 export { db };
-export { countedOrder, disputedOrder, userBadge, userMetrics } from '../src/database/schema.js';
+export { countedOrder, deletedUser, disputedOrder, userBadge, userMetrics } from '../src/database/schema.js';
 
 // An order.status.changed message as Order Service publishes it.
 export function orderMessage(overrides: Record<string, unknown> = {}) {
@@ -54,6 +54,17 @@ export function resolvedMessage(overrides: Record<string, unknown> = {}) {
     orderId: randomUUID(),
     caseId: randomUUID(),
     faultParty: 'requester',
+    ...overrides,
+  };
+}
+
+// A UserDeleted message as User Service publishes it (its own envelope, not the flat format).
+export function userDeletedMessage(userId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    eventId: randomUUID(),
+    type: 'UserDeleted',
+    occurredAt: new Date().toISOString(),
+    data: { userId },
     ...overrides,
   };
 }

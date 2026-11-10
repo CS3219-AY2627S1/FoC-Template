@@ -1,0 +1,61 @@
+# k6 against Order, streaming to Prometheus. Each run is tagged testid=<Job name>.
+#   kubectl -n foc-load create job smoke-$(date +%H%M) --from=cronjob/load-run-smoke
+{{- range $name, $run := .Values.runs }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: load-run-{{ $name }}
+spec:
+  suspend: true
+  schedule: "0 0 31 2 *" # never; started by hand
+  jobTemplate:
+    spec:
+      backoffLimit: 0 # a failed threshold exits non-zero; don't rerun
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          annotations:
+            linkerd.io/inject: enabled # Order only admits meshed callers
+            config.linkerd.io/proxy-cpu-request: {{ $run.proxy.cpu | quote }}
+            config.linkerd.io/proxy-cpu-limit: {{ $run.proxy.cpu | quote }}
+            config.linkerd.io/proxy-memory-request: {{ $run.proxy.memory | quote }}
+            config.linkerd.io/proxy-memory-limit: {{ $run.proxy.memory | quote }}
+        spec:
+          serviceAccountName: k6
+          restartPolicy: Never
+          {{- with $run.nodePool }}
+          nodeSelector:
+            foc.io/pool: {{ . }}
+          tolerations:
+            - { key: foc.io/pool, operator: Equal, value: {{ . }}, effect: NoSchedule }
+          {{- end }}
+          initContainers:
+            {{- include "load-test.seedContainer" $ | nindent 12 }}
+          containers:
+            - name: k6
+              image: {{ $.Values.images.k6 }}
+              args:
+                - run
+                - --out=experimental-prometheus-rw
+                - --tag=testid=$(JOB_NAME)
+                - /work/k6/load.js
+              env:
+                - name: JOB_NAME
+                  valueFrom: { fieldRef: { fieldPath: "metadata.labels['job-name']" } }
+                - { name: VUS, value: {{ $run.vus | quote }} }
+                - { name: PROFILE, value: {{ $run.profile | default "peak" | quote }} }
+                - { name: DURATION, value: {{ $run.duration | quote }} }
+                - { name: ORDER_URL, value: {{ required "orderUrl is required" $.Values.orderUrl | quote }} }
+                - { name: K6_PROMETHEUS_RW_SERVER_URL, value: {{ $.Values.prometheusUrl | quote }} }
+                - { name: K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM, value: "true" }
+                - { name: K6_PROMETHEUS_RW_PUSH_INTERVAL, value: 5s }
+                - { name: K6_PROMETHEUS_RW_STALE_MARKERS, value: "true" }
+              resources:
+                {{- toYaml $run.resources | nindent 16 }}
+              volumeMounts:
+                - { name: scripts, mountPath: /work/k6/load.js, subPath: load.js }
+                - { name: data, mountPath: /work/data }
+          volumes:
+            {{- include "load-test.scriptVolumes" $ | nindent 12 }}
+{{- end }}

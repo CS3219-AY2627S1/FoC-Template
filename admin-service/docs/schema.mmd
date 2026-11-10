@@ -1,0 +1,69 @@
+%% AI Assistance Disclosure
+%% Tool: Cursor (Auto), date: 2026-11-09
+%% Scope: Documentation wording for Admin Service under author-fixed design.
+%% Author review: Sahana Avantika generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+erDiagram
+    conflict_cases ||--o{ audit_logs : "target_id, no FK"
+    user_reports ||--o{ audit_logs : "target_id, no FK"
+    suspension_appeals ||--o{ audit_logs : "target_id, no FK"
+
+    conflict_cases {
+        uuid id PK
+        varchar order_id UK
+        varchar reporter_user_id
+        text comment
+        varchar_array evidence_photo_urls
+        faultparty ai_fault_party
+        float ai_confidence
+        text ai_reasoning
+        conflictstatus status
+        timestamptz ai_completed_at
+        timestamptz review_started_at
+        varchar review_started_by_admin_id "claimer admin id"
+        faultparty resolved_fault_party
+        varchar resolved_by_admin_id "resolver admin id, null if automatic"
+        boolean resolved_automatically
+        timestamptz created_at
+        timestamptz resolution_deadline
+        timestamptz reminder_sent_at
+        timestamptz resolved_at
+    }
+
+    audit_logs {
+        uuid id PK
+        varchar admin_id "caller, or system-auto-resolve"
+        varchar action
+        varchar target_id
+        text detail
+        timestamptz created_at
+    }
+
+    user_reports {
+        uuid id PK
+        varchar reporter_user_id
+        varchar reported_user_id
+        text comment
+        reportrecommendation ai_recommendation
+        float ai_confidence
+        text ai_reasoning
+        timestamptz ai_completed_at
+        reportstatus status
+        timestamptz created_at
+        timestamptz closed_at
+        varchar closed_by_admin_id "admin who closed it"
+    }
+
+    suspension_appeals {
+        uuid id PK
+        varchar user_id
+        text message
+        text rejection_reason
+        appealrecommendation ai_recommendation
+        float ai_confidence
+        text ai_reasoning
+        timestamptz ai_completed_at
+        appealstatus status
+        timestamptz created_at
+        timestamptz closed_at
+        varchar closed_by_admin_id "admin who closed it"
+    }

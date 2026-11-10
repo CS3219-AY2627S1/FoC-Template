@@ -1,3 +1,10 @@
+# AI Assistance Disclosure
+# Tool: Cursor (Auto), date: 2026-11-09
+# Scope: Implementation assistance for Admin Service REST layer under author-fixed requirements and architecture.
+# Author review: Sahana Avantika generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+
+import logging
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +17,8 @@ from app.services import audit, kafka_producer
 from app.services.moderation import close_open_appeals, close_open_reports
 
 router = APIRouter(prefix="/api/v1/admin/users", tags=["admin-users"])
+logger = logging.getLogger(__name__)
+_LIST_STATUSES = {"Created", "Verified", "Suspended"}
 
 
 def _user_headers(request: Request) -> dict[str, str]:
@@ -26,12 +35,33 @@ async def _user_call(request: Request, method: str, path: str, **kwargs) -> http
 
 
 @router.get("", response_model=UserListResponse)
-async def list_users(request: Request, search: str = "", page: int = 1, admin: CurrentAdmin = AdminDep):
-    # NFR1.1 — delegate the actual search to User Service; Admin Service doesn't own user data.
-    resp = await _user_call(request, "GET", "/api/v1/user/search", params={"q": search, "page": page})
+async def list_users(
+    request: Request, search: str = "", page: int = 1, status: str = "", admin: CurrentAdmin = AdminDep
+):
+    # NFR1.1 — User Service owns the rows. status is forwarded so a caller can
+    # count Suspended accounts from `total` instead of paging through everyone.
+    if status and status not in _LIST_STATUSES:
+        raise HTTPException(status_code=422, detail="status must be Created, Verified or Suspended")
+    params: dict[str, str | int] = {"q": search, "page": page}
+    if status:
+        params["status"] = status
+    resp = await _user_call(request, "GET", "/api/v1/user/search", params=params)
     if resp.status_code != 200:
         raise HTTPException(status_code=resp.status_code, detail="User Service rejected the search")
     return resp.json()
+
+
+async def notify_appeal_rejected(request: Request, user_id: str, reason: str) -> None:
+    """Ask User Service to email the reason. The appeal is already rejected if this fails."""
+    try:
+        resp = await _user_call(
+            request, "POST", f"/api/v1/user/{user_id}/appeal-rejected", json={"reason": reason}, timeout=2.0,
+        )
+    except httpx.HTTPError:
+        logger.warning("User Service did not accept the appeal-rejection notice")
+        return
+    if resp.status_code != 200:
+        logger.warning("User Service declined the appeal-rejection notice (%s)", resp.status_code)
 
 
 @router.post("/{user_id}/promote", response_model=ActionResult)

@@ -51,6 +51,9 @@ publicRoutes:
   - { method: POST, path: /api/v1/user/login, service: user, port: 8080 }
   - { method: POST, path: /api/v1/user/forgot-password, service: user, port: 8080 }
   - { method: POST, path: /api/v1/user/reset-password, service: user, port: 8080 }
+  # Suspended users have no session; user checks the email and password itself
+  # (and rate-limits by email) before forwarding the appeal to admin.
+  - { method: POST, path: /api/v1/user/appeals, service: user, port: 8080 }
   - { method: GET, path: /api/v1/supplier, service: supplier, port: 8081 }
 
 # Legacy compatibility path: keep blocked until every caller has migrated.
@@ -67,8 +70,14 @@ blockedPrefixes:
   # spend anyone's credits or refund any order.
   - /api/v1/credit/internal
   - /api/v1/badges/internal
-  # Badges' batch ratings lookup for its daily reconciliation poll.
-  - /api/v1/rating/internal
+  # Order's escalation intake and User's report/appeal intake: no admin session,
+  # so a client could open cases, reports or appeals for anyone.
+  - /api/v1/admin/internal
+  # User's appeal lookup during a suspended login: no auth, takes any userId.
+  - /api/v1/admin/appeals/latest
+  # No routes here yet; blocked ahead of time so a new one is never public.
+  - /api/v1/orders/internal
+  - /api/v1/supplier/internal
 
 # `helm test` pod (not used by Argo CD).
 tests:

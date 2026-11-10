@@ -3,7 +3,12 @@ name: order
 image:
   name: foc/order-service
 port: 8083 # server.port in order-service/src/main/resources/application.yml
-healthPath: /health # application-k8s.yml serves Actuator's health here too; DOWN if the database is unreachable
+healthPath: /health # peers' helm test on the main Service port (server:/health)
+# Ping-only readiness: DB /health times out under full-run load and pulls pods
+# out of the Service (death spiral). Keep /health for monitoring / helm tests.
+readinessPath: /live # kubelet on managementPort (application-k8s.yml live group)
+livenessPath: /live # kubelet on managementPort (ping only)
+managementPort: 8084 # separate Tomcat; probes must not share API worker threads
 database:
   enabled: true # Secret order-db (charts/foc-database, ADR-0010); read via secretEnv below
 kafka:
@@ -28,8 +33,6 @@ secretEnv:
   PGDATABASE: { secret: order-db, key: PGDATABASE }
   PGUSER: { secret: order-db, key: PGUSER }
   PGPASSWORD: { secret: order-db, key: PGPASSWORD }
-  ORDER_USER_LOOKUP_TOKEN:
-    { secret: order-user-lookup, key: ORDER_USER_LOOKUP_TOKEN }
 resources: # a JVM needs more than the chart default
   requests:
     cpu: 100m

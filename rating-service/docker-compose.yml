@@ -1,3 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5)
+# Scope: Generated the local Postgres and app containers.
+# Reviewed by Ngooi Jun Sen.
+
 # Service-local dev dependencies for rating-service.
 # Runs Postgres and the app. The app container uses the build stage of the
 # Dockerfile (tsx watch, live reload through the bind mounts) and applies

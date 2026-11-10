@@ -1,3 +1,8 @@
+%% AI Assistance Disclosure
+%% Tool: Cursor (Auto), date: 2026-10-15
+%% Scope: Documentation wording for Order Service under author-fixed design.
+%% Author review: Varun Sivakumar generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+
 sequenceDiagram
     actor Caller
     participant Orders as Order service
@@ -24,4 +29,4 @@ sequenceDiagram
     Caller->>Orders: GET /api/v1/orders/requests/past
     Orders->>DB: requester ACKNOWLEDGED, UNACKNOWLEDGED, COMPLETED, EXPIRED, CANCELLED rows, newest request_time first
     Caller->>Orders: GET /api/v1/orders/alerts
-    Orders->>DB: caller alerts with notify_requester true, newest first
+    Orders->>DB: caller alerts (notify_requester or notify_courier), newest first

@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Cursor (Auto), date: 2026-10-15
+ * Scope: Implementation assistance for Order Service REST layer under author-fixed requirements and architecture.
+ * Author review: Varun Sivakumar generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+ */
+
 package sg.edu.nus.cs3219.order.rest;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,6 +32,6 @@ public class AlertController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        return queries.alerts(caller, page, size).map(AlertResponse::from);
+        return queries.alerts(caller, page, size).map(alert -> AlertResponse.from(alert, caller.userId()));
     }
 }

@@ -1,3 +1,11 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated the Drizzle schema: grants, ratings, running totals, the
+ *        outbox, and deleted users.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
 import { sql } from 'drizzle-orm';
 import {
   bigserial,
@@ -29,8 +37,17 @@ export const ratingGrant = pgTable(
     rateeRole: ratingRole('ratee_role').notNull(),
     eventId: uuid('event_id').notNull().unique(),
     grantedAt: timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
+    // Set when the rater skips in the modal; hides the grant from /me/pending.
+    skippedAt: timestamp('skipped_at', { withTimezone: true }),
   },
-  (t) => [primaryKey({ columns: [t.orderId, t.raterId] })],
+  (t) => [
+    primaryKey({ columns: [t.orderId, t.raterId] }),
+    // GET /me/pending: one rater's unskipped grants, oldest first. The primary
+    // key starts with order_id, so it can't serve a lookup by rater.
+    index('rating_grant_pending_idx')
+      .on(t.raterId, t.grantedAt)
+      .where(sql`${t.skippedAt} is null`),
+  ],
 );
 
 // Raw submissions, kept for disputes or recomputing (F1.2). One per grant (NFR2.1).
@@ -39,7 +56,9 @@ export const rating = pgTable(
   {
     ratingId: bigserial('rating_id', { mode: 'number' }).primaryKey(),
     orderId: uuid('order_id').notNull(),
-    raterId: uuid('rater_id').notNull(),
+    // Null once the rater deletes their account: the score still counts towards
+    // the ratee's average, but no longer says who gave it (decision 2026-11-09).
+    raterId: uuid('rater_id'),
     raterRole: ratingRole('rater_role').notNull(),
     rateeId: uuid('ratee_id').notNull(),
     rateeRole: ratingRole('ratee_role').notNull(),
@@ -83,6 +102,14 @@ export const outbox = pgTable(
   },
   (t) => [index('outbox_unsent_idx').on(t.outboxId).where(sql`${t.sentAt} is null`)],
 );
+
+// Users whose account was deleted (UserDeleted on foc.user.status). Their grants,
+// received ratings and total are removed and their given ratings anonymised;
+// this row stays so a late or replayed grant for them is ignored (User F5).
+export const deletedUser = pgTable('deleted_user', {
+  userId: uuid('user_id').primaryKey(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export type RatingGrant = typeof ratingGrant.$inferSelect;
 export type NewRatingGrant = typeof ratingGrant.$inferInsert;

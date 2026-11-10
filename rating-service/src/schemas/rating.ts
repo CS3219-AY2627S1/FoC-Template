@@ -1,3 +1,10 @@
+/**
+ * AI Assistance Disclosure
+ * Tool: Claude Code (Claude Opus 5.5)
+ * Scope: Generated TypeBox request and response schemas for the rating routes.
+ * Reviewed by Ngooi Jun Sen.
+ */
+
 import { type Static, Type } from '@sinclair/typebox';
 
 // Each schema is both the runtime JSON Schema and, via Static<>, the TS type.
@@ -29,18 +36,6 @@ export const UserRatingResponse = Type.Object({
   count: Type.Integer(),
 });
 export type UserRatingResponse = Static<typeof UserRatingResponse>;
-
-// POST /internal/batch: Badges' daily poll sends one page of user IDs at a time.
-export const BATCH_MAX_USERS = 100;
-
-export const BatchRatingsBody = Type.Object(
-  { userIds: Type.Array(Uuid, { maxItems: BATCH_MAX_USERS }) },
-  { additionalProperties: false },
-);
-export type BatchRatingsBody = Static<typeof BatchRatingsBody>;
-
-export const BatchRatingsResponse = Type.Object({ ratings: Type.Array(UserRatingResponse) });
-export type BatchRatingsResponse = Static<typeof BatchRatingsResponse>;
 
 export const SubmitRatingBody = Type.Object(
   {

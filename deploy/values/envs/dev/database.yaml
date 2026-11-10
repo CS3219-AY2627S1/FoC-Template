@@ -14,3 +14,5 @@ services: # same list as var.databases in infra/nonprod/aws
   credit: {}
   order: {}
   admin: {}
+  rating: {}
+  badges: {}

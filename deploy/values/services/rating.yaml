@@ -16,6 +16,3 @@ migrate:
   command: ["npm", "run", "db:migrate"]
 mesh: # who may call rating (ADR-0012)
   callers: [gateway, order] # /api/v1/rating/... for the logged-in user; Order looks up averages
-  internal:
-    # Badges' daily reconciliation poll (POST /api/v1/rating/internal/batch).
-    - { path: /api/v1/rating/internal, callers: [badges] }

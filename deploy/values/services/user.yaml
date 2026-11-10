@@ -13,14 +13,14 @@ env:
   # poll a bot, so user stays on one replica; set false on any extra ones.
   TELEGRAM_POLLING_ENABLED: "true"
   TELEGRAM_RESEND_COOLDOWN_SECONDS: "60"
+  # Report and appeal intake (src/admin-intake.ts); without it both answer 503.
+  ADMIN_SERVICE_BASE_URL: http://admin:8084
 migrate:
   enabled: true # runs before each deploy (ADR-0011); image: the Dockerfile's `migrate` stage
   command: ["node_modules/.bin/prisma", "migrate", "deploy"]
 secretEnv:
   # Signs one-time passwords; the app refuses to start in production without it.
   OTP_SECRET: { secret: user-otp, key: OTP_SECRET }
-  ORDER_USER_LOOKUP_TOKEN:
-    { secret: order-user-lookup, key: ORDER_USER_LOOKUP_TOKEN }
   # The bot, from @BotFather. Optional: without it Telegram verification
   # answers 503 TELEGRAM_NOT_CONFIGURED. One bot per environment (two pollers on
   # one bot fight over updates). Locally: kubectl -n foc create secret generic
@@ -32,6 +32,8 @@ secretEnv:
 mesh: # who may call user (ADR-0012)
   callers: [gateway, admin] # admin: list / promote / suspend / reinstate users
   internal:
-    # Envoy's /internal/authorize check.
-    - { path: /api/v1/user/internal, callers: [gateway] }
+    # Envoy authorize + Order telegram lookup. Order must be on the broader
+    # /internal prefix too: overlapping PathPrefix routes can otherwise pick
+    # the gateway-only rule and Order create fails with USER_FAILED 503.
+    - { path: /api/v1/user/internal, callers: [gateway, order] }
     - { path: /api/v1/user/internal/users, callers: [order] } # Telegram lookup

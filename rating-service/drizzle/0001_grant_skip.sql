@@ -1,0 +1,1 @@
+ALTER TABLE "rating_grant" ADD COLUMN "skipped_at" timestamp with time zone;
