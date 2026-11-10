@@ -1486,3 +1486,18 @@ commit=False)` so the settlement and its task result commit once,
 - Author review: `tsc`, `eslint` (only pre-existing warnings) and `vite build`
   pass; order-service repository tests pass; Playwright verified both create and
   edit payloads submit null coordinates after typing a new address.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Open Google Maps synchronously from the deliveries page. The Navigate
+  action now reads the already-loaded supplier from `useSuppliers` instead of
+  awaiting `suppliersApi.get`, so `window.open` runs inside the click handler and
+  is not blocked as a popup. Removed the per-row navigation loading state.
+  Files: `frontend/src/pages/deliveries/MyDeliveries.tsx`.
+- Prompt(s): "2) Navigate can be blocked as a popup: window.open runs after an
+  await suppliersApi.get(...). Use suppliers[order.supplier_id] from
+  useSuppliers, which is already loaded, so no fetch is needed."
+- Author review: `tsc`, `eslint` (only pre-existing warnings) and `vite build`
+  pass. Playwright verified both stages open Google Maps with the expected
+  destinations and that clicking Navigate makes no additional supplier request.

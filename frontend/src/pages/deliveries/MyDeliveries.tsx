@@ -24,7 +24,6 @@ import {
   type OrderResponse,
   ordersApi,
   parseUtcDate,
-  suppliersApi,
 } from "../../lib/api";
 import { useSuppliers } from "../../lib/people";
 
@@ -42,7 +41,6 @@ export default function MyDeliveries() {
   const [loadingCompleted, setLoadingCompleted] = useState(false);
 
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
-  const [navigatingId, setNavigatingId] = useState<string | null>(null);
   const [deliveryOrderId, setDeliveryOrderId] = useState<string | null>(null);
 
   const navigate = useNavigate();
@@ -159,38 +157,31 @@ export default function MyDeliveries() {
       });
   }
 
-  async function handleNavigate(order: OrderResponse) {
-    setNavigatingId(order.order_id);
-    try {
-      let destination: string;
+  function handleNavigate(order: OrderResponse) {
+    let destination: string;
 
-      if (order.status === "PICKED_UP") {
-        // Second stage: pick up -> delivery.
-        destination =
-          order.delivery_latitude != null && order.delivery_longitude != null
-            ? `${order.delivery_latitude},${order.delivery_longitude}`
-            : order.delivery_location;
-      } else {
-        // First stage: current location -> supplier (pickup point).
-        destination = order.pickup_location;
-        try {
-          const supplier = await suppliersApi.get(order.supplier_id);
-          if (supplier.latitude != null && supplier.longitude != null) {
-            destination = `${supplier.latitude},${supplier.longitude}`;
-          }
-        } catch {
-          // Fall back to the pickup address text when the lookup fails.
-        }
+    if (order.status === "PICKED_UP") {
+      // Second stage: pick up -> delivery.
+      destination =
+        order.delivery_latitude != null && order.delivery_longitude != null
+          ? `${order.delivery_latitude},${order.delivery_longitude}`
+          : order.delivery_location;
+    } else {
+      // First stage: current location -> supplier (pickup point). Use the
+      // already-loaded supplier so window.open stays inside the click handler;
+      // browsers block popups opened after an await.
+      destination = order.pickup_location;
+      const supplier = suppliers[order.supplier_id];
+      if (supplier?.latitude != null && supplier.longitude != null) {
+        destination = `${supplier.latitude},${supplier.longitude}`;
       }
-
-      const url = new URL("https://www.google.com/maps/dir/");
-      url.searchParams.set("api", "1");
-      url.searchParams.set("destination", destination);
-      url.searchParams.set("travelmode", "walking");
-      window.open(url.toString(), "_blank", "noopener,noreferrer");
-    } finally {
-      setNavigatingId(null);
     }
+
+    const url = new URL("https://www.google.com/maps/dir/");
+    url.searchParams.set("api", "1");
+    url.searchParams.set("destination", destination);
+    url.searchParams.set("travelmode", "walking");
+    window.open(url.toString(), "_blank", "noopener,noreferrer");
   }
 
   function renderRow(order: OrderResponse, showActions: boolean) {
@@ -262,7 +253,6 @@ export default function MyDeliveries() {
                   size="xs"
                   variant="light"
                   leftSection={<IconRoute size={14} />}
-                  loading={navigatingId === order.order_id}
                   onClick={() => handleNavigate(order)}
                 >
                   Navigate
