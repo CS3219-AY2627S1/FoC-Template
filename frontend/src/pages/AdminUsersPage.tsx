@@ -9,7 +9,7 @@
  * screen).
  *
  * Reads and acts through the Admin Service (GET /api/v1/admin/users and the
- * promote, suspend and reinstate endpoints).
+ * promote, demote, suspend and reinstate endpoints).
  *
  * The open reports and appeals queues sit above the table
  * (components/admin/ModerationQueues).
@@ -26,6 +26,7 @@ import { Icon } from '../components/ui/Icon';
 import { errorMessage } from '../lib/api';
 import { useAdminUserSearch } from '../lib/useAdminUserSearch';
 import {
+  demoteUser,
   promoteUser,
   reinstateUser,
   suspendUser,
@@ -45,6 +46,7 @@ type Pending =
   | { kind: 'suspend'; user: AdminUser }
   | { kind: 'reinstate'; user: AdminUser }
   | { kind: 'promote'; user: AdminUser }
+  | { kind: 'demote'; user: AdminUser }
   | null;
 
 export function AdminUsersPage() {
@@ -87,6 +89,7 @@ export function AdminUsersPage() {
     setActionError(null);
     try {
       if (kind === 'promote') await promoteUser(user.userId);
+      if (kind === 'demote') await demoteUser(user.userId);
       if (kind === 'suspend') await suspendUser(user.userId);
       if (kind === 'reinstate') await reinstateUser(user.userId);
       setPending(null);
@@ -159,7 +162,6 @@ export function AdminUsersPage() {
               <tr>
                 <th scope="col">User</th>
                 <th scope="col">Status</th>
-                <th scope="col">Credits</th>
                 <th scope="col" className={styles.actionsHead}>
                   Actions
                 </th>
@@ -186,13 +188,19 @@ export function AdminUsersPage() {
                     <td data-label="Status">
                       <span className={styles[user.status.toLowerCase()]}>{user.status}</span>
                     </td>
-                    <td className={styles.credits} data-label="Credits">
-                      {user.credits ?? '—'}
-                    </td>
                     <td>
                       <div className={styles.actions}>
                         {/* A suspended account cannot be promoted, and an
-                            admin has nothing to be promoted to. */}
+                            admin has nothing to be promoted to. The signed-in
+                            admin never sees Demote on their own row. */}
+                        {user.isAdmin && !isMe ? (
+                          <Button
+                            variant="secondary"
+                            onClick={() => setPending({ kind: 'demote', user })}
+                          >
+                            Demote
+                          </Button>
+                        ) : null}
                         {suspended || user.isAdmin ? null : (
                           <Button
                             variant="secondary"
@@ -244,7 +252,7 @@ export function AdminUsersPage() {
         </div>
       ) : null}
 
-      {/* NFR9.1.1: suspension and promotion both ask first. */}
+      {/* NFR9.1.1: suspension, promotion and demotion all ask first. */}
       <ConfirmDialog
         open={pending !== null}
         title={
@@ -252,7 +260,9 @@ export function AdminUsersPage() {
             ? 'Suspend this account?'
             : pending?.kind === 'reinstate'
               ? 'Reinstate this account?'
-              : 'Make this person an admin?'
+              : pending?.kind === 'demote'
+                ? 'Demote this admin?'
+                : 'Make this person an admin?'
         }
         consequence={
           pending === null ? null : pending.kind === 'suspend' ? (
@@ -266,10 +276,15 @@ export function AdminUsersPage() {
               {pending.user.name} can log in and act again, within a minute. Their open appeal,
               if any, is closed.
             </>
+          ) : pending.kind === 'demote' ? (
+            <>
+              {pending.user.name} becomes a regular user and loses the admin area. User Service
+              updates their role and signs them out. Their account status stays the same.
+            </>
           ) : (
             <>
               {pending.user.name} gains the whole admin area, including suspending other people
-              and resolving disputes. There is no way to demote someone yet.
+              and resolving disputes. Another admin can demote them later.
             </>
           )
         }
@@ -278,9 +293,11 @@ export function AdminUsersPage() {
             ? 'Suspend'
             : pending?.kind === 'reinstate'
               ? 'Reinstate'
-              : 'Make admin'
+              : pending?.kind === 'demote'
+                ? 'Demote'
+                : 'Make admin'
         }
-        destructive={pending?.kind === 'suspend'}
+        destructive={pending?.kind === 'suspend' || pending?.kind === 'demote'}
         busy={working}
         onConfirm={confirmPending}
         onCancel={() => setPending(null)}

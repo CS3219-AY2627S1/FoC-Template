@@ -20,12 +20,6 @@ export interface AdminUser {
   email: string;
   status: AdminAccountStatus;
   isAdmin: boolean;
-  /**
-   * TODO(credit): the mockup shows a balance per user. Credit exposes
-   * `/credit/me/balance` for the signed-in person only; nothing lets an
-   * admin read someone else's, so this is absent from real responses.
-   */
-  credits?: number;
 }
 
 /** The User Service's search page size (ADMIN_SEARCH_PAGE_SIZE). */
@@ -104,6 +98,15 @@ export async function fetchAdminUser(userId: string): Promise<AdminUser | null> 
 /** Admin F1.1. Admin calls the User Service to apply the role change. */
 export async function promoteUser(userId: string): Promise<void> {
   await api.post(`/admin/users/${encodeURIComponent(userId)}/promote`);
+  clearAdminUserCache();
+}
+
+/**
+ * Sets the account back to a regular user. Admin Service relays
+ * `{ role: "user" }` to User Service, which stores the role and signs them out.
+ */
+export async function demoteUser(userId: string): Promise<void> {
+  await api.post(`/admin/users/${encodeURIComponent(userId)}/demote`);
   clearAdminUserCache();
 }
 
