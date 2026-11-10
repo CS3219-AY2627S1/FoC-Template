@@ -1,5 +1,5 @@
 image:
-  tag: "89c5dae89fcdf1652826b5569d1647e87f9d9b07" # git SHA, set by deploy/push-dev.sh
+  tag: "e30d3f1ac000b9f608688041207ffa34c9a42d12" # git SHA, set by deploy/push-dev.sh
 autoscaling:
   enabled: true
   # Idle/dev. Full-run peak needs min=max=8 — see load-test/README.md
