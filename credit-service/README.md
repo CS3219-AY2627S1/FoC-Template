@@ -43,7 +43,7 @@ app/
 │   ├── credit_service.py # all credit business logic
 │   ├── publisher.py      # publishes reservation events (best-effort)
 │   └── consumer.py       # consumes order + user-registered events
-├── observability/        # metrics, structured logs, readiness, JSON summary
+├── observability/        # metrics, structured logs, readiness
 ├── models/               # CreditAccount, CreditReservation, CreditTransaction,
 │                         # CreditTaskResult (task-id idempotency)
 ├── schemas/              # Pydantic DTOs + interop event copies
@@ -64,7 +64,6 @@ here). Caller identity comes exclusively from the gateway-injected
 | `POST` | `/credits/reservations/{id}/amend` | owner or admin | F2.3 |
 | `POST` | `/credits/reservations/{id}/transfer` | owner or admin | F3 (sync path) |
 | `POST` | `/credits/reservations/{id}/release` | owner or admin | F4 (sync path) |
-| `GET` | `/credits/observability/summary` | admin | N2H: metrics JSON view |
 | `GET` | `/metrics` | none (internal, scraped over `foc-net`) | N2H: Prometheus |
 | `GET` | `/health/ready` | none | N2H: DB + broker readiness |
 
@@ -136,15 +135,12 @@ Measurement-driven availability work, scoped to this service:
   last-message timestamp, DB pool occupancy and credit totals.
 - `GET /health/ready` — DB + broker readiness (`503` when degraded).
   `GET /health` is unchanged.
-- `GET /credits/observability/summary` (admin) — one JSON block for display:
-  availability, p50/p95/p99 per route, error codes, business counters, saga,
-  events, consumer freshness, pool, SLO/error budget.
 - Structured JSON logs (`LOG_JSON=true`) carry `request_id` (echoed back as
   `X-Request-Id`), `user_id`, and `order_id` / `task_id` for consumed events.
 - `make obs-up` starts the optional Prometheus + Grafana profile with a
   provisioned dashboard and alert rules; `make obs-load` generates traffic.
   `scripts/observability-demo.py` drives every metric family without Docker and
-  prints a coverage table (see `docs/observability.md` §5).
+  prints the resulting samples (see `docs/observability.md` §5).
 
 Full write-up, metric reference and the three "metric → decision" stories:
 [`docs/observability.md`](../docs/observability.md).
@@ -159,4 +155,4 @@ make test-credit-service
 Database: `credit-db` (PostgreSQL). Exposes `GET /health`.
 
 > Status: **implemented** per the D1 backlog (Credit F1–F5, N1–N2) plus the
-> observability N2H (metrics, structured logs, readiness, JSON summary).
+> observability N2H (metrics, structured logs, readiness).

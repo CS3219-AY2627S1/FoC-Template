@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # AI-influenced: implemented with AI assistance; see ai/usage-log.md.
-"""Exercise every credit-service metric and show the JSON display endpoint.
+"""Exercise every credit-service metric and print the /metrics samples.
 
 This is the observability self-test / demo. It runs the real FastAPI app
 in-process (TestClient) against in-memory sqlite with a stubbed AMQP transport,
@@ -14,18 +14,16 @@ Usage (from the repo root):
     credit-service/.venv/bin/python     scripts/observability-demo.py   # POSIX
 
 What it proves:
-  1. the three new endpoints exist and answer;
+  1. the new endpoints exist and answer;
   2. each error-envelope code (401/403/404/409 conflict/409 insufficient_credits/
      422 validation_error) is produced and counted under its own label;
   3. every business / saga / event / consumer outcome family appears in
-     /metrics and in GET /credits/observability/summary;
-  4. the summary covers 100% of the exposed metric families (coverage block).
+     /metrics.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import sys
 from datetime import UTC, datetime
@@ -41,12 +39,14 @@ logging.getLogger("app").addHandler(logging.NullHandler())
 logging.getLogger("app").propagate = False
 
 from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 
 from app.config import settings  # noqa: E402
 from app.db import Base, get_session  # noqa: E402
 from app.errors import NotFoundError  # noqa: E402
 from app.main import app  # noqa: E402
+from app.models.account import CreditAccount  # noqa: E402
 from app.models.task_result import CreditTaskResult, TaskResultKind, TaskResultOutcome  # noqa: E402
 from app.observability import health as broker_health  # noqa: E402
 from app.observability import metrics  # noqa: E402
@@ -55,8 +55,6 @@ from app.services import publisher  # noqa: E402
 from app.services.consumer import CreditEventConsumer  # noqa: E402
 from app.services.credit_service import CreditService  # noqa: E402
 from foc_shared.events import OrderEvent, OrderEventType  # noqa: E402
-
-ADMIN = {"X-User-Id": "admin-1", "X-User-Role": "admin"}
 
 
 # ── stubbed AMQP transport (records "broker down" like the real failure) ─────
@@ -170,7 +168,7 @@ section("1. NEW ENDPOINTS")
 print("  GET   /metrics                       (Prometheus text; include_in_schema=False, scraped over foc-net)")
 openapi_paths = client.get("/openapi.json").json()["paths"]
 for path, operations in sorted(openapi_paths.items()):
-    if path in {"/health/ready", "/credits/observability/summary"}:
+    if path == "/health/ready":
         methods = ",".join(sorted(method.upper() for method in operations))
         print(f"  {methods:<5} {path}")
 
@@ -179,7 +177,6 @@ for path, operations in sorted(openapi_paths.items()):
 section("2. HTTP SCENARIOS (every error-envelope code)")
 show("GET /credits/alice/balance (no identity)", call("GET", "/credits/alice/balance", user=None), "401 unauthorized")
 show("GET /credits/bob/balance as alice", call("GET", "/credits/bob/balance", user="alice"), "403 forbidden")
-show("GET /credits/observability/summary as alice", call("GET", "/credits/observability/summary", user="alice"), "403 forbidden")
 show("GET /credits/ghost/balance as admin", call("GET", "/credits/ghost/balance", user="admin-1", role="admin"), "404 not_found")
 
 reserve_a = reserve("order-a", 10)
@@ -493,43 +490,6 @@ for line in exposition.text.splitlines():
         continue
     print(f"  {line}")
 
-# ── 7. the JSON display endpoint ──────────────────────────────────────────
-
-section("7. GET /credits/observability/summary (admin)")
-summary_response = client.get("/credits/observability/summary", headers=ADMIN)
-print("  status:", summary_response.status_code)
-body = summary_response.json()
-coverage_block = body.pop("coverage")
-print(json.dumps(body, indent=2, sort_keys=False))
-
-# ── 8. per-function statistics + metric coverage ──────────────────────────
-
-section("8. PER-FUNCTION STATISTICS")
-print(f"  availability            : {body['slo']['availability_actual']}  (target {body['slo']['availability_target']})")
-print(f"  requests                : {body['http']['total_requests']}  {body['http']['requests_by_class']}")
-print(f"  latency p50/p95/p99 (s) : {body['http']['latency_seconds']['p50']} / "
-      f"{body['http']['latency_seconds']['p95']} / {body['http']['latency_seconds']['p99']}")
-print(f"  error codes             : {body['errors_by_code']}")
-print(f"  reservations            : {body['business']['reservations']}")
-print(f"  amendments              : {body['business']['amendments']}")
-print(f"  transfers               : {body['business']['transfers']}")
-print(f"  releases                : {body['business']['releases']}")
-print(f"  duplicate suppressed    : {body['business']['duplicate_suppressed']}")
-print(f"  saga tasks              : {body['saga']['tasks']}")
-print(f"  saga retries exhausted  : {body['saga']['retries_exhausted']}")
-print(f"  events published        : {body['events']['published']}")
-print(f"  event failures          : {body['events']['failed_total']}")
-print(f"  consumer queues         : {[(q['queue'], q['messages'], q['requeues']) for q in body['consumer']['queues']]}")
-print(f"  database                : accounts={body['database']['accounts_total']} "
-      f"available={body['database']['available_balance_sum']} "
-      f"reserved={body['database']['reserved_balance_sum']} pool={body['database']['pool']}")
-
-section("9. COVERAGE: /metrics -> summary")
-print(f"  metrics exposed: {coverage_block['metrics_exposed']}   covered: {coverage_block['metrics_covered']}")
-print(f"  missing        : {coverage_block['missing']}")
-for family, field in coverage_block["field_by_metric"].items():
-    print(f"  [{'OK' if family not in coverage_block['missing'] else 'MISSING':>7}] {family:<42} -> {field}")
-
 expected_codes = {
     "unauthorized",
     "forbidden",
@@ -538,17 +498,29 @@ expected_codes = {
     "insufficient_credits",
     "validation_error",
 }
-seen = set(body["errors_by_code"])
-section("10. ASSERTIONS")
+seen = {str(row["code"]) for row in metrics.counter_table(metrics.HTTP_ERRORS) if row["value"]}
+section("7. ASSERTIONS")
 print(f"  error codes produced : {sorted(seen)}")
 print(f"  all expected codes   : {sorted(expected_codes)}")
 assert expected_codes <= seen, expected_codes - seen
-assert coverage_block["missing"] == []
-assert coverage_block["metrics_covered"] == coverage_block["metrics_exposed"]
 
-database = body["database"]
-minted = settings.initial_credit_allocation * database["accounts_total"]
-held = database["available_balance_sum"] + database["reserved_balance_sum"]
+async def balance_totals() -> tuple[int, int, int]:
+    async with maker() as session:
+        row = (
+            await session.execute(
+                select(
+                    func.coalesce(func.sum(CreditAccount.available_balance), 0),
+                    func.coalesce(func.sum(CreditAccount.reserved_balance), 0),
+                    func.count(),
+                ).select_from(CreditAccount)
+            )
+        ).one()
+    return int(row[0]), int(row[1]), int(row[2])
+
+
+available_sum, reserved_sum, accounts_total = asyncio.run(balance_totals())
+minted = settings.initial_credit_allocation * accounts_total
+held = available_sum + reserved_sum
 print(f"  credit conservation  : available+reserved={held} == allocation*accounts={minted}")
 assert held == minted
-print("  OK: every error code exercised, every metric covered, credits conserved.")
+print("  OK: every error code exercised, credits conserved.")

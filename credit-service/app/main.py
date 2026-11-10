@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 
-from app.api.routes import credits, credits_observability, health
+from app.api.routes import credits, health
 from app.db import get_session, init_db
 from app.errors import register_exception_handlers
 from app.observability import metrics
@@ -35,5 +35,4 @@ metrics.OBS.install(
 )
 register_exception_handlers(app)
 app.include_router(health.router)
-app.include_router(credits_observability.router)  # /credits/observability/summary
 app.include_router(credits.router)

@@ -1,5 +1,5 @@
 # AI-influenced: implemented with AI assistance; see ai/usage-log.md.
-"""Tests for the observability layer (metrics, readiness, JSON summary).
+"""Tests for the observability layer (metrics, readiness).
 
 Counters are process-global, so every assertion here is a *delta* read through
 ``metrics.metric_value`` — that keeps the tests independent of their order and
@@ -19,14 +19,12 @@ from app.db import Base, get_session
 from app.main import app
 from app.observability import health as broker_health
 from app.observability import metrics
-from app.observability.summary import METRIC_COVERAGE
 from app.schemas.interop import OrderActionEvent
 from app.services import publisher
 from app.services.consumer import CreditEventConsumer
 from app.services.credit_service import CreditService
 from foc_shared.events import OrderEvent, OrderEventType
 
-ADMIN = {"X-User-Id": "admin-1", "X-User-Role": "admin"}
 CLIENT = {"X-User-Id": "user-1", "X-User-Role": "client"}
 BALANCE_ROUTE = "/credits/{user_id}/balance"
 RESERVE_ROUTE = "/credits/reservations"
@@ -252,7 +250,7 @@ async def test_consumer_records_messages_and_freshness():
     assert last > 0
 
 
-# ── readiness + summary ──────────────────────────────────────────────────────
+# ── readiness ──────────────────────────────────────────────────────
 
 
 def test_readiness_reports_degraded_when_broker_is_down(client):
@@ -273,59 +271,3 @@ def test_readiness_is_ready_when_broker_is_connected(client):
         assert resp.json()["status"] == "ready"
     finally:
         broker_health.set_broker_state(False, "test finished")
-
-
-def test_summary_requires_admin(client):
-    resp = client.get("/credits/observability/summary", headers=CLIENT)
-    assert resp.status_code == 403
-    assert resp.json()["code"] == "forbidden"
-
-
-def test_summary_returns_the_display_json(client):
-    _reserve(client, amount=30, order_id="order-summary")
-    client.get("/credits/user-1/balance", headers=CLIENT)
-
-    resp = client.get("/credits/observability/summary", headers=ADMIN)
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-
-    assert set(body) >= {
-        "service",
-        "generated_at",
-        "uptime_seconds",
-        "http",
-        "business",
-        "saga",
-        "events",
-        "consumer",
-        "database",
-        "slo",
-        "health",
-        "coverage",
-    }
-    assert body["service"] == "credit-service"
-    assert body["http"]["total_requests"] >= 1
-    assert body["business"]["reservations"]["accepted"] >= 1
-    assert body["database"]["accounts_total"] == 2
-    assert body["database"]["reserved_balance_sum"] == 30
-    assert body["slo"]["availability_target"] == 0.99
-    assert isinstance(body["consumer"]["queues"], list)
-    assert {q["queue"] for q in body["consumer"]["queues"]} == {
-        "credit-service.order-events",
-        "credit-service.user-events",
-    }
-
-
-def test_summary_covers_every_metric_exposed_at_metrics(client):
-    """The display endpoint must cover /metrics: no family may be left behind."""
-    exposed = metrics.exposed_metrics()
-    assert len(exposed) == len(METRIC_COVERAGE), (
-        f"metric families changed ({len(exposed)} exposed vs {len(METRIC_COVERAGE)} "
-        "mapped): update METRIC_COVERAGE in app/observability/summary.py"
-    )
-    assert set(exposed) == set(METRIC_COVERAGE)
-
-    body = client.get("/credits/observability/summary", headers=ADMIN).json()
-    assert body["coverage"]["metrics_exposed"] == len(exposed)
-    assert body["coverage"]["missing"] == []
-    assert body["coverage"]["metrics_covered"] == body["coverage"]["metrics_exposed"]

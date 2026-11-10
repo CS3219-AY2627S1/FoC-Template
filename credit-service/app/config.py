@@ -21,8 +21,6 @@ class Settings(BaseSettings):
     # Observability: emit one JSON log line per record (containers) instead of a
     # human-readable line (local dev). See docs/observability.md.
     log_json: bool = False
-    # Availability SLO used by the summary endpoint's error-budget arithmetic.
-    availability_slo: float = 0.99
 
     @property
     def consumer_queues(self) -> list[str]:

@@ -22,7 +22,7 @@ Services with an error envelope additionally call
 
 | Service | Status | Prefix |
 | --- | --- | --- |
-| credit-service | ✅ metrics + readiness + JSON summary + all business/saga/consumer counters | `credit` |
+| credit-service | ✅ metrics + readiness + all business/saga/consumer counters | `credit` |
 | supplier-service | ✅ metrics + readiness + envelope `code` counters | `supplier` |
 | user-service | ✅ metrics + readiness (envelope codes on the user-service roadmap) | `user` |
 | order-service | ✅ metrics + readiness | `order` |
@@ -60,7 +60,7 @@ label, and each service's metric names carry its prefix.
 | Saga | Order Service task outcomes, retries exhausted | same (task happy/failure paths) |
 | Events | publish count/latency per routing key, success vs failure | credit `app/services/publisher.py` |
 | Consumer | messages by queue+result, requeue reasons, last-message timestamp, connection state | credit `app/services/consumer.py` |
-| Resources | DB pool in-use/size/overflow, reserved & available credit totals, account count | credit `app/db.py`, summary endpoint |
+| Resources | DB pool in-use/size/overflow, reserved & available credit totals, account count | credit `app/db.py` |
 
 Two design decisions worth knowing:
 
@@ -80,7 +80,6 @@ Two design decisions worth knowing:
 | `GET` | `/metrics` | none — internal only, scraped over `foc-net` | Prometheus exposition |
 | `GET` | `/health` | none | unchanged: `{"status": "ok"}` (compose healthcheck) |
 | `GET` | `/health/ready` | none | readiness; `503` when degraded (DB, plus broker for services that maintain broker state) |
-| `GET` | `/credits/observability/summary` | **admin** — internal only, not in the gateway's `EXPOSED_ROUTES` | the JSON "data display" block |
 
 The broker check is **opt-in** (`install(..., check_broker=False)`): only a
 service with a long-lived consumer keeps `set_broker_state()` up to date.
@@ -91,66 +90,6 @@ supplier-service (no broker use) check the DB only, so they do not report
 `/metrics` is not published through the API gateway on purpose: the gateway is
 default-deny (`app/exposed_routes.py`) and only forwards the client-facing
 routes listed there, so metrics stay an internal operational surface.
-
-### The JSON summary
-
-The summary is an **internal ops surface**, not a browser endpoint: the gateway
-does not expose `/api/credits/observability/summary` (only
-`GET /api/credits/{user_id}/balance` and `.../transactions` are public). Call it
-inside the network, or against a locally running service:
-
-```bash
-# local service (uvicorn on :8000)
-curl -s localhost:8000/credits/observability/summary \
-  -H "X-User-Id: <admin-id>" -H "X-User-Role: admin" | jq .
-```
-
-Shape (abridged):
-
-```json
-{
-  "service": "credit-service",
-  "generated_at": "2026-10-18T06:24:10+00:00",
-  "uptime_seconds": 812.44,
-  "window": "since process start",
-  "http": {
-    "total_requests": 412,
-    "requests_by_class": {"2xx": 388, "3xx": 0, "4xx": 24, "5xx": 0},
-    "server_error_rate": 0.0,
-    "availability": 1.0,
-    "latency_seconds": {"p50": 0.012, "p95": 0.031, "p99": 0.402, "mean": 0.019},
-    "routes": [
-      {"method": "POST", "route": "/credits/reservations",
-       "requests": 260, "error_responses": 20, "p95_seconds": 0.031}
-    ]
-  },
-  "errors_by_code": {"insufficient_credits": 18, "conflict": 6},
-  "business": {
-    "reservations": {"accepted": 210, "rejected_insufficient_credits": 18, "conflict": 6},
-    "transfers": {"ok": 30},
-    "releases": {"ok": 180},
-    "duplicate_suppressed": {"reservation": 6}
-  },
-  "saga": {"tasks": {"release:released": 4, "amend:amended": 1}, "retries_exhausted": {}},
-  "events": {"published": {"CreditReservationAccepted": {"ok": 198, "failed": 0}},
-             "failed_total": 0},
-  "consumer": {"queues": [
-    {"queue": "credit-service.order-events", "connected": true,
-     "last_message_age_seconds": 2.31, "messages": {"ok": 12},
-     "requeues": {"retry_scheduled": 0}}
-  ]},
-  "database": {"accounts_total": 42, "available_balance_sum": 3910,
-               "reserved_balance_sum": 120,
-               "pool": {"in_use": 1, "size": 5, "overflow": 0}},
-  "slo": {"availability_target": 0.99, "availability_actual": 1.0,
-          "server_error_rate": 0.0, "error_budget_remaining_fraction": 1.0},
-  "health": {"status": "ok", "broker_connected": true, "broker_error": null,
-             "stalled_queues": [], "stalled_after_seconds": 300.0}
-}
-```
-
-Percentiles are interpolated from the histogram buckets, so they are estimates
-(bucket width bounds the error) — good enough to pick a page, not a benchmark.
 
 ---
 
@@ -268,8 +207,6 @@ FOC_TOKEN=$TOKEN FOC_USER_ID=$UID_ make obs-load
 # 4. read the numbers without Grafana (internal surfaces: run inside the net)
 docker compose exec -T credit-service python -c \
   "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/metrics').read().decode()[:400])"
-docker compose exec -T credit-service python -c \
-  "import urllib.request as u; r=u.Request('http://localhost:8000/credits/observability/summary', headers={'X-User-Id':'admin','X-User-Role':'admin'}); print(u.urlopen(r).read().decode()[:400])"
 ```
 
 ### Self-test without Docker
@@ -279,16 +216,14 @@ AMQP transport) and drives every metric family to a non-zero value: all HTTP
 error-envelope codes, every business outcome label, all six duplicate-suppression
 OPS, all four saga outcomes, both retry-exhausted counters, all six event routing
 keys (including publish failures), and every consumer branch. It then prints
-`/metrics`, the JSON summary, and a coverage table proving the summary carries
-100% of the exposed metric families.
+the non-zero `/metrics` samples.
 
 ```bash
 credit-service/.venv/Scripts/python scripts/observability-demo.py   # Windows
 credit-service/.venv/bin/python     scripts/observability-demo.py   # POSIX
 ```
 
-It exits non-zero if an error code is missing, if any metric family is not
-covered by the summary, or if credits are not conserved
+It exits non-zero if an error code is missing or if credits are not conserved
 (`available + reserved == allocation × accounts`).
 
 Provisioned dashboard: `observability/grafana/dashboards/credit-service.json`

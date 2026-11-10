@@ -118,10 +118,6 @@ class CreditService:
             raise NotFoundError(f"No credit account exists for user '{user_id}'.")
         return account
 
-    async def balance_totals(self) -> dict[str, int]:
-        """Aggregate balances across all accounts (observability summary)."""
-        return await self._accounts.totals()
-
     # ── F2: reservations ─────────────────────────────────────────────────────
 
     async def reserve(self, *, user_id: str, order_id: str, amount: int) -> CreditReservation:

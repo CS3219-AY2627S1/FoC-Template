@@ -126,7 +126,6 @@ counter_table = OBS.table
 table_to_map = OBS.table_to_map
 histogram_stats = OBS.histogram_stats
 percentile = OBS.percentile
-http_summary = OBS.http_summary
 render = OBS.render
 exposed_metrics = OBS.exposed_metrics
 
@@ -192,56 +191,6 @@ def set_balance_gauges(
     RESERVED_BALANCE_SUM.set(reserved_balance_sum)
     AVAILABLE_BALANCE_SUM.set(available_balance_sum)
     ACCOUNTS_TOTAL.set(accounts_total)
-
-
-# ── Credit-specific views ─────────────────────────────────────────────────────
-
-
-def events_summary() -> dict[str, object]:
-    published: dict[str, dict[str, float]] = {}
-    for row in counter_table(EVENT_PUBLISH):
-        routing_key = str(row.get("routing_key", "unknown"))
-        result = str(row.get("result", "unknown"))
-        bucket = published.setdefault(routing_key, {"ok": 0.0, "failed": 0.0})
-        bucket[result] = bucket.get(result, 0.0) + float(row["value"])
-    failures = sum(bucket.get("failed", 0.0) for bucket in published.values())
-    stats = histogram_stats(EVENT_PUBLISH_DURATION)
-    return {
-        "published": {
-            key: {result: int(value) for result, value in counts.items()}
-            for key, counts in published.items()
-        },
-        "failed_total": int(failures),
-        "publish_latency_seconds": {"mean": stats["mean_seconds"], "p95": stats["p95_seconds"]},
-    }
-
-
-def consumer_summary(queues: tuple[str, ...]) -> dict[str, object]:
-    rows = []
-    for queue in queues:
-        last = metric_value(CONSUMER_LAST_MESSAGE, queue=queue)
-        messages: dict[str, int] = {}
-        for row in counter_table(CONSUMER_MESSAGES):
-            if row.get("queue") != queue:
-                continue
-            result = str(row.get("result", "unknown"))
-            messages[result] = messages.get(result, 0) + int(row["value"])
-        requeues: dict[str, int] = {}
-        for row in counter_table(CONSUMER_REQUEUES):
-            if row.get("queue") != queue:
-                continue
-            reason = str(row.get("reason", "unknown"))
-            requeues[reason] = requeues.get(reason, 0) + int(row["value"])
-        rows.append(
-            {
-                "queue": queue,
-                "connected": bool(metric_value(CONSUMER_CONNECTED, queue=queue)),
-                "last_message_age_seconds": round(time.time() - last, 3) if last else None,
-                "messages": messages,
-                "requeues": requeues,
-            }
-        )
-    return {"queues": rows}
 
 
 def configure_logging() -> None:

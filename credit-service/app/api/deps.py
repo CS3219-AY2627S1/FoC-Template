@@ -10,7 +10,7 @@ from fastapi import Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.errors import ForbiddenError, UnauthorizedError
+from app.errors import UnauthorizedError
 from app.services.credit_service import CreditService
 from foc_shared.auth import HEADER_USER_ID, HEADER_USER_ROLE, Role
 
@@ -43,12 +43,4 @@ async def get_credit_service(
     return CreditService(session)
 
 
-def require_admin(identity: Identity = Depends(require_identity)) -> Identity:
-    """Admin-only gate for operational endpoints (never client-asserted roles)."""
-    if identity.role != Role.ADMIN.value:
-        raise ForbiddenError("Administrator role required.")
-    return identity
-
-
 IdentityDep = Annotated[Identity, Depends(require_identity)]
-AdminDep = Annotated[Identity, Depends(require_admin)]
