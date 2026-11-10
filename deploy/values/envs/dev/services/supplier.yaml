@@ -1,5 +1,5 @@
 image:
-  tag: "5ec616ba9b86e8ead4eaae928dd4c7fa15d6de66" # git SHA, set by deploy/push-dev.sh
+  tag: "89c5dae89fcdf1652826b5569d1647e87f9d9b07" # git SHA, set by deploy/push-dev.sh
 autoscaling:
   enabled: true
   # Idle/dev. Full-run peak needs min=max=8 — see load-test/README.md
@@ -8,5 +8,5 @@ autoscaling:
   maxReplicas: 1
   targetCPUUtilization: 70
 resources:
-  requests: { cpu: 250m }
-  limits: { cpu: "1" }
+  requests: {cpu: 250m}
+  limits: {cpu: "1"}

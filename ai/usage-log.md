@@ -251,6 +251,8 @@ part along the expressway".
 | `order-service/bruno/` | `AI_ASSISTANCE.md` only |
 | `admin-service/app/**/*.py`, tests, config, Docker, scripts, docs | Per-file header |
 | `admin-service/alembic/versions/*.py` | `AI_ASSISTANCE.md` only (no revision edits) |
+| `supplier-service/src/**/*.ts`, tests, Prisma schema/seed, Docker, config | Per-file header |
+| `supplier-service/prisma/migrations/*.sql` | `AI_ASSISTANCE.md` only (no SQL edits) |
 | `load-test/k6/load.js`, inference notes | Per-file header |
 | `load-test` Helm + `setup/` | `load-test/AI_ASSISTANCE.md` |
 | `rating-service/src/**`, tests, scripts, config, Docker | Per-file header |

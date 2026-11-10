@@ -1,3 +1,8 @@
+// AI Assistance Disclosure
+// Tool: Cursor (Auto), date: 2026-11-09
+// Scope: Implementation assistance for Supplier Service Prisma schema/seed under author-fixed requirements and architecture.
+// Author review: Sahana Avantika generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -33,6 +38,7 @@ model Supplier {
   startingTime        String
   closingTime         String
   status              SupplierStatus @default(pending)
+  // Set only while status is rejected. Cleared on approved or pending.
   rejectionReason     String?
   createdByUserId     String?
   createdAt           DateTime       @default(now())

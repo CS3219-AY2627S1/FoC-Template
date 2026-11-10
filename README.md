@@ -54,13 +54,13 @@ microservice (`user-service/`, `supplier-service/`, `order-service/`,
 **Prohibited phases avoided:** requirements elicitation and prioritization;
 architecture and design decisions (service boundaries, order state machine,
 Kafka transactional outbox, schemas and interfaces, load-test profile and
-capacity approach, admin conflict/moderation design); idea generation for
-product features; drafting of decision rationales and trade-off
-justifications. Those were done by the authors. For Order Service and Load
-test, **Varun Sivakumar** owns those decisions. For Admin Service,
-**Sahana Avantika** owns those decisions. Cursor plans under
-[`ai/plans/`](ai/plans/) are author design notes reworded for execution, not
-AI-originated architecture.
+capacity approach, admin conflict/moderation design, supplier catalogue and
+moderation design); idea generation for product features; drafting of
+decision rationales and trade-off justifications. Those were done by the
+authors. For Order Service and Load test, **Varun Sivakumar** owns those
+decisions. For Admin Service and Supplier Service, **Sahana Avantika** owns
+those decisions. Cursor plans under [`ai/plans/`](ai/plans/) are author
+design notes reworded for execution, not AI-originated architecture.
 
 **Used for:**
 
@@ -72,9 +72,10 @@ AI-originated architecture.
 
 **Verification:** AI outputs for Order Service and Load test were reviewed,
 edited where needed, and tested by **Varun Sivakumar**. AI outputs for Admin
-Service were reviewed, edited where needed, and tested by **Sahana Avantika**.
-Each generated the ideas and designed the implementation for their services.
-The team remains accountable for correctness, security, and licensing.
+Service and Supplier Service were reviewed, edited where needed, and tested
+by **Sahana Avantika**. Each generated the ideas and designed the
+implementation for their services. The team remains accountable for
+correctness, security, and licensing.
 
 **Prompts / key exchanges:** see [`ai/usage-log.md`](ai/usage-log.md).
 Author design plans: [`ai/plans/`](ai/plans/).
@@ -116,6 +117,25 @@ deploy safety). Collection disclosure:
 [`admin-service/alembic/versions/AI_ASSISTANCE.md`](admin-service/alembic/versions/AI_ASSISTANCE.md).
 
 Plan: [`ai/plans/admin_service_plan.md`](ai/plans/admin_service_plan.md).
+Usage log: [`ai/usage-log.md`](ai/usage-log.md).
+
+### Supplier Service
+
+**Owner:** Sahana Avantika
+
+Sahana Avantika defined Supplier Service requirements and architecture (public
+catalogue for Order, permitted-user create, verified-admin edit/approve/reject/
+delete, rejection reasons, SupplierAction audit, gateway header rules, Prisma
+schema/seed). Cursor (Auto) assisted with implementation code, tests,
+config/Docker, and documentation under that design. Per-file
+`AI Assistance Disclosure` headers are on TypeScript sources, Prisma
+schema/seed, Docker/compose, and config.
+
+Prisma migration SQL files are **not** edited with in-file headers (checksum /
+deploy safety). Collection disclosure:
+[`supplier-service/prisma/migrations/AI_ASSISTANCE.md`](supplier-service/prisma/migrations/AI_ASSISTANCE.md).
+
+Plan: [`ai/plans/supplier_service_plan.md`](ai/plans/supplier_service_plan.md).
 Usage log: [`ai/usage-log.md`](ai/usage-log.md).
 
 ### Load test
