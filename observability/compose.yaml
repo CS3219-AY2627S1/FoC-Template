@@ -1,0 +1,51 @@
+# AI Assistance Disclosure: OpenAI Codex, 2026-11-10.
+# Scope: Optional local logging stack for the author-approved issue #66 plan.
+# Author review: Plan approved by Ron; implementation review pending.
+name: foc-observability
+
+services:
+  alloy:
+    image: grafana/alloy:v1.21.3
+    command: [run, --server.http.listen-addr=0.0.0.0:12345, --storage.path=/var/lib/alloy, /etc/alloy/config.alloy]
+    environment:
+      APP_COMPOSE_PROJECT: ${APP_COMPOSE_PROJECT:?Set APP_COMPOSE_PROJECT to the application Compose project name}
+    volumes:
+      - ./alloy.alloy:/etc/alloy/config.alloy:ro
+      # Trusted local collector only: :ro does NOT restrict Docker API permissions.
+      - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.7.9
+    command: [-config.file=/etc/loki/config.yaml]
+    volumes:
+      - ./loki.yaml:/etc/loki/config.yaml:ro
+      - loki-data:/loki
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.3.0
+    ports:
+      - 127.0.0.1:${GRAFANA_PORT:-3300}:3000
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in the gitignored observability/.env}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+    volumes:
+      - ./grafana/datasources.yaml:/etc/grafana/provisioning/datasources/loki.yaml:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+volumes:
+  alloy-data:
+  loki-data:
+  grafana-data:

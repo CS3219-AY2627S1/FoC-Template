@@ -1,0 +1,13 @@
+# AI Assistance Disclosure: OpenAI Codex, 2026-11-10.
+# Scope: Provision the local Loki data source for Grafana Explore (#66).
+# Author review: Plan approved by Ron; implementation review pending.
+apiVersion: 1
+
+datasources:
+  - name: FoC logs
+    uid: foc-loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: true
+    editable: false

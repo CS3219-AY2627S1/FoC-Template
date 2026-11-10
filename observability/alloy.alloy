@@ -1,0 +1,80 @@
+// AI Assistance Disclosure: OpenAI Codex, 2026-11-10.
+// Scope: Project-scoped existing-log collection and pre-storage filtering for #66.
+// Author review: Plan approved by Ron; implementation review pending.
+
+discovery.docker "application" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "5s"
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=" + sys.env("APP_COMPOSE_PROJECT")]
+  }
+}
+
+discovery.relabel "application" {
+  targets = discovery.docker.application.targets
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = "user-service|supplier-service|order-service|credit-service|frontend"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "project"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service_name"
+  }
+}
+
+// Docker's stdout/stderr label exists at read time, not discovery time.
+discovery.relabel "streams" {
+  targets = []
+  rule {
+    source_labels = ["__meta_docker_container_log_stream"]
+    target_label  = "stream"
+  }
+}
+
+loki.source.docker "application" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.relabel.application.output
+  relabel_rules = discovery.relabel.streams.rules
+  forward_to    = [loki.process.application.receiver]
+}
+
+loki.process "application" {
+  // nginx access output is stdout; unknown/missing frontend stream fails closed.
+  stage.match {
+    selector = "{service_name=\"frontend\",stream!=\"stderr\"}"
+    action   = "drop"
+  }
+  // nginx error context may also contain a client IP and full request URI.
+  stage.match {
+    selector = "{service_name=\"frontend\"}"
+    stage.replace {
+      expression = "(, client: .*)"
+      replace    = ", client: [REDACTED]"
+    }
+  }
+  // Defence in depth for familiar credentials; not a guarantee of anonymous logs.
+  stage.replace {
+    expression = "(?i)(Bearer[[:space:]]+[A-Za-z0-9._~+/=-]+)"
+    replace    = "Bearer [REDACTED]"
+  }
+  stage.replace {
+    expression = "(?i)(postgres(?:ql)?://[^[:space:]\"']+)"
+    replace    = "[REDACTED_DATABASE_URL]"
+  }
+  stage.label_keep {
+    values = ["project", "service_name", "stream"]
+  }
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
