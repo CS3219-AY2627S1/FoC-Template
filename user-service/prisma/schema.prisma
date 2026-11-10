@@ -1,0 +1,150 @@
+// AI Assistance Disclosure:
+// Tool: ChatGPT (Astra 6)
+// Date: approx. 2026-09-25
+// Scope: Helped write models for pending registrations, OTP requests, admin invitations, email changes, bootstrap state and the outbox, with unique constraints on user identities.
+// Author review: Reviewed, tested, and edited by Lim Shao Qi.
+
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  STUDENT
+  ADMIN
+}
+
+// Permanent bootstrap completion; intentionally not linked to a User.
+model BootstrapState {
+  key         String   @id
+  completedAt DateTime @default(now())
+}
+
+// Preserve eventId and payload on retries; only publication metadata changes.
+// No User relation: pending events must survive user lifecycle changes.
+model OutboxEvent {
+  eventId       String    @id @db.Uuid
+  payload       Json
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  publishedAt   DateTime? @db.Timestamptz(6)
+  attemptCount  Int       @default(0)
+  nextAttemptAt DateTime  @default(now()) @db.Timestamptz(6)
+  lastError     String?
+
+  @@index([publishedAt, nextAttemptAt, createdAt])
+}
+
+// Canonical email/phone CHECK constraints are maintained in SQL migrations.
+model User {
+  userId      String   @id @default(uuid())
+  email       String   @unique
+  username    String   @unique
+  password    String
+  phoneNumber String   @unique
+  role        Role     @default(STUDENT)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  refreshTokens          RefreshToken[]
+  pendingEmailChange     PendingEmailChange?
+  emailChangeOtpRequests EmailChangeOtpRequest[]
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) // Primary key for the RefreshToken table
+  tokenId   String    @unique // Unique identifier for the refresh token
+  tokenHash String    @unique // Actual hashed refresh token value
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Canonical email/phone CHECK constraints are maintained in SQL migrations.
+model PendingRegistration {
+  challengeId    String    @id @default(uuid())
+  email          String    @unique
+  username       String
+  phoneNumber    String
+  // Nullable so secrets can be cleared after consumption or expiry.
+  passwordHash   String?
+  otpHash        String?
+  expiresAt      DateTime
+  failedAttempts Int       @default(0)
+  emailSentAt    DateTime?
+  consumedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([expiresAt])
+}
+
+// A canonical email CHECK constraint is maintained in SQL migrations.
+model RegistrationOtpRequest {
+  id          String   @id @default(uuid())
+  // Independent of the challenge so replacing it cannot reset the request quota.
+  email       String
+  requestedAt DateTime @default(now())
+
+  @@index([email, requestedAt])
+  @@index([requestedAt])
+}
+
+// A canonical email CHECK constraint is maintained in SQL migrations.
+model AdminInvitation {
+  invitationId String   @id @default(uuid())
+  email        String   @unique
+  tokenHash    String   @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
+// A canonical email CHECK constraint is maintained in SQL migrations.
+model PendingEmailChange {
+  challengeId    String    @id @default(uuid())
+  userId         String    @unique
+  newEmail       String
+  otpHash        String?
+  expiresAt      DateTime
+  failedAttempts Int       @default(0)
+  emailSentAt    DateTime?
+  consumedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([newEmail])
+  @@index([expiresAt])
+}
+
+// Request history is independent of the challenge so replacing a code cannot
+// reset the hourly quota.
+model EmailChangeOtpRequest {
+  id          String   @id @default(uuid())
+  userId      String
+  email       String
+  requestedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId, requestedAt])
+  @@index([email, requestedAt])
+  @@index([requestedAt])
+}

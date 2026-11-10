@@ -1,0 +1,14 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (Claude Sonnet 5.5)
+# Date: 2026-11-10
+# Scope: Generated the Grafana dashboard provisioning provider.
+# Author review: Reviewed, tested, checked by the author.
+
+apiVersion: 1
+providers:
+  - name: FoC
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

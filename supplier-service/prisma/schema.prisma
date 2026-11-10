@@ -1,0 +1,73 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+// AI Assistance Disclosure:
+// Tool & model: GPT-6.1-Sol (high)
+// Disclosure date: 2026-11-11 (retrospective; original development dates not supplied)
+// Contributor: Duong Ngoc Mai
+// Scope: Supplier fields, activation status and opening-hours models used by supplier management.
+// Usage log: /ai/usage-log.md, Detailed AI Usage Log for Duong Ngoc Mai.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SupplierStatus {
+  ACTIVATED
+  DEACTIVATED
+}
+
+enum Day {
+  MONDAY 
+  TUESDAY
+  WEDNESDAY
+  THURSDAY 
+  FRIDAY 
+  SATURDAY
+  SUNDAY
+}
+
+model SupplierType { // initial data should include types "RETAIL", "FOOD", "FACILITIES"
+  id String @id @default(uuid())
+  type String @unique
+  suppliers Supplier[]
+
+  @@index([type])
+}
+
+model Supplier {
+  id String @id @default(uuid())
+  name String @unique
+  type String
+  status SupplierStatus @default(ACTIVATED)
+  building String
+  floor String
+  description String
+  address String
+  openingHours OpeningHours[]
+  latitude Float?
+  longitude Float?
+  imageUrl String? @default("/images/LocationImagePlaceholder.jpg")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supplierType SupplierType @relation(fields: [type], references: [type], onDelete: Cascade)
+}
+
+model OpeningHours {
+  id String @id @default(uuid()) // primary key for the opening hours table
+  supplierId String
+  day Day
+  openingTime DateTime @db.Time(0)
+  closingTime DateTime @db.Time(0)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId])
+}

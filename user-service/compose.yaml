@@ -1,0 +1,52 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Astra 6), Claude Code (Opus 5.5)
+# Date: approx. 2026-10-19, 2026-10-21
+# Scope: Generated the compose services for user-service and its Postgres 17 database with a healthcheck and depends_on: service_healthy.#        Add internal backend Docker networks to isolate internal communication.
+#        Add internal backend Docker networks to isolate internal communication.
+# Author review: Reviewed, tested, and edited by Lim Shao Qi; Amber Tan Junning.
+
+services:
+  # Source: Docker Hub Official Postgres Image — https://hub.docker.com/_/postgres
+  user-postgres:
+    image: postgres:17
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5434:5432"
+    environment:
+      POSTGRES_DB: ${USER_POSTGRES_DB:?Set USER_POSTGRES_DB in user-service/.env}
+      POSTGRES_USER: ${USER_POSTGRES_USER:?Set USER_POSTGRES_USER in user-service/.env}
+      POSTGRES_PASSWORD: ${USER_POSTGRES_PASSWORD:?Set USER_POSTGRES_PASSWORD in user-service/.env}
+    volumes:
+      # Store database files outside the container so recreating it retains data.
+      - user_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 2s
+      retries: 20
+
+  user-service:
+    build: .
+    restart: unless-stopped
+    # ports:
+    #   - "${PORT:?Set PORT in user-service/.env}:${PORT}"
+    # Inject user-service/.env values into the container at runtime.
+    env_file: .env
+    # These explicit values override matching entries supplied by env_file.
+    environment:
+      DATABASE_URL: postgresql://${USER_POSTGRES_USER}:${USER_POSTGRES_PASSWORD}@user-postgres:5432/${USER_POSTGRES_DB}?sslmode=disable
+      JWT_PRIVATE_KEY_PATH: /app/keys/private.pem
+      JWT_PUBLIC_KEY_PATH: /app/keys/public.pem
+    volumes:
+      # Bind host PEM files into the container read-only (:ro); keep the keys
+      # outside the image. Both files must exist before starting the service.
+      - ./keys/private.pem:/app/keys/private.pem:ro
+      - ./keys/public.pem:/app/keys/public.pem:ro
+    depends_on:
+      user-postgres:
+        condition: service_healthy
+
+volumes:
+  user_postgres_data:
+
+

@@ -1,0 +1,61 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Astra 6)
+# Date: approx. 2026-10-25
+# Scope: Generated the production compose override that pulls service images from ECR.
+# Author review: Reviewed, tested, and edited by Lim Shao Qi.
+
+# Later edit (2026-11-10, Claude Code / Claude Sonnet 5.5, pending author review): added the Grafana/Alloy production overrides below.
+
+# Production override: docker compose -f compose.yaml -f compose.prod.yaml ...
+# Images come from ECR (pushed by .github/workflows/deploy.yml); the SPA is served by S3/CloudFront.
+services:
+  user-service:
+    build: !reset null
+    image: ${ECR_REGISTRY:?Set ECR_REGISTRY in .env}/foc/user-service:${IMAGE_TAG:-latest}
+  supplier-service:
+    build: !reset null
+    image: ${ECR_REGISTRY:?Set ECR_REGISTRY in .env}/foc/supplier-service:${IMAGE_TAG:-latest}
+  order-service:
+    build: !reset null
+    image: ${ECR_REGISTRY:?Set ECR_REGISTRY in .env}/foc/order-service:${IMAGE_TAG:-latest}
+  credit-service:
+    build: !reset null
+    image: ${ECR_REGISTRY:?Set ECR_REGISTRY in .env}/foc/credit-service:${IMAGE_TAG:-latest}
+  notification-service:
+    build: !reset null
+    image: ${ECR_REGISTRY:?Set ECR_REGISTRY in .env}/foc/notification-service:${IMAGE_TAG:-latest}
+
+  # Centralized logging. Grafana stays on 127.0.0.1:3030; reach it with an SSH tunnel:
+  #   ssh -L 3030:localhost:3030 <user>@<EC2_HOST>
+  grafana:
+    environment:
+      # No default in production: a missing password fails the deploy before anything changes.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+
+  alloy:
+    environment:
+      LOG_ENV: production
+
+  # Served from S3 + CloudFront in production.
+  frontend:
+    profiles: ["local-only"]
+
+  # Replaces the frontend container's /api reverse proxy; CloudFront sends /api/* here.
+  gateway:
+    image: nginxinc/nginx-unprivileged:stable-alpine
+    restart: unless-stopped
+    volumes:
+      # Mount the folder, not the file: scp replaces nginx.conf with a new file,
+      # and a single-file mount would keep showing the old one after a reload.
+      - ./gateway:/etc/nginx/conf.d:ro
+    ports:
+      - "80:8080"
+    depends_on:
+      - user-service
+      - supplier-service
+      - order-service
+      - credit-service
+      - notification-service
+    networks:
+      - default # publishing a port needs a non-internal network
+      - backend

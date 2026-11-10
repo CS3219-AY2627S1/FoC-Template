@@ -1,0 +1,19 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Astra 6)
+# Date: approx. 2026-10-21
+# Scope: Generated the compose service that passes the required VITE_* build args and binds the frontend port to localhost.
+# Author review: Reviewed, tested, and edited by Lim Shao Qi.
+
+services:
+  frontend:
+    build:
+      context: .
+      args:
+        VITE_AUTH_API_BASE_URL: ${VITE_AUTH_API_BASE_URL:?Set VITE_AUTH_API_BASE_URL in frontend/.env}
+        VITE_SUPPLIER_API_BASE_URL: ${VITE_SUPPLIER_API_BASE_URL:?Set VITE_SUPPLIER_API_BASE_URL in frontend/.env}
+        VITE_ORDER_API_BASE_URL: ${VITE_ORDER_API_BASE_URL:?Set VITE_ORDER_API_BASE_URL in frontend/.env}
+        VITE_CREDIT_API_BASE_URL: ${VITE_CREDIT_API_BASE_URL:?Set VITE_CREDIT_API_BASE_URL in frontend/.env}
+        VITE_NOTIFICATION_API_BASE_URL: ${VITE_NOTIFICATION_API_BASE_URL:?Set VITE_NOTIFICATION_API_BASE_URL in frontend/.env}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:?Set FRONTEND_PORT in frontend/.env}:8080"

@@ -1,0 +1,50 @@
+{
+  "name": "user-service",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --import tsx --import ./test/setup.ts --experimental-test-module-mocks --test 'src/**/*.test.ts'",
+    "dev": "nodemon --exec \"tsx src/index.ts | pino-pretty\"",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:migrate": "prisma migrate dev --name init",
+    "db:generate": "prisma generate",
+    "db:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "amqplib": "^2.2.0",
+    "argon2": "^0.45.1",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^10.0.10",
+    "pg": "^8.23.0",
+    "pino": "^10.4.0",
+    "pino-http": "^11.0.0",
+    "prisma": "^7.10.0",
+    "zod": "^4.6.4"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.5.1",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.23.1",
+    "nodemon": "^3.1.14",
+    "pino-pretty": "^13.2.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

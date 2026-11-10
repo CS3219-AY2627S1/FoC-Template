@@ -10,6 +10,26 @@ out/
 *.pem
 *.key
 
+# Testing files
+postman/
+.postman/
+
 # OS
 .DS_Store
 Thumbs.db
+
+# Dependencies
+node_modules/
+
+# Generated files
+generated/
+*.generated.*
+
+# Uploaded supplier images
+**/uploads/
+
+# Prisma
+**/src/generated/
+
+# Local test seed scripts (contain hardcoded credentials)
+user-service/scripts/seed-test-user.mts

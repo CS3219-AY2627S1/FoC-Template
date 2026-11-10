@@ -1,0 +1,161 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Astra 6), Claude Code (Opus 5.5)
+# Date: approx. 2026-10-25, 2026-11-06
+# Scope: Generated the CI workflow (backend unit tests, credit-service integration tests with a Postgres service, frontend build, Docker build check); later helped add order-service and credit-service unit test steps.
+#        Set storage to be local for CI, since the value of STORAGE must always be set (line 55)
+# Author review: Reviewed, tested, and edited by Lim Shao Qi; Amber Tan Junning.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_call: # deploy.yml runs the exact same checks before shipping
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [user-service, supplier-service, order-service, credit-service, notification-service]
+    defaults:
+      run:
+        working-directory: ${{ matrix.service }}
+    env:
+      # prisma.config.ts reads DATABASE_URL; validate/generate never connect to it.
+      DATABASE_URL: postgresql://placeholder:placeholder@localhost:5432/placeholder
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.service }}/package-lock.json
+      - run: npm ci
+      - run: npx prisma validate
+      - run: npx prisma generate
+      - run: npm run build
+      - run: npm test
+        env:
+          # Each service's config.ts throws on missing variables when tests import it; CI-only
+          # values, never connected to. (user-service sets its own in test/setup.ts.)
+          PORT: "3001"
+          FRONTEND_URL: http://localhost
+          JWT_PUBLIC_KEY_PATH: /tmp/unused.pem
+          ORDER_SUPPLIER_SERVICE_TOKEN: ci-only
+          STORAGE: local
+          ORDER_CREDIT_SERVICE_TOKEN: ci-only
+          SUPPLIER_SERVICE_URL: http://localhost
+          CREDIT_SERVICE_URL: http://localhost
+          RABBITMQ_URL: amqp://localhost
+          MAX_STREAMS_PER_USER: "8"
+
+  credit-integration:
+    name: credit-service integration
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: credit-service
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: foc
+          POSTGRES_PASSWORD: foc
+          POSTGRES_DB: credit_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U foc -d credit_test"
+          --health-interval 5s --health-timeout 2s --health-retries 20
+      rabbitmq:
+        image: rabbitmq:4.2-management
+        env:
+          # The default guest user is refused for non-loopback clients.
+          RABBITMQ_DEFAULT_USER: foc
+          RABBITMQ_DEFAULT_PASS: foc
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q check_running"
+          --health-interval 10s --health-timeout 5s --health-retries 10 --health-start-period 30s
+    env:
+      CREDIT_TEST_DATABASE_URL: postgresql://foc:foc@localhost:5432/credit_test
+      CREDIT_TEST_RABBITMQ_URL: amqp://foc:foc@localhost:5672
+      # src/config/config.ts throws on missing variables; CI-only values.
+      DATABASE_URL: postgresql://foc:foc@localhost:5432/credit_test
+      RABBITMQ_URL: amqp://foc:foc@localhost:5672
+      PORT: "3003"
+      FRONTEND_URL: http://localhost
+      JWT_PUBLIC_KEY_PATH: /tmp/ci-public.pem
+      ORDER_CREDIT_SERVICE_TOKEN: ci-only
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: credit-service/package-lock.json
+      - name: Throwaway JWT public key (auth middleware reads it on import)
+        run: |
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /tmp/ci.pem
+          openssl rsa -in /tmp/ci.pem -pubout -out /tmp/ci-public.pem
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run test:integration
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      VITE_AUTH_API_BASE_URL: /api
+      VITE_SUPPLIER_API_BASE_URL: /api
+      VITE_ORDER_API_BASE_URL: /api
+      VITE_CREDIT_API_BASE_URL: /api
+      VITE_NOTIFICATION_API_BASE_URL: /api
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  docker-build:
+    # On deploy, build-push in deploy.yml already proves the images build.
+    if: github.event_name == 'pull_request'
+    name: docker ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          [
+            user-service,
+            supplier-service,
+            order-service,
+            credit-service,
+            notification-service,
+            frontend,
+          ]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.service }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}

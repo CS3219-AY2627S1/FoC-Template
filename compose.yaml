@@ -1,0 +1,127 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (Astra 6), Claude Code (Opus 5.5)
+# Date: approx. 2026-10-21, 2026-11-08
+# Scope: Generated the root compose file that includes each service's compose file and wires shared networks and startup dependencies; helped debug service startup ordering. Debugged 
+# an error where image upload was failing as supplier service could not reach AWS credentials (line 66).
+# Author review: Reviewed, tested, and edited by Lim Shao Qi, Amber Tan Junning (Line 66).
+
+include:
+  - supplier-service/compose.yaml
+  - user-service/compose.yaml
+  - order-service/compose.yaml
+  - credit-service/compose.yaml
+  - frontend/compose.yaml
+  - notification-service/compose.yaml
+  - observability/compose.yaml
+
+services:
+  frontend:
+    depends_on:
+      - user-service
+      - supplier-service
+      - order-service
+      - credit-service
+      - notification-service
+    networks:
+      - default
+      - backend
+
+  # RabbitMQ is shared; keep its startup dependency at the root.
+  user-service:
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - default
+      - backend
+      - user-db
+
+  user-postgres:
+    networks:
+      - user-db
+
+  order-service:
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - backend
+      - order-db
+
+  order-postgres:
+    networks:
+      - order-db
+
+  credit-service:
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - backend
+      - credit-db
+
+  credit-postgres:
+    networks:
+      - credit-db
+
+  supplier-service:
+    networks:
+      - default
+      - backend
+      - supplier-db
+
+  supplier-postgres:
+    networks:
+      - supplier-db
+
+  notification-service:
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - backend
+      - notification-db
+
+  notification-postgres:
+    networks:
+      - notification-db
+
+  rabbitmq:
+    # Source: Docker Hub Official RabbitMQ Image — https://hub.docker.com/_/rabbitmq
+    image: rabbitmq:4.2-management
+    hostname: foc-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_NODENAME: rabbit@foc-rabbitmq
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-foc}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-foc-local-only}
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - backend
+
+volumes:
+  rabbitmq_data:
+
+networks:
+  backend:
+    internal: true
+  user-db:
+    internal: true
+  supplier-db:
+    internal: true
+  order-db:
+    internal: true
+  credit-db:
+    internal: true
+  notification-db:
+    internal: true
