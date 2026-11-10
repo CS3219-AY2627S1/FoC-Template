@@ -1,4 +1,20 @@
+{{- define "foc-lib.rabbitmqPlugins" -}}
+[rabbitmq_management,rabbitmq_prometheus].
+{{- end -}}
+
 {{- define "foc-lib.rabbitmq" -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-plugins
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: rabbitmq
+    {{- include "foc-lib.labels" . | nindent 4 }}
+data:
+  enabled_plugins: |
+    {{- include "foc-lib.rabbitmqPlugins" . | nindent 4 }}
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -36,6 +52,11 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: rabbitmq
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "15692"
+        prometheus.io/path: "/metrics"
+        checksum/config: {{ include "foc-lib.rabbitmqPlugins" . | sha256sum }}
     spec:
       containers:
         - name: rabbitmq
@@ -43,6 +64,8 @@ spec:
           ports:
             - containerPort: 5672
             - containerPort: 15672
+            - name: prometheus
+              containerPort: 15692
           env:
             - name: RABBITMQ_DEFAULT_USER
               valueFrom:
@@ -73,6 +96,13 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/rabbitmq
+            - name: plugins
+              mountPath: /etc/rabbitmq/enabled_plugins
+              subPath: enabled_plugins
+      volumes:
+        - name: plugins
+          configMap:
+            name: rabbitmq-plugins
   volumeClaimTemplates:
     - metadata:
         name: data

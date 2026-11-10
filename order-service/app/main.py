@@ -8,8 +8,9 @@ from fastapi import FastAPI
 
 from app.api.error_handlers import register_exception_handlers
 from app.api.routes import health, orders
-from app.db import engine, init_db
+from app.db import engine, get_session, init_db
 from app.migrate import run_migrations
+from app.observability import OBS
 from app.services.approval_consumer import run_approval_consumer
 from app.services.auto_approval_worker import run_auto_approval_sweeper
 from app.services.client_manager import (
@@ -68,6 +69,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+# Shared observability: /metrics + /health/ready + HTTP metrics. The consumers
+# here do not maintain the shared broker state, so readiness is DB-only.
+OBS.install(app, readiness_session_dep=get_session, check_broker=False)
 register_exception_handlers(app)
 app.include_router(health.router)
 app.include_router(orders.router)

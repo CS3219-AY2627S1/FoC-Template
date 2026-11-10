@@ -43,6 +43,9 @@ root  (infra/argocd/apps, recurse)
  +-- foc             wave  0   infra/helm/foc umbrella chart (values.yaml + values-ec2.yaml)
 ```
 
+The `foc` app also deploys the `observability` subchart (Prometheus and Grafana) into the `foc-observability` namespace.
+Both are `ClusterIP` only, with no Ingress, so they are never public.
+
 Lower (more negative) waves sync first, so ArgoCD, the controllers, the ClusterIssuer, the namespaces, and the secrets are all in place before the `foc` chart deploys.
 On EC2 the chart's own namespace template is disabled (`createNamespaces: false` in `values-ec2.yaml`); the wave -1 `namespaces` app owns the namespaces instead.
 
@@ -157,6 +160,45 @@ gate:
   kubectl -n argocd get secret argocd-initial-admin-secret \
     -o jsonpath='{.data.password}' | base64 -d; echo
   ```
+
+## Grafana access
+
+Prometheus and Grafana run in `foc-observability` with `ClusterIP` Services only, and the EC2 security group stays 80/443.
+The node does not open port 22, so reach Grafana over SSM: start a port-forward on the node, then forward local port 3000 to it from a second terminal.
+
+```
+aws ssm start-session --target <instance-id>
+sudo k3s kubectl -n foc-observability port-forward svc/grafana 3000:3000
+
+# second terminal
+aws ssm start-session --target <instance-id> \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["3000"],"localPortNumber":["3000"]}'
+# then open http://localhost:3000
+```
+
+A host with SSH access can do the same with `ssh -L 3000:localhost:3000 <host> -t 'sudo k3s kubectl -n foc-observability port-forward svc/grafana 3000:3000'`.
+
+Grafana is admin-only (no anonymous access, no sign-up).
+Without the optional `grafana-admin` secret (key `admin-password`) in `foc-observability`, Grafana starts with `admin` / `admin`.
+Grafana prompts for a password change on first login, but the prompt can be skipped, so admins should set the password on first login.
+On EC2, create the sealed `grafana-admin` secret before the first sync:
+
+```
+kubectl create secret generic grafana-admin -n foc-observability \
+  --from-literal=admin-password='<strong password>' --dry-run=client -o yaml \
+  | kubeseal --cert infra/k8s/sealed/pub-cert.pem --format yaml \
+  > infra/k8s/sealed/foc-observability-grafana-admin.yaml
+yq -i '.metadata.annotations."argocd.argoproj.io/sync-options" = "Prune=false"' \
+  infra/k8s/sealed/foc-observability-grafana-admin.yaml
+git add infra/k8s/sealed/foc-observability-grafana-admin.yaml
+git commit
+```
+
+This follows the `<namespace>-<name>.yaml` and `Prune=false` conventions in [`infra/k8s/sealed/README.md`](../k8s/sealed/README.md).
+Store the plaintext password in the team password manager.
+Once the `secrets` app syncs it, run `kubectl -n foc-observability rollout restart deploy/grafana`.
+Grafana only reads `GF_SECURITY_ADMIN_PASSWORD` when it creates the admin user, so on an existing Grafana volume change the password in the UI (or with `grafana cli admin reset-admin-password`) as well.
 
 ## Turn the ArgoCD ingress off
 
