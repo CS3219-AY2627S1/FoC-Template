@@ -1,0 +1,23 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+Scope: Helm chart cluster-config, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
+{{- range .Values.envs }}
+# The AWS Load Balancer Controller keeps env {{ .name }}'s Envoy proxy pods
+# registered in its NLB's target group (infra/<cluster>/aws/gateway-lb.tf),
+# by pod IP, as they come and go. Security group rules are Terraform's too.
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: gateway-{{ .name }}
+  namespace: {{ $.Values.envoyNamespace }}
+spec:
+  serviceRef:
+    name: envoy-{{ .namespace }} # charts/foc-gateway's envoyServiceName default
+    port: 80
+  targetGroupARN: {{ required "envs[].gatewayTargetGroupArn is required" .gatewayTargetGroupArn }}
+  targetType: ip
+---
+{{- end }}

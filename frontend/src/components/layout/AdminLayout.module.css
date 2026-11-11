@@ -1,0 +1,232 @@
+/*
+ * AI-generated (Claude Code); 
+ * Reviewed by Ngooi Jun Sen
+ */
+
+.shell {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  min-height: 100%;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-3);
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+}
+
+.hamburger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  margin-left: calc(-1 * var(--space-2));
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.hamburger:hover {
+  color: var(--color-text);
+}
+
+/* Fills the rail below the brand, so the signed-in block sits at the bottom. */
+.menu {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.logo {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.adminTag {
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: 0.625rem;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.section {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--touch-target);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.section:hover {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.sectionActive {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-weight: var(--font-weight-semibold);
+}
+
+.sectionActive:hover {
+  background: var(--color-accent-hover);
+  color: var(--color-accent-contrast);
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-danger-bg);
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* F3.7.1: open cases whose deadline reminder has fired. Amber, like the
+   "awaiting a decision" status on the Escalations page. */
+.dueSoon {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* With the due pill in front, the total sits beside it instead of at the far end. */
+.countAfterDue {
+  margin-left: var(--space-1);
+}
+
+.sectionActive .count {
+  background: var(--color-accent-contrast);
+  color: var(--color-accent);
+}
+
+.signedIn {
+  margin-top: auto;
+  padding: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.signedInLabel {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-subtle);
+}
+
+.signedInEmail {
+  margin: 2px 0 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.signOut {
+  align-self: flex-start;
+  min-height: var(--touch-target);
+  padding: 0 var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.signOut:hover {
+  color: var(--color-text);
+}
+
+.main {
+  min-width: 0;
+}
+
+/*
+ * NFR11.1.1: below 768px the rail becomes a short top bar, and the sections
+ * open from the menu button as a full-width list, like AppShell's menu.
+ */
+@media (max-width: 767px) {
+  .shell {
+    /* minmax(0, ...) so a wide table scrolls inside its page, not the page. */
+    grid-template-columns: minmax(0, 1fr);
+    /* Without this the bar takes a share of the spare height. */
+    grid-template-rows: auto 1fr;
+  }
+
+  .rail {
+    gap: 0;
+    padding: var(--space-1) var(--space-3);
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .brand {
+    min-height: var(--touch-target);
+    padding: 0;
+  }
+
+  .hamburger {
+    display: inline-flex;
+  }
+
+  .menu {
+    display: none;
+    gap: var(--space-2);
+    padding: var(--space-2) 0;
+  }
+
+  .menuOpen {
+    display: flex;
+  }
+
+  .signedIn {
+    margin-top: 0;
+  }
+}

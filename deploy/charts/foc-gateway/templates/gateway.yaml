@@ -1,0 +1,71 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+Scope: Helm chart foc-gateway, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
+# How Envoy Gateway runs this env's proxy: a Service with a fixed name.
+# Locally it's a LoadBalancer that k3s ServiceLB fulfils. On EKS it's
+# ClusterIP: the NLB is Terraform's (infra/nonprod/aws/gateway-lb.tf) and a
+# TargetGroupBinding (charts/cluster-config) registers the proxy pods in it.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: foc-gateway
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        name: {{ include "foc-gateway.envoyServiceName" . }}
+        type: {{ .Values.envoyServiceType }}
+      # A fixed name instead of envoy-<ns>-<gateway>-<hash>: it's the proxies'
+      # Linkerd identity, which services' mesh policies name (ADR-0012,
+      # charts/foc-service mesh.gateway.serviceAccount).
+      envoyServiceAccount:
+        name: {{ include "foc-gateway.envoyServiceAccountName" . }}
+      {{- if .Values.mesh.enabled }}
+      envoyDeployment:
+        pod:
+          annotations:
+            # Mesh the proxies so gateway → service traffic is mTLS. Their own
+            # inbound traffic comes from the NLB, outside the mesh, so they keep
+            # the cluster's default inbound policy.
+            linkerd.io/inject: enabled
+      {{- end }}
+---
+# The entry point: one HTTP listener; routes must be in this namespace.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: foc
+spec:
+  gatewayClassName: {{ .Values.gatewayClassName }}
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: foc-gateway
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: {{ .Values.listenerPort }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+# Strip identity headers from every client request before any other
+# processing, so only the auth check can set them (ADR-0007).
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: foc-strip-identity-headers
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: foc
+  headers:
+    earlyRequestHeaders:
+      remove:
+        {{- toYaml .Values.identityHeaders | nindent 8 }}

@@ -1,0 +1,43 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+# Scope: Helm values (deploy/values/envs/dev/services), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+image:
+  tag: "87eff7725b448afadb0bf62f200ef244b22d91e3" # git SHA, set by deploy/push-dev.sh
+# Only one replica may poll the Telegram bot: before adding a bot token, run
+# the poller separately and set TELEGRAM_POLLING_ENABLED=false here.
+autoscaling:
+  enabled: true
+  # Idle/dev. Full-run peak needs min=max=8 — see load-test/README.md
+  # "Scale up / scale down". Create looks up telegram; CPU HPA is blind to that.
+  minReplicas: 1
+  maxReplicas: 1
+  targetCPUUtilization: 70
+resources:
+  requests: {cpu: 250m}
+  limits: {cpu: "1"}
+env:
+  APP_ENV: dev
+  # minReplicas=4 for load: only one process may poll a bot. Polling spam was
+  # starving User under smoke and Order create returned 503 USER_FAILED.
+  TELEGRAM_POLLING_ENABLED: "false"
+  # Password-reset links point here.
+  FRONTEND_BASE_URL: https://djj7vqja8at5u.cloudfront.net
+  # OTP and reset emails through SES; the node role may send only as this
+  # verified address (infra/nonprod/aws/ses.tf, node-permissions.tf). While SES is
+  # in the sandbox, only verified recipients get mail.
+  EMAIL_PROVIDER: ses
+  # Not u.nus.edu: its DMARC policy is p=reject, so mail SES sends "from" it
+  # is refused (550 5.7.509). gmail.com is p=none: delivered, often to Junk.
+  # A domain we own, DKIM-verified in SES, would fix that.
+  SES_FROM_EMAIL: donleehh420@gmail.com
+  AWS_REGION: ap-southeast-1
+  # Until the Telegram bot exists, an admin can mark users verified
+  # (POST /api/v1/user/admin/users/{id}/verify). Never in prod.
+  ENABLE_TEST_VERIFICATION: "true"
+# Secrets from Secrets Manager foc/dev/<name> (infra/nonprod/aws/secrets.tf).
+externalSecrets:
+  user-otp: [OTP_SECRET]
+  # Placeholder until the bot exists: paste token + username into foc/dev/user-telegram.
+  user-telegram: [TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME]

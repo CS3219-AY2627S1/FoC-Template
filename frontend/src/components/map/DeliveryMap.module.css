@@ -1,0 +1,146 @@
+/*
+ * AI-generated (Claude Code);
+ * Reviewed by Ngooi Jun Sen.
+ */
+
+.frame {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.map {
+  height: 320px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  /* Shown behind tiles while they load; OneMap Night's own background. */
+  background: #1f2a33;
+  /* Below the sticky mobile header and the picker's open list. */
+  z-index: 0;
+  isolation: isolate;
+}
+
+@media (max-width: 767px) {
+  .map {
+    height: 260px;
+  }
+}
+
+/* The campus outline, the same one the on-campus check uses. */
+.outline {
+  fill: var(--color-accent);
+  fill-opacity: 0.06;
+  stroke: var(--color-accent);
+  stroke-opacity: 0.7;
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+}
+
+/* Same colour code as the delivery picker. */
+.dot {
+  stroke: #10171c;
+  stroke-width: 2;
+  fill-opacity: 1;
+  cursor: pointer;
+}
+
+.own {
+  fill: var(--color-accent);
+}
+
+.shared {
+  fill: var(--color-info);
+}
+
+.selected {
+  stroke: var(--color-text);
+  stroke-width: 3;
+}
+
+/* A drawn map pin: a rotated rounded square with a hole. */
+.pin span {
+  position: absolute;
+  left: 3px;
+  top: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50% 50% 50% 0;
+  background: var(--color-accent);
+  border: 2px solid var(--color-text);
+  transform: rotate(-45deg);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.5);
+}
+
+.pin span::after {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: var(--color-text);
+}
+
+.tooltip {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text);
+  box-shadow: none;
+}
+
+.tooltip::before {
+  display: none;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.key {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+}
+
+.keyOwn {
+  background: var(--color-accent);
+}
+
+.keyShared {
+  margin-left: var(--space-2);
+  background: var(--color-info);
+}
+
+.legendNote {
+  flex-basis: 100%;
+  color: var(--color-text-subtle);
+}
+
+/* Leaflet's light controls, restyled for the dark theme. */
+.map :global(.leaflet-control-attribution) {
+  background: rgb(18 17 16 / 0.75);
+  color: var(--color-text-subtle);
+}
+
+.map :global(.leaflet-control-attribution a) {
+  color: var(--color-text-muted);
+}
+
+.map :global(.leaflet-bar a) {
+  background: var(--color-surface-raised);
+  border-bottom-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.map :global(.leaflet-bar a:hover) {
+  background: var(--color-surface);
+}
+
+.map :global(.leaflet-bar) {
+  border-color: var(--color-border-strong);
+}

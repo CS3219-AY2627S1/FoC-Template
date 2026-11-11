@@ -1,0 +1,17 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+Scope: Helm chart cluster-config, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
+{{- range .Values.envs }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $.Values.rdsCa.configMap }}
+  namespace: {{ .namespace }}
+data:
+  ca.crt: |
+    {{- $.Files.Get $.Values.rdsCa.file | nindent 4 }}
+---
+{{- end }}

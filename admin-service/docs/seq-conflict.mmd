@@ -1,0 +1,38 @@
+%% AI Assistance Disclosure
+%% Tool: Cursor (Auto), date: 2026-11-10
+%% Scope: Documentation wording for Admin Service under author-fixed design.
+%% Author review: Sahana Avantika generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+%% Admin's view of one escalation. Order's seq-escalate and seq-admin cover the same order from Order's side.
+%% Gemini advises only. The deadline can publish the same resolved event when nobody finishes the review.
+sequenceDiagram
+    actor Requester
+    participant Order as Order Service
+    participant Admin as Admin Service
+    participant Photos as Photo bucket
+    participant Gemini
+    actor Reviewer as Admin
+    participant Kafka as foc.admin.events
+
+    Requester->>Order: escalate the order
+    Order->>Admin: POST /internal/conflicts
+    Note over Admin: save the case as created
+    Admin-->>Order: 201
+    Order-->>Requester: order is escalated
+
+    Admin->>Photos: read the stored photos
+    alt Gemini returns a fault
+        Admin->>Gemini: photos and the comment
+        Note over Admin,Gemini: ai_evaluated
+    else photo missing, timeout, or bad reply
+        Note over Admin,Gemini: ai_failed
+    end
+
+    Reviewer->>Admin: claim the case
+    Note over Admin: under_review
+    Admin->>Kafka: admin.review.started
+    Kafka->>Order: order under review
+
+    Reviewer->>Admin: resolve, naming who was at fault
+    Note over Admin: resolved
+    Admin->>Kafka: admin.case.resolved
+    Kafka->>Order: complete the order and delete the photos

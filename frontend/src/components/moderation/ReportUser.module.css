@@ -1,0 +1,28 @@
+/*
+ * AI-generated (Claude Code);
+ * Reviewed by Ngooi Jun Sen.
+ */
+
+/* Quiet, at the end of the page: available, but not competing with the order's actions. */
+.report {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.sent {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.intro {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}

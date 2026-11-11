@@ -1,0 +1,17 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+# Scope: Helm chart cluster-autoscaler, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+apiVersion: v2
+name: cluster-autoscaler
+description: >-
+  Wrapper around the official Cluster Autoscaler chart (vendored under
+  charts/). Cloud clusters only, namespace kube-system.
+type: application
+version: 0.1.0
+dependencies:
+  - name: cluster-autoscaler
+    # App 1.34.x: match the cluster's Kubernetes minor version.
+    version: 9.53.0
+    repository: https://kubernetes.github.io/autoscaler

@@ -1,0 +1,292 @@
+/* 
+ * AI-generated (Claude Code); 
+ * Reviewed by Ngooi Jun Sen.
+ */
+
+.page {
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+}
+
+.subtitle {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-subtle);
+}
+
+.filters {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.filter {
+  min-height: var(--touch-target);
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.filter:hover {
+  color: var(--color-text);
+}
+
+.filterActive {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* NFR11.1.2: the table scrolls inside its own box on a narrow screen. */
+.tableWrap {
+  overflow-x: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.table th {
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  vertical-align: top;
+  color: var(--color-text-muted);
+}
+
+.table tbody tr:first-child td {
+  border-top: none;
+}
+
+.name {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.rejectBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.rejectCopy {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.sub {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-subtle);
+}
+
+.mono {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pending,
+.approved,
+.rejected {
+  display: inline-flex;
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: capitalize;
+}
+
+.pending {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.approved {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.rejected {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.rowActions {
+  /* Up to four buttons (approve or reject, edit, delete), all one fixed
+     width in a 2 x 2 block, so the set reads as one and leaves the text
+     columns room. 1fr would let the table squeeze them to their own text
+     widths. */
+  display: grid;
+  grid-template-columns: repeat(2, 6.5rem);
+  justify-content: end;
+  gap: var(--touch-gap);
+}
+
+/* Edit and Delete always on the second row, so they line up across rows
+   whichever of Approve and Reject a row has. */
+.editAction {
+  grid-row: 2;
+  grid-column: 1;
+}
+
+.deleteAction {
+  grid-row: 2;
+  grid-column: 2;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-7) var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.emptyTitle {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  text-transform: capitalize;
+}
+
+.emptyBody {
+  margin: 0;
+}
+
+
+/* NFR11.1.1: readable text on a narrow screen, no collapsed grid. */
+@media (max-width: 767px) {
+  .page {
+    padding: var(--space-4);
+  }
+
+  .title {
+    font-size: var(--font-size-lg);
+  }
+
+  .filters {
+    width: 100%;
+  }
+
+  /* Four tabs share the width; less padding so they fit at 320px. */
+  .filter {
+    flex: 1;
+    min-width: 0;
+    padding: 0 var(--space-1);
+  }
+
+  /*
+   * Each row becomes a stacked card instead of a table wider than the screen,
+   * so every action is reachable without scrolling sideways. The header row
+   * is replaced by each cell's data-label.
+   */
+  .tableWrap {
+    overflow-x: visible;
+  }
+
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
+    width: 100%;
+  }
+
+  .table {
+    min-width: 0;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table tr {
+    padding: var(--space-3) var(--space-4);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .table tbody tr:first-child {
+    border-top: none;
+  }
+
+  .table td {
+    padding: var(--space-1) 0;
+    border-top: none;
+  }
+
+  /* The label takes a fixed left column, so a value that wraps stays aligned. */
+  .table td[data-label] {
+    position: relative;
+    padding-left: 96px;
+  }
+
+  .table td[data-label]::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 0;
+    font-size: var(--font-size-xs);
+    line-height: 1.5rem;
+    color: var(--color-text-subtle);
+  }
+
+  /* The same 2 x 2 block, stretched to the card's width. */
+  .rowActions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-top: var(--space-2);
+  }
+}

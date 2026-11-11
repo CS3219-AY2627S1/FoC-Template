@@ -1,0 +1,15 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+# Scope: Helm values (deploy/values/envs/local), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+brokers:
+  replicas: 1
+  storage:
+    size: 2Gi
+  resources:
+    requests: { cpu: 250m, memory: 1Gi }
+    limits: { cpu: "1", memory: 1536Mi }
+replication:
+  factor: 1
+  minInsync: 1

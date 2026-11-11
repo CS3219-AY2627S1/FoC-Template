@@ -1,0 +1,13 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-19
+# Scope: Helm chart linkerd-identity, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+apiVersion: v2
+name: linkerd-identity
+description: >-
+  Linkerd's trust anchor and identity issuer, issued by cert-manager, and the
+  trust bundle trust-manager publishes for Linkerd (ADR-0012). One per cluster;
+  release namespace linkerd. Needs charts/cert-manager and charts/trust-manager.
+type: application
+version: 0.1.0

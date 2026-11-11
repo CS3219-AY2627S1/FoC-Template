@@ -1,0 +1,12 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+# Scope: Helm chart envoy-gateway, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+# GatewayClass that FoC Gateways reference (charts/foc-gateway gatewayClassName).
+gatewayClassName: envoy
+
+# Values passed to the vendored gateway-helm chart. Defaults are fine: the
+# controller runs in this release's namespace (envoy-gateway-system) and
+# creates one Envoy proxy Deployment + LoadBalancer Service per Gateway there.
+gateway-helm: {}

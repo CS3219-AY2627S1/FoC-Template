@@ -1,0 +1,20 @@
+sequenceDiagram
+    participant Job as Migrate Job
+    participant Badges as Badges service
+    participant DB as Postgres
+    participant Kafka as Kafka
+
+    Job->>DB: drizzle migrations
+    Badges->>DB: upsert badges.json into badge_catalog
+    Note over Badges,DB: rows that did not change are not written
+    Note over Badges: catalog cache cleared, read once on next use
+    Badges->>Badges: listen on 8086
+    opt any badge added or changed
+        loop 1,000 users at a time, in user id order
+            Badges->>DB: re-check each user in user_metrics
+        end
+        Note over Badges: runs in the background, health probes keep answering
+    end
+    Badges->>Kafka: connect producer for foc.badges.dlq
+    Badges->>Kafka: join group badges-service, subscribe to four topics
+    Note over Badges,Kafka: foc.order.status, foc.admin.events, foc.user.rating, foc.user.status

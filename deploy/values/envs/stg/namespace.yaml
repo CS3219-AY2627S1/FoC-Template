@@ -1,0 +1,16 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-19
+# Scope: Helm values (deploy/values/envs/stg), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+# dev and stg share the non-prod nodes; each gets half-ish of them.
+quota:
+  requests.cpu: "2"
+  requests.memory: 5Gi
+  limits.cpu: "6" # +200m per Linkerd proxy (ADR-0012), incl. rollout surge and mesh tests
+  limits.memory: 10Gi
+  persistentvolumeclaims: "10"
+  pods: "40"
+networkPolicy:
+  # Envoy proxies (charts/foc-gateway) route traffic in and call User's /authorize.
+  allowFromNamespaces: [envoy-gateway-system]

@@ -1,0 +1,151 @@
+/*
+ * AI-generated (Claude Code);
+ * Reviewed by Ngooi Jun Sen.
+ */
+
+/*
+ * Two queues side by side on a wide screen, stacked on a narrow one. min()
+ * lets a column shrink below 320px on the narrowest phones instead of
+ * pushing the page wider than the screen.
+ */
+.queues {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+/* Alerts span both columns rather than squeezing into one. */
+.queues > [role='alert'],
+.queues > [role='status'] {
+  grid-column: 1 / -1;
+}
+
+.queue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+.count {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  color: var(--color-text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.item:first-child {
+  border-top: none;
+}
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.who {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.sub {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-subtle);
+}
+
+.label {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-subtle);
+}
+
+.verdict {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.note {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+/* What the user wrote, kept as typed: line breaks stay, long words wrap. */
+.text {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--touch-gap);
+}
+
+.suspended {
+  display: inline-flex;
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  vertical-align: middle;
+}
+
+.rejectBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.rejectCopy {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}

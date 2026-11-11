@@ -1,0 +1,175 @@
+// AI Assistance Disclosure
+// Tool: OpenAI Codex (GPT-5.6 Luna, GPT-5.6 Sol, GPT-6 Sol and GPT-6.1 Sol), 2026-09-25 to 2026-11-11.
+// Scope: Implementation and test assistance under author-finalized User Service requirements and architecture.
+// Author review: Josh Wang Kai Kiat validated correctness, edited where needed, and verified behavior/tests.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum AccessStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  REMOVED
+}
+
+model User {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  email               String                 @unique
+  name                String
+  passwordHash        String
+  telegramHandle      String                 @unique
+  emailVerifiedAt     DateTime?
+  telegramVerifiedAt  DateTime?
+  telegramUserId      String?                @unique
+  role                UserRole               @default(USER)
+  accessStatus        AccessStatus           @default(ACTIVE)
+  failedLoginAttempts Int                    @default(0)
+  lockedAt            DateTime?
+  lastLoginAt         DateTime?
+  deletionRequestedAt DateTime?
+  scheduledDeletionAt DateTime?
+  suspendedAt         DateTime?
+  suspensionReason    String?
+  authVersion         Int                    @default(0)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  emailOtps           EmailVerificationOtp[]
+  sessions            AuthSession[]
+  passwordResetTokens PasswordResetToken[]
+  telegramChallenges  TelegramVerificationChallenge[]
+  verifiedEvent       UserVerifiedOutbox?
+  sentFriendships     Friendship[]           @relation("FriendshipSender")
+  receivedFriendships Friendship[]           @relation("FriendshipRecipient")
+
+  @@index([accessStatus])
+  @@index([scheduledDeletionAt])
+}
+
+// The migration also enforces no self-requests and an unordered-pair partial
+// unique index for PENDING/ACCEPTED rows. Prisma 5 cannot express that index.
+model Friendship {
+  id          String           @id @default(uuid()) @db.Uuid
+  senderId    String           @db.Uuid
+  recipientId String           @db.Uuid
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  sender      User             @relation("FriendshipSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient   User             @relation("FriendshipRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([senderId, status, createdAt, id])
+  @@index([recipientId, status, createdAt, id])
+}
+
+model EmailVerificationOtp {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  otpHash      String
+  expiresAt    DateTime
+  attemptCount Int       @default(0)
+  usedAt       DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+model AuthSession {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model TelegramVerificationChallenge {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @db.Uuid
+  linkHash       String    @unique
+  otpHash        String?
+  telegramUserId String?
+  expiresAt      DateTime
+  sentAt         DateTime?
+  attemptCount   Int       @default(0)
+  usedAt         DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+model UserVerifiedOutbox {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @unique @db.Uuid
+  email       String
+  createdAt   DateTime  @default(now())
+  publishedAt DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([publishedAt, createdAt])
+}
+
+// UUID references are intentionally not foreign keys: retain a minimal audit
+// trail after account removal, without retaining email, name or Telegram data.
+model UserAuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  actorUserId  String?  @db.Uuid
+  targetUserId String   @db.Uuid
+  action       String
+  reason       String
+  createdAt    DateTime @default(now())
+
+  @@index([targetUserId, createdAt])
+}
+
+// No User foreign key: the notification must survive final account removal.
+// Retain only the UUID and delivery metadata, never profile/credential fields.
+model UserDeletedOutbox {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @unique @db.Uuid
+  createdAt   DateTime  @default(now())
+  publishedAt DateTime?
+
+  @@index([publishedAt, createdAt])
+}

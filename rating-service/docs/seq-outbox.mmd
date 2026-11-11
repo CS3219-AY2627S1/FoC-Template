@@ -1,0 +1,20 @@
+sequenceDiagram
+    participant Rating as Rating service
+    participant DB as Postgres
+    participant Kafka as foc.user.rating
+
+    Note over Rating,DB: the rating, user_rating, and outbox row commit in one transaction
+    loop every second, and again at once while rows come back
+        Rating->>DB: lock up to 100 unsent rows, oldest first, skip locked
+        loop each row
+            Rating->>Kafka: send, key is the ratee's user id
+        end
+        alt every send accepted
+            Rating->>DB: set sent_at and commit
+        else a send fails
+            Note over Rating,DB: roll back, the whole batch is sent again on the next pass
+        end
+    end
+    loop hourly
+        Rating->>DB: delete rows sent more than 7 days ago
+    end

@@ -1,0 +1,9 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-07
+# Scope: Helm values (deploy/values/envs/dev), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+# load-test/ chart against foc-dev (Argo CD app load-test-dev, namespace foc-load).
+orderUrl: http://order.foc-dev.svc.cluster.local:8083
+secretStore: aws-secrets-dev
+secretPrefix: foc/dev/

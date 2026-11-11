@@ -1,0 +1,165 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+Scope: Helm chart foc-service, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
+{{- $dbCa := and .Values.database.enabled .Values.databaseCa.configMap }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "foc-service.name" . }}
+  labels:
+    {{- include "foc-service.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }} {{/* else the HPA owns it */}}
+  replicas: {{ .Values.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "foc-service.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "foc-service.labels" . | nindent 8 }}
+      annotations:
+        # Restart pods when the ConfigMap changes.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.mesh.enabled }}
+        # ADR-0012: mesh this pod; refuse callers without a mesh identity
+        # unless a policy (mesh-policy.yaml) allows them.
+        linkerd.io/inject: enabled
+        config.linkerd.io/default-inbound-policy: all-authenticated
+        {{- with .Values.mesh.proxy }}
+        {{- with .memoryRequest }}
+        config.linkerd.io/proxy-memory-request: {{ . | quote }}
+        {{- end }}
+        {{- with .memoryLimit }}
+        config.linkerd.io/proxy-memory-limit: {{ . | quote }}
+        {{- end }}
+        {{- end }}
+        {{- with .Values.managementPort }}
+        # Kubelet probes hit this port directly (see probes below).
+        config.linkerd.io/skip-inbound-ports: {{ . | quote }}
+        {{- end }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "foc-service.name" . }}
+      # Don't inject legacy <SERVICE>_PORT_* variables for every Service in the
+      # namespace (e.g. KAFKA_KAFKA_BOOTSTRAP_*), which clash with KAFKA_* config.
+      enableServiceLinks: false
+      containers:
+        - name: {{ include "foc-service.name" . }}
+          image: {{ include "foc-service.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.port }}
+            {{- with .Values.managementPort }}
+            - name: management
+              containerPort: {{ . }}
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "foc-service.name" . }}
+          env:
+            # Always set, so any service (or the connectivity stub) can rely on them.
+            - name: PORT
+              value: {{ .Values.port | quote }}
+            - name: SERVICE_NAME
+              value: {{ include "foc-service.name" . }}
+          {{- if .Values.database.enabled }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "foc-service.name" . }}-db # created by charts/foc-database
+                  key: DATABASE_URL
+          {{- end }}
+          {{- range $name, $ref := .Values.secretEnv }}
+            - name: {{ $name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $ref.secret }}
+                  key: {{ $ref.key }}
+                  {{- if $ref.optional }}
+                  optional: true # missing Secret = variable unset, pod still starts
+                  {{- end }}
+          {{- end }}
+          {{- with .Values.kafka.user }}
+            - name: KAFKA_BROKERS
+              value: {{ printf "%s-kafka-bootstrap:9093" $.Values.kafka.clusterName }}
+            - name: KAFKA_SASL_MECHANISM
+              value: SCRAM-SHA-512
+            - name: KAFKA_USERNAME
+              value: {{ . }}
+            - name: KAFKA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }} # created by Strimzi for KafkaUser "{{ . }}"
+                  key: password
+            - name: KAFKA_CA_CERT
+              value: /etc/kafka/ca/ca.crt
+          {{- end }}
+          {{- if $dbCa }}
+            # Node trusts these CAs on top of its own, so node-postgres can
+            # verify the RDS certificate without code changes.
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/db-ca/ca.crt
+          {{- end }}
+          {{- if or .Values.kafka.user $dbCa }}
+          volumeMounts:
+            {{- if .Values.kafka.user }}
+            - name: kafka-ca
+              mountPath: /etc/kafka/ca
+              readOnly: true
+            {{- end }}
+            {{- if $dbCa }}
+            - name: db-ca
+              mountPath: /etc/db-ca
+              readOnly: true
+            {{- end }}
+          {{- end }}
+          {{- $readiness := .Values.readinessPath | default .Values.healthPath }}
+          {{- $liveness := .Values.livenessPath | default .Values.healthPath }}
+          {{- if $readiness }}
+          readinessProbe:
+            httpGet:
+              path: {{ $readiness }}
+              port: {{ if .Values.managementPort }}management{{ else }}http{{ end }}
+            periodSeconds: 10
+            timeoutSeconds: 5
+          {{- end }}
+          {{- if $liveness }}
+          livenessProbe:
+            httpGet:
+              path: {{ $liveness }}
+              port: {{ if .Values.managementPort }}management{{ else }}http{{ end }}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 5
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+      {{- if or .Values.kafka.user $dbCa }}
+      volumes:
+        {{- if .Values.kafka.user }}
+        - name: kafka-ca
+          secret:
+            # Kafka's TLS certificate authority, created by Strimzi.
+            secretName: {{ printf "%s-cluster-ca-cert" .Values.kafka.clusterName }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+        {{- end }}
+        {{- if $dbCa }}
+        - name: db-ca
+          configMap:
+            name: {{ .Values.databaseCa.configMap }}
+            items:
+              - key: {{ .Values.databaseCa.key }}
+                path: ca.crt
+        {{- end }}
+      {{- end }}

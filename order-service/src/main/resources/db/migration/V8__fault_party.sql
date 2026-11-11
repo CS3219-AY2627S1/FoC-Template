@@ -1,0 +1,1 @@
+ALTER TABLE orders ADD COLUMN fault_party VARCHAR(16);

@@ -1,0 +1,31 @@
+meta {
+  name: Nickname patch
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/orders/delivery-points/1
+  body: json
+  auth: none
+}
+headers {
+  X-User-Id: 9a290e37-334d-3b8e-946d-2342f27b2f6e
+  X-Permitted-Action: true
+}
+
+body:json {
+  {
+    "nickname": "Kent Ridge exit"
+  }
+}
+
+tests {
+  test("status is 200 or 404", function() {
+    expect([200, 404]).to.include(res.getStatus());
+    if (res.getStatus() === 200) {
+      expect(res.getBody().nickname).to.equal("Kent Ridge exit");
+      expect(res.getBody().id).to.equal(1);
+    }
+  });
+}

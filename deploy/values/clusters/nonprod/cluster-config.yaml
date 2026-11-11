@@ -1,0 +1,16 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-07
+# Scope: Helm values (deploy/values/clusters/nonprod), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+# TF:<output> values are filled from `terraform output` by deploy/cloud-values.sh
+# (none of them are secrets).
+region: ap-southeast-1
+envs:
+  - name: dev
+    namespace: foc-dev
+    # Grafana's admin password (charts/kube-prometheus-stack); load-setup's
+    # User and Credit database logins (load-test/).
+    extraNamespaces: [monitoring, foc-load]
+    gatewayTargetGroupArn: arn:aws:elasticloadbalancing:ap-southeast-1:474265880628:targetgroup/foc-dev-gateway/5548cc28ce86a735
+  # stg: add with "stg" in infra/nonprod/aws var.envs.

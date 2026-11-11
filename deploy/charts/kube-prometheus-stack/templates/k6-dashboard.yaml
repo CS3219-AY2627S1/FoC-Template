@@ -1,0 +1,17 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-11-07
+Scope: Helm chart kube-prometheus-stack, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
+# k6's "k6 Prometheus (Native Histograms)" dashboard (grafana.com 18030 rev 8),
+# for runs from load-test/. Grafana's sidecar loads ConfigMaps with this label.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k6-dashboard
+  labels:
+    grafana_dashboard: "1"
+data:
+  k6-prometheus.json: |-
+{{ .Files.Get "dashboards/k6-prometheus.json" | indent 4 }}

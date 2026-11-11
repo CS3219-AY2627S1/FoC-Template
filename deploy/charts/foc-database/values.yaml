@@ -1,0 +1,42 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+# Scope: Helm chart foc-database, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+# One FoC environment's databases on a Postgres instance that Terraform created
+# (ADR-0010). Locally deploy/local.sh passes `terraform output -json database`
+# from infra/local/aws as a values file, which is where the snake_case keys
+# below come from.
+
+# Required. Prefix for database and login names: <env>_<service>, e.g.
+# local_credit, dev_credit. dev and stg share one instance, so names must differ.
+env: ""
+
+host: ""
+port: 5432
+admin_username: ""
+admin_password: ""
+admin_database: postgres
+
+# Service → { password }. Each gets database and login <env>_<service>, and a
+# Secret <service>-db with DATABASE_URL (read by charts/foc-service when
+# database.enabled is true).
+services: {}
+
+# Locally the chart writes the Secrets from the values above. In the cloud
+# (false) the passwords live in Secrets Manager and External Secrets creates
+# the same Secrets (templates/external-secrets.yaml); services then only need
+# their keys listed, e.g. services: { credit: {} }.
+createSecrets: true
+
+# Cloud only (createSecrets: false).
+externalSecrets:
+  store: "" # ClusterSecretStore, e.g. aws-secrets-dev (charts/cluster-config)
+  prefix: "" # e.g. foc/dev/ → secret foc/dev/<service>-db
+  adminSecret: "" # ARN of RDS's master user secret (terraform output rds.master_secret_arn)
+
+# psql in the setup Job and tests. Floci's proxy offers TLS with its own CA,
+# RDS requires TLS: `prefer` works for both without a CA file.
+sslMode: prefer
+
+image: postgres:16-alpine

@@ -1,0 +1,12 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-02
+# Scope: Helm values (deploy/values/envs/local/services), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+image:
+  tag: dev
+replicas: 1
+# Local: the chart generates Secret user-otp (random, stable across upgrades).
+# The cloud gets the same Secret from External Secrets (ADR-0010).
+generatedSecrets:
+  user-otp: [OTP_SECRET]

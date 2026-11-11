@@ -1,0 +1,22 @@
+meta {
+  name: My locations success
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/orders/delivery-points/my-locations?page=0&size=20
+  body: none
+  auth: none
+}
+headers {
+  X-User-Id: 9a290e37-334d-3b8e-946d-2342f27b2f6e
+  X-Permitted-Action: true
+}
+
+tests {
+  test("status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().content).to.be.an("array");
+  });
+}

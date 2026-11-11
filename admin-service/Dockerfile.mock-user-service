@@ -1,0 +1,16 @@
+# AI Assistance Disclosure
+# Tool: Cursor (Auto), date: 2026-11-09
+# Scope: Boilerplate/config assistance for Admin Service under author-fixed requirements and architecture.
+# Author review: Sahana Avantika generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir fastapi uvicorn[standard]
+
+COPY mock_user_service.py .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "mock_user_service:app", "--host", "0.0.0.0", "--port", "8000"]

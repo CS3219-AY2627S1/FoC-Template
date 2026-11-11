@@ -1,0 +1,15 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-19
+# Scope: Helm values (deploy/values/envs/local), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+quota:
+  requests.cpu: "4"
+  requests.memory: 6Gi
+  limits.cpu: "10" # +200m per Linkerd proxy (ADR-0012), incl. rollout surge and mesh tests
+  limits.memory: 12Gi
+  persistentvolumeclaims: "10"
+  pods: "40"
+networkPolicy:
+  # Envoy proxies (charts/foc-gateway) route traffic in and call User's /authorize.
+  allowFromNamespaces: [envoy-gateway-system]

@@ -1,0 +1,89 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-04
+# Scope: Helm chart foc-gateway, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+# GatewayClass from charts/envoy-gateway.
+gatewayClassName: envoy
+
+# Namespace where Envoy Gateway runs the proxies (the envoy-gateway release).
+envoyNamespace: envoy-gateway-system
+# Name of this env's Envoy proxy Service there. Default: envoy-<release namespace>.
+envoyServiceName: ""
+# LoadBalancer locally; ClusterIP in the cloud, where the NLB is Terraform's.
+envoyServiceType: LoadBalancer
+
+# ServiceAccount of the Envoy proxies, i.e. their Linkerd identity. Default:
+# envoy-<release namespace>. Services' mesh policies assume that default
+# (charts/foc-service mesh.gateway.serviceAccount); change both together.
+envoyServiceAccountName: ""
+
+# Mesh the Envoy proxies with Linkerd (ADR-0012).
+mesh:
+  enabled: true
+
+listenerPort: 80
+
+# Headers that carry identity from the gateway to services. Removed from every
+# client request before anything else, then set only by the auth check.
+# x-user-telegram: Order trusts it and passes it to peers; User doesn't return
+# it yet, so it only ever arrives empty instead of client-supplied.
+identityHeaders: [x-user-id, x-is-admin, x-permitted-action, x-user-telegram]
+
+# ADR-0007: every protected request is checked with User's authorize endpoint.
+auth:
+  service: user
+  port: 8080
+  path: /api/v1/user/internal/authorize
+
+# Protected routes (auth required): path prefix → service. Paths from the API
+# contract; ports must match deploy/values/services/<svc>.yaml.
+routes:
+  - { prefix: /api/v1/user, service: user, port: 8080 }
+  - { prefix: /api/v1/supplier, service: supplier, port: 8081 }
+  - { prefix: /api/v1/credit, service: credit, port: 3000 }
+  - { prefix: /api/v1/orders, service: order, port: 8083 }
+  - { prefix: /api/v1/rating, service: rating, port: 8085 }
+  - { prefix: /api/v1/badges, service: badges, port: 8086 }
+  - { prefix: /api/v1/admin, service: admin, port: 8084 }
+
+# Public endpoints (no auth), exact path + method, from the API contract.
+# Exact matches take precedence over the prefixes above.
+publicRoutes:
+  - { method: POST, path: /api/v1/user/signup, service: user, port: 8080 }
+  - { method: POST, path: /api/v1/user/verify-email, service: user, port: 8080 }
+  - { method: POST, path: /api/v1/user/resend-verification, service: user, port: 8080 }
+  - { method: POST, path: /api/v1/user/login, service: user, port: 8080 }
+  - { method: POST, path: /api/v1/user/forgot-password, service: user, port: 8080 }
+  - { method: POST, path: /api/v1/user/reset-password, service: user, port: 8080 }
+  # Suspended users have no session; user checks the email and password itself
+  # (and rate-limits by email) before forwarding the appeal to admin.
+  - { method: POST, path: /api/v1/user/appeals, service: user, port: 8080 }
+  - { method: GET, path: /api/v1/supplier, service: supplier, port: 8081 }
+
+# Legacy compatibility path: keep blocked until every caller has migrated.
+blockedPaths:
+  - /api/v1/user/authorize
+
+# Internal-only APIs, called directly over private service DNS, never by
+# clients. Prefixes, so a trailing slash or sub-path is blocked too; the longer
+# prefix wins over the route that would otherwise forward it.
+blockedPrefixes:
+  # Service-token APIs.
+  - /api/v1/user/internal
+  # Order's reserve/release calls: the body names the user, so a client could
+  # spend anyone's credits or refund any order.
+  - /api/v1/credit/internal
+  - /api/v1/badges/internal
+  # Order's escalation intake and User's report/appeal intake: no admin session,
+  # so a client could open cases, reports or appeals for anyone.
+  - /api/v1/admin/internal
+  # User's appeal lookup during a suspended login: no auth, takes any userId.
+  - /api/v1/admin/appeals/latest
+  # No routes here yet; blocked ahead of time so a new one is never public.
+  - /api/v1/orders/internal
+  - /api/v1/supplier/internal
+
+# `helm test` pod (not used by Argo CD).
+tests:
+  curlImage: curlimages/curl:8.10.1

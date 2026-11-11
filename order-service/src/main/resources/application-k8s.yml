@@ -1,0 +1,74 @@
+# AI Assistance Disclosure
+# Tool: Cursor (Auto), date: 2026-10-15
+# Scope: Boilerplate/config assistance for Order Service under author-fixed requirements and architecture.
+# Author review: Varun Sivakumar generated ideas, designed implementation, validated correctness, edited where needed, and verified behavior/tests.
+
+# Kubernetes (deploy/charts/foc-service). Activate with SPRING_PROFILES_ACTIVE=k8s,
+# set in deploy/values/services/order.yaml. Values come from the chart's env contract.
+spring:
+  datasource:
+    # PG* come from Secret order-db (charts/foc-database, ADR-0010). The local
+    # env sets PGSSLMODE=disable for Floci's self-signed proxy.
+    url: jdbc:postgresql://${PGHOST}:${PGPORT}/${PGDATABASE}?sslmode=${PGSSLMODE:require}
+    username: ${PGUSER}
+    password: ${PGPASSWORD}
+    hikari:
+      # Idle/dev on db.t4g.micro: keep 10 (2 pods × 10 leaves room for peers).
+      # Full-run on xlarge: bump to 30 — see load-test/README.md scale-up.
+      maximum-pool-size: 10
+  kafka:
+    # KAFKA_* are set by the chart for KafkaUser "order" (ADR-0004): the TLS
+    # listener with SCRAM-SHA-512, and the cluster CA as a mounted PEM file.
+    bootstrap-servers: ${KAFKA_BROKERS}
+    security:
+      protocol: SASL_SSL
+    properties:
+      sasl.mechanism: ${KAFKA_SASL_MECHANISM:SCRAM-SHA-512}
+      sasl.jaas.config: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="${KAFKA_USERNAME}" password="${KAFKA_PASSWORD}";'
+      ssl.truststore.type: PEM
+      ssl.truststore.location: ${KAFKA_CA_CERT}
+    admin:
+      # Topics are owned by charts/foc-kafka; the order user can't create them.
+      auto-create: false
+
+server:
+  tomcat:
+    threads:
+      # Default 200 fills under 9600 VUs per few pods; workers block on DB/HTTP.
+      max: 400
+
+management:
+  # Separate connector/thread pool so kubelet probes are not starved by API load.
+  server:
+    port: 8084
+  endpoint:
+    health:
+      group:
+        # Peers' helm test still hits the main Service port (*_SERVICE_URL/health).
+        platform:
+          include: "*"
+          additional-path: "server:/health"
+        # Full health on management for scrapes / manual checks (not kubelet readiness).
+        # Spring Boot 4 requires namespace:path (management: or server:), not a bare path.
+        ready:
+          include: "*"
+          additional-path: "management:/health"
+        # Ping only — kubelet readiness+liveness (deploy/values/services/order.yaml).
+        # Must not share API Tomcat workers or trip on slow DB under full-run load.
+        live:
+          include: ping
+          additional-path: "management:/live"
+
+order:
+  # Peer calls (User/Rating/…) under mesh; 2s was tight when User pods hiccup.
+  clients:
+    timeout: 5s
+    # Approved pickup catalogue (5m) and telegram (fixed after signup → 1h);
+    # skip peer round-trips on create/accept. Credit reserve is never cached.
+    supplier-cache-ttl: 5m
+    telegram-cache-ttl: 1h
+  photos:
+    mode: file
+    # Created by the Dockerfile and owned by the app user. Pod-local, so photos
+    # don't survive a restart; s3 mode is the durable option.
+    directory: /app/photos

@@ -1,0 +1,16 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-01
+# Scope: Helm values (deploy/values/envs/prod), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+brokers:
+  replicas: 3
+  storage:
+    size: 20Gi
+    class: "" # set to the EKS gp3 StorageClass once modules/eks defines it
+  resources:
+    requests: { cpu: 500m, memory: 2Gi }
+    limits: { cpu: "2", memory: 3Gi }
+replication:
+  factor: 3
+  minInsync: 2

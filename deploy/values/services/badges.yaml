@@ -1,0 +1,23 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-11
+# Scope: Helm values (deploy/values/services), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+# badges-service: settings that are the same in every environment.
+name: badges
+image:
+  name: foc/badges-service
+port: 8086 # BADGES_SERVICE_PORT default in badges-service/src/config.ts
+healthPath: /health
+database:
+  enabled: true # DATABASE_URL from Secret badges-db (charts/foc-database, ADR-0010)
+  healthPath: /health/db # runs `select 1`
+kafka:
+  user: badges # reads foc.order.status, foc.user.rating, foc.admin.events (ADR-0004)
+env:
+  LOG_LEVEL: info
+migrate:
+  enabled: true # runs before each deploy (ADR-0011); image: the Dockerfile's `migrate` stage
+  command: ["npm", "run", "db:migrate"]
+mesh: # who may call badges (ADR-0012)
+  callers: [gateway] # GET /api/v1/badges/{userId}

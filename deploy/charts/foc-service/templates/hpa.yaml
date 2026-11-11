@@ -1,0 +1,43 @@
+{{- /*
+AI Assistance Disclosure
+Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+Scope: Helm chart foc-service, drafted and edited with Claude Code.
+Reviewed by Don Lee
+*/ -}}
+{{- if .Values.autoscaling.enabled }}
+{{- if not (dig "requests" "cpu" "" .Values.resources) }}
+{{- fail "autoscaling.enabled needs resources.requests.cpu (utilisation is measured against it)" }}
+{{- end }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "foc-service.name" . }}
+  labels:
+    {{- include "foc-service.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "foc-service.name" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: ContainerResource
+      containerResource:
+        name: cpu
+        container: {{ include "foc-service.name" . }}
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilization }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      selectPolicy: Max
+      policies:
+        - { type: Percent, value: 100, periodSeconds: 30 }
+        - { type: Pods, value: 4, periodSeconds: 30 }
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - { type: Percent, value: 50, periodSeconds: 60 }
+{{- end }}

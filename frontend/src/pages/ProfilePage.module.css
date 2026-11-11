@@ -1,0 +1,372 @@
+/* 
+ * AI-generated (Claude Code); 
+ * Reviewed by Ngooi Jun Sen.
+ */
+
+.page {
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--space-5);
+}
+
+/* FR12.3.1: account and credits left, ratings and badges right. */
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--color-danger-bg);
+  color: var(--color-accent);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.identityText {
+  min-width: 0;
+}
+
+.name {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  overflow-wrap: anywhere;
+}
+
+.email {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.verified,
+.unverified {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: var(--font-weight-semibold);
+}
+
+.verified {
+  color: var(--color-success);
+}
+
+.unverified {
+  color: var(--color-warning);
+}
+
+.divider {
+  height: 1px;
+  background: var(--color-border);
+}
+
+.passwordRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.rowLabel {
+  margin: 0;
+  font-weight: var(--font-weight-semibold);
+}
+
+.rowNote {
+  margin: 2px 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.balance {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin: 0;
+  flex-wrap: wrap;
+}
+
+.balanceNumber {
+  font-size: 2.5rem;
+  font-weight: var(--font-weight-bold);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.balanceNote {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.ratingStar {
+  display: inline-flex;
+  margin-left: var(--space-2);
+  color: var(--color-warning);
+  vertical-align: -0.1em;
+}
+
+.breakdown {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+/* Not built yet, and saying so rather than showing invented figures. */
+.places {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.place {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.place:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.placeSwatch {
+  flex: none;
+  /* Beside the name (the first line), not centred on name and detail together. */
+  align-self: flex-start;
+  width: 10px;
+  height: 10px;
+  margin-top: calc((1lh - 10px) / 2);
+  border-radius: var(--radius-pill);
+}
+
+.placeOwn {
+  background: var(--color-accent);
+}
+
+.placeShared {
+  background: var(--color-info);
+}
+
+.placeText {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.placeActions {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+}
+
+.soonHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.soonTag {
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-disabled-bg);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.soonBody {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  color: var(--color-text-subtle);
+}
+
+.badges {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.badge {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.badge:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.medallion {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-pill);
+}
+
+/* Same hues as the order timeline: courier steps warm, requester cool. */
+.badgeCourier {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.badgeRequester {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+}
+
+.badgeAny {
+  background: var(--color-danger-bg);
+  color: var(--color-accent);
+}
+
+.badgeLocked {
+  background: var(--color-disabled-bg);
+  color: var(--color-disabled-text);
+}
+
+.medallionLock {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.badgeText {
+  flex: 1;
+  min-width: 0;
+}
+
+.badgeEarned {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-success);
+}
+
+.badgeProgress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.progressBar {
+  flex: 1;
+  height: 6px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--color-disabled-bg);
+  overflow: hidden;
+  appearance: none;
+}
+
+.progressBar::-webkit-progress-bar {
+  background: var(--color-disabled-bg);
+}
+
+.progressBar::-webkit-progress-value {
+  background: var(--color-accent);
+  border-radius: var(--radius-pill);
+}
+
+.progressBar::-moz-progress-bar {
+  background: var(--color-accent);
+  border-radius: var(--radius-pill);
+}
+
+.progressCount {
+  flex: none;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* FR12.3.2: one stacked column below the breakpoint. */
+@media (max-width: 767px) {
+  .page {
+    padding: var(--space-4);
+  }
+
+  .columns {
+    grid-template-columns: 1fr;
+  }
+
+  .card {
+    padding: var(--space-4);
+  }
+
+  .passwordRow > button {
+    width: 100%;
+  }
+}

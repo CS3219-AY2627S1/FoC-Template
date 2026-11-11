@@ -1,0 +1,15 @@
+sequenceDiagram
+    actor User
+    participant Gateway as Gateway
+    participant Badges as Badges service
+    participant DB as Postgres
+
+    User->>Gateway: GET /api/v1/badges/{userId}
+    Gateway->>Badges: same path, x-user-id set after authorize
+    alt x-user-id missing or not userId
+        Badges-->>User: 404 NOT_FOUND
+    else owner
+        Badges->>DB: catalog, user_metrics row, user_badge rows
+        Note over Badges: earned from user_badge, progress from the metrics
+        Badges-->>User: 200 every catalog badge
+    end

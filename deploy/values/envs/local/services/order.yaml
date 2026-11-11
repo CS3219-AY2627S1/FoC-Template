@@ -1,0 +1,12 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+# Scope: Helm values (deploy/values/envs/local/services), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+image:
+  tag: dev
+replicas: 1
+env:
+  # Floci's Postgres proxy uses a self-signed certificate (see DB_SSL in
+  # common.yaml); JDBC takes the same opt-out as sslmode.
+  PGSSLMODE: disable

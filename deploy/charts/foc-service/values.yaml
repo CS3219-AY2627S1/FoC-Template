@@ -1,0 +1,134 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-07
+# Scope: Helm chart foc-service, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+# Short name, e.g. "credit". Becomes the Service name, so other services call
+# http://<name>:<port> in every environment.
+name: ""
+
+image:
+  registry: "" # per env, e.g. <account>.dkr.ecr.<region>.amazonaws.com
+  name: "" # e.g. foc/credit-service
+  tag: "" # git SHA in the cloud; anything locally
+  pullPolicy: IfNotPresent
+
+replicas: 1 # ignored while autoscaling is enabled
+port: 3000
+
+# HPA on the app container's CPU (% of resources.requests.cpu), plus a PDB.
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilization: 70
+
+# Plain settings, exposed to the container as environment variables.
+env: {}
+
+# If set, the pod gets KAFKA_BROKERS, KAFKA_USERNAME, KAFKA_PASSWORD,
+# KAFKA_SASL_MECHANISM and KAFKA_CA_CERT (path to the cluster CA certificate).
+# The user must exist in charts/foc-kafka (Strimzi creates its Secret).
+kafka:
+  user: ""
+  clusterName: kafka
+
+# If enabled, the pod gets DATABASE_URL from Secret <name>-db, created by
+# charts/foc-database (the service must be listed there). healthPath, if set,
+# is an endpoint that queries the database; `helm test` checks it.
+database:
+  enabled: false
+  healthPath: ""
+
+# Certificate authority for the database's TLS certificate (the RDS CA bundle
+# in the cloud; ADR-0010). If configMap is set and database.enabled, the pod
+# (and the migrate Job) mounts that key at /etc/db-ca/ca.crt and gets
+# NODE_EXTRA_CA_CERTS pointing at it. "" = none (local Postgres has no TLS).
+databaseCa:
+  configMap: ""
+  key: ca.crt
+
+# Schema migrations (ADR-0011). If enabled, a Job runs `command` before every
+# install/upgrade, in the service's own "<tag><tagSuffix>" image (the
+# Dockerfile's `migrate` stage), with DATABASE_URL from Secret <name>-db.
+# A failed migration fails the release, so new pods never meet an old schema.
+migrate:
+  enabled: false
+  command: [] # e.g. ["node_modules/.bin/prisma", "migrate", "deploy"]; [] = the image's CMD
+  tagSuffix: -migrate
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+# Env vars read from an existing Secret instead of a ConfigMap, for values that
+# must not sit in git or in `env`: NAME: { secret: <Secret name>, key: <key> }.
+# Add `optional: true` for a value the service can run without (the pod starts
+# with the variable unset when the Secret doesn't exist).
+secretEnv: {}
+
+# LOCAL ONLY: have this chart create Secret <name> with a random value for each
+# key, e.g. { user-otp: [OTP_SECRET] }. Kept across upgrades (helm lookup), so
+# it doesn't work under Argo CD, which renders without the cluster. In the cloud
+# the External Secrets Operator creates the same Secrets (ADR-0010).
+generatedSecrets: {}
+
+# CLOUD: the same Secrets, copied from AWS Secrets Manager by the External
+# Secrets Operator: Secret <name> gets each key from secret
+# <secretStore.prefix><name> (JSON; created by infra/<cluster>/aws/secrets.tf).
+# Same shape as generatedSecrets, e.g. { user-otp: [OTP_SECRET] }; list it
+# under the one service that owns the Secret.
+externalSecrets: {}
+# ClusterSecretStore for this env (charts/cluster-config), set in
+# values/envs/<env>/common.yaml.
+secretStore:
+  name: "" # e.g. aws-secrets-dev
+  prefix: "" # e.g. foc/dev/
+
+# Linkerd service mesh (ADR-0012). The pod gets a proxy, runs as its own
+# ServiceAccount (= its Linkerd identity) and accepts only mesh-authenticated
+# callers listed here; the health paths stay open for the kubelet's probes.
+# Add a caller in the same change that adds the call.
+mesh:
+  enabled: true
+  # Callers allowed on every path not matched under `internal`: "gateway" (the
+  # Envoy Gateway proxies, charts/foc-gateway), another service's name, or
+  # <namespace>/<serviceaccount> for a caller outside this namespace.
+  callers: [gateway]
+  # Path prefixes with their own, narrower caller list, e.g.
+  #   - { path: /api/v1/credit/internal, callers: [order] }
+  internal: []
+  # Envoy Gateway's proxy ServiceAccount (charts/foc-gateway names it
+  # envoy-<namespace>); "" = envoy-<release namespace>.
+  gateway:
+    namespace: envoy-gateway-system
+    serviceAccount: ""
+  # The identity that may read the proxy's /metrics (charts/kube-prometheus-stack).
+  metrics:
+    enabled: false
+    namespace: monitoring
+    serviceAccount: prometheus
+  # Linkerd sidecar memory. "" = injector defaults (~20Mi/64Mi). Order under
+  # full load needs more (see deploy/values/envs/dev/services/order.yaml).
+  proxy:
+    memoryRequest: ""
+    memoryLimit: ""
+
+# HTTP health check path; "" disables the probes and the HTTP test.
+# readinessPath / livenessPath override when set (e.g. Order: /health vs /live).
+healthPath: /health
+readinessPath: ""
+livenessPath: ""
+# When set, probes use this container port (e.g. Spring management.server.port)
+# and Linkerd skips inbound on it so kubelet is not meshed onto a busy proxy.
+managementPort: ""
+
+# `helm test` pods (not used by Argo CD).
+tests:
+  curlImage: curlimages/curl:8.10.1
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi

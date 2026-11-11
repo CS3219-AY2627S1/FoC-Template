@@ -1,0 +1,22 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-07
+# Scope: Helm values (deploy/values/envs/dev), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+# dev and stg share the non-prod nodes; each gets half-ish of them.
+# Fits every HPA at maxReplicas plus Kafka, proxies, Jobs and rollout surge.
+# Raise a maxReplicas → raise these, or the extra pods are refused.
+# Sized for a full-run peak (Order×32 + peers×8); idle floors are lower — see
+# load-test/README.md. 28/40Gi refused the 32-pod Order floor; keep headroom.
+quota:
+  requests.cpu: "40"
+  requests.memory: 64Gi
+  limits.cpu: "120"
+  limits.memory: 120Gi
+  persistentvolumeclaims: "10"
+  pods: "100"
+networkPolicy:
+  # Envoy proxies (charts/foc-gateway) route traffic in and call User's /authorize.
+  # Prometheus scrapes the Linkerd proxies (charts/kube-prometheus-stack).
+  # k6 calls Order (load-test/).
+  allowFromNamespaces: [envoy-gateway-system, monitoring, foc-load]

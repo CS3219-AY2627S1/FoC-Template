@@ -1,0 +1,8 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-10-22
+# Scope: Helm values (deploy/values/envs/dev), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+# The NLB is Terraform's (infra/nonprod/aws/gateway-lb.tf); a TargetGroupBinding
+# in charts/cluster-config registers the proxies, so no LoadBalancer Service.
+envoyServiceType: ClusterIP

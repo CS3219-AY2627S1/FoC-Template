@@ -1,0 +1,74 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+# Scope: Helm chart foc-kafka, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+# Services connect to <clusterName>-kafka-bootstrap:9093 (TLS + SCRAM-SHA-512).
+clusterName: kafka
+
+kafka:
+  version: 4.3.1
+  metadataVersion: 4.3-IV0
+
+# One node pool whose nodes are both KRaft controller and broker.
+brokers:
+  replicas: 1
+  storage:
+    size: 5Gi
+    class: "" # "" = the cluster's default StorageClass
+    deleteClaim: false
+  resources: {}
+
+# Must not exceed brokers.replicas.
+replication:
+  factor: 1
+  minInsync: 1
+
+topicDefaults:
+  partitions: 3
+
+# Event catalog (API contract, "Asynchronous/Event-Driven Communication").
+topics:
+  - name: foc.user.status
+  - name: foc.order.status
+  - name: foc.credit.commands
+  - name: foc.rating.commands
+  - name: foc.user.rating
+  - name: foc.admin.commands
+  - name: foc.admin.events
+  # Rating's dead letters: messages its consumer skipped, replayed with
+  # npm run replay:dlq. Kept 30 days, longer than the 7-day default.
+  - name: foc.rating.dlq
+    config:
+      retention.ms: 2592000000
+  # Badges' dead letters: messages its consumer skipped, replayed with
+  # npm run replay:dlq. Kept 30 days, longer than the 7-day default.
+  - name: foc.badges.dlq
+    config:
+      retention.ms: 2592000000
+
+# `helm test` pod (Kafka CLI). Keep in step with the Strimzi/Kafka versions.
+tests:
+  image: quay.io/strimzi/kafka:1.2.0-kafka-4.3.1
+
+# One KafkaUser per service that uses Kafka. ACLs mirror the event catalog
+# (ADR-0004). Consumers may also read consumer groups prefixed "<user>".
+users:
+  user:
+    write: [foc.user.status]
+    read: []
+  credit:
+    write: []
+    read: [foc.user.status, foc.credit.commands]
+  order:
+    write: [foc.order.status, foc.credit.commands, foc.rating.commands] # escalations go to admin over HTTP
+    read: [foc.admin.events, foc.user.status] # user.status: UserDeleted → drop delivery points
+  rating:
+    write: [foc.user.rating, foc.rating.dlq]
+    read: [foc.rating.commands, foc.user.status, foc.rating.dlq] # user.status: UserDeleted → anonymise
+  admin:
+    write: [foc.admin.events]
+    read: [] # foc.admin.commands is unused: escalations arrive over HTTP
+  badges:
+    write: [foc.badges.dlq]
+    read: [foc.order.status, foc.user.rating, foc.admin.events, foc.user.status, foc.badges.dlq]

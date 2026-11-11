@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1791652755973,
+      "tag": "0000_initial_setup",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794157488799,
+      "tag": "0001_grant_skip",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794160659608,
+      "tag": "0002_deleted_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794161568671,
+      "tag": "0003_grant_pending_index",
+      "breakpoints": true
+    }
+  ]
+}

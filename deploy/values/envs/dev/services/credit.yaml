@@ -1,0 +1,17 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-03
+# Scope: Helm values (deploy/values/envs/dev/services), drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+image:
+  tag: "50bc6649d7fa3edd8ca3e820850b8cb284dbf278" # git SHA, set by deploy/push-dev.sh
+autoscaling:
+  enabled: true
+  # Idle/dev. Full-run peak needs min=max=8 — see load-test/README.md
+  # "Scale up / scale down". Create reserves credit; CPU HPA is blind to that.
+  minReplicas: 1
+  maxReplicas: 2 # room for one extra pod under CPU load
+  targetCPUUtilization: 70
+resources:
+  requests: {cpu: 250m}
+  limits: {cpu: "1"}

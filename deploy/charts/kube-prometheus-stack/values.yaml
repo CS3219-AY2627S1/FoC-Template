@@ -1,0 +1,105 @@
+# AI Assistance Disclosure
+# Tool: Claude Code (Claude Opus 5.5), date: 2026-11-06
+# Scope: Helm chart kube-prometheus-stack, drafted and edited with Claude Code.
+# Reviewed by Don Lee
+
+# Secret store for Grafana's admin password:
+# values/clusters/<cluster>/kube-prometheus-stack.yaml.
+grafanaAdmin:
+  secretStore: ""
+  remoteKey: ""
+
+kube-prometheus-stack:
+  fullnameOverride: kps
+
+  alertmanager:
+    enabled: false
+
+  # Not scrapeable on EKS: AWS runs the control plane, and kube-proxy binds its
+  # metrics port to localhost.
+  kubeEtcd: { enabled: false }
+  kubeScheduler: { enabled: false }
+  kubeControllerManager: { enabled: false }
+  kubeProxy: { enabled: false }
+  defaultRules:
+    rules:
+      alertmanager: false
+      etcd: false
+      kubeControllerManager: false
+      kubeProxy: false
+      kubeSchedulerAlerting: false
+      kubeSchedulerRecording: false
+
+  prometheusOperator:
+    admissionWebhooks:
+      # Helm-hook patch Jobs loop under Argo CD; cert-manager is already here.
+      certManager: { enabled: true }
+      patch: { enabled: false }
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 256Mi }
+
+  prometheus:
+    serviceAccount:
+      # foc-service's mesh.metrics.serviceAccount lets this identity scrape proxies.
+      name: prometheus
+    prometheusSpec:
+      replicas: 1
+      scrapeInterval: 30s
+      enableRemoteWriteReceiver: true # k6's experimental-prometheus-rw output
+      retention: 7d
+      retentionSize: 8GB
+      # Pick up every monitor and rule, not only those labelled for this release.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+      # Meshed: proxy metrics are only served to this mesh identity.
+      podMetadata:
+        annotations:
+          linkerd.io/inject: enabled
+      resources:
+        requests: { cpu: 500m, memory: 2Gi }
+        limits: { memory: 4Gi }
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: gp3
+            accessModes: [ReadWriteOnce]
+            resources:
+              requests: { storage: 10Gi }
+    additionalPodMonitors:
+      # Request rate, success rate and latency per service: the services expose
+      # no metrics of their own. The port is on an init container (native sidecar).
+      - name: linkerd-proxy
+        namespaceSelector:
+          matchNames: [foc-dev]
+        selector:
+          matchExpressions:
+            - { key: linkerd.io/control-plane-ns, operator: Exists }
+            - { key: app.kubernetes.io/part-of, operator: In, values: [foc] }
+        podTargetLabels: [app.kubernetes.io/name]
+        podMetricsEndpoints:
+          - port: linkerd-admin
+            path: /metrics
+
+  grafana:
+    admin:
+      existingSecret: grafana-admin # templates/grafana-admin.yaml
+    persistence:
+      enabled: false
+    sidecar:
+      datasources:
+        alertmanager: { enabled: false }
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { memory: 512Mi }
+
+  kube-state-metrics:
+    resources:
+      requests: { cpu: 20m, memory: 64Mi }
+      limits: { memory: 256Mi }
+
+  prometheus-node-exporter:
+    resources:
+      requests: { cpu: 20m, memory: 32Mi }
+      limits: { memory: 64Mi }

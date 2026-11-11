@@ -1,0 +1,181 @@
+/*
+ * AI-generated (Claude Code);
+ * Reviewed by Ngooi Jun Sen.
+ */
+
+.root {
+  position: relative;
+  min-width: 0;
+}
+
+/* Matches the text fields and the native select (Inputs.module.css). */
+.control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--touch-target);
+  padding: var(--space-3);
+  padding-right: var(--space-6);
+  position: relative;
+  background: var(--color-field);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.control:focus-visible,
+.control[aria-expanded='true'] {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.invalid {
+  border-color: var(--color-danger);
+}
+
+.value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.placeholder {
+  color: var(--color-placeholder);
+}
+
+.chevron {
+  position: absolute;
+  right: var(--space-3);
+  display: flex;
+  color: var(--color-text-muted);
+}
+
+.list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  max-height: min(360px, 55vh);
+  margin: 0;
+  padding: var(--space-1) 0;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.45);
+}
+
+.list:focus {
+  outline: none;
+}
+
+.group {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.groupLabel {
+  margin: 0;
+  color: var(--color-text-subtle);
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.groupLabel.accent {
+  color: var(--color-accent);
+}
+
+.groupLabel.info {
+  color: var(--color-info);
+}
+
+.option {
+  display: flex;
+  /* Top-aligned, so the marker sits beside the name, not between name and detail. */
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-height: var(--touch-target);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.active {
+  background: var(--color-surface);
+}
+
+.selected .optionLabel {
+  font-weight: var(--font-weight-semibold);
+}
+
+.optionText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.optionLabel {
+  overflow-wrap: anywhere;
+}
+
+.optionDetail {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-subtle);
+  overflow-wrap: anywhere;
+}
+
+.check {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 1lh;
+  color: var(--color-accent);
+}
+
+/* The colour code: a filled dot per kind of place, a plus for a new one. */
+.slot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  /* One line of the label's text, so the marker centres on the first line. */
+  height: 1lh;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+}
+
+.swatch.accent {
+  background: var(--color-accent);
+}
+
+.swatch.info {
+  background: var(--color-info);
+}
+
+/* A ring with a plus drawn from two bars, so it centres exactly. */
+.swatch.add {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--color-border-strong);
+  background:
+    linear-gradient(var(--color-text-muted), var(--color-text-muted)) center / 8px 1.5px no-repeat,
+    linear-gradient(var(--color-text-muted), var(--color-text-muted)) center / 1.5px 8px no-repeat;
+}
