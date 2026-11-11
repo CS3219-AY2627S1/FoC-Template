@@ -1,0 +1,4 @@
+The dev environment is up, but for SES to work, need to add your emails into SES to verify, because our SES is in sandbox environment.
+
+https://nus-aws-cloud.awsapps.com/start/#/ -> click on nus isb account 70, then nusisb_IsbUsersPS -> go to Simple Email Service (SES)
+On the right panel, click Identities -> Create Identity -> check email address -> Enter your nus email address -> create identity. You should receive an email to verify it, then after that you can move on to creating account.
