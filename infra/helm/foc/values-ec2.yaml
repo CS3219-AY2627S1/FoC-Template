@@ -12,34 +12,34 @@ global:
   backup:
     image:
       repository: pg-backup
-      tag: 460a5d300b1b7ac02cf96265398169aeebe57af5
+      tag: 610b984f802a0a87f1ca831a05e03791a85c5284
     s3EndpointUrl: ""
     bucket: cs3219-g31-foc-backups-f6748651
 supplier-service:
-  image: {repository: supplier-service, tag: 460a5d300b1b7ac02cf96265398169aeebe57af5}
+  image: {repository: supplier-service, tag: 610b984f802a0a87f1ca831a05e03791a85c5284}
 user-service:
-  image: {repository: user-service, tag: 460a5d300b1b7ac02cf96265398169aeebe57af5}
+  image: {repository: user-service, tag: 610b984f802a0a87f1ca831a05e03791a85c5284}
   env:
     SMTP_HOST: mailpit.foc-mail.svc.cluster.local
     SMTP_PORT: "1025"
     SMTP_STARTTLS: "false"
     OTP_DEV_MODE: "false"
 credit-service:
-  image: {repository: credit-service, tag: 460a5d300b1b7ac02cf96265398169aeebe57af5}
+  image: {repository: credit-service, tag: 610b984f802a0a87f1ca831a05e03791a85c5284}
 order-service:
-  image: {repository: order-service, tag: 460a5d300b1b7ac02cf96265398169aeebe57af5}
+  image: {repository: order-service, tag: 610b984f802a0a87f1ca831a05e03791a85c5284}
   env:
     ORDER_PHOTO_BUCKET: "cs3219-g31-foc-photos-e102d87e"
     ORDER_PHOTO_REGION: ap-southeast-1
 notification-service:
-  image: {repository: notification-service, tag: 460a5d300b1b7ac02cf96265398169aeebe57af5}
+  image: {repository: notification-service, tag: 610b984f802a0a87f1ca831a05e03791a85c5284}
 chat-service:
-  image: {repository: chat-service, tag: 460a5d300b1b7ac02cf96265398169aeebe57af5}
+  image: {repository: chat-service, tag: 610b984f802a0a87f1ca831a05e03791a85c5284}
   env:
     CHAT_PHOTO_BUCKET: "cs3219-g31-foc-photos-e102d87e"
     CHAT_PHOTO_REGION: ap-southeast-1
 api-gateway:
-  image: {repository: api-gateway, tag: 460a5d300b1b7ac02cf96265398169aeebe57af5}
+  image: {repository: api-gateway, tag: 610b984f802a0a87f1ca831a05e03791a85c5284}
   env:
     CORS_ALLOWED_ORIGINS: https://13.215.134.195.nip.io
   ingress:
@@ -48,7 +48,7 @@ api-gateway:
       enabled: true
       issuer: letsencrypt-prod
 frontend:
-  image: {repository: frontend, tag: 460a5d300b1b7ac02cf96265398169aeebe57af5}
+  image: {repository: frontend, tag: 610b984f802a0a87f1ca831a05e03791a85c5284}
   env:
     API_BASE_URL: https://13.215.134.195.nip.io
   ingress:
