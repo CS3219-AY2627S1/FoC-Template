@@ -19,6 +19,11 @@ supplier-service:
   image: {repository: supplier-service, tag: 460a5d300b1b7ac02cf96265398169aeebe57af5}
 user-service:
   image: {repository: user-service, tag: 460a5d300b1b7ac02cf96265398169aeebe57af5}
+  env:
+    SMTP_HOST: mailpit.foc-mail.svc.cluster.local
+    SMTP_PORT: "1025"
+    SMTP_STARTTLS: "false"
+    OTP_DEV_MODE: "false"
 credit-service:
   image: {repository: credit-service, tag: 460a5d300b1b7ac02cf96265398169aeebe57af5}
 order-service:
@@ -59,3 +64,11 @@ observability:
       tls:
         enabled: true
         issuer: letsencrypt-prod
+mailpit:
+  enabled: true
+  ingress:
+    enabled: true
+    host: mail.13.215.134.195.nip.io
+    tls:
+      enabled: true
+      issuer: letsencrypt-prod

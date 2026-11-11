@@ -40,3 +40,7 @@ dependencies:
     version: 0.1.0
     repository: "file://charts/observability"
     condition: observability.enabled
+  - name: mailpit
+    version: 0.1.0
+    repository: "file://charts/mailpit"
+    condition: mailpit.enabled

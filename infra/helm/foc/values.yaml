@@ -21,6 +21,9 @@ smokeTest:
 observability:
   enabled: true
 
+mailpit:
+  enabled: false
+
 namespaces:
   - foc-supplier
   - foc-user
@@ -32,3 +35,4 @@ namespaces:
   - foc-gateway
   - foc-frontend
   - foc-observability
+  - foc-mail
