@@ -1,0 +1,197 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-06
+# Scope (AI-25): Generated Kubernetes manifests, health endpoints and probe settings from my deployment specification.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# Kafka: 3 brokers in KRaft mode (each pod is both a broker and a controller; no ZooKeeper).
+#
+# Why a StatefulSet and not a Deployment:
+#   - each pod gets a stable name (kafka-0, kafka-1, kafka-2), used as its node id and address
+#   - each pod gets its own disk (PersistentVolumeClaim) that follows it across restarts
+#
+# 3 brokers with replication factor 3 and min in-sync replicas 2: any one broker (or AZ) can go down
+# with no data loss and no downtime. Compare: compose.yaml runs 1 broker with replication factor 1.
+#
+# Alternative: Amazon MSK (managed Kafka) + MSK Connect. More expensive, but AWS runs it.
+
+# Headless Service (clusterIP: None): no load balancing, just a DNS name per pod, e.g.
+# kafka-0.kafka-headless.campuscouriers-messaging.svc.cluster.local. Brokers use these to find each other.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-headless
+  namespace: campuscouriers-messaging
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true # brokers must find each other BEFORE they are ready (to elect a controller)
+  selector:
+    app.kubernetes.io/name: kafka
+  ports:
+    - name: broker
+      port: 9092
+    - name: controller
+      port: 9093
+---
+# Bootstrap address for clients: kafka.campuscouriers-messaging.svc.cluster.local:9092
+# A client connects here once, learns the per-pod addresses, then talks to each broker directly.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: campuscouriers-messaging
+spec:
+  selector:
+    app.kubernetes.io/name: kafka
+  ports:
+    - name: broker
+      port: 9092
+      targetPort: broker
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: campuscouriers-messaging
+  labels:
+    app.kubernetes.io/name: kafka
+spec:
+  serviceName: kafka-headless
+  replicas: 3
+  # Start all 3 at once: a controller quorum needs a majority online, so starting them one by one
+  # (the default) would leave kafka-0 waiting forever for the others.
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60 # time to hand over partition leadership cleanly
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000 # "appuser" in the apache/kafka image
+        runAsGroup: 1000
+        fsGroup: 1000 # makes the mounted disk writable by that user
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: kafka
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: kafka
+      containers:
+        - name: kafka
+          image: apache/kafka:4.3.1 # same version as compose.yaml
+          # Each pod derives its node id and its own address from its name (kafka-0 -> id 0),
+          # then starts Kafka with the image's normal start script.
+          command: ["sh", "-c"]
+          args:
+            - |
+              export KAFKA_NODE_ID="${HOSTNAME##*-}"
+              export KAFKA_ADVERTISED_LISTENERS="PLAINTEXT://${HOSTNAME}.kafka-headless.${POD_NAMESPACE}.svc.cluster.local:9092"
+              exec /etc/kafka/docker/run
+          ports:
+            - name: broker
+              containerPort: 9092
+            - name: controller
+              containerPort: 9093
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # The apache/kafka image turns every KAFKA_* variable into a server.properties setting
+            # (KAFKA_NUM_PARTITIONS -> num.partitions).
+            - name: CLUSTER_ID # any fixed base64 UUID; must stay the same for the life of the cluster
+              value: "Y2FtcHVzY291cmllcnMxMg"
+            - name: KAFKA_PROCESS_ROLES
+              value: broker,controller
+            - name: KAFKA_LISTENERS
+              value: PLAINTEXT://:9092,CONTROLLER://:9093
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: CONTROLLER
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: PLAINTEXT
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: >-
+                0@kafka-0.kafka-headless.campuscouriers-messaging.svc.cluster.local:9093,1@kafka-1.kafka-headless.campuscouriers-messaging.svc.cluster.local:9093,2@kafka-2.kafka-headless.campuscouriers-messaging.svc.cluster.local:9093
+            - name: KAFKA_LOG_DIRS
+              value: /var/lib/kafka/data/logs # subfolder: the volume root contains "lost+found"
+            - name: KAFKA_NUM_PARTITIONS
+              value: "3"
+            - name: KAFKA_DEFAULT_REPLICATION_FACTOR
+              value: "3"
+            - name: KAFKA_MIN_INSYNC_REPLICAS
+              value: "2"
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "3"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "3"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "2"
+            - name: KAFKA_HEAP_OPTS
+              value: -Xms512m -Xmx512m
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/kafka/data
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              memory: 1536Mi
+          startupProbe:
+            tcpSocket:
+              port: broker
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: broker
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: broker
+            periodSeconds: 20
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+  # One 10 GiB EBS disk per broker (data-kafka-0, data-kafka-1, ...). These are kept when the
+  # StatefulSet is deleted, so data survives a redeploy.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: gp3
+        resources:
+          requests:
+            storage: 10Gi
+---
+# At most one broker may be evicted at a time (e.g. node upgrade), keeping 2 of 3 replicas in sync.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kafka
+  namespace: campuscouriers-messaging
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka

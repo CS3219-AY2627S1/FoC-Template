@@ -1,0 +1,115 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-06
+# Scope (AI-25): Generated Kubernetes manifests, health endpoints and probe settings from my deployment specification.
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-09 to 2026-11-10
+# Scope (AI-26): Generated Terraform, Kubernetes manifests and scripts for the AWS resources I specified.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# Kafka Connect running the Debezium connectors: streams each service's outbox table to Kafka.
+#
+# A Deployment (not a StatefulSet) is fine: Connect keeps its state (connector configs, read
+# positions) in Kafka topics, not on local disk. 1 replica: each Postgres connector runs as a single
+# task anyway, and Kubernetes restarts the pod if it dies. A 2nd replica would only be a warm standby.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-connect
+  namespace: campuscouriers-messaging
+  labels:
+    app.kubernetes.io/name: kafka-connect
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka-connect
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka-connect
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kafka-connect
+          image: quay.io/debezium/connect:3.6.3.Final # same version as compose.yaml
+          ports:
+            - name: rest
+              containerPort: 8083
+          env:
+            - name: BOOTSTRAP_SERVERS
+              value: kafka:9092
+            - name: GROUP_ID
+              value: debezium-connect
+            - name: CONFIG_STORAGE_TOPIC
+              value: connect-configs
+            - name: OFFSET_STORAGE_TOPIC
+              value: connect-offsets
+            - name: STATUS_STORAGE_TOPIC
+              value: connect-status
+            - name: CONFIG_STORAGE_REPLICATION_FACTOR
+              value: "3"
+            - name: OFFSET_STORAGE_REPLICATION_FACTOR
+              value: "3"
+            - name: STATUS_STORAGE_REPLICATION_FACTOR
+              value: "3"
+            # Lets connector configs read DB credentials as ${env:USER_DB_PASSWORD} etc.
+            - name: CONNECT_CONFIG_PROVIDERS
+              value: env
+            - name: CONNECT_CONFIG_PROVIDERS_ENV_CLASS
+              value: org.apache.kafka.common.config.provider.EnvVarConfigProvider
+            # Address other Connect workers use to reach this one (only matters with >1 replica)
+            - name: ADVERTISED_HOST_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: HEAP_OPTS
+              value: -Xms512m -Xmx512m
+          envFrom:
+            # USER_DB_NAME / _USERNAME / _PASSWORD, and the same for SUPPLIER_, ORDER_, CREDIT_ and CHAT_.
+            # Read only at pod start: after this Secret changes, restart Kafka Connect (see k8s/README.md)
+            - secretRef:
+                name: debezium-db-credentials
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              memory: 1536Mi
+          startupProbe:
+            httpGet:
+              path: /
+              port: rest
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /
+              port: rest
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: rest
+            periodSeconds: 20
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+# Connect's REST API (register/inspect connectors). Internal only: use `kubectl port-forward` to reach it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-connect
+  namespace: campuscouriers-messaging
+spec:
+  selector:
+    app.kubernetes.io/name: kafka-connect
+  ports:
+    - name: rest
+      port: 8083
+      targetPort: rest

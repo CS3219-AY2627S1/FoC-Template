@@ -1,0 +1,102 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-09 to 2026-11-10
+# Scope (AI-26): Generated Terraform, Kubernetes manifests and scripts for the AWS resources I specified.
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-10 to 2026-11-11
+# Scope (AI-29): Generated manifests, secret wiring and service changes to deploy the AI assistant and RAG services.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# Creates, for each service, a login user and a database it owns, and blocks the other services from
+# connecting to it (database-per-service, enforced by PostgreSQL itself). The users Debezium reads
+# from also get rds_replication. Tables are created later by each service (Hibernate / Alembic;
+# RAG's by its rag-index Job). The RAG database also gets the pgvector extension, which only an
+# admin may create on RDS.
+#
+# Re-runnable: users and databases are only created if missing; passwords are (re)set every time.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-init
+  namespace: campuscouriers-ops
+spec:
+  backoffLimit: 4 # RDS or the secrets may not be ready on the first try
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: db-init
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70 # "postgres" user in the postgres:alpine image
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: db-init
+          image: postgres:18-alpine # only its psql client is used; matches the RDS major version
+          envFrom:
+            - secretRef:
+                name: db-admin # PGHOST, PGPORT, PGUSER, PGPASSWORD
+            - secretRef:
+                name: db-service-credentials # <SERVICE>_DB_USERNAME / _DB_PASSWORD
+          env:
+            - name: PGDATABASE
+              value: postgres
+            - name: PGSSLMODE
+              value: require # RDS for PostgreSQL 15+ only accepts encrypted connections
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+
+              # $1 = user, $2 = password, $3 = database, $4 = true if Debezium reads it.
+              # Values go in as psql variables (:'x' = quoted literal, :"x" = quoted name), never
+              # pasted into the SQL text, so a value can't change the meaning of a statement.
+              init_db() {
+                echo "== $3 (owner $1, replication: $4)"
+                psql -v ON_ERROR_STOP=1 -q \
+                  -v u="$1" -v pw="$2" -v db="$3" -v cdc="$4" <<'SQL'
+              SELECT format('CREATE ROLE %I LOGIN', :'u')
+               WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'u') \gexec
+              ALTER ROLE :"u" WITH LOGIN PASSWORD :'pw';
+
+              -- PostgreSQL 16+: to create a database owned by another role, you must be able to
+              -- act as that role
+              GRANT :"u" TO CURRENT_USER;
+
+              SELECT format('CREATE DATABASE %I OWNER %I', :'db', :'u')
+               WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'db') \gexec
+
+              -- By default every user may connect to every database; only the owner may now
+              REVOKE ALL ON DATABASE :"db" FROM PUBLIC;
+
+              \if :cdc
+                GRANT rds_replication TO :"u";
+              \endif
+              SQL
+              }
+
+              init_db "$USER_DB_USERNAME"     "$USER_DB_PASSWORD"     campuscouriers_user     true
+              init_db "$SUPPLIER_DB_USERNAME" "$SUPPLIER_DB_PASSWORD" campuscouriers_supplier true
+              init_db "$CREDIT_DB_USERNAME"   "$CREDIT_DB_PASSWORD"   campuscouriers_credit   true
+              init_db "$ORDER_DB_USERNAME"    "$ORDER_DB_PASSWORD"    campuscouriers_order    true
+              init_db "$CHAT_DB_USERNAME"     "$CHAT_DB_PASSWORD"     campuscouriers_chat     true
+              init_db "$NOTIFICATION_DB_USERNAME" "$NOTIFICATION_DB_PASSWORD" campuscouriers_notification false
+              init_db "$RAG_DB_USERNAME"      "$RAG_DB_PASSWORD"      campuscouriers_rag      false
+
+              echo "== campuscouriers_rag: pgvector extension"
+              psql -v ON_ERROR_STOP=1 -q -d campuscouriers_rag -c 'CREATE EXTENSION IF NOT EXISTS vector'
+              echo "== done"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

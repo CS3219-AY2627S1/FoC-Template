@@ -1,0 +1,22 @@
+# Provider plugins and module downloads (recreated by `terraform init`)
+**/.terraform/*
+
+# State files: may contain secrets, and the real state lives in S3.
+# The bootstrap state is the one local exception; keep it out of git too (see README).
+*.tfstate
+*.tfstate.*
+*.tfplan
+
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Holds your personal budget alert email
+bootstrap/terraform.tfvars
+
+# Commit .terraform.lock.hcl: it pins exact provider versions so the whole team uses the same ones

@@ -1,0 +1,263 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-10
+# Scope (AI-27): Generated the deploy workflow, CI helper scripts and deploy-role Terraform I specified.
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-10 to 2026-11-11
+# Scope (AI-29): Generated manifests, secret wiring and service changes to deploy the AI assistant and RAG services.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# Deploys main to AWS on every push (and on demand: Actions tab -> Deploy -> Run workflow).
+# How it works and the one-time setup: .github/workflows/README.md
+#
+#   plan ──> images (one job per service that changed) ──> backend ──> frontend
+#
+# Nothing is rebuilt or restarted when its code hasn't changed: image tags come from the git hash of
+# each service's folder (scripts/image-tags.sh), and the frontend is skipped when the deployed build
+# already matches.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    # Changes that never affect what runs in the cluster or the frontend
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "terraform/**"
+      - "compose.yaml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write # to sign in to AWS with GitHub's OIDC token (no stored keys)
+  contents: read
+
+# One deploy at a time; a newer push waits for the running one instead of cancelling it halfway
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-southeast-1
+  CLUSTER_NAME: campuscouriers
+  ECR_REGISTRY: 596601390706.dkr.ecr.ap-southeast-1.amazonaws.com
+  APP_NAMESPACE: campuscouriers-app
+  MESSAGING_NAMESPACE: campuscouriers-messaging
+
+jobs:
+  plan:
+    name: Work out what to build
+    runs-on: ubuntu-latest
+    outputs:
+      builds: ${{ steps.tags.outputs.builds }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Find images not yet in ECR
+        id: tags
+        run: |
+          builds="[]"
+          while read -r service tag folder; do
+            if aws ecr describe-images --repository-name "campuscouriers/$service" \
+                 --image-ids "imageTag=$tag" > /dev/null 2>&1; then
+              echo "$service:$tag already in ECR"
+            else
+              echo "$service:$tag needs building"
+              builds=$(jq -c --arg s "$service" --arg t "$tag" --arg f "$folder" '. + [{service: $s, tag: $t, folder: $f}]' <<< "$builds")
+            fi
+          done < <(bash scripts/image-tags.sh)
+          echo "builds=$builds" >> "$GITHUB_OUTPUT"
+
+  images:
+    name: Build ${{ matrix.service }}
+    needs: plan
+    if: needs.plan.outputs.builds != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.builds) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      # provenance/sbom off: push one plain image, as scripts/build-and-push.ps1 does (see the comment there)
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.folder }}
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ env.ECR_REGISTRY }}/campuscouriers/${{ matrix.service }}:${{ matrix.tag }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          # Reuse layers (e.g. downloaded Maven/pip dependencies) from earlier runs
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  backend:
+    name: Deploy to EKS
+    needs: [plan, images]
+    # Runs when every image built, or when nothing needed building
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.images.result == 'success' || needs.images.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Connect kubectl to the cluster
+        run: aws eks update-kubeconfig --name "$CLUSTER_NAME"
+
+      - name: Point the manifests at this commit's images
+        run: bash scripts/image-tags.sh --write
+
+      - name: Show what will change
+        run: kubectl diff -k k8s || true # exit code 1 just means "there are differences"
+
+      # Same as k8s/README.md step 3. "configured"/"created" means the connector files changed.
+      - name: Update the Debezium connector files
+        id: connectors
+        run: |
+          result=$(kubectl create configmap debezium-connectors -n "$MESSAGING_NAMESPACE" \
+            --from-file=debezium/connectors --from-file=debezium/register-connectors.sh \
+            --dry-run=client -o yaml | kubectl apply -f -)
+          echo "$result"
+          if grep -qE "configured|created" <<< "$result"; then echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+
+      # New order-service code may need new columns, so migrate BEFORE its new pods start.
+      # Only when order-service's image changes (alembic upgrade is a no-op otherwise, but takes a minute).
+      - name: Migrate the order database
+        run: |
+          new=$(kubectl kustomize k8s | yq 'select(.kind == "Deployment" and .metadata.name == "order-service") | .spec.template.spec.containers[0].image')
+          live=$(kubectl get deployment order-service -n "$APP_NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+          if [[ "$new" == "$live" ]]; then echo "order-service unchanged ($live), no migration needed"; exit 0; fi
+          echo "order-service: ${live:-none} -> $new"
+          bash scripts/ci/run-job.sh "$APP_NAMESPACE" order-migrate 600
+
+      # Checked before applying, since applying changes what's live
+      - name: Check whether the RAG knowledge base needs importing
+        id: rag
+        run: |
+          new=$(kubectl kustomize k8s | yq 'select(.kind == "Deployment" and .metadata.name == "rag-service") | .spec.template.spec.containers[0].image')
+          live=$(kubectl get deployment rag-service -n "$APP_NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+          if [[ "$new" == "$live" ]]; then echo "rag-service unchanged ($live), chunks already imported"; exit 0; fi
+          echo "rag-service: ${live:-none} -> $new"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Apply the manifests
+        run: kubectl apply -k k8s
+
+      # The chunks (RAG-service/ingestion/chunks.csv) are inside the image, so a new image may mean new
+      # chunks. Runs after applying, which creates the database login Secret on the first deploy; until
+      # it finishes, the Assistant answers from the previous chunks.
+      - name: Import the RAG knowledge chunks
+        if: steps.rag.outputs.changed == 'true'
+        run: bash scripts/ci/run-job.sh "$APP_NAMESPACE" rag-index 900
+
+      - name: Wait for the rollouts
+        run: |
+          for deployment in $(kubectl get deployments -n "$APP_NAMESPACE" -o name); do
+            kubectl rollout status "$deployment" -n "$APP_NAMESPACE" --timeout=10m
+          done
+          kubectl rollout status deployment/kafka-connect -n "$MESSAGING_NAMESPACE" --timeout=10m
+
+      - name: Register the changed Debezium connectors
+        if: steps.connectors.outputs.changed == 'true'
+        run: |
+          # Kafka Connect reads the connector files only through this job
+          bash scripts/ci/run-job.sh "$MESSAGING_NAMESPACE" register-connectors 600
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Deployed images"
+            echo "| Service | Tag |"
+            echo "|---|---|"
+            bash scripts/image-tags.sh | while read -r service tag _; do echo "| $service | \`$tag\` |"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  frontend:
+    name: Deploy the frontend
+    needs: backend # after the backend, so new pages never call endpoints that aren't live yet
+    if: ${{ !cancelled() && needs.backend.result == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      BUCKET: ${{ vars.FRONTEND_BUCKET }}
+      DISTRIBUTION: ${{ vars.FRONTEND_DISTRIBUTION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # The build depends on the frontend code and the API address, so both make up its version.
+      # version.json is uploaded with each build; if it already matches, there is nothing to do.
+      - name: Check whether the deployed frontend is current
+        id: version
+        run: |
+          api_url="https://$(yq '.data.apiHost' k8s/domain.yaml)"
+          version=$(jq -cn --arg tree "$(git rev-parse HEAD:frontend)" --arg api "$api_url" '{tree: $tree, api: $api}')
+          deployed=$(aws s3 cp "s3://$BUCKET/version.json" - 2>/dev/null | jq -c '{tree, api}' || true)
+          echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == "$deployed" ]]; then
+            echo "Frontend already deployed ($version)"
+          else
+            echo "Deployed: ${deployed:-nothing recorded}; building $version"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.version.outputs.build == 'true'
+        with:
+          node-version: 22
+
+      # Same steps as scripts/deploy-frontend.ps1
+      - name: Build
+        if: steps.version.outputs.build == 'true'
+        working-directory: frontend
+        env:
+          VITE_USER_API_URL: ${{ steps.version.outputs.api_url }}
+          VITE_SUPPLIER_API_URL: ${{ steps.version.outputs.api_url }}
+          VITE_ORDER_API_URL: ${{ steps.version.outputs.api_url }}
+          VITE_CREDIT_API_URL: ${{ steps.version.outputs.api_url }}
+          VITE_NOTIFICATION_API_URL: ${{ steps.version.outputs.api_url }}
+          VITE_CHAT_API_URL: ${{ steps.version.outputs.api_url }}
+          VITE_AI_ASSISTANT_API_URL: ${{ steps.version.outputs.api_url }}
+          VITE_RAG_API_URL: ${{ steps.version.outputs.api_url }}
+          VITE_MOCK_AUTH: "false"
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Upload and clear the CDN cache
+        if: steps.version.outputs.build == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          jq -n --argjson v "$VERSION" --arg commit "$GITHUB_SHA" '$v + {commit: $commit}' > frontend/dist/version.json
+          aws s3 sync frontend/dist/assets "s3://$BUCKET/assets" --cache-control "public, max-age=31536000, immutable"
+          aws s3 sync frontend/dist "s3://$BUCKET" --exclude "assets/*" --cache-control "no-cache" --delete
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths "/*" --query Invalidation.Id --output text

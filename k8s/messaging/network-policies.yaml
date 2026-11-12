@@ -1,0 +1,74 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-06
+# Scope (AI-25): Generated Kubernetes manifests, health endpoints and probe settings from my deployment specification.
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-09 to 2026-11-10
+# Scope (AI-26): Generated Terraform, Kubernetes manifests and scripts for the AWS resources I specified.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# Who may connect to which pod in campuscouriers-messaging (same approach as k8s/app/network-policies.yaml).
+
+# 1. Deny all incoming traffic by default
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: campuscouriers-messaging
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+# 2. Kafka brokers: each other (replication + controller quorum), Kafka Connect, and consumers in the
+#    app namespace. Add new consumers here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kafka
+  namespace: campuscouriers-messaging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kafka
+      ports:
+        - port: 9092
+        - port: 9093
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kafka-connect
+        # namespaceSelector + podSelector in ONE item = "these pods in that namespace"
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: campuscouriers-app
+          podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["credit-service", "notification-service", "chat-service"]
+      ports:
+        - port: 9092
+---
+# 3. Kafka Connect's REST API: only the job that registers the connectors
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kafka-connect
+  namespace: campuscouriers-messaging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kafka-connect
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: register-connectors
+      ports:
+        - port: 8083

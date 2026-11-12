@@ -1,0 +1,13 @@
+<!--
+AI Assistance Disclosure
+Tool and date: OpenAI Codex (gpt-5.6-sol), 2026-10-03
+Scope (AI-02): Adjusted existing UI styling to match the supplied Figma mockup.
+Usage log: AI_USAGE_LOG.md
+Author review: Changes validated and confirmed.
+-->
+
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="19" height="19" viewBox="0 0 19 19" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="compass">
+<path id="Vector" d="M9.5 17.4173C13.8726 17.4173 17.4173 13.8726 17.4173 9.5C17.4173 5.1274 13.8726 1.5827 9.5 1.5827C5.1274 1.5827 1.5827 5.1274 1.5827 9.5C1.5827 13.8726 5.1274 17.4173 9.5 17.4173Z" stroke="#68736C" stroke-linecap="round"/>
+</g>
+</svg>

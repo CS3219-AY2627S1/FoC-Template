@@ -1,0 +1,25 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-09 to 2026-11-10
+# Scope (AI-26): Generated Terraform, Kubernetes manifests and scripts for the AWS resources I specified.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# The ONE place to set the domain for the Kubernetes manifests.
+# k8s/kustomization.yaml (replacements) copies these values into:
+#   apiHost   -> app/ingress.yaml: the ALB's hostname (external-dns creates its DNS record, and the
+#                ALB picks the ACM certificate for this name from terraform/bootstrap/dns.tf)
+#   appOrigin -> the CORS setting of every service: the frontend's address, allowed to call the API
+#
+# "local-config": kustomize reads this file but never sends it to the cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: domain-settings
+  annotations:
+    config.kubernetes.io/local-config: "true"
+data:
+  # Must match the certificate's name EXACTLY, including "api.":
+  #   terraform -chdir=terraform/bootstrap output api_hostname
+  apiHost: api.campuscouriers.online
+  # Comma-separated. Add http://localhost:5173 while running the frontend locally against this API.
+  appOrigin: https://app.campuscouriers.online

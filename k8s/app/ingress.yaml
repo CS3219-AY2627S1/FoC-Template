@@ -1,0 +1,157 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-06
+# Scope (AI-25): Generated Kubernetes manifests, health endpoints and probe settings from my deployment specification.
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-09 to 2026-11-10
+# Scope (AI-26): Generated Terraform, Kubernetes manifests and scripts for the AWS resources I specified.
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-10 to 2026-11-11
+# Scope (AI-29): Generated manifests, secret wiring and service changes to deploy the AI assistant and RAG services.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+# AI Assistance Disclosure:
+# Tool: OpenAI Codex (GPT-5), date: 2026-11-10
+# Scope: Debugged and updated Chat Service cloud endpoint routing.
+
+# Public entry point for the APIs. The AWS Load Balancer Controller sees this Ingress and creates an
+# internet-facing Application Load Balancer (ALB) in the public subnets.
+#
+# The frontend is NOT here: it is served from S3 + CloudFront at app.<domain>. Only api.<domain> is
+# routed here, by path. The ALB cannot rewrite paths, so the rules use each service's existing paths.
+#
+# Paths left out on purpose (reachable only inside the cluster):
+#   /api/reservations/**    credit reservations: only order-service calls these (it also proves itself
+#                           with a shared key), so they stay off the internet
+#   /.well-known/jwks.json  only the services need the JWT public keys
+#   /actuator/**, /health   health checks
+#
+# Routes use service-owned prefixes so requests do not depend on precedence between overlapping
+# ALB path rules.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api
+  namespace: campuscouriers-app
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    # Send traffic straight to pod IPs (needs the VPC CNI, which EKS uses) instead of via node ports
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443" # HTTP -> HTTPS
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+    # TLS certificate: if left out, the controller finds an issued ACM certificate matching the
+    # host below. Pin it explicitly once Terraform creates it:
+    # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:<ACCOUNT_ID>:certificate/<ID>
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    # Lets new pods start receiving traffic sooner after a deploy (default is 300s)
+    alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=30
+    alb.ingress.kubernetes.io/tags: project=campuscouriers
+    # Live notifications (Server-Sent Events) and chat (WebSockets) keep connections open; the ALB
+    # closes any that stay silent longer than this (default 60s). Both send heartbeats well within it.
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=300
+spec:
+  ingressClassName: alb
+  rules:
+    - host: api.example.com # set from k8s/domain.yaml (apiHost); external-dns points it at this ALB
+      http:
+        paths:
+          # user-service
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: user-service
+                port:
+                  name: http
+          - path: /api/v1/accounts
+            pathType: Prefix
+            backend:
+              service:
+                name: user-service
+                port:
+                  name: http
+          - path: /api/v1/profiles
+            pathType: Prefix
+            backend:
+              service:
+                name: user-service
+                port:
+                  name: http
+          # supplier-service
+          - path: /suppliers
+            pathType: Prefix
+            backend:
+              service:
+                name: supplier-service
+                port:
+                  name: http
+          - path: /categories
+            pathType: Prefix
+            backend:
+              service:
+                name: supplier-service
+                port:
+                  name: http
+          - path: /buildings
+            pathType: Prefix
+            backend:
+              service:
+                name: supplier-service
+                port:
+                  name: http
+          # credit-service
+          - path: /api/wallets
+            pathType: Prefix
+            backend:
+              service:
+                name: credit-service
+                port:
+                  name: http
+          # ai-errand-assistant-service. The one exception to service-owned prefixes: POST /errands/draft
+          # sits inside order-service's /errands, so this Exact rule must stay ABOVE /errands (the ALB uses
+          # the first matching rule, in this order). Moving the endpoint to its own prefix would remove this.
+          - path: /errands/draft
+            pathType: Exact
+            backend:
+              service:
+                name: ai-errand-assistant-service
+                port:
+                  name: http
+          # order-service. Prefix matches whole path segments, so /errand does not cover /errands
+          - path: /errand
+            pathType: Prefix
+            backend:
+              service:
+                name: order-service
+                port:
+                  name: http
+          - path: /errands
+            pathType: Prefix
+            backend:
+              service:
+                name: order-service
+                port:
+                  name: http
+          # chat-service (REST + the WebSocket at /conversations/{id}/ws; the ALB passes WebSockets through)
+          - path: /conversations
+            pathType: Prefix
+            backend:
+              service:
+                name: chat-service
+                port:
+                  name: http
+          # rag-service: the Assistant page (POST /query, signed-in users only)
+          - path: /query
+            pathType: Prefix
+            backend:
+              service:
+                name: rag-service
+                port:
+                  name: http
+          # notification-service (includes the live stream GET /notifications/stream)
+          - path: /notifications
+            pathType: Prefix
+            backend:
+              service:
+                name: notification-service
+                port:
+                  name: http

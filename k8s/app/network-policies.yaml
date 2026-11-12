@@ -1,0 +1,138 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-06
+# Scope (AI-25): Generated Kubernetes manifests, health endpoints and probe settings from my deployment specification.
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-09 to 2026-11-10
+# Scope (AI-26): Generated Terraform, Kubernetes manifests and scripts for the AWS resources I specified.
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-10 to 2026-11-11
+# Scope (AI-29): Generated manifests, secret wiring and service changes to deploy the AI assistant and RAG services.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# Who may connect to which pod in campuscouriers-app.
+#
+# Start from "deny all incoming traffic", then allow only the connections the system needs.
+# Policies add up: a pod accepts traffic if ANY policy selecting it allows it.
+# On EKS this needs network policy support enabled on the VPC CNI add-on.
+#
+# Only incoming traffic is restricted. Outgoing traffic (to RDS, Kafka, AWS APIs, DNS) stays open.
+# The database itself is protected by RDS security groups, not by these policies.
+
+# 1. Deny all incoming traffic to every pod in the namespace by default
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: campuscouriers-app
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+# 2. The ALB may reach the API services (requests and health checks).
+#    With target-type "ip", traffic arrives from the ALB's addresses in the PUBLIC subnets.
+#    Use the public subnet CIDRs here, not the whole VPC CIDR: pods also get VPC addresses,
+#    so allowing the whole VPC would let every pod in, defeating the policies below.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-alb-to-api-services
+  namespace: campuscouriers-app
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: ["user-service", "supplier-service", "credit-service", "order-service",
+                 "notification-service", "chat-service", "ai-errand-assistant-service",
+                 "rag-service"]
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/24 # public subnet, AZ a (terraform output public_subnet_cidrs)
+        - ipBlock:
+            cidr: 10.0.1.0/24 # public subnet, AZ b
+      ports:
+        - port: http
+---
+# 3. user-service is called by the other services (JWT public keys, user lookups)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-services-to-user-service
+  namespace: campuscouriers-app
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: user-service
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["supplier-service", "credit-service", "order-service",
+                         "notification-service", "chat-service", "ai-errand-assistant-service",
+                         "rag-service"]
+      ports:
+        - port: http
+---
+# 4. supplier-service is called by credit-service, order-service and ai-errand-assistant-service (catalog)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-services-to-supplier-service
+  namespace: campuscouriers-app
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: supplier-service
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["credit-service", "order-service", "ai-errand-assistant-service"]
+      ports:
+        - port: http
+---
+# 5. credit-service is called by order-service (credit reservations)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-order-to-credit-service
+  namespace: campuscouriers-app
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: credit-service
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: order-service
+      ports:
+        - port: http
+---
+# 6. order-service is called by ai-errand-assistant-service (the caller's past errands, for drafts).
+#    Browser requests still arrive through the ALB (policy 2).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ai-assistant-to-order-service
+  namespace: campuscouriers-app
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: order-service
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ai-errand-assistant-service
+      ports:
+        - port: http

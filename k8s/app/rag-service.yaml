@@ -1,0 +1,180 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-10 to 2026-11-11
+# Scope (AI-29): Generated manifests, secret wiring and service changes to deploy the AI assistant and RAG services.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# rag-service (FastAPI): the Assistant page. POST /query embeds the question, finds the closest
+# knowledge chunks in PostgreSQL (pgvector), and has Claude answer from them. Signed-in users only.
+# Same layout as order-service.yaml; differences are commented.
+#
+# Needs: the campuscouriers_rag database with the vector extension (k8s/ops db-init), the chunks
+# imported by the rag-index Job (run by the deploy workflow whenever this image changes), and
+# ANTHROPIC_API_KEY from AWS Secrets Manager (k8s/README.md, "API keys").
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rag-service
+  namespace: campuscouriers-app
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-service
+  namespace: campuscouriers-app
+  labels:
+    app.kubernetes.io/name: rag-service
+spec:
+  # Pod count is owned by the HorizontalPodAutoscaler below
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rag-service
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rag-service
+    spec:
+      serviceAccountName: rag-service
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60 # let an in-flight Claude answer finish after the preStop pause
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001 # the image runs as root by default; run it as an unprivileged uid instead
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: rag-service
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: rag-service
+      containers:
+        - name: rag-service
+          image: campuscouriers/rag-service
+          # The image's default command is the indexing job; run the API instead (as compose does)
+          command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            # uid 10001 has no home directory; give libraries that cache files a writable one
+            - name: HOME
+              value: /tmp
+          envFrom:
+            - configMapRef:
+                name: rag-service-config # generated from k8s/app/config/rag-service.env
+            - secretRef:
+                name: rag-db-credentials # DATABASE_URL
+            # ANTHROPIC_API_KEY. Optional: until the key is set, the pod still starts and /query
+            # answers 503 instead of the service failing to start. Read at start: after setting or
+            # rotating the key, restart this Deployment (k8s/README.md, "API keys").
+            - secretRef:
+                name: rag-anthropic
+                optional: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          # PyTorch and the embedding model take ~500 MiB before the first request
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+          # Loading PyTorch and the model takes a while; allow up to 3 minutes before the first check
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+---
+# Exposed on 8080 like the other services; forwards to the container's 8000
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-service
+  namespace: campuscouriers-app
+  annotations:
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: rag-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# Embedding a question uses some CPU; 2 pods for availability, a third under load
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rag-service
+  namespace: campuscouriers-app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rag-service
+  minReplicas: 2
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: rag-service
+  namespace: campuscouriers-app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rag-service

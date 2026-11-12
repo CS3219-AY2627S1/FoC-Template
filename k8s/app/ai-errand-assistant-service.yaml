@@ -1,0 +1,164 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-10 to 2026-11-11
+# Scope (AI-29): Generated manifests, secret wiring and service changes to deploy the AI assistant and RAG services.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# ai-errand-assistant-service (FastAPI): turns a short request ("iced milo from the Deck to COM3 by
+# 5pm") into a draft errand using OpenAI. POST /errands/draft. It stores nothing, so it scales freely.
+# Same layout as order-service.yaml; differences are commented.
+#
+# OPENAI_API_KEY comes from AWS Secrets Manager (campuscouriers/openai-api-key) through the
+# ai-assistant-openai Secret (external-secrets.yaml). How to set it: k8s/README.md, "API keys".
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-errand-assistant-service
+  namespace: campuscouriers-app
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-errand-assistant-service
+  namespace: campuscouriers-app
+  labels:
+    app.kubernetes.io/name: ai-errand-assistant-service
+spec:
+  # Pod count is owned by the HorizontalPodAutoscaler below
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-errand-assistant-service
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ai-errand-assistant-service
+    spec:
+      serviceAccountName: ai-errand-assistant-service
+      automountServiceAccountToken: false
+      # A draft waits on OpenAI for up to ~30s; let in-flight requests finish after the preStop pause
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001 # the image runs as root by default; run it as an unprivileged uid instead
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: ai-errand-assistant-service
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: ai-errand-assistant-service
+      containers:
+        - name: ai-errand-assistant-service
+          image: campuscouriers/ai-errand-assistant-service
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: ai-errand-assistant-service-config # generated from k8s/app/config/ai-errand-assistant-service.env
+            # OPENAI_API_KEY. Optional: until the key is set, the pod still starts and drafts return
+            # 503 "OpenAI API key is not configured" instead of the service failing to start.
+            # Environment variables are read at start: after setting or rotating the key, restart
+            # this Deployment (k8s/README.md, "API keys").
+            - secretRef:
+                name: ai-assistant-openai
+                optional: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 3
+            failureThreshold: 20
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+# Exposed on 8080 like the other services; forwards to the container's 8000
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-errand-assistant-service
+  namespace: campuscouriers-app
+  annotations:
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ai-errand-assistant-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# Mostly waiting on OpenAI, so CPU stays low; 2 pods for availability, more only under heavy use
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai-errand-assistant-service
+  namespace: campuscouriers-app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-errand-assistant-service
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ai-errand-assistant-service
+  namespace: campuscouriers-app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-errand-assistant-service

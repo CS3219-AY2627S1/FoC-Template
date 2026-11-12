@@ -1,0 +1,26 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-06
+# Scope (AI-25): Generated Kubernetes manifests, health endpoints and probe settings from my deployment specification.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# Two namespaces, matching the architecture diagram.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: campuscouriers-app
+  labels:
+    # Pod Security Admission: reject pods that run as root, escalate privileges, etc.
+    pod-security.kubernetes.io/enforce: restricted
+    # AWS Load Balancer Controller: during a rolling update, wait until the ALB reports a new pod
+    # healthy before the old one is removed, so there are no 502s during deploys
+    elbv2.k8s.aws/pod-readiness-gate-inject: enabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: campuscouriers-messaging
+  labels:
+    # Third-party Kafka/Debezium images are less locked down, so enforce "baseline" and only warn on "restricted"
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted

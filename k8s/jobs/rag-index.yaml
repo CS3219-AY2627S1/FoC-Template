@@ -1,0 +1,61 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-10 to 2026-11-11
+# Scope (AI-29): Generated manifests, secret wiring and service changes to deploy the AI assistant and RAG services.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# Imports RAG-service/ingestion/chunks.csv (baked into the image) into the RAG database: creates the
+# table if needed (RAG-service/database/init.sql), then replaces every chunk with fresh embeddings.
+# The deploy workflow runs it whenever the rag-service image changes, i.e. when the chunks or the code
+# change, before the new pods start. Needs db-init to have created the database + vector extension.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rag-index
+  namespace: campuscouriers-app
+spec:
+  backoffLimit: 3 # retry up to 3 times (e.g. if RDS isn't reachable yet)
+  ttlSecondsAfterFinished: 3600 # delete the finished Job after 1 hour, so it can be applied again
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rag-index
+    spec:
+      restartPolicy: Never
+      serviceAccountName: rag-service
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: index
+          image: campuscouriers/rag-service # default command: python -m ingestion.index_chunks
+          # Same values as k8s/app/config/rag-service.env (Jobs can't reference the generated,
+          # hash-named ConfigMap from their separate kustomization)
+          env:
+            - { name: EMBEDDING_MODEL, value: sentence-transformers/all-MiniLM-L6-v2 }
+            - { name: HF_HUB_OFFLINE, value: "1" }
+            - { name: HOME, value: /tmp }
+          envFrom:
+            - secretRef:
+                name: rag-db-credentials # DATABASE_URL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              memory: 1536Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi

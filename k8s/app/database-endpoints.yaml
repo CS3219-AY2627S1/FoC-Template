@@ -1,0 +1,80 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-06
+# Scope (AI-25): Generated Kubernetes manifests, health endpoints and probe settings from my deployment specification.
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-09 to 2026-11-10
+# Scope (AI-26): Generated Terraform, Kubernetes manifests and scripts for the AWS resources I specified.
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-10 to 2026-11-11
+# Scope (AI-29): Generated manifests, secret wiring and service changes to deploy the AI assistant and RAG services.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# Stable in-cluster names for the RDS databases.
+#
+# An ExternalName Service is just a DNS alias: "user-db" resolves to the RDS endpoint. The services keep
+# using DB_HOST=user-db (the same name as in compose.yaml), and only this file changes when the endpoint does.
+# Later, Terraform can write the real endpoint here.
+#
+# All four point at one RDS instance holding four databases (one per service). To give a service its
+# own instance, change only its externalName.
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-db
+  namespace: campuscouriers-app
+spec:
+  type: ExternalName
+  externalName: campuscouriers.cd2g48wauxqx.ap-southeast-1.rds.amazonaws.com # terraform output rds_address
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: supplier-db
+  namespace: campuscouriers-app
+spec:
+  type: ExternalName
+  externalName: campuscouriers.cd2g48wauxqx.ap-southeast-1.rds.amazonaws.com # terraform output rds_address
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: credit-db
+  namespace: campuscouriers-app
+spec:
+  type: ExternalName
+  externalName: campuscouriers.cd2g48wauxqx.ap-southeast-1.rds.amazonaws.com # terraform output rds_address
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-db
+  namespace: campuscouriers-app
+spec:
+  type: ExternalName
+  externalName: campuscouriers.cd2g48wauxqx.ap-southeast-1.rds.amazonaws.com # terraform output rds_address
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-db
+  namespace: campuscouriers-app
+spec:
+  type: ExternalName
+  externalName: campuscouriers.cd2g48wauxqx.ap-southeast-1.rds.amazonaws.com # terraform output rds_address
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat-db
+  namespace: campuscouriers-app
+spec:
+  type: ExternalName
+  externalName: campuscouriers.cd2g48wauxqx.ap-southeast-1.rds.amazonaws.com # terraform output rds_address
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-db
+  namespace: campuscouriers-app
+spec:
+  type: ExternalName
+  externalName: campuscouriers.cd2g48wauxqx.ap-southeast-1.rds.amazonaws.com # terraform output rds_address

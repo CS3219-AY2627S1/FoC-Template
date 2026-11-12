@@ -1,0 +1,28 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-09 to 2026-11-10
+# Scope (AI-26): Generated Terraform, Kubernetes manifests and scripts for the AWS resources I specified.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# One-off database setup, kept apart from everything else because it needs the RDS MASTER password.
+# Apply it, wait for the Job, then delete the whole folder so that password leaves the cluster:
+#
+#   kubectl apply -k k8s/ops
+#   kubectl wait --for=condition=complete job/db-init -n campuscouriers-ops --timeout=5m
+#   kubectl logs job/db-init -n campuscouriers-ops
+#   kubectl delete -k k8s/ops
+#
+# Safe to re-run (e.g. after rotating a service password): every step checks before it creates.
+# Needs the ClusterSecretStore (k8s/platform) to exist first.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - external-secrets.yaml
+  - db-init-job.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: campuscouriers
+    includeSelectors: false

@@ -1,0 +1,43 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-06
+# Scope (AI-25): Generated Kubernetes manifests, health endpoints and probe settings from my deployment specification.
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-09 to 2026-11-10
+# Scope (AI-26): Generated Terraform, Kubernetes manifests and scripts for the AWS resources I specified.
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-10 to 2026-11-11
+# Scope (AI-29): Generated manifests, secret wiring and service changes to deploy the AI assistant and RAG services.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# One-off Jobs. Apply:  kubectl apply -k k8s/jobs
+# Needs the namespaces, ConfigMaps and Secrets from k8s/ to exist first.
+# A Job can't be changed once created; finished Jobs delete themselves after an hour
+# (ttlSecondsAfterFinished), or delete one by hand to re-run it sooner.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - order-migrate.yaml
+  - user-bootstrap.yaml
+  - supplier-seed.yaml
+  - register-connectors.yaml
+  - rag-index.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: campuscouriers
+    includeSelectors: false
+
+# Keep in sync with k8s/kustomization.yaml
+images:
+  - name: campuscouriers/user-service
+    newName: 596601390706.dkr.ecr.ap-southeast-1.amazonaws.com/campuscouriers/user-service
+    newTag: ae4114ce1c8d
+  - name: campuscouriers/supplier-service
+    newName: 596601390706.dkr.ecr.ap-southeast-1.amazonaws.com/campuscouriers/supplier-service
+    newTag: 88ca99a6c06a
+  - name: campuscouriers/order-service
+    newName: 596601390706.dkr.ecr.ap-southeast-1.amazonaws.com/campuscouriers/order-service
+    newTag: 83d64c1b237c
+  - name: campuscouriers/rag-service
+    newName: 596601390706.dkr.ecr.ap-southeast-1.amazonaws.com/campuscouriers/rag-service
+    newTag: set-by-scripts-image-tags

@@ -1,0 +1,13 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-09 to 2026-11-10
+# Scope (AI-26): Generated Terraform, Kubernetes manifests and scripts for the AWS resources I specified.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# Copy to backend.hcl (or paste the `backend_hcl` output of terraform/bootstrap) and commit it:
+# it holds no secrets, and every teammate must point at the same state file.
+bucket       = "campuscouriers-tfstate-123456789012"
+key          = "campuscouriers/infra.tfstate"
+region       = "ap-southeast-1"
+encrypt      = true
+use_lockfile = true # lock file next to the state in S3, so two people can't apply at once

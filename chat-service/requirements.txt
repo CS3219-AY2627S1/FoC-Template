@@ -1,0 +1,13 @@
+# AI Assistance Disclosure: OpenAI Codex (GPT-5), 2026-11-08.
+# Scope: Generated Chat Service dependency configuration.
+
+fastapi
+uvicorn[standard]
+PyJWT[crypto]
+SQLAlchemy
+psycopg[binary]
+alembic
+aiokafka
+pytest
+httpx
+

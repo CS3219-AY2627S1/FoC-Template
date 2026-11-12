@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+PyJWT[crypto]
+httpx
+pytest
+tzdata

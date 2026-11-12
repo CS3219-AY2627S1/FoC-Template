@@ -1,0 +1,70 @@
+# Isolated, disposable databases. No development volumes or published ports.
+services:
+  credit-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: credit_integration
+      POSTGRES_USER: integration
+      POSTGRES_PASSWORD: integration-test-only
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U integration -d credit_integration"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  order-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: order_integration
+      POSTGRES_USER: integration
+      POSTGRES_PASSWORD: integration-test-only
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U integration -d order_integration"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  credit-service:
+    build: ../../credit-service
+    image: foc-order-credit-test-credit:local
+    environment:
+      DB_HOST: credit-db
+      DB_PORT: 5432
+      DB_NAME: credit_integration
+      DB_USERNAME: integration
+      DB_PASSWORD: integration-test-only
+      USER_SERVICE_URL: http://runner:8099
+      ORDER_CREDIT_SERVICE_KEY: isolated-integration-backend-key
+      SPRING_KAFKA_LISTENER_AUTO_STARTUP: "false"
+    depends_on:
+      credit-db:
+        condition: service_healthy
+  order-service:
+    build: ..
+    image: foc-order-credit-test-order:local
+    environment:
+      DB_HOST: order-db
+      DB_PORT: 5432
+      DB_NAME: order_integration
+      DB_USERNAME: integration
+      DB_PASSWORD: integration-test-only
+      USER_SERVICE_URL: http://runner:8099
+      SUPPLIER_SERVICE_URL: http://runner:8099
+      CREDIT_SERVICE_URL: http://credit-service:8080
+      ORDER_CREDIT_SERVICE_KEY: isolated-integration-backend-key
+    depends_on:
+      order-db:
+        condition: service_healthy
+  runner:
+    build:
+      context: ..
+      dockerfile: integration/Dockerfile
+    environment:
+      CREDIT_TEST_DSN: postgresql://integration:integration-test-only@credit-db:5432/credit_integration
+      ORDER_TEST_DSN: postgresql://integration:integration-test-only@order-db:5432/order_integration
+      TEST_ORDER_DATABASE_URL: postgresql+psycopg://integration:integration-test-only@order-db:5432/order_integration
+    depends_on:
+      - credit-service
+      - order-service

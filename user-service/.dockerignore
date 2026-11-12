@@ -1,0 +1,26 @@
+# Build output and tooling
+target
+.mvn
+mvnw
+mvnw.cmd
+HELP.md
+*.md
+
+# IDE / VCS
+.idea
+.vscode
+*.iml
+.git
+.gitignore
+.gitattributes
+
+# Secrets must never enter the build context
+.env
+.env.*
+keys
+src/main/resources/keys
+*.pem
+*.key
+
+Dockerfile
+.dockerignore

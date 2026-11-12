@@ -1,0 +1,11 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-09 to 2026-11-10
+# Scope (AI-26): Generated Terraform, Kubernetes manifests and scripts for the AWS resources I specified.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# Copy to terraform.tfvars (git-ignored) and fill in
+aws_account_id     = "123456789012"
+budget_alert_email = "you@example.com"
+domain_name        = "yourdomain.com" # the domain you bought; the API will be api.yourdomain.com
+# monthly_budget_usd = 50

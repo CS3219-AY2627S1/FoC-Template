@@ -1,0 +1,115 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-09 to 2026-11-10
+# Scope (AI-26): Generated Terraform, Kubernetes manifests and scripts for the AWS resources I specified.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# notification-service: turns Kafka events (errands, credits, chat messages) into notifications,
+# stores them, and pushes them live to browsers over Server-Sent Events (GET /notifications/stream).
+# Same layout as user-service.yaml, which has the full explanations; differences are commented.
+#
+# EXACTLY ONE POD, on purpose (no HorizontalPodAutoscaler):
+#   Each browser's live stream is held in one pod's memory, but Kafka hands each event to only one
+#   pod of the consumer group. With 2+ pods, an event processed by pod A never reaches a browser
+#   connected to pod B: the notification is saved, but only shows up after a refresh. Scaling out
+#   needs the pods to share events first (e.g. Redis pub/sub or PostgreSQL LISTEN/NOTIFY).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: notification-service
+  namespace: campuscouriers-app
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: campuscouriers-app
+  labels:
+    app.kubernetes.io/name: notification-service
+spec:
+  replicas: 1 # see the top of this file
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notification-service
+  strategy:
+    rollingUpdate:
+      maxSurge: 1 # the new pod starts before the old one stops; browsers reconnect to it
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: notification-service
+    spec:
+      serviceAccountName: notification-service
+      automountServiceAccountToken: false
+      # Open streams hold requests open; Spring waits up to 30s for them on shutdown, after the
+      # 15s preStop pause
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001 # matches the uid created in notification-service/Dockerfile
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: notification-service
+          image: campuscouriers/notification-service
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: notification-service-config # generated from k8s/app/config/notification-service.env
+            - secretRef:
+                name: notification-db-credentials # DB_USERNAME, DB_PASSWORD
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: campuscouriers-app
+  annotations:
+    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health/readiness
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: notification-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+# No PodDisruptionBudget: with a single pod, "keep at least 1" would block node upgrades forever.

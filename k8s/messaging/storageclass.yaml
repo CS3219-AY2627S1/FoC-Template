@@ -1,0 +1,21 @@
+# AI Assistance Disclosure
+# Tool and date: Anthropic Claude (model unrecorded), 2026-11-06
+# Scope (AI-25): Generated Kubernetes manifests, health endpoints and probe settings from my deployment specification.
+# Usage log: AI_USAGE_LOG.md
+# Author review: Pending confirmation by Melodi Joy Halim.
+
+# Disk type for Kafka's persistent volumes. Newer EKS clusters have no default StorageClass, so
+# define one. Needs the Amazon EBS CSI driver add-on.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+# EBS volumes live in one Availability Zone. Waiting until the pod is scheduled creates the volume
+# in the same AZ as the pod, instead of creating it first and leaving the pod unable to use it.
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Retain # deleting the PVC keeps the disk (and its Kafka data) until you remove it yourself

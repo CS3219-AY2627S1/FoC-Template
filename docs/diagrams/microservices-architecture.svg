@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">CampusCouriers microservices architecture</title>
+  <desc id="desc">React frontend communicates with six backend services. Each core service owns a PostgreSQL database. Debezium and Kafka provide event-driven integration.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L10,3 L0,6 Z" fill="#334155"/></marker>
+    <style>
+      .bg{fill:#f8fafc}.title{font:700 32px Arial;fill:#0f172a}.label{font:600 20px Arial;fill:#0f172a}.small{font:16px Arial;fill:#475569}.box{stroke:#334155;stroke-width:2;rx:14}.front{fill:#dbeafe}.svc{fill:#ecfeff}.db{fill:#fef3c7}.infra{fill:#ede9fe}.edge{stroke:#334155;stroke-width:2.5;fill:none;marker-end:url(#arrow)}.event{stroke:#7c3aed;stroke-width:2.5;fill:none;stroke-dasharray:9 7;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect class="bg" width="1600" height="900"/>
+  <text class="title" x="70" y="65">CampusCouriers — Microservices Architecture</text>
+  <text class="small" x="70" y="98">Synchronous REST for user actions; asynchronous events for cross-service updates</text>
+
+  <rect class="box front" x="70" y="180" width="250" height="120"/><text class="label" x="195" y="230" text-anchor="middle">React Frontend</text><text class="small" x="195" y="260" text-anchor="middle">Web / mobile-responsive UI</text>
+  <rect class="box svc" x="420" y="140" width="220" height="95"/><text class="label" x="530" y="180" text-anchor="middle">User Service</text><text class="small" x="530" y="208" text-anchor="middle">Auth, JWT, profiles</text>
+  <rect class="box svc" x="420" y="270" width="220" height="95"/><text class="label" x="530" y="310" text-anchor="middle">Supplier Service</text><text class="small" x="530" y="338" text-anchor="middle">Suppliers and search</text>
+  <rect class="box svc" x="420" y="400" width="220" height="95"/><text class="label" x="530" y="440" text-anchor="middle">Order Service</text><text class="small" x="530" y="468" text-anchor="middle">Errand lifecycle</text>
+  <rect class="box svc" x="420" y="530" width="220" height="95"/><text class="label" x="530" y="570" text-anchor="middle">Credit Service</text><text class="small" x="530" y="598" text-anchor="middle">Wallets and reservations</text>
+  <rect class="box svc" x="420" y="660" width="220" height="95"/><text class="label" x="530" y="700" text-anchor="middle">Chat Service</text><text class="small" x="530" y="728" text-anchor="middle">REST + WebSockets</text>
+  <rect class="box svc" x="760" y="660" width="260" height="95"/><text class="label" x="890" y="700" text-anchor="middle">Notification Service</text><text class="small" x="890" y="728" text-anchor="middle">Kafka + Server-Sent Events</text>
+
+  <path class="edge" d="M320 220 H420"/><path class="edge" d="M320 235 H390 V317 H420"/><path class="edge" d="M320 250 H370 V447 H420"/><path class="edge" d="M320 265 H350 V577 H420"/><path class="edge" d="M320 280 H330 V707 H420"/>
+  <path class="edge" d="M320 290 H720 V707 H760"/>
+
+  <rect class="box db" x="700" y="125" width="180" height="70"/><text class="label" x="790" y="167" text-anchor="middle">User DB</text>
+  <rect class="box db" x="700" y="255" width="180" height="70"/><text class="label" x="790" y="297" text-anchor="middle">Supplier DB</text>
+  <rect class="box db" x="700" y="385" width="180" height="70"/><text class="label" x="790" y="427" text-anchor="middle">Order DB</text>
+  <rect class="box db" x="700" y="515" width="180" height="70"/><text class="label" x="790" y="557" text-anchor="middle">Credit DB</text>
+  <rect class="box db" x="1100" y="655" width="180" height="70"/><text class="label" x="1190" y="697" text-anchor="middle">Chat DB</text>
+  <rect class="box db" x="1100" y="755" width="180" height="70"/><text class="label" x="1190" y="797" text-anchor="middle">Notification DB</text>
+  <path class="edge" d="M640 188 H700"/><path class="edge" d="M640 318 H700"/><path class="edge" d="M640 448 H700"/><path class="edge" d="M640 578 H700"/><path class="edge" d="M1020 707 H1100"/><path class="edge" d="M1020 720 H1070 V790 H1100"/>
+
+  <rect class="box infra" x="1010" y="145" width="470" height="220"/><text class="label" x="1245" y="185" text-anchor="middle">Event Backbone</text><text class="small" x="1245" y="220" text-anchor="middle">Transactional outbox tables</text><text class="label" x="1245" y="270" text-anchor="middle">Debezium / Kafka Connect</text><text class="small" x="1245" y="305" text-anchor="middle">Kafka topics</text><text class="small" x="1245" y="335" text-anchor="middle">Consumers: credit, chat, notifications</text>
+  <path class="event" d="M880 160 H1010"/><path class="event" d="M880 290 H1010"/><path class="event" d="M880 420 H1010"/><path class="event" d="M880 550 H1010"/><path class="event" d="M1010 335 H950 V707 H760"/>
+  <text class="small" x="1015" y="410">Events are published after the local DB transaction commits</text>
+</svg>

@@ -3,6 +3,12 @@ dist/
 build/
 out/
 
+# Python-generated files
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.pnpm-store/
+
 # Environment / secrets
 .env
 .env.local
@@ -13,3 +19,6 @@ out/
 # OS
 .DS_Store
 Thumbs.db
+
+# IDE
+.idea
