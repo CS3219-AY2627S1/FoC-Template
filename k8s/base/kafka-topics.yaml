@@ -1,0 +1,22 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6.1 Terra), date: 2026-11-06
+# Scope: Generated implementation of Kafka topic initialization Job configuration
+# Author review: Verified kafka topics are correctly initialized in floci eks and on deployment.
+
+apiVersion: batch/v1
+kind: Job
+metadata: { name: kafka-init, namespace: relay }
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: init
+          securityContext: { allowPrivilegeEscalation: false }
+          resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: 500m, memory: 768Mi } }
+          image: IMAGE_CREDIT_API
+          command: [node, scripts/kafka-topics.mjs]
+          env:
+            - { name: NODE_OPTIONS, value: "--max-old-space-size=614" }
+          envFrom: [{ configMapRef: { name: relay-runtime } }, { secretRef: { name: relay-runtime } }]

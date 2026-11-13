@@ -1,0 +1,27 @@
+.proof-upload {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px;
+  background: rgba(118, 118, 128, 0.08);
+  border: 2px dashed rgba(0, 0, 0, 0.15);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.proof-upload:hover {
+  background: rgba(0, 122, 255, 0.06);
+  border-color: rgba(0, 122, 255, 0.3);
+}
+.status-step.done .step-dot,
+.status-step.active .step-dot {
+  background: var(--ios-blue);
+}
+.status-step.active .step-dot {
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.2);
+}
+.status-step.pending .step-dot {
+  background: var(--ios-gray5);
+}

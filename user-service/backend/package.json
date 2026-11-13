@@ -1,0 +1,38 @@
+{
+  "name": "@relay/user-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "npm run prisma:generate && npm run prisma:migrate:deploy",
+    "build": "prisma generate && tsc",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "lint": "prisma generate && tsc --noEmit",
+    "test": "export DATABASE_URL=\"${USER_TEST_DATABASE_URL:-${DATABASE_URL:-postgresql://relay:relay@localhost:5432/relay?schema=public}}\" KAFKA_TOPIC_USER_EVENTS=\"${KAFKA_TOPIC_USER_EVENTS:-user-events}\" && npm run build && npm run prisma:migrate:deploy && vitest run && node --import tsx --test tests/*.test.mjs",
+    "prisma:generate": "DATABASE_URL=\"${DATABASE_URL:-postgresql://relay:relay@localhost:5432/relay?schema=public}\" prisma generate",
+    "prisma:migrate:deploy": "DATABASE_URL=\"${DATABASE_URL:-postgresql://relay:relay@localhost:5432/relay?schema=public}\" prisma migrate deploy",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.1138.0",
+    "@aws-sdk/client-s3": "^3.1000.0",
+    "@aws-sdk/s3-request-presigner": "^3.1136.0",
+    "@prisma/client": "^6.16.0",
+    "@relay/contracts": "*",
+    "@relay/user-auth-backend-middleware": "*",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "kafkajs": "^2.2.4",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.5.0",
+    "prisma": "^6.16.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

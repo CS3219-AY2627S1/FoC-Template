@@ -1,0 +1,24 @@
+$kind: http-request
+description: ''
+url: '{{baseUrl}}/api/errands/'
+method: POST
+headers:
+  Content-Type: application/json
+  Cookie: '{{requesterCookie}}'
+body:
+  type: json
+  content: '{"supplierDetails":{"supplierId":"{{supplierId}}","supplierName":"{{supplierName}}","serviceType":1},"name":"03 Create delivery errand (20 credits)","pickupLocation":{"lat":1.3,"lng":103.8,"buildingName":"Pickup","floorNumber":1},"targetLocation":{"lat":1.31,"lng":103.81,"buildingName":"Dropoff","floorNumber":2},"deliveryDetails":{"description":"Postman credit lifecycle demo"},"creditAmount":20}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const selectedSession=pm.collectionVariables.get('requesterCookie');
+      if(typeof selectedSession!=='string'||!/^relay_access=[^;]+; relay_id=[^;]+$/.test(selectedSession))throw new Error('Missing or invalid requesterCookie in this collection. Run its login step first.');
+      pm.variables.set('requesterCookie',selectedSession);
+      pm.request.headers.upsert({key:'Cookie',value:selectedSession});
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 201',()=>pm.response.to.have.status(201));
+      pm.collectionVariables.set('completeId',pm.response.json().errand.id);
+      pm.test('opens after reserve',()=>pm.expect(pm.response.json().errand.status).to.eql('OPEN'));
+settings: { disableCookies: true, protocolVersion: auto }
+order: 3000

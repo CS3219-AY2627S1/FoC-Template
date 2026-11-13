@@ -1,0 +1,13 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/api/auth/me'
+order: 16000
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.upsert({key:'Cookie',value:'relay_access='+pm.collectionVariables.get('s1Access')+'; relay_id='+pm.collectionVariables.get('s1Id')});
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200',()=>pm.response.to.have.status(200));
+      pm.test('same user',()=>pm.expect(pm.response.json().data.user.subject).to.eql(pm.collectionVariables.get('sub')));
+settings: { disableCookies: true, protocolVersion: auto }

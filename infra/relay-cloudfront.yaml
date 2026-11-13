@@ -1,0 +1,89 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6.1 Terra), date: 2026-11-06
+# Scope: Generated implementation of CloudFront HTTPS distribution and API Gateway origin configuration
+# Author review: Verified correctness and increase Cloudfront price class to include Singapore as a location.
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFront HTTPS entry point for the Relay EKS ALB without a custom domain.
+Parameters:
+  DistributionEnabled:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Disable while paused to retain the distribution and domain without serving requests.
+  LoadBalancerDnsName:
+    Type: String
+    Description: DNS name reported by the Relay Kubernetes Ingress.
+  OriginPath:
+    Type: String
+    Default: /relay
+  OriginProtocolPolicy:
+    Type: String
+    Default: https-only
+    AllowedValues: [https-only, http-only]
+  UseAwsApiGatewayPolicy:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+  OriginHttpPort:
+    Type: Number
+    Default: 80
+Conditions:
+  EnableDistribution: !Equals [!Ref DistributionEnabled, 'true']
+  UseAwsGatewayPolicy: !Equals [!Ref UseAwsApiGatewayPolicy, 'true']
+Resources:
+  RelayOriginRequestPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: !Sub '${AWS::StackName}-relay-origin'
+        Comment: Forward browser requests and HTTPS protocol to Relay.
+        CookiesConfig: { CookieBehavior: all }
+        QueryStringsConfig: { QueryStringBehavior: all }
+        HeadersConfig:
+          HeaderBehavior: allViewerAndWhitelistCloudFront
+          Headers: [CloudFront-Forwarded-Proto]
+  RelayDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: Relay local-domain-free HTTPS entry point
+        Enabled: !If [EnableDistribution, true, false]
+        HttpVersion: http2
+        PriceClass: PriceClass_200
+        Origins:
+          - Id: relay-alb
+            DomainName: !Ref LoadBalancerDnsName
+            OriginPath: !Ref OriginPath
+            CustomOriginConfig:
+              HTTPPort: !Ref OriginHttpPort
+              OriginProtocolPolicy: !Ref OriginProtocolPolicy
+        DefaultCacheBehavior:
+          TargetOriginId: relay-alb
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+          CachedMethods: [GET, HEAD]
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          OriginRequestPolicyId: !If [UseAwsGatewayPolicy, 'b689b0a8-53d0-40ab-baf2-68738e2966ac', !Ref RelayOriginRequestPolicy]
+        # Only Vite's fingerprinted build assets are immutable. HTML, API
+        # responses, and module federation entry files use the uncached default.
+        CacheBehaviors:
+          - PathPattern: assets/*
+            TargetOriginId: relay-alb
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          - PathPattern: remotes/*/assets/*
+            TargetOriginId: relay-alb
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+Outputs:
+  DistributionId: { Value: !Ref RelayDistribution }
+  DistributionDomainName: { Value: !GetAtt RelayDistribution.DomainName }

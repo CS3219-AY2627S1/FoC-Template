@@ -1,0 +1,19 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.codex
+.agents
+*.log
+
+# Deployment credentials and cluster access must never enter image build contexts.
+.env
+.env.local
+.env.*.local
+deploy/*.aws.env
+deploy/.*.kubeconfig
+deploy/.*-pause.env
+floci/docker/.generated.env
+floci/eks/.kubeconfig
+**/*.pem
+**/*.key

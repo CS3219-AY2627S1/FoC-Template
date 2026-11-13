@@ -1,0 +1,146 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: relay-observability
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: relay-headlamp
+  namespace: relay-observability
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: relay-headlamp-viewer
+  namespace: relay-observability
+---
+# The login identity can observe Relay, but cannot change workloads or read Secrets.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: relay-headlamp-viewer
+  namespace: relay
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, services, endpoints, events, replicationcontrollers, resourcequotas, limitranges]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets, statefulsets, daemonsets]
+    verbs: [get, list, watch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, list, watch]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list, watch]
+  - apiGroups: [metrics.k8s.io]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [keda.sh]
+    resources: [scaledobjects, scaledjobs]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: relay-headlamp-viewer
+  namespace: relay
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: relay-headlamp-viewer
+subjects:
+  - kind: ServiceAccount
+    name: relay-headlamp-viewer
+    namespace: relay-observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: relay-headlamp-observer
+rules:
+  - apiGroups: [""]
+    resources: [namespaces, nodes]
+    verbs: [get, list, watch]
+  - apiGroups: [metrics.k8s.io]
+    resources: [nodes]
+    verbs: [get, list]
+  - apiGroups: [apiextensions.k8s.io]
+    resources: [customresourcedefinitions]
+    verbs: [get, list, watch]
+  - apiGroups: [apiregistration.k8s.io]
+    resources: [apiservices]
+    verbs: [get, list, watch]
+  - apiGroups: [authorization.k8s.io]
+    resources: [selfsubjectaccessreviews, selfsubjectrulesreviews]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: relay-headlamp-observer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: relay-headlamp-observer
+subjects:
+  - kind: ServiceAccount
+    name: relay-headlamp-viewer
+    namespace: relay-observability
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: relay-headlamp
+  namespace: relay-observability
+spec:
+  type: ClusterIP
+  selector:
+    app: relay-headlamp
+  ports:
+    - name: web
+      port: 4466
+      targetPort: web
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relay-headlamp
+  namespace: relay-observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: relay-headlamp
+  template:
+    metadata:
+      labels:
+        app: relay-headlamp
+    spec:
+      serviceAccountName: relay-headlamp
+      containers:
+        - name: headlamp
+          image: ghcr.io/headlamp-k8s/headlamp:v0.46.0
+          imagePullPolicy: IfNotPresent
+          args: ["-in-cluster"]
+          securityContext:
+            allowPrivilegeEscalation: false
+          ports:
+            - name: web
+              containerPort: 4466
+          readinessProbe:
+            httpGet: { path: /, port: web }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /, port: web }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }

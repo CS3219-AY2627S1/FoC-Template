@@ -1,0 +1,17 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT 6.1 Sol), date: 2026-10-28
+# Scope: Generated initial implementation, fixed bugs for deployment configuration
+# Author review: I validated correctness and edited for style.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-user-clusterrolebinding
+subjects:
+  - kind: User
+    name: admin@example.com
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io

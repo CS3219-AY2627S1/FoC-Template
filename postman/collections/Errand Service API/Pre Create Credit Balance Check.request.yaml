@@ -1,0 +1,33 @@
+$kind: http-request
+description: ''
+url: '{{baseUrl}}/api/credit'
+method: GET
+headers:
+  Cookie: relay_access={{sessionCookie}}; relay_id={{idCookie}}
+order: 13000
+scripts:
+  - type: beforeRequest
+    code: |-
+      const access=pm.collectionVariables.get('sessionCookie');
+      const id=pm.collectionVariables.get('idCookie');
+      if(!access||!id)throw new Error('Run the matching login request before this request.');
+      pm.request.headers.upsert({key:'Cookie',value:'relay_access='+access+'; relay_id='+id});
+      if(Number(pm.collectionVariables.get('preCreateCreditAttempts')||0)>0)setTimeout(()=>{},750);
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      const balance=pm.response.code===200?pm.response.json():null;
+      const attempt=Number(pm.collectionVariables.get('preCreateCreditAttempts')||0);
+      if((!balance||balance.availableCredit!==100||balance.reserveCredit!==0)&&attempt<40){
+        pm.collectionVariables.set('preCreateCreditAttempts',String(attempt+1));
+        pm.execution.setNextRequest(pm.info.requestName);
+      }else{
+        pm.collectionVariables.unset('preCreateCreditAttempts');
+        pm.test('Requester has initial credit before placing an errand',()=>{
+          pm.response.to.have.status(200);
+          pm.expect(balance.availableCredit).to.eql(100);
+          pm.expect(balance.reserveCredit).to.eql(0);
+        });
+      }
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

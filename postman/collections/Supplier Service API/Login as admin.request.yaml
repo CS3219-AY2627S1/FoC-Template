@@ -1,0 +1,34 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/login'
+order: 1000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "{{adminEmail}}",
+      "password": "{{adminPassword}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Login returns 200', () => {
+        pm.response.to.have.status(200);
+      });
+
+      const cookies = pm.response.headers.all().filter(header => header.key.toLowerCase() === 'set-cookie').map(header => header.value.split(';')[0]);
+      const access = cookies.find(cookie => cookie.startsWith('relay_access='))?.slice('relay_access='.length);
+      const id = cookies.find(cookie => cookie.startsWith('relay_id='))?.slice('relay_id='.length);
+      const refresh = cookies.find(cookie => cookie.startsWith('relay_refresh='))?.slice('relay_refresh='.length);
+      pm.test('Login sets Cognito cookies', () => {
+        pm.expect(access).to.be.a('string').and.not.empty;
+        pm.expect(id).to.be.a('string').and.not.empty;
+        pm.expect(refresh).to.be.a('string').and.not.empty;
+      });
+      pm.collectionVariables.set('sessionCookie', access);
+      pm.collectionVariables.set('idCookie', id);
+      pm.collectionVariables.set('refreshCookie', refresh);
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

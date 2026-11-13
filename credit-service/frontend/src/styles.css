@@ -1,0 +1,194 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: ChatGPT (model: GPT-6 Sol), date: 2026-10-17
+ * Scope: Generated styling and animations for UI components
+ * Author review: Viewed the UI on the browser and did repeated prompts to improve the animation, and verified styles use the relay design system.
+ */
+.credit-profile-content {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.credit-view {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 24px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 90ms ease-in,
+    visibility 0s linear 90ms;
+}
+
+.credit-balance-view {
+  display: grid;
+  align-content: start;
+  gap: 20px;
+}
+
+.credit-history-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.credit-profile-content:not(.credit-history-screen) .credit-balance-view,
+.credit-history-screen .credit-history-view {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity 260ms ease-out 85ms,
+    visibility 0s;
+}
+
+.credit-history-screen .credit-balance-view,
+.credit-profile-content:not(.credit-history-screen) .credit-history-view {
+  z-index: 1;
+}
+
+.credit-profile-content:not(.credit-history-screen) .credit-balance-view,
+.credit-history-screen .credit-history-view {
+  z-index: 2;
+}
+
+.credit-balance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.credit-balance-grid > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+}
+
+.credit-balance-grid span {
+  color: var(--relay-text-muted);
+  font-size: 0.8rem;
+}
+
+.credit-balance-grid strong {
+  font-size: 1.45rem;
+}
+
+.credit-history-button {
+  justify-self: stretch;
+}
+
+@media (max-width: 380px) {
+  .credit-balance-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.credit-history-view .credit-profile-header {
+  flex: 0 0 auto;
+}
+
+.credit-history-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.credit-history-state {
+  margin: 0;
+}
+
+.credit-history-state .relay-button {
+  margin-top: 12px;
+}
+
+.credit-history-table-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  overflow: auto;
+}
+
+.credit-history-list {
+  display: grid;
+  width: 100%;
+  min-width: max-content;
+  height: 100%;
+  min-height: 356px;
+  grid-template-columns: minmax(max-content, 1fr) minmax(max-content, 1fr) max-content;
+  grid-template-rows: 36px repeat(10, minmax(32px, 1fr));
+  column-gap: 24px;
+  font-size: 0.88rem;
+}
+
+.credit-history-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  border-bottom: 1px solid var(--relay-glass-soft-border);
+  box-sizing: border-box;
+}
+
+.credit-history-row > span {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.credit-history-heading > span {
+  color: var(--relay-text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.credit-history-cell-amount {
+  text-align: right;
+}
+
+.credit-amount {
+  font-weight: 700;
+}
+.credit-amount-incoming {
+  color: var(--relay-green-dark);
+}
+.credit-amount-outgoing {
+  color: var(--relay-red-dark);
+}
+.credit-amount-neutral {
+  color: var(--relay-text-muted);
+}
+
+.credit-history-pagination {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.credit-history-pagination .relay-button {
+  min-width: 0;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 500px) {
+  .credit-history-list {
+    font-size: 0.78rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .credit-view {
+    transition: none;
+  }
+}

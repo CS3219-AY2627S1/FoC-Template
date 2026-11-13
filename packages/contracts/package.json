@@ -1,0 +1,13 @@
+{
+  "name": "@relay/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./errand": "./src/errand/index.ts",
+    "./supplier": "./src/supplier/index.ts",
+    "./user": "./src/user/index.ts",
+    "./user-auth": "./src/user-auth/index.ts"
+  }
+}

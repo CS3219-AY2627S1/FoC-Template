@@ -1,0 +1,45 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/supplier'
+order: 11907
+headers:
+  Content-Type: application/json
+  Cookie: relay_access={{sessionCookie}}; relay_id={{idCookie}}
+body:
+  type: json
+  content: |-
+    {
+      "name": "{{supplierName2}}",
+      "location": {
+        "lat": 1.2970,
+        "lng": 103.7760,
+        "buildingName": "Second Test Building",
+        "floorNumber": 2
+      },
+      "isOperational": true,
+      "operatingHours": {
+        "openingTime": "10:00",
+        "closingTime": "19:00",
+        "daysOfWeek": [1, 2, 3, 4]
+      },
+      "serviceTypes": [1]
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      const access=pm.collectionVariables.get('sessionCookie');
+      const id=pm.collectionVariables.get('idCookie');
+      if(!access||!id)throw new Error('Run the matching login request before this request.');
+      pm.request.headers.upsert({key:'Cookie',value:'relay_access='+access+'; relay_id='+id});
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      const json = pm.response.json();
+      pm.test('Create second supplier returns 201', () => {
+        pm.response.to.have.status(201);
+      });
+      if (json.supplier && json.supplier.id) {
+        pm.collectionVariables.set('supplierId2', json.supplier.id);
+      }
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

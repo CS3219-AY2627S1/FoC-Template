@@ -1,0 +1,16 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/register'
+order: 2000
+headers:
+  Content-Type: 'application/json'
+body:
+  type: json
+  content: '{"email":"test@example.com","password":"{{password}}","passwordConfirmation":"{{password}}"}'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 400',()=>pm.response.to.have.status(400));
+      pm.test('VALIDATION_FAILED',()=>pm.expect(pm.response.json().error.code).to.eql('VALIDATION_FAILED'));
+      pm.test('email field error',()=>pm.expect(pm.response.json().error.fieldErrors).to.have.property('email'));
+settings: { disableCookies: true, protocolVersion: auto }

@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+out/
+
+# Test and coverage output
+coverage/
+.nyc_output/
+
+# Tool caches
+.cache/
+.vite/
+.turbo/
+
+# Module Federation generated artifacts
+.mf/
+
+# Repository metadata
+.git/
+
+# Minified/generated assets
+*.min.js
+*.min.css

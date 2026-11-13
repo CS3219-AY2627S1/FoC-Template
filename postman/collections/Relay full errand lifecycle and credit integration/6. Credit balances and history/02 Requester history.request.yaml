@@ -1,0 +1,23 @@
+$kind: http-request
+description: ''
+url: '{{baseUrl}}/api/credit/history?offset=0'
+queryParams:
+  offset: '0'
+method: GET
+headers:
+  Cookie: '{{requesterCookie}}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const selectedSession=pm.collectionVariables.get('requesterCookie');
+      if(typeof selectedSession!=='string'||!/^relay_access=[^;]+; relay_id=[^;]+$/.test(selectedSession))throw new Error('Missing or invalid requesterCookie in this collection. Run its login step first.');
+      pm.variables.set('requesterCookie',selectedSession);
+      pm.request.headers.upsert({key:'Cookie',value:selectedSession});
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200',()=>pm.response.to.have.status(200));
+      pm.test('history array',()=>pm.expect(pm.response.json().records).to.be.an('array'));
+      pm.test('three reserves',()=>pm.expect(pm.response.json().records.filter(r=>['expiryId','cancelId','completeId'].some(k=>r.reference?.id===pm.collectionVariables.get(k))&&r.type==='CREDIT_RESERVE').length).to.eql(3));
+      pm.test('two releases',()=>pm.expect(pm.response.json().records.filter(r=>['expiryId','cancelId'].some(k=>r.reference?.id===pm.collectionVariables.get(k))&&r.type==='CREDIT_RELEASE').length).to.eql(2));
+settings: { disableCookies: true, protocolVersion: auto }
+order: 2000

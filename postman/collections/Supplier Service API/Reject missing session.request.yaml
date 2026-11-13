@@ -1,0 +1,12 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/api/supplier'
+order: 22000
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('List without auth returns 401', () => {
+        pm.response.to.have.status(401);
+      });
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

@@ -1,0 +1,12 @@
+$kind: http-request
+url: '{{flociUrl}}/_aws/ses'
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.response.to.have.status(200);
+      const m=pm.response.json().messages.filter(x=>x.Destination.ToAddresses.includes(pm.collectionVariables.get('courierEmail'))).pop();
+      pm.expect(m).to.exist;
+      pm.collectionVariables.set('courierCode',m.Body.text_part.match(/\b\d{6}\b/)[0]);
+settings: { disableCookies: true }
+order: 2000

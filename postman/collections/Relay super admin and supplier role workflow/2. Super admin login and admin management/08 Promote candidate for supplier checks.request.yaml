@@ -1,0 +1,20 @@
+$kind: http-request
+url: '{{baseUrl}}/api/auth/admin/promote'
+method: POST
+headers:
+  Content-Type: application/json
+  Cookie: '{{superAdminCookie}}'
+body:
+  type: json
+  content: '{"email":"{{adminEmail}}"}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const selectedCookie=pm.collectionVariables.get('superAdminCookie');
+      if(typeof selectedCookie!=='string'||!/^relay_access=[^;]+; relay_id=[^;]+$/.test(selectedCookie))throw new Error('Missing or invalid superAdminCookie in this collection. Run its sign-in step first.');
+      pm.variables.set('superAdminCookie',selectedCookie);
+      pm.request.headers.upsert({key:'Cookie',value:selectedCookie});
+  - type: afterResponse
+    code: pm.test('HTTP 204',()=>pm.response.to.have.status(204));
+settings: { disableCookies: true, protocolVersion: auto }
+order: 6000

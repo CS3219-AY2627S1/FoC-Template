@@ -1,0 +1,10 @@
+$kind: collection
+description: Run folders in order against local Docker Compose and Floci. A verified user without a profile receives 404 USER_NOT_FOUND from Credit Service. Profile creation publishes UserRegistered asynchronously; the final GET retries until the initial 100 credits appear or 15 attempts fail. Each full run creates a fresh user.
+variables:
+  testEmail: relay-credit@example.com
+  testPassword: Test1234!
+  testUsername: relayCreditUser
+  verificationCode: ''
+  sessionCookie: ''
+  cognitoSub: ''
+  sessionRefreshCookie: ''

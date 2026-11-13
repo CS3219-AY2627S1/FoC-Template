@@ -1,0 +1,34 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/api/supplier?serviceTypes=[0]'
+queryParams:
+  serviceTypes: '[0]'
+order: 5000
+headers:
+  Cookie: relay_access={{sessionCookie}}; relay_id={{idCookie}}
+scripts:
+  - type: beforeRequest
+    code: |-
+      const access=pm.collectionVariables.get('sessionCookie');
+      const id=pm.collectionVariables.get('idCookie');
+      if(!access||!id)throw new Error('Run the matching login request before this request.');
+      pm.request.headers.upsert({key:'Cookie',value:'relay_access='+access+'; relay_id='+id});
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('List suppliers with serviceTypes=[0] returns 200', () => {
+        pm.response.to.have.status(200);
+      });
+
+      const json = pm.response.json();
+      pm.test('Response contains suppliers array', () => {
+        pm.expect(json.suppliers).to.be.an('array');
+      });
+
+      pm.test('All returned suppliers have Food service type', () => {
+        json.suppliers.forEach((supplier) => {
+          pm.expect(supplier.serviceTypes).to.include(0);
+        });
+      });
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

@@ -1,0 +1,169 @@
+services:
+  floci:
+    build:
+      context: .
+      dockerfile: floci/docker/Dockerfile
+    environment:
+      FLOCI_INIT_HOOKS_TIMEOUT_SECONDS: '300'
+    ports:
+      - '4566:4566'
+      - '7001-7004:7001-7004'
+    env_file:
+      - .env.development
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ['CMD-SHELL', 'test -f /app/data/ready && /usr/local/bin/healthcheck.sh']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 300s
+
+  kafbat-ui:
+    profiles: [ui]
+    image: ghcr.io/kafbat/kafka-ui:latest
+    ports:
+      - '8081:8080'
+    environment:
+      KAFKA_CLUSTERS_0_NAME: relay-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: ${KAFKA_BROKERS:?Run floci/docker/up.sh}
+      DYNAMIC_CONFIG_ENABLED: 'true'
+
+  kafka-init:
+    extra_hosts: ['host.docker.internal:host-gateway']
+    depends_on:
+      floci: { condition: service_healthy }
+  host:
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    env_file:
+      - .env.development
+  supplier-schema:
+    depends_on:
+      floci:
+        condition: service_healthy
+  supplier-api:
+    environment:
+      DB_HOST: floci
+  user-event-publisher:
+    extra_hosts: ['host.docker.internal:host-gateway']
+    depends_on:
+      floci:
+        condition: service_healthy
+  errand-notification:
+    extra_hosts: ['host.docker.internal:host-gateway']
+    depends_on:
+      floci: { condition: service_healthy }
+  errand-event-publisher:
+    extra_hosts: ['host.docker.internal:host-gateway']
+    depends_on:
+      floci:
+        condition: service_healthy
+  errand-api:
+    depends_on:
+      floci:
+        condition: service_healthy
+  user-api:
+    env_file:
+      - .env.development
+    ports:
+      - '3001:3000' # User API for local Postman requests
+    environment:
+      PORT: 3000
+      AUTH_MODE: cognito
+      AWS_ENDPOINT_URL: http://floci:4566
+      S3_ENDPOINT: http://host.docker.internal:4566
+      S3_PUBLIC_ENDPOINT: http://localhost:4566
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: test
+      S3_SECRET_ACCESS_KEY: test
+      S3_BUCKET: ${S3_BUCKET:?Run floci/docker/up.sh}
+      S3_FORCE_PATH_STYLE: 'true'
+      # Cognito tokens are issued using the browser-facing Floci URL.
+      # The backend still uses the internal Floci hostname for JWKS retrieval.
+      COGNITO_ISSUER: ${COGNITO_ISSUER}
+      COGNITO_JWKS_URI: ${COGNITO_JWKS_URI}
+    depends_on:
+      floci:
+        condition: service_healthy
+  user-auth-api:
+    env_file:
+      - .env.development
+    environment:
+      AWS_ENDPOINT_URL: http://floci:4566
+      AUTH_BOOTSTRAP_ADMIN_EMAIL: ${FLOCI_INITIAL_ADMIN_EMAIL:-admin@example.com}
+      COOKIE_SECURE: 'false'
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
+      COGNITO_ISSUER: ${COGNITO_ISSUER}
+      COGNITO_JWKS_URI: ${COGNITO_JWKS_URI}
+    ports:
+      - '3004:3000'
+    depends_on:
+      floci:
+        condition: service_healthy
+  credit-api:
+    extra_hosts: ['host.docker.internal:host-gateway']
+    depends_on:
+      floci:
+        condition: service_healthy
+    ports:
+      - '3002:3000' # Credit API for local Postman requests
+
+  user-prisma-studio:
+    profiles: [ui]
+    image: relay-user-api:latest
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: ${USER_DATABASE_URL:?Run floci/docker/up.sh}
+    command:
+      - npx
+      - prisma
+      - studio
+      - --schema=user-service/backend/prisma/schema.prisma
+      - --hostname=0.0.0.0
+      - --port=5555
+    ports:
+      - '5555:5555'
+    depends_on:
+      floci:
+        condition: service_healthy
+
+  errand-prisma-studio:
+    profiles: [ui]
+    image: relay-errand-api:latest
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: ${ERRAND_DATABASE_URL:?Run floci/docker/up.sh}
+    command:
+      - npx
+      - prisma
+      - studio
+      - --schema=errand-service/backend/prisma/schema.prisma
+      - --hostname=0.0.0.0
+      - --port=5555
+    ports:
+      - '5556:5555'
+    depends_on:
+      floci:
+        condition: service_healthy
+
+  credit-prisma-studio:
+    profiles: [ui]
+    image: relay-credit-api:latest
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: ${CREDIT_DATABASE_URL:?Run floci/docker/up.sh}
+    command:
+      - npx
+      - prisma
+      - studio
+      - --schema=credit-service/backend/prisma/schema.prisma
+      - --hostname=0.0.0.0
+      - --port=5555
+    ports:
+      - '5557:5555'
+    depends_on:
+      floci:
+        condition: service_healthy

@@ -1,0 +1,14 @@
+$kind: http-request
+url: '{{flociUrl}}/_aws/ses'
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200',()=>pm.response.to.have.status(200));
+      const a=pm.response.json().messages||[]; const m=a.filter(x=>(x.Destination?.ToAddresses||[]).includes(pm.collectionVariables.get('normalEmail'))).pop();
+      pm.test('email found',()=>pm.expect(m).to.exist);
+      const match=m?.Body?.text_part?.match(/\b\d{6}\b/);
+      pm.test('code found',()=>pm.expect(match).to.exist);
+      if(match)pm.collectionVariables.set('normalCode',match[0]);
+settings: { disableCookies: true }
+order: 7000

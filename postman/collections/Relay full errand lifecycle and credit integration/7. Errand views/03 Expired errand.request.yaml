@@ -1,0 +1,20 @@
+$kind: http-request
+description: ''
+url: '{{baseUrl}}/api/errands/{{expiryId}}'
+method: GET
+headers:
+  Cookie: '{{requesterCookie}}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const selectedSession=pm.collectionVariables.get('requesterCookie');
+      if(typeof selectedSession!=='string'||!/^relay_access=[^;]+; relay_id=[^;]+$/.test(selectedSession))throw new Error('Missing or invalid requesterCookie in this collection. Run its login step first.');
+      pm.variables.set('requesterCookie',selectedSession);
+      pm.request.headers.upsert({key:'Cookie',value:selectedSession});
+  - type: afterResponse
+    code: |-
+      const e=pm.response.code===200?pm.response.json().errand:null;
+      pm.test('HTTP 200',()=>pm.response.to.have.status(200));
+      if(e)pm.test('status EXPIRED',()=>pm.expect(e.status).to.eql('EXPIRED'));
+settings: { disableCookies: true, protocolVersion: auto }
+order: 3000

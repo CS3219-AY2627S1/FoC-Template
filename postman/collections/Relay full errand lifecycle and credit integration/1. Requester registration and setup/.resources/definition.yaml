@@ -1,0 +1,3 @@
+$kind: collection
+description: Fresh requester, email verification, profile creation, initial allocation, then super admin login, profile creation, and supplier setup.
+order: 1000

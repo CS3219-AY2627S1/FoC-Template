@@ -1,0 +1,28 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6 Sol), date: 2026-11-05
+# Scope: Generated Kafka topic settings
+# Author review: Verified correctness.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: relay-runtime
+  namespace: relay
+data:
+  PORT: "3000"
+  NODE_ENV: production
+  COOKIE_SECURE: "true"
+  AUTH_MODE: cognito
+  KAFKA_REPLICATION_FACTOR: "3"
+  KAFKA_PARTITION_COUNT: "12"
+  KAFKA_MIN_IN_SYNC_REPLICAS: "2"
+  KAFKA_TOPIC_USER_EVENTS: user-events
+  KAFKA_TOPIC_USER_DLQ: user-events-dlq
+  KAFKA_TOPIC_ERRAND_EVENTS: errand-events
+  KAFKA_TOPIC_ERRAND_DLQ: errand-events-dlq
+  KAFKA_AUTH_MODE: scram
+  USER_API_TIMEOUT: "5000"
+  CREDIT_ESTIMATION_API_URL: "http://credit-estimation-api:3005"
+  SUPPLIER_TIMEZONE: Asia/Singapore
+  SUPPLIER_SERVICE_TIMEOUT_MS: "5000"
+  ERRAND_SERVICE_TIMEOUT_MS: "5000"

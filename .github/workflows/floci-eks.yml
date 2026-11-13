@@ -1,0 +1,167 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6.1 Terra), date: 2026-11-06
+# Scope: Generated implementation of local EKS CI
+# Author review: Verified correctness and CI was run on GitHub
+
+name: Floci EKS CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      COMPOSE_PARALLEL_LIMIT: '2'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.32.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start Floci EKS
+        run: npm run up:eks
+
+      - name: Verify pod replacement
+        env:
+          KUBECONFIG: ${{ github.workspace }}/floci/eks/.kubeconfig
+        run: |
+          kubectl -n relay rollout restart deployment/errand-notification
+          kubectl -n relay rollout status deployment/errand-notification --timeout=5m
+          kubectl -n relay wait --for=condition=ready pod \
+            -l app=errand-notification --timeout=5m
+
+          # Traefik watches EndpointSlices asynchronously.  A ready Pod does
+          # not necessarily mean the public route has received the endpoint
+          # yet, so wait until the Service has a ready address before testing
+          # the notification route through CloudFront.
+          for attempt in $(seq 1 30); do
+            ready_endpoints="$(kubectl -n relay get endpointslice \
+              -l kubernetes.io/service-name=errand-notification \
+              -o jsonpath='{range .items[*].endpoints[?(@.conditions.ready==true)]}{.addresses[0]}{"\n"}{end}')"
+            if [[ -n "$ready_endpoints" ]]; then
+              printf 'Ready notification endpoints:\n%s\n' "$ready_endpoints"
+              break
+            fi
+            if [[ "$attempt" == 30 ]]; then
+              echo 'Timed out waiting for a ready notification EndpointSlice.' >&2
+              kubectl -n relay get service errand-notification endpointslice \
+                -l kubernetes.io/service-name=errand-notification -o yaml >&2 || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # Allow the local Traefik provider to observe the EndpointSlice.
+          sleep 3
+          kubectl -n relay get pods
+
+      - name: Run application integration tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          domain="$(docker exec -e AWS_ENDPOINT_URL=http://127.0.0.1:4566 \
+            -e AWS_DEFAULT_REGION=us-east-1 -e AWS_ACCESS_KEY_ID=test -e AWS_SECRET_ACCESS_KEY=test \
+            relay-floci-eks aws cloudformation describe-stacks --stack-name relay-local-edge \
+            --query 'Stacks[0].Outputs[?OutputKey==`DistributionDomainName`].OutputValue' --output text)"
+          [[ "$domain" == *.cloudfront.localhost.floci.io ]]
+          export RELAY_SHELL_URL="https://$domain"
+          export NODE_EXTRA_CA_CERTS="$GITHUB_WORKSPACE/floci/eks/.floci-ca.pem"
+          export RELAY_TEST_HTTP2=1
+          export NO_PROXY="localhost,127.0.0.1,.localhost.floci.io"
+          export no_proxy="$NO_PROXY"
+          # Pod readiness can precede Traefik's update to the replacement endpoint.
+          # Bound the entire wait, including stalled requests, to 15 seconds.
+          if ! timeout 15s bash <<'BASH'
+          while true; do
+            status="$(curl --silent --show-error --http2 \
+              --cacert "$NODE_EXTRA_CA_CERTS" --connect-timeout 2 --max-time 3 \
+              --output /dev/null --write-out '%{http_code}' \
+              "$RELAY_SHELL_URL/api/notifications/stream")" || status=000
+            if [[ "$status" == 401 ]]; then
+              echo 'Notification route is ready (HTTP 401).'
+              exit 0
+            fi
+            echo "Waiting for notification route (HTTP $status)..."
+            sleep 1
+          done
+          BASH
+          then
+            echo 'Notification route did not return HTTP 401 within 15 seconds.' >&2
+            exit 1
+          fi
+          npm run test:services
+
+      - name: Install Postman CLI
+        run: curl -fsSL https://dl-cli.pstmn.io/install/unix.sh | sh
+
+      - name: Run Postman collections against Floci EKS
+        shell: bash
+        run: |
+          set -euo pipefail
+          domain="$(docker exec -e AWS_ENDPOINT_URL=http://127.0.0.1:4566 \
+            -e AWS_DEFAULT_REGION=us-east-1 -e AWS_ACCESS_KEY_ID=test -e AWS_SECRET_ACCESS_KEY=test \
+            relay-floci-eks aws cloudformation describe-stacks --stack-name relay-local-edge \
+            --query 'Stacks[0].Outputs[?OutputKey==`DistributionDomainName`].OutputValue' --output text)"
+          [[ "$domain" == *.cloudfront.localhost.floci.io ]]
+          export NO_PROXY="localhost,127.0.0.1,.localhost.floci.io"
+          export no_proxy="$NO_PROXY"
+          for collection in postman/collections/*/; do
+            [[ -f "${collection}.resources/definition.yaml" ]] || continue
+            echo "Running Postman collection: $collection"
+            postman collection run "$collection" \
+              --environment postman/environments/eks.environment.yaml \
+              --env-var "baseUrl=https://$domain" \
+              --ssl-extra-ca-certs "$GITHUB_WORKSPACE/floci/eks/.floci-ca.pem"
+          done
+
+      - name: Collect Kubernetes and Floci diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          docker ps -a > eks-diagnostics.txt
+          docker logs relay-floci-eks >> eks-diagnostics.txt 2>&1 || true
+          if [[ -s floci/eks/.kubeconfig ]]; then
+            export KUBECONFIG="$GITHUB_WORKSPACE/floci/eks/.kubeconfig"
+            kubectl -n relay get pods,jobs,deployments -o wide >> eks-diagnostics.txt 2>&1 || true
+            kubectl -n relay get events --sort-by=.metadata.creationTimestamp >> eks-diagnostics.txt 2>&1 || true
+            for deploy in $(kubectl -n relay get deployments -o name 2>/dev/null); do
+              echo "Logs for $deploy" >> eks-diagnostics.txt
+              kubectl -n relay logs "$deploy" --all-containers --tail=100 >> eks-diagnostics.txt 2>&1 || true
+            done
+          fi
+
+      - name: Upload EKS diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: floci-eks-diagnostics
+          path: eks-diagnostics.txt
+          if-no-files-found: ignore
+
+      - name: Stop Floci EKS
+        if: always()
+        run: npm run down:eks

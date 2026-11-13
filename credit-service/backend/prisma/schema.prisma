@@ -1,0 +1,74 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: ChatGPT (model: GPT-6 Sol), date: 2026-10-16
+ * Scope: Generated the credit balance and transaction schema.
+ * Author review: Verified correctness of primary keys and indexes.
+ */
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../../packages/credit-prisma/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TransactionType {
+  INITIAL_ALLOCATION
+  CREDIT_RESERVE
+  CREDIT_RELEASE
+  CREDIT_TRANSFER
+  USER_DELETION
+}
+
+enum CreditAccountStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum SettlementStatus {
+  CREDITED
+  PENDING
+}
+
+model CreditBalance {
+  userId          String   @id @map("user_id")
+  availableCredit Decimal  @default(0) @map("available_credit")
+  reserveCredit   Decimal  @default(0) @map("reserve_credit")
+  status          CreditAccountStatus @default(ACTIVE)
+  lastUpdated     DateTime @updatedAt @map("last_updated")
+
+  @@map("credit_balances")
+}
+
+model TransactionRecord {
+  // Canonical service:id:type key from the contract enforces idempotency.
+  reference  String          @id
+  time       DateTime        @default(now())
+  senderId   String          @map("sender_id")
+  receiverId String          @map("receiver_id")
+  type       TransactionType
+  amount     Decimal
+
+  // History survives account closure; intentionally no balance foreign keys.
+  @@index([senderId, time])
+  @@index([receiverId, time])
+  @@map("transaction_records")
+}
+
+// Every post-migration errand transfer has one settlement record. A user
+// deletion converts credited courier settlements to PENDING without losing the
+// immutable transfer history.
+model CreditSettlement {
+  reference  String           @id
+  senderId   String           @map("sender_id")
+  receiverId String           @map("receiver_id")
+  amount     Decimal
+  status     SettlementStatus @default(CREDITED)
+  createdAt  DateTime         @default(now()) @map("created_at")
+  updatedAt  DateTime         @updatedAt @map("updated_at")
+
+  @@index([receiverId, status])
+  @@map("credit_settlements")
+}

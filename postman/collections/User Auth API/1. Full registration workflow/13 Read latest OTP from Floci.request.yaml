@@ -1,0 +1,14 @@
+$kind: http-request
+method: GET
+url: '{{flociUrl}}/_aws/ses'
+order: 13000
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('SES 200',()=>pm.response.to.have.status(200));
+      const email=pm.collectionVariables.get('email');
+      const messages=(pm.response.json().messages||[]).filter(m=>(m.Destination?.ToAddresses||[]).includes(email));
+      const code=messages[messages.length-1]?.Body?.text_part?.match(/\b(\d{6})\b/)?.[1];
+      pm.test('latest OTP for this user exists',()=>pm.expect(code).to.match(/^\d{6}$/));
+      if(code)pm.collectionVariables.set('otp',code);
+settings: { disableCookies: true }

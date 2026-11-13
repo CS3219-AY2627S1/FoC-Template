@@ -1,0 +1,27 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/refresh'
+order: 1000
+scripts:
+  - type: beforeRequest
+    code: |-
+      for(const name of ['Access','Id','Refresh'])pm.collectionVariables.set('s1Old'+name,pm.collectionVariables.get('s1'+name));
+      pm.request.headers.upsert({key:'Cookie',value:'relay_refresh='+pm.collectionVariables.get('s1OldRefresh')});
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200',()=>pm.response.to.have.status(200));
+      const c=pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').map(h=>h.value.split(';')[0]);
+      for(const name of ['Access','Id','Refresh']){
+        const key='relay_'+name.toLowerCase(), value=c.find(x=>x.startsWith(key+'='));
+        pm.test(key+' cookie present',()=>pm.expect(value).to.match(new RegExp('^'+key+'=.+')));
+        if(value)pm.collectionVariables.set('s1New'+name,value.split('=')[1]);
+      }
+
+      for(const name of ['Access','Id'])pm.test(name+' rotated',()=>pm.expect(pm.collectionVariables.get('s1New'+name)).not.to.eql(pm.collectionVariables.get('s1Old'+name)));
+      if(pm.environment.get('target_env')==='development'){
+        console.warn('Floci limitation: refresh-token rotation is configured but Floci returns the unchanged refresh token. This does not verify production rotation.');
+        pm.test('Floci returns unchanged refresh token (known limitation)',()=>pm.expect(pm.collectionVariables.get('s1New'+'Refresh')).to.eql(pm.collectionVariables.get('s1Old'+'Refresh')));
+      }else{
+        pm.test('Refresh token rotated',()=>pm.expect(pm.collectionVariables.get('s1New'+'Refresh')).not.to.eql(pm.collectionVariables.get('s1Old'+'Refresh')));
+      }
+settings: { disableCookies: true, protocolVersion: auto }

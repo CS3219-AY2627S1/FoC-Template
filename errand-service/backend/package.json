@@ -1,0 +1,34 @@
+{
+  "name": "@relay/errand-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run prisma:generate && tsc",
+    "dev": "tsx watch src/app.ts",
+    "start": "node dist/app.js",
+    "audit:profileless": "tsx src/scripts/audit-profileless-errands.ts",
+    "lint": "npm run prisma:generate && tsc --noEmit",
+    "test": "export DATABASE_URL=\"${ERRAND_TEST_DATABASE_URL:-${DATABASE_URL:-postgresql://relay:relay@localhost:5434/relay_errand?schema=public}}\" && npm run prisma:generate && vitest run --no-file-parallelism",
+    "prisma:generate": "DATABASE_URL=\"${DATABASE_URL:-postgresql://relay:relay@localhost:5434/relay_errand?schema=public}\" prisma generate",
+    "prisma:migrate": "DATABASE_URL=\"${DATABASE_URL:-postgresql://relay:relay@localhost:5434/relay_errand?schema=public}\" prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "@relay/contracts": "*",
+    "@relay/user-auth-backend-middleware": "*",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "kafkajs": "^2.2.4",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.5.0",
+    "prisma": "^6.19.3",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

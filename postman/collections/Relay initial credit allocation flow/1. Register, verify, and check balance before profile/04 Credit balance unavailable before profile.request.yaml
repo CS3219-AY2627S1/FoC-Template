@@ -1,0 +1,19 @@
+$kind: http-request
+url: '{{baseUrl}}/api/credit'
+method: GET
+headers:
+  Cookie: '{{sessionCookie}}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const selectedCookie=pm.collectionVariables.get('sessionCookie');
+      if(typeof selectedCookie!=='string'||!/^relay_access=[^;]+; relay_id=[^;]+$/.test(selectedCookie))throw new Error('Missing or invalid sessionCookie in this collection. Run its sign-in step first.');
+      pm.variables.set('sessionCookie',selectedCookie);
+      pm.request.headers.upsert({key:'Cookie',value:selectedCookie});
+  - type: afterResponse
+    code: |-
+      pm.test('balance absent before profile',()=>pm.response.to.have.status(404));
+      pm.test('missing balance code',()=>pm.expect(pm.response.json().code).to.eql('USER_NOT_FOUND'));
+      pm.test('balance record absent',()=>pm.expect(pm.response.json().message).to.match(/balance/i));
+settings: { disableCookies: true, protocolVersion: auto }
+order: 5000

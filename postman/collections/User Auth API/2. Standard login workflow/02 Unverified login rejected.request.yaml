@@ -1,0 +1,15 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/login'
+order: 2000
+headers:
+  Content-Type: 'application/json'
+body:
+  type: json
+  content: '{"email":"{{unverifiedEmail}}","password":"{{password}}"}'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 403',()=>pm.response.to.have.status(403));
+      pm.test('EMAIL_NOT_VERIFIED',()=>pm.expect(pm.response.json().error.code).to.eql('EMAIL_NOT_VERIFIED'));
+settings: { disableCookies: true, protocolVersion: auto }

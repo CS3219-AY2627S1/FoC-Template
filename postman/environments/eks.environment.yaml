@@ -1,0 +1,20 @@
+name: eks
+values:
+  - key: target_env
+    value: development
+    enabled: true
+    type: default
+    description: Use Floci-specific auth expectations in local development.
+  - key: baseUrl
+    value: 'https://REPLACE_WITH_FLOCI_CLOUDFRONT_DOMAIN'
+    enabled: true
+    type: default
+  - key: flociUrl
+    value: 'https://localhost:4567'
+    enabled: true
+    type: default
+  - key: deployment_target
+    value: eks
+    enabled: true
+    type: default
+    description: Selects deployment-specific cookie expectations.

@@ -1,0 +1,40 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6 Sol), date: 2026-11-04
+# Scope: Remove user-provided S3 bucket name
+# Author review: Verified AWS does auto-generate a unique bucket name and that it is outputted.
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Relay private profile-image bucket.
+
+Resources:
+  UserImageBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+Outputs:
+  BucketName:
+    Description: Profile image S3 bucket name
+    Value: !Ref UserImageBucket
+  BucketArn:
+    Description: Profile image S3 bucket ARN
+    Value: !GetAtt UserImageBucket.Arn
+  S3Endpoint:
+    Description: Regional S3 endpoint for SDK operations
+    Value: !Sub https://s3.${AWS::Region}.amazonaws.com
+  S3PublicEndpoint:
+    Description: Endpoint used in profile image URLs
+    Value: !Sub https://s3.${AWS::Region}.amazonaws.com

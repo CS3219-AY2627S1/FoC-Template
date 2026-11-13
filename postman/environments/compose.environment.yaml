@@ -1,0 +1,20 @@
+name: compose
+values:
+  - key: target_env
+    value: development
+    enabled: true
+    type: default
+    description: Use Floci-specific auth expectations in local development.
+  - key: baseUrl
+    value: 'http://localhost:8080'
+    enabled: true
+    type: default
+  - key: flociUrl
+    value: 'http://localhost:4566'
+    enabled: true
+    type: default
+  - key: deployment_target
+    value: compose
+    enabled: true
+    type: default
+    description: Selects deployment-specific cookie expectations.

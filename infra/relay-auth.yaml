@@ -1,0 +1,89 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6 Sol), date: 2026-11-02
+# Scope: Generated implementation of Cognito configuration compatible with AWS and Floci
+# Author review: Verified correctness and that validation rules match our requirements.
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Relay Cognito user pool, public app client, and authorization groups.
+
+Parameters:
+  UserPoolName:
+    Type: String
+    Default: relay-users
+  ClientName:
+    Type: String
+    Default: relay-client
+  AdminGroupName:
+    Type: String
+    Default: AdminGroup
+  SuperAdminGroupName:
+    Type: String
+    Default: SuperAdminGroup
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Ref UserPoolName
+      UsernameAttributes:
+        - email
+      UsernameConfiguration:
+        CaseSensitive: false
+      AutoVerifiedAttributes:
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: !Ref ClientName
+      GenerateSecret: false
+      EnableTokenRevocation: true
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: !Ref AdminGroupName
+      Description: Admin user group
+
+  SuperAdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: !Ref SuperAdminGroupName
+      Description: Super admin user group
+
+Outputs:
+  UserPoolId:
+    Description: Cognito user pool ID
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Description: Cognito app client ID
+    Value: !Ref UserPoolClient
+  UserPoolIssuer:
+    Description: OIDC issuer URL
+    Value: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+  UserPoolJwksUri:
+    Description: Cognito JSON Web Key Set URL
+    Value: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}/.well-known/jwks.json
+  AdminGroupName:
+    Value: !Ref AdminGroupName
+  SuperAdminGroupName:
+    Value: !Ref SuperAdminGroupName

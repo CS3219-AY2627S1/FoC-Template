@@ -1,0 +1,19 @@
+$kind: http-request
+url: '{{baseUrl}}/api/auth/verification/confirm-and-login'
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: '{"email":"{{requesterEmail}}","password":"{{password}}","code":"{{requesterCode}}"}'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.response.to.have.status(200);
+      pm.collectionVariables.set('requesterSub',pm.response.json().data.user.subject);
+      pm.collectionVariables.set('requesterCookie',pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').map(h=>h.value.split(';')[0]).filter(x=>x.startsWith('relay_access=')||x.startsWith('relay_id=')).join('; '));
+      const refreshCookie=pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').map(h=>h.value.split(';')[0]).find(x=>x.startsWith('relay_refresh='));
+      pm.test('Cognito access, ID and refresh cookies returned',()=>{pm.expect(pm.collectionVariables.get('requesterCookie')).to.match(/^relay_access=[^;]+; relay_id=[^;]+$/);pm.expect(refreshCookie).to.match(/^relay_refresh=[^;]+$/);});
+      if(refreshCookie)pm.collectionVariables.set('requesterRefreshCookie',refreshCookie);
+settings: { disableCookies: true, protocolVersion: auto }
+order: 3000

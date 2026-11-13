@@ -1,0 +1,5 @@
+.env.local
+.env.aws.local
+.env.generated
+.env.aws.generated
+results/*.json

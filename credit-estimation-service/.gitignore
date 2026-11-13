@@ -1,0 +1,26 @@
+# Build output
+dist/
+build/
+out/
+node_modules/
+packages/*/generated/
+
+# Prisma generated artifacts
+**/prisma/generated/
+**/generated/prisma/
+**/.prisma/
+
+# Diagnostics
+.mf/
+.postman/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# OS
+.DS_Store
+Thumbs.db

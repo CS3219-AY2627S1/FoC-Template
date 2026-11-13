@@ -1,0 +1,17 @@
+$kind: collection
+description: CRUD and validation tests for supplier-service/backend. Run in order against the Docker Compose host proxy.
+variables:
+  sessionCookie: ''
+  idCookie: ''
+  refreshCookie: ''
+  supplierId: ''
+  supplierId2: ''
+  supplierId4: ''
+  supplierId3: ''
+  adminEmail: admin@example.com
+  adminPassword: Admin123%
+  supplierId5: ''
+  supplierName: ''
+  supplierName2: ''
+  supplierName5: ''
+  supplierUpdatedName: ''

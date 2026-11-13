@@ -1,0 +1,23 @@
+$kind: http-request
+description: Only 90 credits remain available while 10 are reserved. A 95-credit second order must fail without consuming the reserved 10.
+url: '{{baseUrl}}/api/errands/'
+method: POST
+headers:
+  Content-Type: application/json
+  Cookie: '{{requesterCookie}}'
+body:
+  type: json
+  content: '{"supplierDetails":{"supplierId":"{{supplierId}}","supplierName":"{{supplierName}}","serviceType":1},"name":"Over available balance","pickupLocation":{"lat":1.3,"lng":103.8,"buildingName":"Pickup","floorNumber":1},"targetLocation":{"lat":1.31,"lng":103.81,"buildingName":"Dropoff","floorNumber":2},"deliveryDetails":{"description":"Postman credit lifecycle demo"},"creditAmount":95}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const selectedSession=pm.collectionVariables.get('requesterCookie');
+      if(typeof selectedSession!=='string'||!/^relay_access=[^;]+; relay_id=[^;]+$/.test(selectedSession))throw new Error('Missing or invalid requesterCookie in this collection. Run its login step first.');
+      pm.variables.set('requesterCookie',selectedSession);
+      pm.request.headers.upsert({key:'Cookie',value:selectedSession});
+  - type: afterResponse
+    code: |-
+      pm.test('insufficient available credit rejected',()=>pm.response.to.have.status(422));
+      pm.test('insufficient credit code',()=>pm.expect(pm.response.json().code).to.eql('INSUFFICIENT_CREDIT'));
+settings: { disableCookies: true, protocolVersion: auto }
+order: 3000

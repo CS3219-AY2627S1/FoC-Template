@@ -1,0 +1,63 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6.1 Terra), date: 2026-11-06
+# Scope: Updated ALB ingress to be private and added URL rewrites for API Gateway
+# Author review: Verified correctness and tested on floci eks and on aws.
+
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata: { name: alb }
+spec:
+  controller: eks.amazonaws.com/alb
+  parameters:
+    apiGroup: eks.amazonaws.com
+    kind: IngressClassParams
+    name: relay-alb
+---
+apiVersion: eks.amazonaws.com/v1
+kind: IngressClassParams
+metadata: { name: relay-alb }
+spec:
+  scheme: internal
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: relay
+  namespace: relay
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/security-groups: PRIVATE_ALB_SECURITY_GROUP_ID
+    alb.ingress.kubernetes.io/manage-backend-security-group-rules: "true"
+    alb.ingress.kubernetes.io/transforms.host: '[{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/relay/?(.*)$","replace":"/$1"}]}}]'
+    alb.ingress.kubernetes.io/transforms.supplier-frontend: '[{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/relay/?(.*)$","replace":"/$1"}]}}]'
+    alb.ingress.kubernetes.io/transforms.user-frontend: '[{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/relay/?(.*)$","replace":"/$1"}]}}]'
+    alb.ingress.kubernetes.io/transforms.errand-frontend: '[{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/relay/?(.*)$","replace":"/$1"}]}}]'
+    alb.ingress.kubernetes.io/transforms.credit-frontend: '[{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/relay/?(.*)$","replace":"/$1"}]}}]'
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    # Reuse ready backend Pods and allow quiet SSE connections between heartbeats.
+    alb.ingress.kubernetes.io/healthcheck-path: /healthz
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=3600
+    alb.ingress.kubernetes.io/transforms.user-auth-api: '[{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/relay/?(.*)$","replace":"/$1"}]}}]'
+    alb.ingress.kubernetes.io/transforms.user-api: '[{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/relay/?(.*)$","replace":"/$1"}]}}]'
+    alb.ingress.kubernetes.io/transforms.supplier-api: '[{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/relay/?(.*)$","replace":"/$1"}]}}]'
+    alb.ingress.kubernetes.io/transforms.errand-api: '[{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/relay/?(.*)$","replace":"/$1"}]}}]'
+    alb.ingress.kubernetes.io/transforms.credit-api: '[{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/relay/?(.*)$","replace":"/$1"}]}}]'
+    alb.ingress.kubernetes.io/transforms.errand-notification: '[{"type":"url-rewrite","urlRewriteConfig":{"rewrites":[{"regex":"^/relay/?(.*)$","replace":"/$1"}]}}]'
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          # Browser APIs bypass the host frontend; keep internal APIs private.
+          - { path: /relay/api/auth, pathType: Prefix, backend: { service: { name: user-auth-api, port: { number: 3000 } } } }
+          - { path: /relay/api/user, pathType: Prefix, backend: { service: { name: user-api, port: { number: 3000 } } } }
+          - { path: /relay/api/supplier, pathType: Prefix, backend: { service: { name: supplier-api, port: { number: 3000 } } } }
+          - { path: /relay/api/errands, pathType: Prefix, backend: { service: { name: errand-api, port: { number: 3000 } } } }
+          - { path: /relay/api/credit, pathType: Prefix, backend: { service: { name: credit-api, port: { number: 3000 } } } }
+          - { path: /relay/api/notifications/stream, pathType: Prefix, backend: { service: { name: errand-notification, port: { number: 3010 } } } }
+          - { path: /relay/remotes/supplier, pathType: Prefix, backend: { service: { name: supplier-frontend, port: { number: 80 } } } }
+          - { path: /relay/remotes/user, pathType: Prefix, backend: { service: { name: user-frontend, port: { number: 80 } } } }
+          - { path: /relay/remotes/errand, pathType: Prefix, backend: { service: { name: errand-frontend, port: { number: 80 } } } }
+          - { path: /relay/remotes/credit, pathType: Prefix, backend: { service: { name: credit-frontend, port: { number: 80 } } } }
+          - { path: /relay, pathType: Prefix, backend: { service: { name: host, port: { number: 80 } } } }

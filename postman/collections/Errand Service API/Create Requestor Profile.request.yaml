@@ -1,0 +1,30 @@
+$kind: http-request
+method: PATCH
+url: '{{baseUrl}}/api/user/me'
+order: 6000
+headers:
+  Content-Type: application/json
+  Cookie: relay_access={{sessionCookie}}; relay_id={{idCookie}}
+body:
+  type: json
+  content: |-
+    {
+      "username": "{{requesterUsername}}",
+      "profilePicture": null
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      const access=pm.collectionVariables.get('sessionCookie');
+      const id=pm.collectionVariables.get('idCookie');
+      if(!access||!id)throw new Error('Run the matching login request before this request.');
+      pm.request.headers.upsert({key:'Cookie',value:'relay_access='+access+'; relay_id='+id});
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Requester profile created', () => {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json().ok).to.be.true;
+      });
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

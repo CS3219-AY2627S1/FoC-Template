@@ -1,0 +1,33 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/errands/{{errandId}}/accept'
+order: 18000
+headers:
+  Content-Type: application/json
+  Cookie: relay_access={{sessionCookieCourier}}; relay_id={{idCookieCourier}}
+body:
+  type: json
+  content: ''
+scripts:
+  - type: beforeRequest
+    code: |-
+      const access=pm.collectionVariables.get('sessionCookieCourier');
+      const id=pm.collectionVariables.get('idCookieCourier');
+      if(!access||!id)throw new Error('Run the matching login request before this request.');
+      pm.request.headers.upsert({key:'Cookie',value:'relay_access='+access+'; relay_id='+id});
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Cannot accept already-accepted errand', () => {
+        pm.response.to.have.status(409);
+      });
+
+      const json = pm.response.json();
+      pm.test('Error code is CONFLICT', () => {
+        pm.expect(json.code).to.eql('INVALID_TRANSITION');
+      });
+      pm.test('Error message is correct', () => {
+        pm.expect(json.message).to.include('Errand is already accepted by a courier.');
+      });
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

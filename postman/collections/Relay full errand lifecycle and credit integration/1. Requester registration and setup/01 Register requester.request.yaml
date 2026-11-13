@@ -1,0 +1,20 @@
+$kind: http-request
+url: '{{baseUrl}}/api/auth/register'
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: '{"email":"{{requesterEmail}}","password":"{{password}}","passwordConfirmation":"{{password}}"}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const s=Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+      pm.collectionVariables.set('requesterEmail','relay-requester-'+s+'@u.nus.edu');
+      pm.collectionVariables.set('requesterName','relayrequester'+s);
+      pm.collectionVariables.set('supplierName','Relay E2E '+s);
+      pm.collectionVariables.set('supplierUpdatedName','Relay E2E Updated '+s);
+  - type: afterResponse
+    code: pm.response.to.have.status(201);
+settings: { disableCookies: true, protocolVersion: auto }
+order: 1000

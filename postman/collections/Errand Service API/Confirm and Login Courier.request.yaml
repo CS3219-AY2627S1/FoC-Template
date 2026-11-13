@@ -1,0 +1,38 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/verification/confirm-and-login'
+order: 9000
+description: Confirm signup with verification code and login for courier
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "{{courierEmail}}",
+      "password": "{{courierPassword}}",
+      "code": "{{courierVerificationCode}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Verification accepted', () => {
+        pm.response.to.have.status(200);
+      });
+
+      const json = pm.response.json();
+      const cookies = pm.response.headers.all().filter(header => header.key.toLowerCase() === 'set-cookie').map(header => header.value.split(';')[0]);
+      const access = cookies.find(cookie => cookie.startsWith('relay_access='))?.slice('relay_access='.length);
+      const id = cookies.find(cookie => cookie.startsWith('relay_id='))?.slice('relay_id='.length);
+      const refresh = cookies.find(cookie => cookie.startsWith('relay_refresh='))?.slice('relay_refresh='.length);
+      pm.test('Cognito cookies returned', () => {
+        pm.expect(access).to.be.a('string').and.not.empty;
+        pm.expect(id).to.be.a('string').and.not.empty;
+        pm.expect(refresh).to.be.a('string').and.not.empty;
+      });
+      pm.collectionVariables.set('sessionCookieCourier', access);
+      pm.collectionVariables.set('idCookieCourier', id);
+      pm.collectionVariables.set('refreshCookieCourier', refresh);
+      pm.collectionVariables.set('courierSub', json.data.user.subject);
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

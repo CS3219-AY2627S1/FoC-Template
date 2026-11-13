@@ -1,0 +1,17 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/admin/demote'
+order: 11000
+headers:
+  Content-Type: 'application/json'
+body:
+  type: json
+  content: '{"email":"{{email}}"}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.upsert({key:'Cookie',value:'relay_access='+pm.collectionVariables.get('adminAccess')+'; relay_id='+pm.collectionVariables.get('adminId')});
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 204',()=>pm.response.to.have.status(204));
+settings: { disableCookies: true, protocolVersion: auto }

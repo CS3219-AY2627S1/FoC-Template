@@ -1,0 +1,21 @@
+$kind: http-request
+url: '{{baseUrl}}/api/auth/register'
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: '{"email":"{{testEmail}}","password":"{{testPassword}}","passwordConfirmation":"{{testPassword}}"}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const suffix=Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+      pm.collectionVariables.set('testEmail',`relay-credit-${suffix}@u.nus.edu`);
+      pm.collectionVariables.set('testUsername',`relayCredit${suffix}`);
+      pm.collectionVariables.set('balanceAttempts','0');
+  - type: afterResponse
+    code: |-
+      pm.test('registration accepted',()=>pm.response.to.have.status(201));
+      pm.test('verification required',()=>pm.expect(pm.response.json().data.verificationRequired).to.eql(true));
+settings: { disableCookies: true, protocolVersion: auto }
+order: 1000

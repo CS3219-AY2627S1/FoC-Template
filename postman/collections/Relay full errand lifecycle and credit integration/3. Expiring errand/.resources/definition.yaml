@@ -1,0 +1,3 @@
+$kind: collection
+description: Short future expiry. Keep this folder in runner order; GET triggers due lifecycle processing and credit release arrives asynchronously via Kafka.
+order: 3000

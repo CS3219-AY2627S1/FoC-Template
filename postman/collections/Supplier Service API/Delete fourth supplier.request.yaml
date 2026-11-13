@@ -1,0 +1,21 @@
+$kind: http-request
+method: DELETE
+url: '{{baseUrl}}/api/supplier/{{supplierId4}}'
+order: 17000
+headers:
+  Cookie: relay_access={{sessionCookie}}; relay_id={{idCookie}}
+scripts:
+  - type: beforeRequest
+    code: |-
+      const access=pm.collectionVariables.get('sessionCookie');
+      const id=pm.collectionVariables.get('idCookie');
+      if(!access||!id)throw new Error('Run the matching login request before this request.');
+      pm.request.headers.upsert({key:'Cookie',value:'relay_access='+access+'; relay_id='+id});
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Delete supplier returns 204', () => {
+        pm.response.to.have.status(204);
+      });
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

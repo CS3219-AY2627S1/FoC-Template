@@ -1,0 +1,33 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/errands/{{errandId3}}/cancel'
+order: 33000
+headers:
+  Content-Type: application/json
+  Cookie: relay_access={{sessionCookie}}; relay_id={{idCookie}}
+body:
+  type: json
+  content: ''
+scripts:
+  - type: beforeRequest
+    code: |-
+      const access=pm.collectionVariables.get('sessionCookie');
+      const id=pm.collectionVariables.get('idCookie');
+      if(!access||!id)throw new Error('Run the matching login request before this request.');
+      pm.request.headers.upsert({key:'Cookie',value:'relay_access='+access+'; relay_id='+id});
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Cannot cancel ACCEPTED errand', () => {
+        pm.response.to.have.status(409);
+      });
+
+      const json = pm.response.json();
+      pm.test('Error code is INVALID_TRANSITION', () => {
+        pm.expect(json.code).to.eql('INVALID_TRANSITION');
+      });
+      pm.test('Error message is correct', () => {
+        pm.expect(json.message).to.include('Errand was not in expected state: OPEN.');
+      });
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

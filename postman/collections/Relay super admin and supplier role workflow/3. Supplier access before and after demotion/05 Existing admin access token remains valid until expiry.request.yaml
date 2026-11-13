@@ -1,0 +1,20 @@
+$kind: http-request
+url: '{{baseUrl}}/api/supplier/{{supplierId}}'
+method: PUT
+headers:
+  Content-Type: application/json
+  Cookie: '{{adminCookie}}'
+body:
+  type: json
+  content: '{"isOperational":true}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const selectedCookie=pm.collectionVariables.get('adminCookie');
+      if(typeof selectedCookie!=='string'||!/^relay_access=[^;]+; relay_id=[^;]+$/.test(selectedCookie))throw new Error('Missing or invalid adminCookie in this collection. Run its sign-in step first.');
+      pm.variables.set('adminCookie',selectedCookie);
+      pm.request.headers.upsert({key:'Cookie',value:selectedCookie});
+  - type: afterResponse
+    code: pm.test('HTTP 200',()=>pm.response.to.have.status(200));
+settings: { disableCookies: true, protocolVersion: auto }
+order: 6000

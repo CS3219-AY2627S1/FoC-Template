@@ -1,0 +1,18 @@
+$kind: http-request
+method: GET
+url: '{{flociUrl}}/_aws/ses'
+order: 4000
+description: Fetch verification code from SES mock
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('SES messages available', () => pm.response.to.have.status(200));
+      const messages = pm.response.json().messages || [];
+      const email = pm.collectionVariables.get('requesterEmail').toLowerCase();
+      const matching = messages.filter(msg => JSON.stringify(msg).toLowerCase().includes(email));
+      const latest = matching[matching.length - 1];
+      const code = latest?.Body?.text_part?.match(/\b(\d{6})\b/)?.[1];
+      pm.test('Requester OTP for current run found', () => pm.expect(code, `No OTP for ${email}`).to.exist);
+      if (code) pm.collectionVariables.set('requesterVerificationCode', code);
+    language: text/javascript
+settings: { disableCookies: true }

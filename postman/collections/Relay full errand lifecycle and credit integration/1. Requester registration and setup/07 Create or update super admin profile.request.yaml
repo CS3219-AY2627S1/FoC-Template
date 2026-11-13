@@ -1,0 +1,22 @@
+$kind: http-request
+url: '{{baseUrl}}/api/user/me'
+method: PATCH
+headers:
+  Content-Type: application/json
+  Cookie: '{{superAdminCookie}}'
+body:
+  type: json
+  content: '{"username":"relaySuperAdmin"}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const selectedSession=pm.collectionVariables.get('superAdminCookie');
+      if(typeof selectedSession!=='string'||!/^relay_access=[^;]+; relay_id=[^;]+$/.test(selectedSession))throw new Error('Missing or invalid superAdminCookie in this collection. Run its login step first.');
+      pm.variables.set('superAdminCookie',selectedSession);
+      pm.request.headers.upsert({key:'Cookie',value:selectedSession});
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200',()=>pm.response.to.have.status(200));
+      pm.test('profile created',()=>pm.expect(pm.response.json().data.profileCreated).to.eql(true));
+settings: { disableCookies: true, protocolVersion: auto }
+order: 9000

@@ -1,0 +1,22 @@
+$kind: http-request
+url: '{{baseUrl}}/api/supplier'
+method: POST
+headers:
+  Content-Type: application/json
+  Cookie: '{{superAdminCookie}}'
+body:
+  type: text
+  content: '{"name":"{{supplierName}}","location":{"lat":1.3,"lng":103.8,"buildingName":"E2E Pickup","floorNumber":1},"isOperational":true,"operatingHours":{"openingTime":"00:00","closingTime":"00:00","daysOfWeek":[0,1,2,3,4,5,6]},"serviceTypes":[1]}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const selectedSession=pm.collectionVariables.get('superAdminCookie');
+      if(typeof selectedSession!=='string'||!/^relay_access=[^;]+; relay_id=[^;]+$/.test(selectedSession))throw new Error('Missing or invalid superAdminCookie in this collection. Run its login step first.');
+      pm.variables.set('superAdminCookie',selectedSession);
+      pm.request.headers.upsert({key:'Cookie',value:selectedSession});
+  - type: afterResponse
+    code: |-
+      pm.response.to.have.status(201);
+      pm.collectionVariables.set('supplierId',pm.response.json().supplier.id);
+settings: { disableCookies: true, protocolVersion: auto }
+order: 10000

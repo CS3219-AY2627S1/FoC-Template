@@ -1,0 +1,45 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6.1 Terra), date: 2026-11-06
+# Scope: Generated implementation of local Headlamp Kubernetes dashboard
+# Author review: Verified that headlamp connects to local eks cluster correctly.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: relay-headlamp, namespace: relay }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: relay-headlamp-admin, namespace: relay }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: relay-local-headlamp-admin }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: cluster-admin }
+subjects:
+  - { kind: ServiceAccount, name: relay-headlamp-admin, namespace: relay }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: relay-headlamp, namespace: relay }
+spec: { selector: { app: relay-headlamp }, ports: [{ port: 4466, targetPort: web }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: relay-headlamp, namespace: relay }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: relay-headlamp } }
+  template:
+    metadata: { labels: { app: relay-headlamp } }
+    spec:
+      serviceAccountName: relay-headlamp
+      containers:
+        - name: headlamp
+          securityContext: { allowPrivilegeEscalation: false }
+          image: ghcr.io/headlamp-k8s/headlamp:v0.46.0
+          imagePullPolicy: IfNotPresent
+          args: ["-in-cluster"]
+          ports: [{ name: web, containerPort: 4466 }]
+          readinessProbe: { httpGet: { path: /, port: web }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /, port: web }, periodSeconds: 10 }
+          resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }

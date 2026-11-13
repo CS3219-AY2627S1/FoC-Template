@@ -1,0 +1,23 @@
+$kind: http-request
+url: '{{baseUrl}}/api/auth/register'
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: '{"email":"{{adminEmail}}","password":"{{adminPassword}}","passwordConfirmation":"{{adminPassword}}"}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const s=Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+      pm.collectionVariables.set('adminEmail',`relay-admin-${s}@u.nus.edu`);
+      pm.collectionVariables.set('normalEmail',`relay-user-${s}@u.nus.edu`);
+      pm.collectionVariables.set('adminUsername',`relayAdmin${s}`);
+      pm.collectionVariables.set('normalUsername',`relayUser${s}`);
+      pm.collectionVariables.set('supplierName',`Relay Postman ${s}`);
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 201',()=>pm.response.to.have.status(201));
+      pm.test('verification required',()=>pm.expect(pm.response.json().data.verificationRequired).to.eql(true));
+settings: { disableCookies: true, protocolVersion: auto }
+order: 1000

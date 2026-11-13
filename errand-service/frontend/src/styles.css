@@ -1,0 +1,666 @@
+/* AI Assistance Disclosure:
+Tool: ChatGPT (model: GPT-5.6 Luna), date: 2026-11-02
+Scope: Generated CSS based on provided UI mockup.
+Author review: I validated correctness and edited for style. */
+
+.errand-map-shell {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+}
+.errand-card-shell {
+  min-height: 100%;
+  padding: 22px;
+  box-sizing: border-box;
+}
+.errand-top-controls {
+  position: absolute;
+  z-index: var(--relay-layer-map-controls);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  pointer-events: none;
+}
+.errand-top-controls > * {
+  pointer-events: auto;
+}
+.errand-control-icon {
+  width: 20px;
+  height: 20px;
+}
+.errand-top-controls .errand-control-icon {
+  color: #1c1c1e;
+}
+.errand-map-controls {
+  position: absolute;
+  z-index: var(--relay-layer-map-controls);
+  right: 24px;
+  bottom: 126px;
+  display: grid;
+  gap: 10px;
+}
+.errand-bottom-controls {
+  position: absolute;
+  z-index: var(--relay-layer-toolbar);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.errand-bottom-controls .updates-action {
+  display: inline-flex;
+  align-items: center;
+}
+.errand-create-popover,
+.errand-detail-popover {
+  z-index: var(--relay-layer-card);
+}
+.errand-create-popover .create-errand-card,
+.errand-detail-popover .errand-detail-card {
+  width: 100%;
+  max-height: calc(100dvh - 150px);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.24);
+}
+.errand-detail-card {
+  position: absolute;
+  top: 50%;
+  left: 24px;
+  width: min(405px, calc(100vw - 48px));
+  transform: translateY(-50%);
+  padding: clamp(18px, 2.25vw, 26px);
+}
+.create-errand-card {
+  padding: clamp(22px, 3vw, 34px);
+}
+.create-errand-card {
+  width: min(540px, 100%);
+  margin: 0 auto;
+  max-height: calc(100dvh - 44px);
+  overflow: auto;
+  scrollbar-width: none;
+}
+.create-errand-card::-webkit-scrollbar {
+  display: none;
+}
+.errand-detail-header,
+.errand-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.errand-detail-header {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.errand-detail-back-row {
+  display: flex;
+  justify-content: flex-end;
+}
+.errand-detail-heading {
+  min-width: 0;
+}
+.errand-detail-header h1,
+.errand-detail-header h2,
+.errand-panel-header h2 {
+  margin: 0;
+  letter-spacing: -0.04em;
+}
+.errand-detail-header h1 {
+  font-size: clamp(1.8rem, 4vw, 2.5rem);
+}
+.errand-detail-header h2 {
+  font-size: clamp(1.45rem, 3vw, 2rem);
+}
+.errand-eyebrow,
+.route-label {
+  margin: 0 0 8px;
+  color: var(--relay-text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+}
+.errand-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--relay-text-muted);
+  font-size: 0.82rem;
+}
+.errand-person-card,
+.errand-route-card,
+.errand-info-card,
+.errand-reward-card {
+  margin-top: 18px;
+  border: 1px solid var(--relay-glass-soft-border);
+  border-radius: 18px;
+  background: var(--relay-glass-soft-bg);
+  -webkit-backdrop-filter: var(--relay-glass-soft-filter);
+  backdrop-filter: var(--relay-glass-soft-filter);
+}
+.errand-person-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 15px;
+}
+.errand-person-card div {
+  display: grid;
+  gap: 2px;
+}
+.errand-person-card span:not(.errand-avatar):not(.errand-online-dot) {
+  color: var(--relay-text-muted);
+  font-size: 0.8rem;
+}
+.errand-avatar {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 50%;
+}
+.errand-avatar-placeholder {
+  display: grid;
+  place-items: center;
+  background: #34c759;
+  color: white;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+.errand-online-dot {
+  width: 9px;
+  height: 9px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: #34c759;
+  box-shadow: 0 0 0 4px rgba(52, 199, 89, 0.14);
+}
+.errand-route-card {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+}
+.errand-route-card > div {
+  display: grid;
+  gap: 4px;
+  padding: 15px 17px;
+}
+.errand-route-card > div + div {
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+.errand-route-card strong {
+  font-size: 0.96rem;
+}
+.errand-info-card,
+.errand-reward-card {
+  padding: 15px 17px;
+}
+.errand-info-card p {
+  margin: 8px 0 6px;
+  line-height: 1.45;
+}
+.errand-info-card small,
+.errand-reward-card small {
+  color: var(--relay-text-muted);
+  line-height: 1.4;
+}
+.errand-reward-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  background: rgba(0, 122, 255, 0.08);
+}
+.errand-reward-card div {
+  display: grid;
+  gap: 5px;
+}
+.errand-reward-card strong {
+  color: #007aff;
+  font-size: 1.15rem;
+}
+.errand-reward-card small {
+  max-width: 190px;
+  text-align: right;
+}
+.errand-progress {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin: 22px 0 4px;
+}
+.errand-progress div {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  color: var(--relay-text-muted);
+  font-size: 0.7rem;
+  text-align: center;
+}
+.errand-progress div:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 13px;
+  left: calc(50% + 17px);
+  width: calc(100% - 34px);
+  height: 2px;
+  background: rgba(0, 0, 0, 0.1);
+}
+.errand-progress div.active {
+  color: #007aff;
+}
+.errand-progress div.active:not(:last-child)::after {
+  background: #007aff;
+}
+.errand-progress span {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border-radius: 50%;
+  background: #e5e5ea;
+  font-weight: 800;
+}
+.errand-progress .active span {
+  background: #007aff;
+  color: white;
+}
+.errand-action-stack {
+  display: grid;
+  gap: 9px;
+  margin-top: 20px;
+}
+.errand-action-stack .relay-button {
+  width: 100%;
+}
+.errand-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+.errand-field {
+  display: grid;
+  gap: 7px;
+  color: #3a334d;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+.errand-field > span > b {
+  color: var(--relay-red);
+}
+.errand-field em {
+  color: var(--relay-text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-style: normal;
+}
+/* For fields with input + button on same row (like Reward credits) */
+.errand-field.has-input-button {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+.errand-field.has-input-button > span {
+  grid-column: 1 / -1;
+}
+.errand-field input,
+.errand-field select,
+.errand-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  background: var(--relay-glass-soft-bg);
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  outline: none;
+}
+.errand-readonly-value {
+  box-sizing: border-box;
+  min-height: 45px;
+  padding: 11px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 12px;
+  background: rgba(118, 118, 128, 0.08);
+  color: var(--relay-text-muted);
+  font-weight: 500;
+}
+.errand-field textarea {
+  resize: vertical;
+  line-height: 1.4;
+}
+.errand-field input:focus,
+.errand-field select:focus,
+.errand-field textarea:focus {
+  border-color: #007aff;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
+}
+.errand-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  min-width: 0;
+}
+.errand-form-grid > .errand-field {
+  min-width: 0;
+}
+.errand-reward-grid {
+  display: grid;
+  gap: 12px;
+}
+.errand-reward-grid input {
+  min-width: 0;
+}
+.errand-estimate-pill {
+  position: relative;
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 7px 9px 7px 11px;
+  min-height: 0;
+  box-sizing: border-box;
+  border: 1px solid rgba(0, 122, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(0, 122, 255, 0.1);
+  color: #0066cc;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.errand-estimate-pill-rate-limited {
+  border-color: rgba(255, 159, 10, 0.3);
+  background: rgba(255, 159, 10, 0.14);
+  color: #9a5b00;
+}
+.errand-estimate-pill-invalid {
+  border-color: rgba(255, 59, 48, 0.3);
+  background: rgba(255, 59, 48, 0.12);
+  color: #c62828;
+}
+.errand-estimate-pill-balance {
+  border-color: rgba(255, 159, 10, 0.3);
+  background: rgba(255, 159, 10, 0.14);
+  color: #9a5b00;
+}
+.errand-estimate-help {
+  display: inline-grid;
+  width: 19px;
+  height: 19px;
+  min-width: 19px;
+  max-width: 19px;
+  min-height: 19px;
+  max-height: 19px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  box-sizing: border-box;
+  margin: 0;
+  line-height: 1;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+.errand-estimate-help:hover,
+.errand-estimate-help:focus-visible {
+  background: rgba(0, 122, 255, 0.12);
+}
+.errand-estimate-reason {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(280px, calc(100vw - 64px));
+  padding: 10px 12px;
+  border: 1px solid var(--relay-glass-soft-border);
+  border-radius: 12px;
+  display: none;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+  color: var(--relay-text);
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.errand-estimate-pill:hover .errand-estimate-reason,
+.errand-estimate-help:focus-visible + .errand-estimate-reason {
+  display: block;
+}
+.errand-estimate-pill .relay-icon-button {
+  --relay-icon-button-scale: 0.8;
+}
+.errand-credit-input-wrapper {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.errand-credit-input-wrapper .errand-estimate-button {
+  align-self: center;
+}
+.errand-credit-input-wrapper input {
+  flex: 1;
+  min-width: 0;
+}
+.errand-estimate-button {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  max-width: 34px;
+  min-height: 34px;
+  max-height: 34px;
+  place-items: center;
+  box-sizing: border-box;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--relay-control-bg);
+  color: var(--relay-text);
+  font: inherit;
+  font-size: calc(var(--relay-control-font-size, 1.05rem) * 1);
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    background 0.16s ease;
+}
+.errand-estimate-button:hover {
+  background: var(--relay-control-bg-hover);
+}
+.errand-estimate-button:active {
+  transform: scale(0.92);
+}
+.errand-estimate-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.errand-estimate-icon {
+  width: 20px;
+  height: 20px;
+}
+.errand-form-note {
+  margin: -2px 0 0;
+  color: var(--relay-text-muted);
+  font-size: 0.78rem;
+}
+.errand-filter-panel {
+  position: absolute;
+  z-index: var(--relay-layer-card);
+  top: 78px;
+  left: 18px;
+  width: min(350px, calc(100vw - 36px));
+  padding: 24px;
+}
+.errand-filter-panel fieldset {
+  padding: 0;
+  margin: 22px 0;
+  border: 0;
+}
+.errand-filter-panel legend {
+  margin-bottom: 9px;
+  color: var(--relay-text-muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.errand-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.errand-filter-chip {
+  padding: 10px 20px;
+  border: 1px solid var(--relay-glass-soft-border);
+  border-radius: 999px;
+  background: var(--relay-glass-soft-bg);
+  color: #8e8e93;
+  font: inherit;
+  font-size: var(--relay-control-font-size, 1.05rem);
+  cursor: pointer;
+}
+.errand-filter-chip.selected {
+  border-color: #007aff;
+  background: #007aff;
+  color: #1c1c1e;
+}
+.errand-button-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 5px;
+  vertical-align: -3px;
+}
+.my-request-card {
+  position: absolute;
+  z-index: var(--relay-layer-card);
+  left: 18px;
+  bottom: 116px;
+  display: grid;
+  gap: 5px;
+  width: min(360px, calc(100vw - 36px));
+  padding: 17px;
+  border: 1px solid var(--relay-glass-soft-border);
+  border-radius: 22px;
+  background: var(--relay-glass-soft-bg);
+  box-shadow: var(--relay-glass-soft-shadow);
+  -webkit-backdrop-filter: var(--relay-glass-soft-filter);
+  backdrop-filter: var(--relay-glass-soft-filter);
+  text-align: left;
+  cursor: pointer;
+}
+.request-card-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--relay-text-muted);
+  font-size: 0.78rem;
+}
+.my-request-card strong {
+  font-size: 1.05rem;
+}
+.my-request-card small,
+.my-request-card em {
+  color: var(--relay-text-muted);
+  font-size: 0.78rem;
+  font-style: normal;
+}
+.my-request-card em {
+  color: #007aff;
+}
+.errand-marker {
+  position: relative;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 2px solid white;
+  border-radius: 50% 50% 50% 6px;
+  background: var(--marker);
+  color: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  transform: rotate(-45deg);
+}
+.errand-marker b {
+  transform: rotate(45deg);
+  font-size: 13px;
+}
+.errand-marker-selected {
+  box-shadow:
+    0 0 0 8px rgba(0, 122, 255, 0.25),
+    0 4px 12px rgba(0, 0, 0, 0.28);
+}
+@media (max-width: 700px) {
+  .errand-top-controls {
+    gap: 10px;
+  }
+  .errand-detail-card {
+    top: auto;
+    right: 0;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    left: 0;
+    width: 100%;
+    transform: none;
+    padding: 20px;
+    border-radius: 24px 24px 0 0;
+  }
+  .errand-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .my-request-card {
+    bottom: 92px;
+  }
+  .errand-create-popover {
+    right: 0;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    left: 0;
+    width: 100%;
+    max-height: calc(100dvh - 96px);
+  }
+  .errand-create-popover .create-errand-card {
+    width: 100%;
+    max-width: none;
+  }
+  .errand-detail-popover {
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 96px);
+  }
+  .errand-filter-panel {
+    top: auto;
+    right: 0;
+    bottom: 92px;
+    left: 0;
+    width: 100%;
+    max-height: calc(100dvh - 120px);
+    overflow: auto;
+  }
+  .errand-bottom-controls .errand-control-label {
+    font-size: inherit !important;
+  }
+  .updates-action .errand-control-label,
+  .new-request-action .errand-control-label {
+    display: none;
+  }
+}
+
+.errand-updates-control {
+  display: flex;
+}
+.errand-updates-popover {
+  z-index: var(--relay-layer-card);
+}
+
+.errand-updates-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}

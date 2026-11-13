@@ -1,0 +1,32 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/healthz'
+order: 970
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Health check returns 200', () => {
+        pm.response.to.have.status(200);
+      });
+      pm.test('Response is "ok"', () => {
+        pm.expect(pm.response.text().trim()).to.eql('ok');
+      });
+
+      // Clear session cookie
+      pm.collectionVariables.set('sessionCookie', '');
+      pm.collectionVariables.set('idCookie', '');
+      pm.collectionVariables.set('refreshCookie', '');
+
+      // Clear all supplier IDs
+      pm.collectionVariables.set('supplierId', '');
+      pm.collectionVariables.set('supplierId2', '');
+      pm.collectionVariables.set('supplierId3', '');
+      pm.collectionVariables.set('supplierId4', '');
+      pm.collectionVariables.set('supplierId5', '');
+      const runId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+      pm.collectionVariables.set('supplierName', 'Postman Test Supplier ' + runId);
+      pm.collectionVariables.set('supplierName2', 'Second Postman Test Supplier ' + runId);
+      pm.collectionVariables.set('supplierName5', 'Different Name Same LatLng ' + runId);
+      pm.collectionVariables.set('supplierUpdatedName', 'Postman Test Supplier Updated ' + runId);
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

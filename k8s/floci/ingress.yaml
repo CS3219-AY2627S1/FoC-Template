@@ -1,0 +1,27 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6 Sol), date: 2026-11-02
+# Scope: Generated implementation of local Kubernetes ingress routing
+# Author review: Verified correctness of API routes and that it matches AWS ALB config.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: relay
+  namespace: relay
+spec:
+  ingressClassName: traefik
+  rules:
+    - http:
+        paths:
+          # Mirror production API routing through the local Traefik ingress.
+          - { path: /api/auth, pathType: Prefix, backend: { service: { name: user-auth-api, port: { number: 3000 } } } }
+          - { path: /api/user, pathType: Prefix, backend: { service: { name: user-api, port: { number: 3000 } } } }
+          - { path: /api/supplier, pathType: Prefix, backend: { service: { name: supplier-api, port: { number: 3000 } } } }
+          - { path: /api/errands, pathType: Prefix, backend: { service: { name: errand-api, port: { number: 3000 } } } }
+          - { path: /api/credit, pathType: Prefix, backend: { service: { name: credit-api, port: { number: 3000 } } } }
+          - { path: /api/notifications/stream, pathType: Prefix, backend: { service: { name: errand-notification, port: { number: 3010 } } } }
+          - { path: /remotes/supplier, pathType: Prefix, backend: { service: { name: supplier-frontend, port: { number: 80 } } } }
+          - { path: /remotes/user, pathType: Prefix, backend: { service: { name: user-frontend, port: { number: 80 } } } }
+          - { path: /remotes/errand, pathType: Prefix, backend: { service: { name: errand-frontend, port: { number: 80 } } } }
+          - { path: /remotes/credit, pathType: Prefix, backend: { service: { name: credit-frontend, port: { number: 80 } } } }
+          - { path: /, pathType: Prefix, backend: { service: { name: host, port: { number: 80 } } } }

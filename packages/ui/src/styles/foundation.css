@@ -1,0 +1,109 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  --relay-blue: #007aff;
+  --relay-blue-dark: #0051d5;
+  --relay-blue-tint: rgba(0, 122, 255, 0.18);
+  --relay-blue-shadow: rgba(0, 122, 255, 0.3);
+  --relay-text: #1c1c1e;
+  --relay-text-muted: #6f6f76;
+  --relay-text-on-accent: #fff;
+  --relay-red: #ff3b30;
+  --relay-red-bg: #fff0f2;
+  --relay-red-dark: #a22843;
+  --relay-red-shadow: rgba(255, 59, 48, 0.24);
+  --relay-green-bg: #e7f8ed;
+  --relay-green-dark: #16834b;
+  --relay-orange-bg: #fff4db;
+  --relay-orange-dark: #805b0b;
+  --relay-gray-bg: #f2f2f7;
+  --relay-gray-text: #6f6f76;
+  /* Four shared glass types: surface, control, soft/nested, and overlay. */
+  --relay-glass-surface-bg: rgba(255, 255, 255, 0.78);
+  --relay-glass-surface-strong-bg: rgba(255, 255, 255, 0.95);
+  --relay-glass-surface-border: rgba(255, 255, 255, 0.68);
+  --relay-glass-surface-filter: blur(24px) saturate(1.6);
+  --relay-glass-surface-shadow: 0 5px 18px rgba(0, 0, 0, 0.1);
+  --relay-glass-control-bg: rgba(255, 255, 255, 0.78);
+  --relay-glass-control-border: rgba(255, 255, 255, 0.76);
+  --relay-glass-control-filter: blur(24px) saturate(1.6);
+  --relay-glass-control-shadow: 0 10px 24px rgba(0, 0, 0, 0.13), 0 3px 8px rgba(0, 0, 0, 0.08);
+  --relay-glass-soft-bg: rgba(255, 255, 255, 0.46);
+  --relay-glass-soft-border: rgba(255, 255, 255, 0.68);
+  --relay-glass-soft-filter: blur(20px) saturate(1.4);
+  --relay-glass-soft-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --relay-glass-overlay-bg: rgba(20, 18, 30, 0.12);
+  --relay-glass-overlay-filter: blur(18px);
+  --relay-glass-overlay-dark-bg: rgba(0, 0, 0, 0.32);
+  --relay-glass-overlay-dark-filter: blur(24px);
+  --relay-control-bg: rgba(118, 118, 128, 0.1);
+  --relay-control-bg-hover: rgba(118, 118, 128, 0.18);
+  --relay-control-font-size: 1.05rem;
+  /* Shared stacking layers. Keep map controls and sheets in one ordering system. */
+  --relay-layer-map: 0;
+  --relay-layer-map-controls: 500;
+  --relay-layer-card: 900;
+  --relay-layer-toolbar: 1100;
+  --relay-layer-modal: 1300;
+  --ios-blue: var(--relay-blue);
+  --ios-blue-dark: var(--relay-blue-dark);
+  --ios-green: #34c759;
+  --ios-red: #ff3b30;
+  --ios-orange: #ff9500;
+  --ios-gray: #8e8e93;
+  --ios-gray2: #aeaeb2;
+  --ios-gray5: #e5e5ea;
+  --ios-gray6: #f2f2f7;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100dvh;
+  height: 100%;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'SF Pro Display',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  background: var(--relay-gray-bg);
+}
+#root,
+.relay-app-shell {
+  position: relative;
+  height: 100dvh;
+  min-height: 100dvh;
+}
+.relay-app-shell {
+  width: 100%;
+}
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.relay-design-system h1 {
+  color: var(--relay-text);
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

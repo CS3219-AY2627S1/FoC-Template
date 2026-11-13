@@ -1,0 +1,23 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/api/errands?scope=visible'
+queryParams:
+  scope: visible
+order: 29000
+headers:
+  Cookie: relay_access={{sessionCookieCourier}}; relay_id={{idCookieCourier}}
+scripts:
+  - type: beforeRequest
+    code: |-
+      const access=pm.collectionVariables.get('sessionCookieCourier');
+      const id=pm.collectionVariables.get('idCookieCourier');
+      if(!access||!id)throw new Error('Run the matching login request before this request.');
+      pm.request.headers.upsert({key:'Cookie',value:'relay_access='+access+'; relay_id='+id});
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Courier errands retrieved', () => {
+        pm.response.to.have.status(200);
+      });
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

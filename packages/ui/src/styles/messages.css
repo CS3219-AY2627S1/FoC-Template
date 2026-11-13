@@ -1,0 +1,52 @@
+.relay-message {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid;
+  border-radius: 9px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.relay-message-content {
+  display: grid;
+  gap: 2px;
+}
+
+.relay-message-error {
+  border-color: #f4c4cc;
+  background: #fff0f2;
+  color: #a22843;
+}
+
+.relay-message-warning {
+  border-color: #f2d59a;
+  background: #fff8e7;
+  color: #805b0b;
+}
+
+.relay-message-info {
+  border-color: #b9d9f4;
+  background: #eff8ff;
+  color: #175985;
+}
+
+.relay-message-success {
+  border-color: #b7e3c7;
+  background: #effcf3;
+  color: #176b3d;
+}
+
+.relay-message-dismiss {
+  min-height: 0 !important;
+  padding: 0 4px !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: currentColor;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}

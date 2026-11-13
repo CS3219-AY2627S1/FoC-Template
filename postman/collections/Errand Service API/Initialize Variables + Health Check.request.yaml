@@ -1,0 +1,54 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/healthz'
+order: 1000
+description: Initialize/clear variables before test run
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Health check returns 200', () => {
+        pm.response.to.have.status(200);
+      });
+      pm.test('Response is "ok"', () => {
+        pm.expect(pm.response.text().trim()).to.eql('ok');
+      });
+
+      // Clear session cookies
+      pm.collectionVariables.set('sessionCookie', '');
+      pm.collectionVariables.set('idCookie', '');
+      pm.collectionVariables.set('refreshCookie', '');
+      pm.collectionVariables.set('sessionCookieCourier', '');
+      pm.collectionVariables.set('idCookieCourier', '');
+      pm.collectionVariables.set('refreshCookieCourier', '');
+
+      pm.collectionVariables.unset('preCreateCreditAttempts');
+
+      // Clear verification codes
+      pm.collectionVariables.set('requesterVerificationCode', '');
+      pm.collectionVariables.set('courierVerificationCode', '');
+
+      // Clear errand IDs
+      pm.collectionVariables.set('errandId', '');
+      pm.collectionVariables.set('errandId2', '');
+      pm.collectionVariables.set('errandId3', '');
+
+      // Clear requester/courier subs
+      pm.collectionVariables.set('requesterSub', '');
+      pm.collectionVariables.set('requesterSub2', '');
+      pm.collectionVariables.set('courierSub', '');
+
+      // Clear supplier IDs
+      pm.collectionVariables.set('supplierId_cheers', '');
+      pm.collectionVariables.set('supplierId_instachef', '');
+
+      // Init other variables
+      const runId = Date.now() + Math.floor(Math.random() * 1000000);
+      pm.collectionVariables.set('requesterEmail', 'e' + runId + 'r@u.nus.edu')
+      pm.collectionVariables.set('requesterUsername', 'requester' + runId)
+      pm.collectionVariables.set('requesterPassword', 'Test123%')
+      pm.collectionVariables.set('courierEmail', 'e' + runId + 'c@u.nus.edu')
+      pm.collectionVariables.set('courierUsername', 'courier' + runId)
+      pm.collectionVariables.set('courierPassword', 'Test123%')
+      pm.collectionVariables.set('expiresAt', '2028-12-31T12:00:00Z')
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

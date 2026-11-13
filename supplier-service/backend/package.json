@@ -1,0 +1,27 @@
+{
+  "name": "@relay/supplier-backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/app.ts",
+    "build": "tsc",
+    "start": "tsx dist/app.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@relay/contracts": "*",
+    "express": "^5.1.0",
+    "pg": "^8.11.3",
+    "@relay/user-auth-backend-middleware": "*",
+    "dotenv": "^16.6.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.11.3",
+    "tsx": "^4.7.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,15 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/verification/confirm-and-login'
+order: 11000
+headers:
+  Content-Type: 'application/json'
+body:
+  type: json
+  content: '{"email":"{{email}}","password":"{{password}}","code":"000000"}'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 400',()=>pm.response.to.have.status(400));
+      pm.test('OTP_INVALID',()=>pm.expect(pm.response.json().error.code).to.eql('OTP_INVALID'));
+settings: { disableCookies: true, protocolVersion: auto }

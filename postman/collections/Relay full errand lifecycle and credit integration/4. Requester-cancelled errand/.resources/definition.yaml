@@ -1,0 +1,3 @@
+$kind: collection
+description: Reservation stays unavailable until the requester cancels an OPEN errand; Kafka release restores available balance.
+order: 4000

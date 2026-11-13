@@ -1,0 +1,80 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6 Sol), date: 2026-11-05
+# Scope: Generated implementation of OIDC service-account roles and AWS access policies
+# Author review: Verified correctness of OIDC provider and that allowed actions are mapped to what the user auth and user services do.
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS access for Relay S3 and Cognito workloads.
+Parameters:
+  ClusterIssuerUrl: { Type: String }
+  ClusterIssuerHost: { Type: String }
+  ExistingOidcProviderArn: { Type: String, Default: '' }
+  ProfileImageBucketName: { Type: String }
+  CognitoUserPoolId: { Type: String }
+Conditions:
+  UseExistingOidcProvider: !Not [!Equals [!Ref ExistingOidcProviderArn, '']]
+  CreateOidcProvider: !Equals [!Ref ExistingOidcProviderArn, '']
+Resources:
+  ClusterOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOidcProvider
+    Properties:
+      Url: !Ref ClusterIssuerUrl
+      ClientIdList: [sts.amazonaws.com]
+  UserApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Fn::Sub:
+          - >-
+            {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"${ProviderArn}"},"Action":"sts:AssumeRoleWithWebIdentity","Condition":{"StringEquals":{"${ClusterIssuerHost}:aud":"sts.amazonaws.com","${ClusterIssuerHost}:sub":"system:serviceaccount:relay:user-api"}}}]}
+          - ProviderArn: !If [UseExistingOidcProvider, !Ref ExistingOidcProviderArn, !Ref ClusterOidcProvider]
+      Policies:
+        - PolicyName: ProfileImageBucketAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ListProfileImageBucket
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ProfileImageBucketName}'
+              - Sid: ManageProfileImages
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ProfileImageBucketName}/*'
+        - PolicyName: CognitoAccountDeletion
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: cognito-idp:AdminDeleteUser
+                Resource: !Sub 'arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}'
+  UserAuthRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Fn::Sub:
+          - >-
+            {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"${ProviderArn}"},"Action":"sts:AssumeRoleWithWebIdentity","Condition":{"StringEquals":{"${ClusterIssuerHost}:aud":"sts.amazonaws.com","${ClusterIssuerHost}:sub":"system:serviceaccount:relay:user-auth-api"}}}]}
+          - ProviderArn: !If [UseExistingOidcProvider, !Ref ExistingOidcProviderArn, !Ref ClusterOidcProvider]
+      Policies:
+        - PolicyName: CognitoAdministration
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cognito-idp:AdminGetUser
+                  - cognito-idp:AdminAddUserToGroup
+                  - cognito-idp:AdminRemoveUserFromGroup
+                  - cognito-idp:AdminUserGlobalSignOut
+                  - cognito-idp:ListUsersInGroup
+                Resource: !Sub 'arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}'
+Outputs:
+  OidcProviderArn:
+    Value: !If [UseExistingOidcProvider, !Ref ExistingOidcProviderArn, !Ref ClusterOidcProvider]
+  UserApiRoleArn: { Value: !GetAtt UserApiRole.Arn }
+  UserAuthRoleArn: { Value: !GetAtt UserAuthRole.Arn }

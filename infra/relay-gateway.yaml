@@ -1,0 +1,78 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6.1 Terra), date: 2026-11-06
+# Scope: Generated implementation of API Gateway streaming proxy and private ALB integration
+# Author review: Verified API Gateway uses correct VPC links, and that it purely acts as a proxy with correct settings and timeouts.
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Regional streaming REST proxy and VPC link for the Relay private ALB.
+Parameters:
+  VpcLinkSubnetA: { Type: AWS::EC2::Subnet::Id }
+  VpcLinkSubnetB: { Type: AWS::EC2::Subnet::Id }
+  VpcLinkSecurityGroupId: { Type: AWS::EC2::SecurityGroup::Id }
+  LoadBalancerArn: { Type: String }
+  LoadBalancerDnsName: { Type: String }
+Resources:
+  VpcLink:
+    Type: AWS::ApiGatewayV2::VpcLink
+    Properties:
+      Name: !Sub '${AWS::StackName}-link'
+      SubnetIds: [!Ref VpcLinkSubnetA, !Ref VpcLinkSubnetB]
+      SecurityGroupIds: [!Ref VpcLinkSecurityGroupId]
+  Api:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${AWS::StackName}-proxy'
+      EndpointConfiguration: { Types: [REGIONAL] }
+  ProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref Api
+      ParentId: !GetAtt Api.RootResourceId
+      PathPart: '{proxy+}'
+  RootMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !GetAtt Api.RootResourceId
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: ANY
+        ConnectionType: VPC_LINK
+        ConnectionId: !Ref VpcLink
+        IntegrationTarget: !Ref LoadBalancerArn
+        # The ALB ingress routes /relay and removes that prefix before forwarding.
+        Uri: !Sub 'http://${LoadBalancerDnsName}/relay/'
+        ResponseTransferMode: STREAM
+  ProxyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref Api
+      ResourceId: !Ref ProxyResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      RequestParameters: { 'method.request.path.proxy': true }
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: ANY
+        ConnectionType: VPC_LINK
+        ConnectionId: !Ref VpcLink
+        IntegrationTarget: !Ref LoadBalancerArn
+        Uri: !Sub 'http://${LoadBalancerDnsName}/relay/{proxy}'
+        RequestParameters: { 'integration.request.path.proxy': 'method.request.path.proxy' }
+        ResponseTransferMode: STREAM
+        TimeoutInMillis: 900000
+  Deployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: [RootMethod, ProxyMethod]
+    Properties: { RestApiId: !Ref Api }
+  Stage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref Api
+      DeploymentId: !Ref Deployment
+      StageName: relay
+Outputs:
+  ApiId: { Value: !Ref Api }
+  ApiDomainName: { Value: !Sub '${Api}.execute-api.${AWS::Region}.${AWS::URLSuffix}' }

@@ -1,0 +1,29 @@
+$kind: http-request
+name: '10 Requester after transfer: 80 available, 0 reserved'
+description: ''
+url: '{{baseUrl}}/api/credit'
+method: GET
+headers:
+  Cookie: '{{requesterCookie}}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const selectedSession=pm.collectionVariables.get('requesterCookie');
+      if(typeof selectedSession!=='string'||!/^relay_access=[^;]+; relay_id=[^;]+$/.test(selectedSession))throw new Error('Missing or invalid requesterCookie in this collection. Run its login step first.');
+      pm.variables.set('requesterCookie',selectedSession);
+      pm.request.headers.upsert({key:'Cookie',value:selectedSession});
+  - type: beforeRequest
+    code: |-
+      const retryKey='retry:'+pm.info.requestName;
+      if(Number(pm.collectionVariables.get(retryKey)||0)>0)setTimeout(()=>{},750);
+  - type: afterResponse
+    code: |-
+      const b=pm.response.code===200?pm.response.json():null;
+      const key='retry:'+pm.info.requestName;
+      const n=Number(pm.collectionVariables.get(key)||0);
+      if((!b||b.availableCredit!==80||b.reserveCredit!==0)&&n<45){pm.collectionVariables.set(key,String(n+1));pm.execution.setNextRequest(pm.info.requestName);}else{pm.collectionVariables.unset(key);
+      pm.test('balance returned',()=>pm.response.to.have.status(200));
+      if(b){pm.test('correct user',()=>pm.expect(b.userId).to.eql(pm.collectionVariables.get('requesterSub')));pm.test('available = 80',()=>pm.expect(b.availableCredit).to.eql(80));pm.test('reserved = 0',()=>pm.expect(b.reserveCredit).to.eql(0));}
+      }
+settings: { disableCookies: true, protocolVersion: auto }
+order: 10000

@@ -1,0 +1,10 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/refresh'
+order: 5000
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 401',()=>pm.response.to.have.status(401));
+      pm.test('UNAUTHENTICATED',()=>pm.expect(pm.response.json().error.code).to.eql('UNAUTHENTICATED'));
+settings: { disableCookies: true, protocolVersion: auto }

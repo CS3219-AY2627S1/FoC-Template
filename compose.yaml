@@ -1,0 +1,398 @@
+services:
+  kafka-init:
+    build:
+      context: .
+      dockerfile: credit-service/backend/Dockerfile
+    command: [node, scripts/kafka-topics.mjs]
+    environment:
+      KAFKA_BROKERS: ${KAFKA_BROKERS:?Run floci/docker/up.sh}
+      KAFKA_AUTH_MODE: none
+
+  # Each domain owns a frontend remote and, when implemented, its own API.
+  # Keep the API private to this Compose network with `expose`, rather than
+  # publishing its port. The host is the browser-facing API boundary.
+  host:
+    build:
+      context: .
+      dockerfile: host/Dockerfile
+    ports:
+      - '8080:80'
+    depends_on:
+      supplier-frontend:
+        condition: service_healthy
+      supplier-api:
+        condition: service_healthy
+      user-frontend:
+        condition: service_healthy
+      user-auth-api:
+        condition: service_healthy
+      errand-frontend:
+        condition: service_healthy
+      errand-api:
+        condition: service_healthy
+      credit-frontend:
+        condition: service_healthy
+      credit-api:
+        condition: service_healthy
+      credit-estimation-api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1/healthz']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+    # TODO(kubernetes): Create a Deployment, Service, and external ingress or
+    # LoadBalancer for this container. Add readiness/liveness probes using
+    # /healthz and set resource requests/limits.
+
+  supplier-frontend:
+    build:
+      context: .
+      dockerfile: supplier-service/frontend/Dockerfile
+    ports:
+      - '5001:80'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1/healthz']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      supplier-api:
+        condition: service_healthy
+    # TODO(kubernetes): Create a Deployment and ClusterIP Service. Replicas
+    # can scale independently behind that Service.
+
+  user-frontend:
+    build:
+      context: .
+      dockerfile: user-service/frontend/Dockerfile
+    ports:
+      - '5002:80'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1/healthz']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    # TODO(kubernetes): Create a Deployment and ClusterIP Service.
+    # Add a health-checked user-api dependency when its API exists.
+
+  errand-frontend:
+    build:
+      context: .
+      dockerfile: errand-service/frontend/Dockerfile
+    ports:
+      - '5003:80'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1/healthz']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      errand-api:
+        condition: service_healthy
+      errand-notification:
+        condition: service_healthy
+    # TODO(kubernetes): Create a Deployment and ClusterIP Service.
+    # Add a health-checked errand-api dependency when its API exists.
+
+  credit-frontend:
+    build:
+      context: .
+      dockerfile: credit-service/frontend/Dockerfile
+    ports:
+      - '5004:80'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1/healthz']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    # TODO(kubernetes): Create a Deployment and ClusterIP Service.
+    # Add a health-checked credit-api dependency when its API exists.
+
+  # Backend service templates
+  #
+  # Copy and adapt one of these stanzas when implementing a service API.
+  # Do not expose API ports to the host: other containers can reach an API by
+  # its Compose service name (for example, http://supplier-api:3000).
+  # Add the corresponding /api/<service>/ proxy route to host/nginx.conf so
+  # browser code can use a relative URL such as /api/supplier/shops.
+  #
+  supplier-schema:
+    build:
+      context: .
+      dockerfile: supplier-service/backend/Dockerfile
+    environment:
+      SUPPLIER_DATABASE_URL: ${SUPPLIER_DATABASE_URL:?Set SUPPLIER_DATABASE_URL}
+    command: ['node', 'migrate.js']
+    restart: 'no'
+
+  supplier-api:
+    build:
+      context: .
+      dockerfile: supplier-service/backend/Dockerfile
+    expose:
+      - '3000'
+    environment:
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
+      COGNITO_ADMIN_GROUP_NAME: ${COGNITO_ADMIN_GROUP_NAME:-AdminGroup}
+      COGNITO_SUPERADMIN_GROUP_NAME: ${COGNITO_SUPERADMIN_GROUP_NAME:-SuperAdminGroup}
+      COGNITO_ISSUER: ${COGNITO_ISSUER}
+      COGNITO_JWKS_URI: ${COGNITO_JWKS_URI}
+      PORT: '3000'
+      DB_PORT: ${SUPPLIER_DATABASE_PORT:?Set SUPPLIER_DATABASE_PORT}
+      DB_NAME: relay
+      DB_USER: relay
+      DB_PASSWORD: ${SUPPLIER_DATABASE_PASSWORD:?Set SUPPLIER_DATABASE_PASSWORD}
+      USER_API_URL: 'http://user-api:3000'
+      USER_API_TIMEOUT: '5000'
+      USER_SERVICE_INTERNAL_TOKEN: local-internal-user-service-token
+      INTERNAL_SUPPLIER_SERVICE_TOKEN: local-internal-supplier-service-token
+      SUPPLIER_TIMEZONE: Asia/Singapore
+    depends_on:
+      supplier-schema:
+        condition: service_completed_successfully
+      user-api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/healthz']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  #
+  user-api:
+    build:
+      context: .
+      dockerfile: user-service/backend/Dockerfile
+    expose:
+      - '3000'
+    environment:
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
+      COGNITO_ADMIN_GROUP_NAME: ${COGNITO_ADMIN_GROUP_NAME:-AdminGroup}
+      COGNITO_SUPERADMIN_GROUP_NAME: ${COGNITO_SUPERADMIN_GROUP_NAME:-SuperAdminGroup}
+      COGNITO_ISSUER: ${COGNITO_ISSUER}
+      COGNITO_JWKS_URI: ${COGNITO_JWKS_URI}
+      NODE_ENV: production
+      PORT: '3000'
+      DATABASE_URL: ${USER_DATABASE_URL:?Set USER_DATABASE_URL}
+      INTERNAL_USER_SERVICE_TOKEN: local-internal-user-service-token
+      KAFKA_BROKERS: ${KAFKA_BROKERS:?Run floci/docker/up.sh}
+      KAFKA_TOPIC_USER_EVENTS: ${KAFKA_TOPIC_USER_EVENTS:-user-events}
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/health']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  #
+  user-event-publisher:
+    build:
+      context: .
+      dockerfile: user-service/event-publisher/Dockerfile
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${USER_DATABASE_URL:?Set USER_DATABASE_URL}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:?Run floci/docker/up.sh}
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+  errand-event-publisher:
+    build:
+      context: .
+      dockerfile: errand-service/event-publisher/Dockerfile
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${ERRAND_DATABASE_URL:?Set ERRAND_DATABASE_URL}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:?Run floci/docker/up.sh}
+      KAFKA_TOPIC_ERRAND_EVENTS: ${KAFKA_TOPIC_ERRAND_EVENTS:-errand-events}
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+  user-auth-api:
+    build:
+      context: .
+      dockerfile: user-service/auth/Dockerfile
+    expose:
+      - '3000'
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      COGNITO_ENDPOINT_URL: http://floci:4566
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID?Run floci/docker/up.sh}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID?Run floci/docker/up.sh}
+      COGNITO_ADMIN_GROUP_NAME: ${COGNITO_ADMIN_GROUP_NAME:-AdminGroup}
+      COGNITO_SUPERADMIN_GROUP_NAME: ${COGNITO_SUPERADMIN_GROUP_NAME:-SuperAdminGroup}
+      COOKIE_SECURE: 'false'
+      KAFKA_BROKERS: ${KAFKA_BROKERS?Run floci/docker/up.sh}
+      KAFKA_AUTH_MODE: none
+      KAFKA_TOPIC_USER_EVENTS: ${KAFKA_TOPIC_USER_EVENTS:-user-events}
+      KAFKA_TOPIC_USER_DLQ: ${KAFKA_TOPIC_USER_DLQ:-user-events-dlq}
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/health']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  errand-api:
+    build:
+      context: .
+      dockerfile: errand-service/backend/Dockerfile
+    expose:
+      - '3000'
+    environment:
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
+      COGNITO_ADMIN_GROUP_NAME: ${COGNITO_ADMIN_GROUP_NAME:-AdminGroup}
+      COGNITO_SUPERADMIN_GROUP_NAME: ${COGNITO_SUPERADMIN_GROUP_NAME:-SuperAdminGroup}
+      COGNITO_ISSUER: ${COGNITO_ISSUER}
+      COGNITO_JWKS_URI: ${COGNITO_JWKS_URI}
+      NODE_ENV: production
+      PORT: '3000'
+      DATABASE_URL: ${ERRAND_DATABASE_URL:?Set ERRAND_DATABASE_URL}
+      USER_API_URL: http://user-api:3000
+      USER_SERVICE_INTERNAL_TOKEN: ${USER_SERVICE_INTERNAL_TOKEN:-local-internal-user-service-token}
+      SUPPLIER_API_URL: http://supplier-api:3000
+      SUPPLIER_SERVICE_TIMEOUT_MS: ${SUPPLIER_SERVICE_TIMEOUT_MS:-5000}
+      INTERNAL_SUPPLIER_SERVICE_TOKEN: ${INTERNAL_SUPPLIER_SERVICE_TOKEN:-local-internal-supplier-service-token}
+      ERRAND_SERVICE_TIMEOUT_MS: ${ERRAND_SERVICE_TIMEOUT_MS:-5000}
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC_ERRAND_EVENTS: ${KAFKA_TOPIC_ERRAND_EVENTS:-errand-events}
+      CREDIT_API_URL: http://credit-api:3000
+      CREDIT_SERVICE_INTERNAL_TOKEN: ${CREDIT_SERVICE_INTERNAL_TOKEN:-local-internal-credit-service-token}
+      # Credit estimation client settings
+      CREDIT_ESTIMATION_API_URL: http://credit-estimation-api:3005
+      CREDIT_ESTIMATION_SERVICE_TOKEN: local-internal-estimation-service-token
+      KAFKA_TOPIC_USER_EVENTS: ${KAFKA_TOPIC_USER_EVENTS:-user-events}
+      KAFKA_TOPIC_USER_DLQ: ${KAFKA_TOPIC_USER_DLQ:-user-events-dlq}
+    depends_on:
+      credit-api:
+        condition: service_healthy
+      user-api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/health']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  #
+  credit-api:
+    build:
+      context: .
+      dockerfile: credit-service/backend/Dockerfile
+    expose:
+      - '3000'
+    environment:
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}
+      COGNITO_ADMIN_GROUP_NAME: ${COGNITO_ADMIN_GROUP_NAME:-AdminGroup}
+      COGNITO_SUPERADMIN_GROUP_NAME: ${COGNITO_SUPERADMIN_GROUP_NAME:-SuperAdminGroup}
+      COGNITO_ISSUER: ${COGNITO_ISSUER}
+      COGNITO_JWKS_URI: ${COGNITO_JWKS_URI}
+      NODE_ENV: production
+      PORT: '3000'
+      DATABASE_URL: ${CREDIT_DATABASE_URL:?Set CREDIT_DATABASE_URL}
+      USER_API_URL: http://user-api:3000
+      USER_API_TIMEOUT: '5000'
+      USER_SERVICE_INTERNAL_TOKEN: local-internal-user-service-token
+      KAFKA_BROKERS: ${KAFKA_BROKERS:?Run floci/docker/up.sh}
+      KAFKA_TOPIC_USER_EVENTS: ${KAFKA_TOPIC_USER_EVENTS:-user-events}
+      KAFKA_TOPIC_USER_DLQ: ${KAFKA_TOPIC_USER_DLQ:-user-events-dlq}
+      KAFKA_TOPIC_ERRAND_EVENTS: ${KAFKA_TOPIC_ERRAND_EVENTS:-errand-events}
+      KAFKA_TOPIC_ERRAND_DLQ: ${KAFKA_TOPIC_ERRAND_DLQ:-errand-events-dlq}
+      CREDIT_SERVICE_INTERNAL_TOKEN: local-internal-credit-service-token
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/health']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  #
+  credit-estimation-api:
+    build:
+      context: .
+      dockerfile: credit-estimation-service/backend/Dockerfile
+    ports:
+      - '3005:3005'
+    environment:
+      NODE_ENV: production
+      PORT: '3005'
+      USER_API_URL: http://user-api:3000
+      USER_SERVICE_INTERNAL_TOKEN: ${USER_SERVICE_INTERNAL_TOKEN:-local-internal-user-service-token}
+      CREDIT_ESTIMATION_SERVICE_TOKEN: ${CREDIT_ESTIMATION_SERVICE_TOKEN:-local-internal-estimation-service-token}
+      ESTIMATION_SERVICE_TIMEOUT_MS: ${ESTIMATION_SERVICE_TIMEOUT_MS:-5000}
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_ENDPOINT: ${AI_ENDPOINT:-}
+      AI_TEMPERATURE: ${AI_TEMPERATURE:-0}
+      AI_MAX_TOKENS: ${AI_MAX_TOKENS:-1000}
+      AI_ESTIMATION_TIMEOUT_MS: ${AI_ESTIMATION_TIMEOUT_MS:-3000}
+      AI_RATE_LIMIT_REQUESTS_PER_MINUTE: ${AI_RATE_LIMIT_REQUESTS_PER_MINUTE:-20}
+      AI_GLOBAL_RATE_LIMIT_REQUESTS_PER_MINUTE: ${AI_GLOBAL_RATE_LIMIT_REQUESTS_PER_MINUTE:-300}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    depends_on:
+      user-api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3005/healthz']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 512M
+    command: [redis-server, --appendonly, 'yes', --save, '', --maxmemory, 360mb, --maxmemory-policy, allkeys-lru]
+
+  errand-notification:
+    build:
+      context: .
+      dockerfile: errand-notification-service/backend/Dockerfile
+    expose:
+      - '3010'
+    environment:
+      PORT: '3010'
+      KAFKA_BROKERS: ${KAFKA_BROKERS:?Run floci/docker/up.sh}
+      KAFKA_AUTH_MODE: none
+      KAFKA_TOPIC_ERRAND_EVENTS: ${KAFKA_TOPIC_ERRAND_EVENTS:-errand-events}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID:-us-east-1_test}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID:-test}
+      COGNITO_ISSUER: ${COGNITO_ISSUER:-http://localhost:4566/us-east-1_test}
+      COGNITO_JWKS_URI: ${COGNITO_JWKS_URI:-http://floci:4566/us-east-1_test/.well-known/jwks.json}
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3010/health']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis-data:

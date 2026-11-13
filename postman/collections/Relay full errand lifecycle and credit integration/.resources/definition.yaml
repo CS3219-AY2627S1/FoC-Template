@@ -1,0 +1,32 @@
+$kind: collection
+description: Run folders in order against local Compose and Floci, with Collection Runner request delay 1000 ms. Each full run creates fresh identities and one supplier. Assertions check credit snapshots and history after three 10/15/20-credit errands. Credit event settlement is asynchronous; bounded polling is in the relevant GET requests. See the companion README for architecture, interfaces, and fault-demo guidance. Every authenticated request reads its selected session from this collection and sets exactly one explicit Cookie header. Disable stored cookies in Postman Runner.
+variables:
+  password: Test1234!
+  superAdminEmail: admin@example.com
+  superAdminPassword: Admin123%
+  requesterCookie: ''
+  requesterRefreshCookie: ''
+  superAdminCookie: ''
+  superAdminRefreshCookie: ''
+  courierCookie: ''
+  courierRefreshCookie: ''
+  requesterEmail: ''
+  requesterName: ''
+  supplierName: ''
+  supplierUpdatedName: ''
+  requesterCode: ''
+  requesterSub: ''
+  supplierId: ''
+  courierEmail: ''
+  courierName: ''
+  courierCode: ''
+  courierSub: ''
+  expiryAt: ''
+  expiryId: ''
+  cancelId: ''
+  completeId: ''
+scripts:
+  - type: http:beforeRequest
+    code: |-
+      const cookieHeaders=pm.request.headers.all().filter(h=>h.key.toLowerCase()==='cookie'&&!h.disabled);
+      if(cookieHeaders.length>1)throw new Error('Only one explicit Cookie header is allowed.');

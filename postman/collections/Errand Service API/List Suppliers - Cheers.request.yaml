@@ -1,0 +1,36 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/api/supplier'
+order: 12000
+headers:
+  Cookie: relay_access={{sessionCookie}}; relay_id={{idCookie}}
+scripts:
+  - type: beforeRequest
+    code: |-
+      const access=pm.collectionVariables.get('sessionCookie');
+      const id=pm.collectionVariables.get('idCookie');
+      if(!access||!id)throw new Error('Run the matching login request before this request.');
+      pm.request.headers.upsert({key:'Cookie',value:'relay_access='+access+'; relay_id='+id});
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('List suppliers returns 200', () => {
+        pm.response.to.have.status(200);
+      });
+
+      const json = pm.response.json();
+      pm.test('Response contains suppliers array', () => {
+        pm.expect(json.suppliers).to.be.an('array');
+      });
+
+      // Find Cheers Unmanned Convenience Store
+      const cheersSupplier = json.suppliers.find(s => s.name === 'Cheers Unmanned Convenience Store');
+      pm.test('Cheers supplier found', () => {
+        pm.expect(cheersSupplier).to.exist;
+      });
+
+      if (cheersSupplier) {
+        pm.collectionVariables.set('supplierId_cheers', cheersSupplier.id);
+      }
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

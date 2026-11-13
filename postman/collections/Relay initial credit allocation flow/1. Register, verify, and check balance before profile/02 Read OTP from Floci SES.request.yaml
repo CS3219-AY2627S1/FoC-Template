@@ -1,0 +1,14 @@
+$kind: http-request
+url: '{{flociUrl}}/_aws/ses'
+method: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('SES mailbox available',()=>pm.response.to.have.status(200));
+      const message=(pm.response.json().messages||[]).filter(item=>(item.Destination?.ToAddresses||[]).includes(pm.collectionVariables.get('testEmail'))).pop();
+      pm.test('verification email found',()=>pm.expect(message).to.exist);
+      const match=message?.Body?.text_part?.match(/\b\d{6}\b/);
+      pm.test('six-digit OTP found',()=>pm.expect(match).to.exist);
+      if(match)pm.collectionVariables.set('verificationCode',match[0]);
+settings: { disableCookies: true }
+order: 2000

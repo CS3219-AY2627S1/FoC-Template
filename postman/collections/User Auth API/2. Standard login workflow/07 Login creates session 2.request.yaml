@@ -1,0 +1,42 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/login'
+order: 7000
+headers:
+  Content-Type: 'application/json'
+body:
+  type: json
+  content: '{"email":"{{email}}","password":"{{password}}"}'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200',()=>pm.response.to.have.status(200));
+      const c=pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').map(h=>h.value.split(';')[0]);
+      const rawCookies=pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').map(h=>h.value);
+      pm.test('HttpOnly SameSite cookies with correct paths',()=>{
+        for(const name of ['relay_access','relay_id','relay_refresh']){
+          const cookie=rawCookies.find(value=>value.startsWith(name+'='));
+          pm.expect(cookie).to.include('HttpOnly').and.include('SameSite=Strict');
+          pm.expect(cookie).to.include(name==='relay_refresh'?'Path=/api/auth':'Path=/');
+          if(name!=='relay_refresh')pm.expect(cookie).to.include('Max-Age=900');
+        }
+      });
+      const compose=pm.environment.get('deployment_target')==='compose';
+      if(compose)console.warn('Compose uses HTTP: Secure cookies are intentionally disabled locally.');
+      pm.test(compose?'Compose cookies omit Secure for local HTTP':'HTTPS cookies include Secure',()=>{
+        for(const name of ['relay_access','relay_id','relay_refresh']){
+          const cookie=rawCookies.find(value=>value.startsWith(name+'='));
+          pm.expect(cookie, name+' cookie').to.be.a('string');
+          const secure=/(?:^|;)\s*Secure(?:;|$)/i.test(cookie);
+          pm.expect(secure, name+' Secure attribute').to.eql(!compose);
+        }
+      });
+      for(const name of ['Access','Id','Refresh']){
+        const key='relay_'+name.toLowerCase(), value=c.find(x=>x.startsWith(key+'='));
+        pm.test(key+' cookie present',()=>pm.expect(value).to.match(new RegExp('^'+key+'=.+')));
+        if(value)pm.collectionVariables.set('s2'+name,value.split('=')[1]);
+      }
+
+      pm.test('same user',()=>pm.expect(pm.response.json().data.user.subject).to.eql(pm.collectionVariables.get('sub')));
+      for(const name of ['Access','Id','Refresh'])pm.test('session 2 has a distinct '+name+' token',()=>pm.expect(pm.collectionVariables.get('s2'+name)).not.to.eql(pm.collectionVariables.get('s1'+name)));
+settings: { disableCookies: true, protocolVersion: auto }

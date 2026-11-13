@@ -1,0 +1,14 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/logout'
+order: 2000
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.upsert({key:'Cookie',value:'relay_refresh='+pm.collectionVariables.get('s2NewRefresh')});
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 204',()=>pm.response.to.have.status(204));
+      const cookies=pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').map(h=>h.value);
+      pm.test('all auth cookies cleared',()=>{for(const name of ['relay_access','relay_id','relay_refresh'])pm.expect(cookies.some(x=>x.startsWith(name+'=;')&&x.includes('Max-Age=0'))).to.eql(true);});
+settings: { disableCookies: true, protocolVersion: auto }

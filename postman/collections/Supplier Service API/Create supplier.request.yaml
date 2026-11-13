@@ -1,0 +1,50 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/supplier'
+order: 9000
+headers:
+  Content-Type: application/json
+  Cookie: relay_access={{sessionCookie}}; relay_id={{idCookie}}
+body:
+  type: json
+  content: |-
+    {
+      "name": "{{supplierName}}",
+      "location": {
+        "lat": 1.2966,
+        "lng": 103.7764,
+        "buildingName": "Postman Test Building",
+        "floorNumber": 1
+      },
+      "isOperational": true,
+      "operatingHours": {
+        "openingTime": "09:00",
+        "closingTime": "18:00",
+        "daysOfWeek": [1, 2, 3, 4, 5]
+      },
+      "serviceTypes": [0]
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      const access=pm.collectionVariables.get('sessionCookie');
+      const id=pm.collectionVariables.get('idCookie');
+      if(!access||!id)throw new Error('Run the matching login request before this request.');
+      pm.request.headers.upsert({key:'Cookie',value:'relay_access='+access+'; relay_id='+id});
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      const json = pm.response.json();
+
+      pm.test('Create supplier returns 201', () => {
+        pm.response.to.have.status(201);
+      });
+
+      if (json.supplier && json.supplier.id) {
+        pm.test('Response contains supplier id', () => {
+          pm.expect(json.supplier.id).to.be.a('string').and.not.empty;
+        });
+        pm.collectionVariables.set('supplierId', json.supplier.id);
+      }
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

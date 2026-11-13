@@ -1,0 +1,14 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/register'
+order: 1000
+headers:
+  Content-Type: 'application/json'
+body:
+  type: json
+  content: '{"email":"{{unverifiedEmail}}","password":"{{password}}","passwordConfirmation":"{{password}}"}'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 201',()=>pm.response.to.have.status(201));
+settings: { disableCookies: true, protocolVersion: auto }

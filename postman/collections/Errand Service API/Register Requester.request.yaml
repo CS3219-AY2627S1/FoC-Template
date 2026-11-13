@@ -1,0 +1,51 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/register'
+order: 2000
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "{{requesterEmail}}",
+      "password": "{{requesterPassword}}",
+      "passwordConfirmation": "{{requesterPassword}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      // Only proceed if email is not already set (allows hardcoded values to persist)
+      if (!pm.collectionVariables.get('requesterEmail')) {
+        if (pm.response.code === 201) {
+          // Successful registration
+          pm.test('Requester registered', () => {
+            pm.expect(pm.response.code).to.eql(201);
+          });
+
+          const json = pm.response.json();
+          pm.test('Verification required', () => {
+            pm.expect(json.data.verificationRequired).to.eql(true);
+          });
+
+          // Extract the email from response or use generated one
+          const email = json.data.email || 'relay-req-' + pm.collectionVariables.get('timestamp') + '@test';
+          pm.collectionVariables.set('requesterEmail', email);
+        } else if (pm.response.code === 409) {
+          // User already exists - this is okay for test setup
+          const json = pm.response.json();
+          pm.test('User already exists (tolerated)', () => {
+            pm.expect(json.error.code).to.eql('EMAIL_ALREADY_REGISTERED');
+          });
+
+          // Use the email from the request body since we know it's already registered
+          const requestBody = JSON.parse(pm.request.body.raw);
+          pm.collectionVariables.set('requesterEmail', requestBody.email);
+        } else {
+          pm.test('Request failed', () => {
+            pm.expect(pm.response.code).to.eql(201, 'Expected 201 Created or 409 Conflict');
+          });
+        }
+      }
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

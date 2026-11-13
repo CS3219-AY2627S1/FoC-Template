@@ -1,0 +1,35 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/api/errands/{{errandId}}'
+order: 30000
+headers:
+  Cookie: relay_access={{sessionCookie}}; relay_id={{idCookie}}
+scripts:
+  - type: beforeRequest
+    code: |-
+      const access=pm.collectionVariables.get('sessionCookie');
+      const id=pm.collectionVariables.get('idCookie');
+      if(!access||!id)throw new Error('Run the matching login request before this request.');
+      pm.request.headers.upsert({key:'Cookie',value:'relay_access='+access+'; relay_id='+id});
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Errand details retrieved', () => {
+        pm.response.to.have.status(200);
+      });
+
+      const json = pm.response.json();
+      pm.test('Errand ID matches', () => {
+        pm.expect(json.errand.id).to.eql(pm.collectionVariables.get('errandId'));
+      });
+      pm.test('Errand status is CONFIRMED', () => {
+        pm.expect(json.errand.status).to.eql('CONFIRMED');
+      });
+      pm.test('Requester matches', () => {
+        pm.expect(json.errand.requesterSub).to.eql(pm.collectionVariables.get('requesterSub'));
+      });
+      pm.test('Courier matches', () => {
+        pm.expect(json.errand.courierSub).to.eql(pm.collectionVariables.get('courierSub'));
+      });
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

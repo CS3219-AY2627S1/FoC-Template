@@ -1,0 +1,16 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/register'
+order: 10000
+headers:
+  Content-Type: 'application/json'
+body:
+  type: json
+  content: '{"email":"{{email}}","password":"{{password}}","passwordConfirmation":"{{password}}"}'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 201',()=>pm.response.to.have.status(201));
+      pm.test('verification required',()=>pm.expect(pm.response.json().data.verificationRequired).to.eql(true));
+      pm.test('no auth cookies before verification',()=>pm.expect(pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie')).to.be.empty);
+settings: { disableCookies: true, protocolVersion: auto }

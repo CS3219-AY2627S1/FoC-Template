@@ -1,0 +1,55 @@
+{
+  "name": "relay",
+  "private": true,
+  "workspaces": [
+    "host",
+    "supplier-service/frontend",
+    "supplier-service/backend",
+    "user-service/frontend",
+    "user-service/backend",
+    "user-service/auth",
+    "errand-service/frontend",
+    "errand-service/backend",
+    "errand-notification-service/backend",
+    "credit-service/frontend",
+    "credit-service/backend",
+    "credit-estimation-service/backend",
+    "packages/*"
+  ],
+  "scripts": {
+    "headlamp": "bash deploy/scripts/headlamp.sh",
+    "up:compose": "bash floci/docker/up.sh",
+    "up:eks": "bash floci/eks/up.sh",
+    "down:compose": "bash floci/docker/down.sh",
+    "down:eks": "bash floci/eks/down.sh",
+    "views:compose": "bash floci/docker/views.sh start",
+    "views:compose:stop": "bash floci/docker/views.sh stop",
+    "views:eks": "bash floci/eks/views.sh start",
+    "views:eks:stop": "bash floci/eks/views.sh stop",
+    "dev": "npm run dev-infra && concurrently --kill-others-on-fail --names frontend,backend \"npm run dev-fe\" \"npm run dev-be\"",
+    "dev-infra": "bash scripts/dev-infra.sh",
+    "dev-fe": "concurrently --kill-others-on-fail --names host,supplier,user,errand,credit \"npm run dev --workspace=@relay/host\" \"npm run dev --workspace=@relay/supplier-frontend\" \"npm run dev --workspace=@relay/user-frontend\" \"npm run dev --workspace=@relay/errand-frontend\" \"npm run dev --workspace=@relay/credit-frontend\"",
+    "dev-be": "bash scripts/dev-be.sh",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test:workspaces && npm run test:services",
+    "test:workspaces": "npm run build --workspace=@relay/user-auth-backend-middleware && npm run test --workspaces --if-present",
+    "test:services": "npm run test:services:integration",
+    "test:services:integration": "node --test tests/integration/*.test.mjs",
+    "format": "prettier . --write"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5",
+    "prettier": "^3.9.8"
+  },
+  "overrides": {
+    "adm-zip": "0.6.1"
+  },
+  "allowScripts": {
+    "esbuild@0.24.2": true
+  }
+}

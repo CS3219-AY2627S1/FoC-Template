@@ -1,0 +1,20 @@
+$kind: http-request
+description: ''
+url: '{{baseUrl}}/api/credit'
+method: GET
+headers:
+  Cookie: '{{courierCookie}}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const selectedSession=pm.collectionVariables.get('courierCookie');
+      if(typeof selectedSession!=='string'||!/^relay_access=[^;]+; relay_id=[^;]+$/.test(selectedSession))throw new Error('Missing or invalid courierCookie in this collection. Run its login step first.');
+      pm.variables.set('courierCookie',selectedSession);
+      pm.request.headers.upsert({key:'Cookie',value:selectedSession});
+  - type: afterResponse
+    code: |-
+      const b=pm.response.code===200?pm.response.json():null;
+      pm.test('balance returned',()=>pm.response.to.have.status(200));
+      if(b){pm.test('correct user',()=>pm.expect(b.userId).to.eql(pm.collectionVariables.get('courierSub')));pm.test('available = 100',()=>pm.expect(b.availableCredit).to.eql(100));pm.test('reserved = 0',()=>pm.expect(b.reserveCredit).to.eql(0));}
+settings: { disableCookies: true, protocolVersion: auto }
+order: 7000

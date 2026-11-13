@@ -1,0 +1,31 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6.1 Terra), date: 2026-11-06
+# Scope: Generated implementation of local Kafka monitoring view
+# Author review: Verified correctness and that local kafbat view works.
+
+apiVersion: v1
+kind: Service
+metadata: { name: relay-kafka-ui, namespace: relay }
+spec: { selector: { app: relay-kafka-ui }, ports: [{ port: 8080, targetPort: web }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: relay-kafka-ui, namespace: relay }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: relay-kafka-ui } }
+  template:
+    metadata: { labels: { app: relay-kafka-ui } }
+    spec:
+      containers:
+        - name: ui
+          securityContext: { allowPrivilegeEscalation: false }
+          image: ghcr.io/kafbat/kafka-ui:latest
+          imagePullPolicy: IfNotPresent
+          ports: [{ name: web, containerPort: 8080 }]
+          env:
+            - { name: KAFKA_CLUSTERS_0_NAME, value: relay-local-eks }
+            - name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS
+              valueFrom: { secretKeyRef: { name: relay-runtime, key: KAFKA_BROKERS } }
+          readinessProbe: { tcpSocket: { port: web }, periodSeconds: 5 }
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: '1', memory: 768Mi } }

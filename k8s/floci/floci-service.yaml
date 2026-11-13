@@ -1,0 +1,17 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6 Sol), date: 2026-11-02
+# Scope: Generated implementation of local Floci service connectivity from Kubernetes
+# Author review: Verified correctness of Floci container exposed port.
+
+apiVersion: v1
+kind: Service
+metadata: { name: floci-local, namespace: relay }
+spec:
+  ports: [{ name: http, port: 4566, targetPort: 4566 }]
+---
+apiVersion: v1
+kind: Endpoints
+metadata: { name: floci-local, namespace: relay }
+subsets:
+  - addresses: [{ ip: FLOCI_DOCKER_IP }]
+    ports: [{ name: http, port: 4566 }]

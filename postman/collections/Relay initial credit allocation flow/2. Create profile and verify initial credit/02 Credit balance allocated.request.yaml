@@ -1,0 +1,32 @@
+$kind: http-request
+url: '{{baseUrl}}/api/credit'
+method: GET
+headers:
+  Cookie: '{{sessionCookie}}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const selectedCookie=pm.collectionVariables.get('sessionCookie');
+      if(typeof selectedCookie!=='string'||!/^relay_access=[^;]+; relay_id=[^;]+$/.test(selectedCookie))throw new Error('Missing or invalid sessionCookie in this collection. Run its sign-in step first.');
+      pm.variables.set('sessionCookie',selectedCookie);
+      pm.request.headers.upsert({key:'Cookie',value:selectedCookie});
+  - type: beforeRequest
+    code: if(Number(pm.collectionVariables.get('balanceAttempts')||0)>0)setTimeout(()=>{},1000);
+  - type: afterResponse
+    code: |-
+      const attempt=Number(pm.collectionVariables.get('balanceAttempts')||0)+1;
+      if(pm.response.code===404 && attempt<15){
+        pm.collectionVariables.set('balanceAttempts',String(attempt));
+        pm.execution.setNextRequest(pm.info.requestName);
+      }else{
+        pm.collectionVariables.unset('balanceAttempts');
+        pm.test('balance allocated',()=>pm.response.to.have.status(200));
+        if(pm.response.code===200){
+          const b=pm.response.json();
+          pm.test('belongs to new user',()=>pm.expect(b.userId).to.eql(pm.collectionVariables.get('cognitoSub')));
+          pm.test('100 available credits',()=>pm.expect(b.availableCredit).to.eql(100));
+          pm.test('zero reserved credits',()=>pm.expect(b.reserveCredit).to.eql(0));
+        }
+      }
+settings: { disableCookies: true, protocolVersion: auto }
+order: 2000

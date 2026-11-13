@@ -1,0 +1,26 @@
+$kind: collection
+description: Full errand lifecycle tests for errand-service/backend. Tests Create -> Accept -> Pickup -> Deliver -> Confirm workflow with two separate users (requester and courier).
+variables:
+  sessionCookie: ''
+  idCookie: ''
+  refreshCookie: ''
+  sessionCookieCourier: ''
+  idCookieCourier: ''
+  refreshCookieCourier: ''
+  requesterEmail: ''
+  requesterPassword: ''
+  requesterVerificationCode: ''
+  requesterUsername: ''
+  courierEmail: ''
+  courierPassword: ''
+  courierVerificationCode: ''
+  courierUsername: ''
+  supplierId_cheers: ''
+  supplierId_instachef: ''
+  errandId: ''
+  errandId2: ''
+  errandId3: ''
+  requesterSub: ''
+  courierSub: ''
+  requesterSub2: ''
+  expiresAt: 2026-12-12T12:00:00.000Z

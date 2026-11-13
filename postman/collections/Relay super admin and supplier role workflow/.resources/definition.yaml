@@ -1,0 +1,22 @@
+$kind: collection
+description: Run folders in order against local Docker Compose and Floci. The first request generates two fresh user emails. The bootstrap super admin values match .env.development. Role changes affect newly issued access tokens. An existing admin access token keeps its old groups until it expires; sign in again to observe the new role. This workflow leaves two users and one supplier in the local database.
+variables:
+  superAdminEmail: admin@example.com
+  superAdminPassword: Admin123%
+  superAdminUsername: relaySuperAdmin
+  adminEmail: relay-admin@example.com
+  adminPassword: Test1234!
+  adminUsername: relayAdminCandidate
+  normalEmail: relay-user@example.com
+  normalPassword: Test1234!
+  normalUsername: relayNormalCandidate
+  supplierName: Relay Postman Supplier
+  supplierId: ''
+  superAdminCookie: ''
+  adminCookie: ''
+  normalCookie: ''
+  adminCode: ''
+  normalCode: ''
+  adminRefreshCookie: ''
+  normalRefreshCookie: ''
+  superAdminRefreshCookie: ''

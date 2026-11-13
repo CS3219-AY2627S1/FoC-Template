@@ -1,0 +1,14 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/verification/resend'
+order: 12000
+headers:
+  Content-Type: 'application/json'
+body:
+  type: json
+  content: '{"email":"{{email}}"}'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 204',()=>pm.response.to.have.status(204));
+settings: { disableCookies: true, protocolVersion: auto }

@@ -1,0 +1,15 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/login'
+order: 5000
+headers:
+  Content-Type: 'application/json'
+body:
+  type: json
+  content: '{"email":"person@example.com","password":"{{password}}"}'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 400',()=>pm.response.to.have.status(400));
+      pm.test('VALIDATION_FAILED',()=>pm.expect(pm.response.json().error.code).to.eql('VALIDATION_FAILED'));
+settings: { disableCookies: true, protocolVersion: auto }

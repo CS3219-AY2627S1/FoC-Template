@@ -1,0 +1,62 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/errands'
+order: 26000
+headers:
+  Content-Type: application/json
+  Cookie: relay_access={{sessionCookie}}; relay_id={{idCookie}}
+body:
+  type: json
+  content: |-
+    {
+      "supplierDetails": {
+        "supplierId": "{{supplierId_instachef}}",
+        "supplierName": "InstaChef",
+        "serviceType": 0
+      },
+      "name": "Another succulent chinese meal",
+      "pickupLocation": {
+        "lat": 1.2938898,
+        "lng": 103.7736305,
+        "floorNumber": 1,
+        "buildingName": "Terrace"
+      },
+      "targetLocation": {
+        "lat": 1.3525,
+        "lng": 103.8200,
+        "buildingName": "Building B",
+        "floorNumber": 2
+      },
+      "deliveryDetails": {
+        "description": "food",
+        "instructions": "somehting"
+      },
+      "creditAmount": 10,
+      "expiresAt": "{{expiresAt}}"
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      const access=pm.collectionVariables.get('sessionCookie');
+      const id=pm.collectionVariables.get('idCookie');
+      if(!access||!id)throw new Error('Run the matching login request before this request.');
+      pm.request.headers.upsert({key:'Cookie',value:'relay_access='+access+'; relay_id='+id});
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Errand created', () => {
+        pm.response.to.have.status(201);
+      });
+
+      const json = pm.response.json();
+      pm.test('Errand has ID', () => {
+        pm.expect(json.errand).to.exist;
+        pm.expect(json.errand.id).to.exist;
+      });
+      pm.collectionVariables.set('errandId2', json.errand.id);
+      pm.collectionVariables.set('requesterSub2', json.errand.requesterSub);
+      pm.test('Errand 2 status is OPEN', () => {
+        pm.expect(json.errand.status).to.eql('OPEN');
+      });
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

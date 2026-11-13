@@ -1,0 +1,3 @@
+$kind: collection
+description: OPEN ? ACCEPTED ? PICKED_UP ? DELIVERED ? CONFIRMED. Confirm emits the transfer event; credit changes settle asynchronously.
+order: 5000

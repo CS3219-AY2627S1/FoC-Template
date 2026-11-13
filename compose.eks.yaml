@@ -1,0 +1,36 @@
+services:
+  floci-eks:
+    build:
+      context: .
+      dockerfile: floci/eks/Dockerfile
+    container_name: relay-floci-eks
+    env_file:
+      - .env.development
+    environment:
+      FLOCI_LOCAL_EKS: 'true'
+      FLOCI_BASE_URL: https://localhost:4567
+      FLOCI_TLS_ENABLED: 'true'
+      FLOCI_SERVICES_CLOUDFRONT_DOMAIN_SUFFIX: cloudfront.localhost.floci.io
+      FLOCI_SERVICES_CLOUDFRONT_ALLOWED_PRIVATE_ORIGIN_HOSTS: localhost
+      FLOCI_SERVICES_ECR_URI_STYLE: path
+      FLOCI_STORAGE_PERSISTENT_PATH: /app/data
+      FLOCI_SERVICES_EKS_MOCK: 'false'
+      FLOCI_INIT_HOOKS_TIMEOUT_SECONDS: '600'
+    user: root
+    ports:
+      - '4567:4566'
+      - '443:443'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - floci-eks-ca:/app/data/tls
+    healthcheck:
+      test: ['CMD-SHELL', 'test -f /app/data/ready && /usr/local/bin/healthcheck.sh']
+      interval: 10s
+      timeout: 3s
+      retries: 30
+      start_period: 600s
+
+volumes:
+  floci-eks-ca:
+    external: true
+    name: relay-floci-eks-ca

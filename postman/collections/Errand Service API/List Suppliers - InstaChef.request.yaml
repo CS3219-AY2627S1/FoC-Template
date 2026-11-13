@@ -1,0 +1,36 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/api/supplier'
+order: 11000
+headers:
+  Cookie: relay_access={{sessionCookie}}; relay_id={{idCookie}}
+scripts:
+  - type: beforeRequest
+    code: |-
+      const access=pm.collectionVariables.get('sessionCookie');
+      const id=pm.collectionVariables.get('idCookie');
+      if(!access||!id)throw new Error('Run the matching login request before this request.');
+      pm.request.headers.upsert({key:'Cookie',value:'relay_access='+access+'; relay_id='+id});
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('List suppliers returns 200', () => {
+        pm.response.to.have.status(200);
+      });
+
+      const json = pm.response.json();
+      pm.test('Response contains suppliers array', () => {
+        pm.expect(json.suppliers).to.be.an('array');
+      });
+
+      // Find InstaChef
+      const instachefSupplier = json.suppliers.find(s => s.name === 'InstaChef');
+      pm.test('InstaChef supplier found', () => {
+        pm.expect(instachefSupplier).to.exist;
+      });
+
+      if (instachefSupplier) {
+        pm.collectionVariables.set('supplierId_instachef', instachefSupplier.id);
+      }
+    language: text/javascript
+settings: { disableCookies: true, protocolVersion: auto }

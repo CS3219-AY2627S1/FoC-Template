@@ -1,0 +1,168 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6 Sol), date: 2026-11-05
+# Scope: Generated implementation of local Floci database infrastructure emulation
+# Author review: Verified correctness and that implementation matches aws closely.
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Local Floci RDS infrastructure for Relay integration tests.
+Parameters:
+  DatabaseInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+  DatabaseAllocatedStorage:
+    Type: Number
+    Default: 20
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.60.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+  SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.60.0.0/20
+      AvailabilityZone: !Select [0, !GetAZs '']
+  SubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.60.16.0/20
+      AvailabilityZone: !Select [1, !GetAZs '']
+  SubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.60.32.0/20
+      AvailabilityZone: !Select [2, !GetAZs '']
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: PostgreSQL access within the temporary Floci network
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 10.60.0.0/16
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private Relay database subnets
+      SubnetIds: [!Ref SubnetA, !Ref SubnetB]
+  UserDatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"relay"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+  ErrandDatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"relay"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+  CreditDatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"relay"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+  SupplierDatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"relay"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+  UserDatabase:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: postgres
+      DBInstanceClass: !Ref DatabaseInstanceClass
+      AllocatedStorage: !Ref DatabaseAllocatedStorage
+      StorageType: gp3
+      DBName: relay
+      MasterUsername: !Sub '{{resolve:secretsmanager:${UserDatabaseSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${UserDatabaseSecret}:SecretString:password}}'
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups: [!GetAtt DatabaseSecurityGroup.GroupId]
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      ApplyImmediately: true
+  ErrandDatabase:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: postgres
+      DBInstanceClass: !Ref DatabaseInstanceClass
+      AllocatedStorage: !Ref DatabaseAllocatedStorage
+      StorageType: gp3
+      DBName: relayerrand
+      MasterUsername: !Sub '{{resolve:secretsmanager:${ErrandDatabaseSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${ErrandDatabaseSecret}:SecretString:password}}'
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups: [!GetAtt DatabaseSecurityGroup.GroupId]
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+  CreditDatabase:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: postgres
+      DBInstanceClass: !Ref DatabaseInstanceClass
+      AllocatedStorage: !Ref DatabaseAllocatedStorage
+      StorageType: gp3
+      DBName: relay
+      MasterUsername: !Sub '{{resolve:secretsmanager:${CreditDatabaseSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${CreditDatabaseSecret}:SecretString:password}}'
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups: [!GetAtt DatabaseSecurityGroup.GroupId]
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+  SupplierDatabase:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: postgres
+      DBInstanceClass: !Ref DatabaseInstanceClass
+      AllocatedStorage: !Ref DatabaseAllocatedStorage
+      StorageType: gp3
+      DBName: relay
+      MasterUsername: !Sub '{{resolve:secretsmanager:${SupplierDatabaseSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${SupplierDatabaseSecret}:SecretString:password}}'
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups: [!GetAtt DatabaseSecurityGroup.GroupId]
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+Outputs:
+  VpcId: { Value: !Ref Vpc }
+  SubnetAId: { Value: !Ref SubnetA }
+  SubnetBId: { Value: !Ref SubnetB }
+  SubnetCId: { Value: !Ref SubnetC }
+  UserDatabaseEndpoint: { Value: !GetAtt UserDatabase.Endpoint.Address }
+  ErrandDatabaseEndpoint: { Value: !GetAtt ErrandDatabase.Endpoint.Address }
+  CreditDatabaseEndpoint: { Value: !GetAtt CreditDatabase.Endpoint.Address }
+  SupplierDatabaseEndpoint: { Value: !GetAtt SupplierDatabase.Endpoint.Address }
+  UserDatabasePort: { Value: !GetAtt UserDatabase.Endpoint.Port }
+  ErrandDatabasePort: { Value: !GetAtt ErrandDatabase.Endpoint.Port }
+  CreditDatabasePort: { Value: !GetAtt CreditDatabase.Endpoint.Port }
+  SupplierDatabasePort: { Value: !GetAtt SupplierDatabase.Endpoint.Port }
+  UserDatabaseSecretArn: { Value: !Ref UserDatabaseSecret }
+  ErrandDatabaseSecretArn: { Value: !Ref ErrandDatabaseSecret }
+  CreditDatabaseSecretArn: { Value: !Ref CreditDatabaseSecret }
+  SupplierDatabaseSecretArn: { Value: !Ref SupplierDatabaseSecret }

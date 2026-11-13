@@ -1,0 +1,23 @@
+$kind: http-request
+url: '{{baseUrl}}/api/user/me'
+method: PATCH
+headers:
+  Content-Type: application/json
+  Cookie: '{{sessionCookie}}'
+body:
+  type: json
+  content: '{"username":"{{testUsername}}"}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const selectedCookie=pm.collectionVariables.get('sessionCookie');
+      if(typeof selectedCookie!=='string'||!/^relay_access=[^;]+; relay_id=[^;]+$/.test(selectedCookie))throw new Error('Missing or invalid sessionCookie in this collection. Run its sign-in step first.');
+      pm.variables.set('sessionCookie',selectedCookie);
+      pm.request.headers.upsert({key:'Cookie',value:selectedCookie});
+  - type: afterResponse
+    code: |-
+      pm.test('profile created',()=>pm.response.to.have.status(200));
+      pm.test('username matches',()=>pm.expect(pm.response.json().data.username).to.eql(pm.collectionVariables.get('testUsername')));
+      pm.test('profile complete',()=>pm.expect(pm.response.json().data.profileCreated).to.eql(true));
+settings: { disableCookies: true, protocolVersion: auto }
+order: 1000

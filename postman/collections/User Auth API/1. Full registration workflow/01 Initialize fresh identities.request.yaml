@@ -1,0 +1,13 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/healthz'
+order: 1000
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('health 200',()=>pm.response.to.have.status(200));
+      const suffix=Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+      pm.collectionVariables.set('email','relay-auth-'+suffix+'@u.nus.edu');
+      pm.collectionVariables.set('unverifiedEmail','relay-pending-'+suffix+'@nus.edu.sg');
+      for(const key of ['otp','sub','s1Access','s1Id','s1Refresh','s1OldAccess','s1OldId','s1OldRefresh','s1NewAccess','s1NewId','s1NewRefresh','s2Access','s2Id','s2Refresh','s2OldRefresh','s2NewRefresh','adminAccess','adminId'])pm.collectionVariables.unset(key);
+settings: { disableCookies: true, protocolVersion: auto }

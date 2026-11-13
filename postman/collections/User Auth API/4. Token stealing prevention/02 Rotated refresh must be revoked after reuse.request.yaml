@@ -1,0 +1,19 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/api/auth/refresh'
+order: 2000
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.upsert({key:'Cookie',value:'relay_refresh='+pm.collectionVariables.get('s1NewRefresh')});
+  - type: afterResponse
+    code: |-
+      if(pm.environment.get('target_env')==='development'){
+        console.warn('Floci limitation: reuse of the old refresh token does not revoke the token family; the newer session remains refreshable locally.');
+        pm.test('Floci leaves token family usable after reuse (known limitation)',()=>pm.response.to.have.status(200));
+        pm.test('Floci returns auth cookies',()=>pm.expect(pm.response.headers.all().some(h=>h.key.toLowerCase()==='set-cookie'&&h.value.startsWith('relay_refresh='))).to.eql(true));
+      }else{
+        pm.test('Stolen refresh token rejected',()=>pm.response.to.have.status(401));
+        if(pm.response.code===401)pm.test('INVALID_CREDENTIALS',()=>pm.expect(pm.response.json().error?.code).to.eql('INVALID_CREDENTIALS'));
+      }
+settings: { disableCookies: true, protocolVersion: auto }

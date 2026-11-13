@@ -1,0 +1,32 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6.1 Terra), date: 2026-11-06
+# Scope: Generated implementation of local errand database inspection view
+# Author review: Verified correctness and that local prisma view of errand database works.
+
+apiVersion: v1
+kind: Service
+metadata: { name: relay-errand-prisma-studio, namespace: relay }
+spec: { selector: { app: relay-errand-prisma-studio }, ports: [{ port: 5555, targetPort: web }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: relay-errand-prisma-studio, namespace: relay }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: relay-errand-prisma-studio } }
+  template:
+    metadata: { labels: { app: relay-errand-prisma-studio } }
+    spec:
+      containers:
+        - name: studio
+          securityContext: { allowPrivilegeEscalation: false }
+          image: STUDIO_API_IMAGE
+          imagePullPolicy: IfNotPresent
+          command: [npx, prisma, studio, --schema=errand-service/backend/prisma/schema.prisma, --hostname=0.0.0.0, --port=5555]
+          ports: [{ name: web, containerPort: 5555 }]
+          env:
+            - { name: NODE_OPTIONS, value: "--max-old-space-size=614" }
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: relay-runtime, key: ERRAND_DATABASE_URL } }
+          readinessProbe: { tcpSocket: { port: web }, periodSeconds: 5 }
+          resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: 500m, memory: 768Mi } }

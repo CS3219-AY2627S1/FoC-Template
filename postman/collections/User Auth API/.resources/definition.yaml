@@ -1,0 +1,30 @@
+$kind: collection
+description: Complete local Cognito proxy workflow. Run the entire collection in order against Docker Compose and Floci. Fresh NUS user per run. Security assertions intentionally fail when Floci does not rotate refresh tokens or revoke a token family after reuse.
+variables:
+  bootstrapAdminEmail: admin@example.com
+  bootstrapAdminPassword: Admin123%
+  email: ''
+  password: Test1234!
+  newPassword: Changed1234!
+  unverifiedEmail: ''
+  otp: ''
+  sub: ''
+  s1Access: ''
+  s1Id: ''
+  s1Refresh: ''
+  s1OldAccess: ''
+  s1OldId: ''
+  s1OldRefresh: ''
+  s1NewAccess: ''
+  s1NewId: ''
+  s1NewRefresh: ''
+  s2Access: ''
+  s2Id: ''
+  s2Refresh: ''
+  s2OldRefresh: ''
+  s2NewRefresh: ''
+  adminAccess: ''
+  adminId: ''
+  s2NewAccess: ''
+  s2NewId: ''
+  adminRefresh: ''

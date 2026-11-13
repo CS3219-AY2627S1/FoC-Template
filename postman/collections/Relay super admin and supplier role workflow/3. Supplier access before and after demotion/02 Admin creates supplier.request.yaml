@@ -1,0 +1,22 @@
+$kind: http-request
+url: '{{baseUrl}}/api/supplier'
+method: POST
+headers:
+  Content-Type: application/json
+  Cookie: '{{adminCookie}}'
+body:
+  type: json
+  content: '{"name":"{{supplierName}}","location":{"lat":1.3,"lng":103.8,"buildingName":"Postman Test Building","floorNumber":1},"isOperational":true,"operatingHours":{"openingTime":"09:00","closingTime":"18:00","daysOfWeek":[0,1,2,3,4]},"serviceTypes":[0,1]}'
+scripts:
+  - type: beforeRequest
+    code: |-
+      const selectedCookie=pm.collectionVariables.get('adminCookie');
+      if(typeof selectedCookie!=='string'||!/^relay_access=[^;]+; relay_id=[^;]+$/.test(selectedCookie))throw new Error('Missing or invalid adminCookie in this collection. Run its sign-in step first.');
+      pm.variables.set('adminCookie',selectedCookie);
+      pm.request.headers.upsert({key:'Cookie',value:selectedCookie});
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 201',()=>pm.response.to.have.status(201));
+      const s=pm.response.json().supplier; pm.test('supplier ID',()=>pm.expect(s.id).to.be.a('string').and.not.empty); if(s.id)pm.collectionVariables.set('supplierId',s.id);
+settings: { disableCookies: true, protocolVersion: auto }
+order: 3000

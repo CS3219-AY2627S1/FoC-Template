@@ -1,0 +1,106 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT 6.1 Sol), date: 2026-10-28
+# Scope: Generated initial implementation, fixed bugs for deployment configuration
+# Author review: I validated correctness and edited for style.
+
+# Apply after runtime-secret.yaml exists and before workloads.yaml. Each Job runs
+# the Prisma migration exactly once; scaled application Pods do not run migrations.
+apiVersion: batch/v1
+kind: Job
+metadata: { name: supplier-schema, namespace: relay }
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: schema
+          securityContext: { allowPrivilegeEscalation: false }
+          resources:
+            { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: 500m, memory: 768Mi } }
+          image: IMAGE_SUPPLIER_API
+          command: [node, migrate.js]
+          env:
+            - { name: NODE_OPTIONS, value: '--max-old-space-size=614' }
+            - {
+                name: SUPPLIER_DATABASE_URL,
+                valueFrom: { secretKeyRef: { name: relay-runtime, key: SUPPLIER_DATABASE_URL } },
+              }
+            - { name: DB_SSL_CA_PATH, value: /etc/ssl/certs/rds-global-bundle.pem }
+---
+apiVersion: batch/v1
+kind: Job
+metadata: { name: user-migrate, namespace: relay }
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          securityContext: { allowPrivilegeEscalation: false }
+          resources:
+            { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: 500m, memory: 768Mi } }
+          image: IMAGE_USER_API
+          command:
+            [sh, -c, 'npx prisma migrate deploy --schema=user-service/backend/prisma/schema.prisma']
+          env:
+            - { name: NODE_OPTIONS, value: '--max-old-space-size=614' }
+            - {
+                name: DATABASE_URL,
+                valueFrom: { secretKeyRef: { name: relay-runtime, key: USER_DATABASE_URL } },
+              }
+---
+apiVersion: batch/v1
+kind: Job
+metadata: { name: errand-migrate, namespace: relay }
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          securityContext: { allowPrivilegeEscalation: false }
+          resources:
+            { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: 500m, memory: 768Mi } }
+          image: IMAGE_ERRAND_API
+          command:
+            [
+              sh,
+              -c,
+              'npx prisma migrate deploy --schema=errand-service/backend/prisma/schema.prisma',
+            ]
+          env:
+            - { name: NODE_OPTIONS, value: '--max-old-space-size=614' }
+            - {
+                name: DATABASE_URL,
+                valueFrom: { secretKeyRef: { name: relay-runtime, key: ERRAND_DATABASE_URL } },
+              }
+---
+apiVersion: batch/v1
+kind: Job
+metadata: { name: credit-migrate, namespace: relay }
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          securityContext: { allowPrivilegeEscalation: false }
+          resources:
+            { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: 500m, memory: 768Mi } }
+          image: IMAGE_CREDIT_API
+          command:
+            [
+              sh,
+              -c,
+              'npx prisma migrate deploy --schema=credit-service/backend/prisma/schema.prisma',
+            ]
+          env:
+            - { name: NODE_OPTIONS, value: '--max-old-space-size=614' }
+            - {
+                name: DATABASE_URL,
+                valueFrom: { secretKeyRef: { name: relay-runtime, key: CREDIT_DATABASE_URL } },
+              }

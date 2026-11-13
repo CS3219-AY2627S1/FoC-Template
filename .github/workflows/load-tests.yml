@@ -1,0 +1,330 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-5.6 Luna), date: 2026-10-31
+# Scope: Generated initial implementation of the load-tests GitHub Actions workflow.
+# Author review: I validated correctness, edited for domain needs, and debugged as necessary.
+
+name: Load tests
+
+on:
+  pull_request:
+    paths:
+      - 'load-tests/**'
+      - '.github/workflows/load-tests.yml'
+
+  push:
+    branches:
+      - main
+    paths:
+      - "load-tests/**"
+      - ".github/workflows/load-tests.yml"
+
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Environment to test'
+        required: true
+        type: choice
+        default: local
+        options:
+          - local
+          - aws
+      suite:
+        description: 'Load-test suite to run'
+        required: true
+        type: choice
+        default: full
+        options:
+          - smoke
+          - lifecycle
+          - core
+          - nfr
+          - full
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: load-tests
+  cancel-in-progress: true
+
+jobs:
+  k6:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      COMPOSE_PARALLEL_LIMIT: '2'
+      COMPOSE_PROJECT_NAME: relay
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start Compose with Floci
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.target != 'aws' }}
+        run: npm run up:compose
+
+      - name: Wait for Compose services
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.target != 'aws' }}
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error http://localhost:8080/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Compose application did not become healthy" >&2
+          exit 1
+
+      - name: Provision disposable load-test data
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.target != 'aws' }}
+        env:
+          BASE_URL: http://localhost:8080
+          LOAD_TEST_K6_BASE_URL: http://host.docker.internal:8080
+          LOAD_TEST_ENV_FILE: load-tests/.env.generated
+        run: node load-tests/provision-test-data.mjs
+
+      - name: Select local generated environment
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.target != 'aws' }}
+        run: echo "LOAD_TEST_ENV_FILE=load-tests/.env.generated" >> "$GITHUB_ENV"
+
+      - name: Configure AWS credentials
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'aws' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_LOAD_TEST_ROLE_ARN }}
+          aws-region: ap-southeast-1
+
+      - name: Configure AWS target and provision load-test data
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'aws' }}
+        shell: bash
+        env:
+          AWS_REGION: ap-southeast-1
+          LOAD_TEST_ENV_FILE: load-tests/.env.aws.generated
+          LOAD_TEST_SUPPLIER_NAME: Octobox
+          LOAD_TEST_CLEANUP: true
+        run: |
+          mapfile -t CLOUDFRONT_DOMAINS < <(aws cloudfront list-distributions \
+            --query 'DistributionList.Items[?Enabled==`true`].DomainName' \
+            --output text | tr '\t' '\n' | sed '/^$/d')
+
+          if [ "${#CLOUDFRONT_DOMAINS[@]}" -eq 0 ]; then
+            echo "No enabled CloudFront distributions were found"
+            exit 1
+          fi
+
+          if [ "${#CLOUDFRONT_DOMAINS[@]}" -ne 1 ]; then
+            echo "Expected exactly one enabled CloudFront distribution, found ${#CLOUDFRONT_DOMAINS[@]}:"
+            printf ' - %s\n' "${CLOUDFRONT_DOMAINS[@]}"
+            echo "Add an unambiguous CloudFront selection before running AWS load tests."
+            exit 1
+          fi
+
+          CLOUDFRONT_DOMAIN_NAME="${CLOUDFRONT_DOMAINS[0]}"
+
+          BASE_URL="https://$CLOUDFRONT_DOMAIN_NAME"
+          export BASE_URL
+          echo "BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+          echo "CLOUDFRONT_DOMAIN_NAME=$CLOUDFRONT_DOMAIN_NAME" >> "$GITHUB_ENV"
+
+          COGNITO_USER_POOL_ID="$(aws cloudformation describe-stacks \
+            --stack-name relay-auth \
+            --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" \
+            --output text)"
+          test -n "$COGNITO_USER_POOL_ID"
+          export COGNITO_USER_POOL_ID
+          echo "COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID" >> "$GITHUB_ENV"
+          echo "LOAD_TEST_ENV_FILE=load-tests/.env.aws.generated" >> "$GITHUB_ENV"
+
+          node load-tests/provision-aws-test-data.mjs
+
+      - name: Run browse smoke test locally for pull requests
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: pwsh
+        run: |
+          docker run --rm -i `
+            --add-host host.docker.internal:host-gateway `
+            --env-file load-tests/.env.generated `
+            -e K6_SUMMARY_PATH=/scripts/results/errand-browse-summary.json `
+            -v "${PWD}/load-tests:/scripts" `
+            --entrypoint sh `
+            grafana/k6 `
+            -c 'k6 run --env BASE_URL="$BASE_URL" --env LOAD_TEST_USER_EMAIL="$LOAD_TEST_USER_EMAIL" --env LOAD_TEST_USER_PASSWORD="$LOAD_TEST_USER_PASSWORD" --env LOAD_TEST_ERRAND_ID="$LOAD_TEST_ERRAND_ID" --env K6_SUMMARY_PATH="$K6_SUMMARY_PATH" /scripts/errand-browse-smoke.js'
+
+      - name: Verify Grafana Cloud credentials
+        if: ${{ github.event_name != 'pull_request' }}
+        env:
+          K6_CLOUD_TOKEN: ${{ secrets.K6_CLOUD_TOKEN }}
+          K6_CLOUD_STACK_ID: ${{ secrets.K6_CLOUD_STACK_ID }}
+          K6_CLOUD_PROJECT_ID: ${{ secrets.K6_CLOUD_PROJECT_ID }}
+        run: |
+          test -n "$K6_CLOUD_TOKEN" || { echo "K6_CLOUD_TOKEN is not configured"; exit 1; }
+          test -n "$K6_CLOUD_STACK_ID" || { echo "K6_CLOUD_STACK_ID is not configured"; exit 1; }
+          test -n "$K6_CLOUD_PROJECT_ID" || { echo "K6_CLOUD_PROJECT_ID is not configured"; exit 1; }
+
+      - name: Run browse smoke test in Grafana Cloud
+        if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.suite == 'smoke' || inputs.suite == 'full') }}
+        shell: pwsh
+        env:
+          K6_CLOUD_TOKEN: ${{ secrets.K6_CLOUD_TOKEN }}
+          K6_CLOUD_STACK_ID: ${{ secrets.K6_CLOUD_STACK_ID }}
+          K6_CLOUD_PROJECT_ID: ${{ secrets.K6_CLOUD_PROJECT_ID }}
+        run: |
+          . ./load-tests/Invoke-K6Cloud.ps1
+          Invoke-K6Cloud `
+            -Script "errand-browse-smoke.js" `
+            -Summary "errand-browse-summary.json" `
+            -EnvFile $env:LOAD_TEST_ENV_FILE
+
+      - name: Run lifecycle test
+        if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.suite == 'lifecycle' || inputs.suite == 'full') }}
+        shell: pwsh
+        env:
+          K6_CLOUD_TOKEN: ${{ secrets.K6_CLOUD_TOKEN }}
+          K6_CLOUD_STACK_ID: ${{ secrets.K6_CLOUD_STACK_ID }}
+          K6_CLOUD_PROJECT_ID: ${{ secrets.K6_CLOUD_PROJECT_ID }}
+        run: |
+          . ./load-tests/Invoke-K6Cloud.ps1
+          Invoke-K6Cloud `
+            -Script "errand-lifecycle.js" `
+            -Summary "errand-lifecycle-summary.json" `
+            -EnvFile $env:LOAD_TEST_ENV_FILE
+
+      - name: Run core scenarios
+        if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.suite == 'core' || inputs.suite == 'full') }}
+        shell: pwsh
+        env:
+          K6_CLOUD_TOKEN: ${{ secrets.K6_CLOUD_TOKEN }}
+          K6_CLOUD_STACK_ID: ${{ secrets.K6_CLOUD_STACK_ID }}
+          K6_CLOUD_PROJECT_ID: ${{ secrets.K6_CLOUD_PROJECT_ID }}
+        run: |
+          . ./load-tests/Invoke-K6Cloud.ps1
+          Invoke-K6Cloud `
+            -Script "errand-core-scenarios.js" `
+            -Summary "errand-core-summary.json" `
+            -EnvFile $env:LOAD_TEST_ENV_FILE
+
+      - name: Run authentication NFR
+        if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.suite == 'nfr' || inputs.suite == 'full') }}
+        shell: pwsh
+        env:
+          K6_CLOUD_TOKEN: ${{ secrets.K6_CLOUD_TOKEN }}
+          K6_CLOUD_STACK_ID: ${{ secrets.K6_CLOUD_STACK_ID }}
+          K6_CLOUD_PROJECT_ID: ${{ secrets.K6_CLOUD_PROJECT_ID }}
+        run: |
+          . ./load-tests/Invoke-K6Cloud.ps1
+          Invoke-K6Cloud `
+            -Script "nfr-auth.js" `
+            -Summary "nfr-auth-summary.json" `
+            -EnvFile $env:LOAD_TEST_ENV_FILE
+
+      - name: Run errand read NFR
+        if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.suite == 'nfr' || inputs.suite == 'full') }}
+        shell: pwsh
+        env:
+          K6_CLOUD_TOKEN: ${{ secrets.K6_CLOUD_TOKEN }}
+          K6_CLOUD_STACK_ID: ${{ secrets.K6_CLOUD_STACK_ID }}
+          K6_CLOUD_PROJECT_ID: ${{ secrets.K6_CLOUD_PROJECT_ID }}
+        run: |
+          . ./load-tests/Invoke-K6Cloud.ps1
+          Invoke-K6Cloud `
+            -Script "nfr-errand-read.js" `
+            -Summary "nfr-errand-read-summary.json" `
+            -EnvFile $env:LOAD_TEST_ENV_FILE
+
+      - name: Run mixed errand NFR
+        if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.suite == 'nfr' || inputs.suite == 'full') }}
+        shell: pwsh
+        env:
+          K6_CLOUD_TOKEN: ${{ secrets.K6_CLOUD_TOKEN }}
+          K6_CLOUD_STACK_ID: ${{ secrets.K6_CLOUD_STACK_ID }}
+          K6_CLOUD_PROJECT_ID: ${{ secrets.K6_CLOUD_PROJECT_ID }}
+        run: |
+          . ./load-tests/Invoke-K6Cloud.ps1
+          Invoke-K6Cloud `
+            -Script "nfr-errand-mixed.js" `
+            -Summary "nfr-errand-mixed-summary.json" `
+            -EnvFile $env:LOAD_TEST_ENV_FILE
+
+      - name: Run credit NFR
+        if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.suite == 'nfr' || inputs.suite == 'full') }}
+        shell: pwsh
+        env:
+          K6_CLOUD_TOKEN: ${{ secrets.K6_CLOUD_TOKEN }}
+          K6_CLOUD_STACK_ID: ${{ secrets.K6_CLOUD_STACK_ID }}
+          K6_CLOUD_PROJECT_ID: ${{ secrets.K6_CLOUD_PROJECT_ID }}
+        run: |
+          . ./load-tests/Invoke-K6Cloud.ps1
+          Invoke-K6Cloud `
+            -Script "nfr-credit.js" `
+            -Summary "nfr-credit-summary.json" `
+            -EnvFile $env:LOAD_TEST_ENV_FILE
+
+      - name: Run supplier NFR
+        if: ${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.suite == 'nfr' || inputs.suite == 'full') }}
+        shell: pwsh
+        env:
+          K6_CLOUD_TOKEN: ${{ secrets.K6_CLOUD_TOKEN }}
+          K6_CLOUD_STACK_ID: ${{ secrets.K6_CLOUD_STACK_ID }}
+          K6_CLOUD_PROJECT_ID: ${{ secrets.K6_CLOUD_PROJECT_ID }}
+        run: |
+          . ./load-tests/Invoke-K6Cloud.ps1
+          Invoke-K6Cloud `
+            -Script "nfr-supplier.js" `
+            -Summary "nfr-supplier-summary.json" `
+            -EnvFile $env:LOAD_TEST_ENV_FILE
+
+      - name: Clean up local disposable load-test data
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.target != 'aws') }}
+        env:
+          BASE_URL: http://localhost:8080
+          LOAD_TEST_ENV_FILE: load-tests/.env.generated
+          LOAD_TEST_CLEANUP: true
+        run: node load-tests/cleanup-test-data.mjs
+
+      - name: Clean up AWS fixture data
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.target == 'aws' }}
+        env:
+          LOAD_TEST_ENV_FILE: load-tests/.env.aws.generated
+          LOAD_TEST_CLEANUP: true
+        run: node load-tests/cleanup-test-data.mjs
+
+      - name: Upload k6 summaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-summaries
+          path: load-tests/results/*.json
+          if-no-files-found: ignore
+
+      - name: Collect Compose diagnostics
+        if: ${{ failure() && (github.event_name != 'workflow_dispatch' || inputs.target != 'aws') }}
+        run: |
+          docker ps -a > compose-ps.txt
+          for id in $(docker ps -aq --filter label=com.docker.compose.project=relay); do
+            docker logs "$id" >> compose-logs.txt 2>&1 || true
+          done
+          docker logs relay-floci-1 >> compose-logs.txt 2>&1 || true
+
+      - name: Upload Compose diagnostics
+        if: ${{ failure() && (github.event_name != 'workflow_dispatch' || inputs.target != 'aws') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-compose-diagnostics
+          path: |
+            compose-ps.txt
+            compose-logs.txt
+
+      - name: Stop the Compose environment
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.target != 'aws') }}
+        run: npm run down:compose

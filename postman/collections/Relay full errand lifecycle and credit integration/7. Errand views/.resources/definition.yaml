@@ -1,0 +1,3 @@
+$kind: collection
+description: Read current errands by scope or ID. Can be run again after the lifecycle folders.
+order: 7000

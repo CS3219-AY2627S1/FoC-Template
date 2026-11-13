@@ -1,0 +1,12 @@
+{
+  "name": "@relay/user-prisma",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./generated/index.d.ts",
+      "import": "./generated/index.js"
+    }
+  }
+}

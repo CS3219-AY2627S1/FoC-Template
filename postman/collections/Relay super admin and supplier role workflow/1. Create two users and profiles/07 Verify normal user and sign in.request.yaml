@@ -1,0 +1,18 @@
+$kind: http-request
+url: '{{baseUrl}}/api/auth/verification/confirm-and-login'
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: '{"email":"{{normalEmail}}","password":"{{normalPassword}}","code":"{{normalCode}}"}'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('HTTP 200',()=>pm.response.to.have.status(200));
+      const c=pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').map(h=>h.value.split(';')[0]).filter(x=>x.startsWith('relay_access=')||x.startsWith('relay_id=')).join('; '); pm.test('access cookie',()=>pm.expect(c).to.include('relay_access=')); if(c)pm.collectionVariables.set('normalCookie',c);
+      const refreshCookie=pm.response.headers.all().filter(h=>h.key.toLowerCase()==='set-cookie').map(h=>h.value.split(';')[0]).find(x=>x.startsWith('relay_refresh='));
+      pm.test('Cognito access, ID and refresh cookies returned',()=>{pm.expect(pm.collectionVariables.get('normalCookie')).to.match(/^relay_access=[^;]+; relay_id=[^;]+$/);pm.expect(refreshCookie).to.match(/^relay_refresh=[^;]+$/);});
+      if(refreshCookie)pm.collectionVariables.set('normalRefreshCookie',refreshCookie);
+settings: { disableCookies: true, protocolVersion: auto }
+order: 8000

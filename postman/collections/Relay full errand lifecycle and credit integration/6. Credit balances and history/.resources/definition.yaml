@@ -1,0 +1,3 @@
+$kind: collection
+description: Read-only Credit Service endpoints for requester and courier. History identifies reserve/release/transfer by errand ID.
+order: 6000
