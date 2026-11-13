@@ -1,0 +1,245 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Opus 5), date: 2026-09-17
+// Scope: Ported the prototype's supplier list, search, filter and admin CRUD
+//   flow (loadSuppliers, renderGrid, renderCategoryOptions) to React.
+//   2026-09-22: takes the suppliers client as a prop instead of importing the
+//   module, now that it carries a per-session token. The admin checkbox's
+//   label no longer claims to bypass access control — it cannot any more.
+// Author review: Nigeltzy - Checked the simple generated converted file based on the prototype and requirements provided.
+//
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5), date: 2026-10-01
+// Scope: Removed the manual "show admin controls" checkbox. `isAdmin` is now
+//   App's own derived session.role === "ADMIN", so the controls just show
+//   for a real admin account instead of needing a manual toggle every time.
+// Author review: PENDING — <reviewer to complete>
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { SuppliersApi } from "./suppliersApi";
+import type { Supplier, SupplierInput } from "./types";
+import { MockBadge } from "../../components/MockBadge";
+import { Modal } from "../../components/Modal";
+import { Workspace } from "../../components/Workspace";
+import { SupplierCard } from "./SupplierCard";
+import { SupplierDetail } from "./SupplierDetail";
+import { SupplierForm } from "./SupplierForm";
+import type { ToastMessage } from "../../components/Toast";
+
+interface SuppliersViewProps {
+  /** Injected by App. main.tsx creates the token store the transport reads and passes it to App. */
+  api: SuppliersApi;
+  // AI-generated (edited by nigeltzy).
+  /** True when `api` is the fixture rather than supplier-service. */
+  isMock: boolean;
+  isAdmin: boolean;
+  onNotify: (message: ToastMessage) => void;
+}
+
+/** Which modal, if any, is open. Null means none. */
+type ModalState =
+  | { kind: "detail"; supplier: Supplier }
+  | { kind: "create" }
+  | { kind: "edit"; supplier: Supplier }
+  | null;
+
+export function SuppliersView({
+  api,
+  isMock,
+  isAdmin,
+  onNotify,
+}: SuppliersViewProps) {
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [modal, setModal] = useState<ModalState>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  /**
+   * The category dropdown is populated from the unfiltered listing and then
+   * held steady, so narrowing the results cannot remove the option you would
+   * need to widen them again.
+   */
+  const [categories, setCategories] = useState<string[]>([]);
+  const categoriesLoaded = useRef(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const results = await api.listSuppliers({ search, category });
+      setSuppliers(results);
+      if (!categoriesLoaded.current && !search && !category) {
+        categoriesLoaded.current = true;
+        setCategories([...new Set(results.map((s) => s.type))].sort());
+      }
+    } catch (err) {
+      setSuppliers([]);
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  }, [search, category]);
+
+  // Debounced so typing in the search box does not fire a request per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(load, 300);
+    return () => clearTimeout(timer);
+  }, [load]);
+
+  const handleSubmit = async (input: SupplierInput) => {
+    setSubmitting(true);
+    try {
+      if (modal?.kind === "edit") {
+        const updated = await api.updateSupplier(modal.supplier.id, input);
+        onNotify({ text: "Supplier updated", kind: "success" });
+        // AI-generated (edited by Claude Code, 2026-11-10): back to the supplier's
+        // detail with its new values, not to an empty pane.
+        setModal({ kind: "detail", supplier: updated });
+      } else {
+        await api.createSupplier(input);
+        onNotify({ text: "Supplier created", kind: "success" });
+        setModal(null);
+      }
+      await load();
+    } catch (err) {
+      onNotify({
+        text: err instanceof Error ? err.message : "Save failed",
+        kind: "error",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (supplier: Supplier) => {
+    try {
+      await api.deleteSupplier(supplier.id);
+      onNotify({ text: "Supplier deleted", kind: "success" });
+      setModal(null);
+      await load();
+    } catch (err) {
+      onNotify({
+        text: err instanceof Error ? err.message : "Delete failed",
+        kind: "error",
+      });
+    }
+  };
+
+  return (
+    <section>
+      <div className="page-head">
+        <h1>Suppliers</h1>
+        {/* AI-generated (edited by James Teo): no longer the only screen backed
+            by a real service, so that sentence is gone. */}
+        <p className="page-sub">
+          Campus stores, facilities and pickup points an errand can point at.
+        </p>
+      </div>
+
+      {isMock && <MockBadge service="supplier-service" />}
+
+      <div className="controls">
+        <input
+          className="search-input"
+          type="search"
+          placeholder="Search by name…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          aria-label="Search suppliers by name"
+        />
+        <select
+          className="category-select"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          aria-label="Filter by category"
+        >
+          <option value="">All categories</option>
+          {categories.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        {isAdmin && (
+          <button
+            className="btn btn-primary"
+            onClick={() => setModal({ kind: "create" })}
+          >
+            + Add supplier
+          </button>
+        )}
+      </div>
+
+      {/* AI-generated (edited by Claude Code, 2026-11-09): a supplier's detail, and its
+          edit form, open beside the list on a wide window and in a dialog on a narrow
+          one (D-154); adding one stays a dialog. */}
+      <Workspace
+        list={
+          <>
+      {loading && (
+          <div role="status" aria-label="Loading suppliers">
+            <span className="skeleton row" />
+            <span className="skeleton row" />
+            <span className="skeleton row" />
+          </div>
+        )}
+  
+        {error && !loading && (
+          <p className="status error">
+            Could not load suppliers: {error}
+            <br />
+            {/* AI-generated (edited by nigeltzy). */}
+            <span className="status-hint">
+              The server isn't responding. Try again in a moment.
+            </span>
+          </p>
+        )}
+  
+        {!loading && !error && suppliers.length === 0 && (
+          <p className="status">No suppliers match your search.</p>
+        )}
+  
+        {!loading && !error && suppliers.length > 0 && (
+          <div className="supplier-grid">
+            {suppliers.map((s) => (
+              <SupplierCard
+                key={s.id}
+                supplier={s}
+                onSelect={(supplier) => setModal({ kind: "detail", supplier })}
+              />
+            ))}
+          </div>
+        )}
+          </>
+        }
+        detail={
+          modal?.kind === "detail" ? (
+            <SupplierDetail
+              supplier={modal.supplier}
+              isAdmin={isAdmin}
+              onEdit={(supplier) => setModal({ kind: "edit", supplier })}
+              onDelete={handleDelete}
+            />
+          ) : modal?.kind === "edit" ? (
+            <SupplierForm
+              existing={modal.supplier}
+              submitting={submitting}
+              onSubmit={handleSubmit}
+              onCancel={() => setModal({ kind: "detail", supplier: modal.supplier })}
+            />
+          ) : null
+        }
+        onCloseDetail={() => setModal(null)}
+        emptyText="Pick a supplier to see it here."
+      />
+
+      {modal?.kind === "create" && (
+        <Modal onClose={() => setModal(null)}>
+          <SupplierForm submitting={submitting} onSubmit={handleSubmit} onCancel={() => setModal(null)} />
+        </Modal>
+      )}
+    </section>
+  );
+}

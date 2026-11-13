@@ -1,0 +1,97 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Opus 5), date: 2026-09-19
+// Scope: Process wiring — config load, verifier, router, HTTP server,
+//   graceful shutdown.
+// Author review: Edited by nigeltzy - I checked the output of this generated code and asked for some explanation as this was generated alongside the proxy package that I had guided the AI to create. The generated code seems to be a typical implementation of a main.go file for an API gateway, with proper error handling and graceful shutdown.
+//
+// 2026-09-19: rewritten from the scaffold's health-only server to wire the
+// real router (D-027). Re-read before relying on the sign-off above.
+
+// Command api runs the FoC API Gateway. It verifies each access token against
+// user-service's JWKS and the revocation keys in Redis, strips client-supplied
+// claim headers, injects its own, and forwards the request to the downstream
+// service over HTTP.
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"foc/api-gateway/internal/auth"
+	"foc/api-gateway/internal/config"
+	"foc/api-gateway/internal/httpapi"
+	"foc/api-gateway/internal/revocation"
+)
+
+func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Error("api-gateway stopped", "err", err)
+		os.Exit(1)
+	}
+
+	verifier := auth.NewVerifier(cfg.JWKSURL, &http.Client{Timeout: 5 * time.Second})
+
+	// The client connects on first use, so the gateway starts without Redis
+	// and answers 503 on authenticated routes until Redis answers (root §5).
+	// Its error is fixed text: REDIS_URL can carry a password.
+	rdb, err := revocation.NewRedisClient(cfg.RedisURL)
+	if err != nil {
+		logger.Error("api-gateway stopped", "err", err)
+		os.Exit(1)
+	}
+
+	router, err := httpapi.NewRouter(cfg.Downstream, verifier, revocation.New(rdb), cfg.RefreshTokenTTL, logger)
+	if err != nil {
+		logger.Error("api-gateway stopped", "err", fmt.Errorf("building router: %w", err))
+		os.Exit(1)
+	}
+
+	server := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		// net/http's own errors, such as a failed accept, as JSON lines too.
+		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
+	}
+
+	// Serve in the background so the main goroutine can wait for a signal.
+	errs := make(chan error, 1)
+	go func() {
+		logger.Info("api-gateway listening", "port", cfg.Port)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errs <- err
+		}
+	}()
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case err := <-errs:
+		logger.Error("api-gateway stopped", "err", fmt.Errorf("serve: %w", err))
+		os.Exit(1)
+	case <-stop:
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		logger.Warn("http shutdown", "err", err)
+	}
+	if err := rdb.Close(); err != nil {
+		logger.Warn("close Redis client", "err", err)
+	}
+}

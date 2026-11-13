@@ -1,0 +1,516 @@
+# AI Assistance Disclosure:
+# Tool: Codex (model: GPT-6), date: 2026-11-08
+# Scope: Updated SendGrid OTP environment settings and Compose forwarding; local log delivery retained.
+# Author review: PENDING — reviewer to complete
+
+# AI Assistance Disclosure:
+# Tool: Codex (GPT-5), date: 2026-09-18
+# Scope: Added local PostgreSQL 16 and user-service API containers.
+# Author review: COMPLETED BY ZI YANG
+# Tool: Claude Code (model: Opus 5), date: 2026-09-19
+# Scope: Compose baseline — extends the supplier-service/frontend stack from
+#   PR #1 with Redis and the API Gateway, and closes the public ports that
+#   ai/decisions.md D-010 says must be internal. 2026-09-22: merge with main,
+#   which landed PR #1's half of this file; comments brought up to date. Later
+#   that day: the frontend service was removed — the gateway serves the built
+#   SPA, so the browser has one origin (D-033).
+# Author review: Nigeltzy - I checked the output of this generated code and asked for some explanation as this was generated alongside the proxy package that I had guided the AI to create. The generated code seems to be a typical implementation of a docker-compose file for an API gateway, with proper service definitions and environment variables. Though of course this will be updated in the future as well with future eidts and merges.
+# Tool: Claude Code (model: Sonnet 5), date: 2026-10-01
+# Scope: Merged two top-level `services:` maps left over from PR #4/#5 landing
+#   separately (invalid YAML — a duplicate mapping key — made `docker compose`
+#   refuse to parse the file at all); mechanical fix, no service definition
+#   changed.
+# Author review: PENDING — <reviewer to complete>
+# Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
+# Scope: supplier-service gets JWKS_URL and REDIS_URL, so it verifies admin
+#   tokens and their revocation itself (D-041, D-054), and the note at the top
+#   no longer says it trusts the gateway's identity headers. SHARED FILE.
+# Author review: PENDING — <reviewer to complete>
+# Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
+# Scope: notification-service and its database (D-140), and the gateway's
+#   NOTIFICATION_BASE_URL (D-144). SHARED FILE.
+# Author review: nigeltzy - checked the output was consistent and as expected.
+
+services:
+  user-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: user
+      POSTGRES_USER: ${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}
+      POSTGRES_PASSWORD: ${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set} -d user"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+# Only services with a `ports:` key are reachable from the host; api-gateway
+# (host port 8080) is the only one other machines can reach, and rabbitmq,
+# loki and grafana listen on 127.0.0.1 only. supplier-service verifies the
+# bearer token on its own admin writes (D-041, D-054), but it holds no ports:
+# key all the same (D-010 in ai/decisions.md).
+#
+# The frontend is not in this file: `npm run dev` in frontend/ serves
+# it on 3001 and forwards /auth and /api to the gateway here.
+
+  # AI-generated (edited by nigeltzy): user-service's separate database for
+  # errand-ranking models (D-095), with the same credentials as user-db.
+  user-ranking-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: user_ranking
+      POSTGRES_USER: ${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}
+      POSTGRES_PASSWORD: ${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}
+    volumes:
+      - user-ranking-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set} -d user_ranking"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---- Redis ------------------------------------------------------------
+  # AI-generated (edited by nigeltzy) — rewritten for D-024.
+  # user-service's store, including the access-token revocation keys that
+  # the gateway, order-service and supplier-service read. No `ports:` key, so
+  # it is reachable only inside this network.
+  redis:
+    image: redis:7-alpine
+    # Append-only persistence, so the jti blocklist survives a restart.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 8081
+      USER_DB_URL: postgres://${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}:${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}@user-db:5432/user?sslmode=disable
+      # AI-generated (edited by nigeltzy): ranking models (D-095).
+      USER_RANKING_DB_URL: postgres://${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}:${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}@user-ranking-db:5432/user_ranking?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      # AI-generated (edited by ZI YANG).
+      JWT_KEYSET_PATH: /run/secrets/keys.json
+      JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL:-15m}
+      JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-168h}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:?INITIAL_ADMIN_EMAIL must be set}
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:?INITIAL_ADMIN_USERNAME must be set}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD must be set}
+      # Verification codes go to `docker compose logs user-service` unless .env
+      # sets OTP_DELIVERY=sendgrid and the two SENDGRID_* values.
+      OTP_DELIVERY: ${OTP_DELIVERY:-log}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      SENDGRID_SENDER_EMAIL: ${SENDGRID_SENDER_EMAIL:-}
+      # Must match the foc user in rabbitmq/definitions.json.
+      RABBITMQ_URL: amqp://foc:foc-dev-password@rabbitmq:5672/foc
+    depends_on:
+      user-db:
+        condition: service_healthy
+      user-ranking-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # AI-generated (edited by ZI YANG).
+      - ./user-service/keys.json:/run/secrets/keys.json:ro
+    restart: on-failure
+    # A GET on the service's health endpoint. The five Go services share these
+    # settings; start_period covers credit-service's wait for RabbitMQ.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+  # ---- API gateway ------------------------------------------------------
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    # No depends_on: the gateway fetches JWKS and connects to Redis on first
+    # use, so it can start before user-service and Redis. Authenticated routes
+    # answer 503 until both answer.
+    environment:
+      PORT: 8080
+      # user-service's JWKS endpoint. Until user-service is running, authenticated
+      # routes return 503.
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      # The Redis user-service writes the revocation keys to. Every verified
+      # token is checked against them.
+      REDIS_URL: redis://redis:6379
+      # All four base URLs are required, including services not in this file yet.
+      USER_BASE_URL: http://user-service:8081
+      SUPPLIER_BASE_URL: http://supplier-service:8082
+      ORDER_BASE_URL: http://order-service:8083
+      CREDIT_BASE_URL: http://credit-service:8084
+      CHAT_BASE_URL: http://chat-service:8085
+      NOTIFICATION_BASE_URL: http://notification-service:8086
+      # Refresh-cookie Max-Age, taken from JWT_REFRESH_TOKEN_TTL in .env
+      # (default 168h) so it matches user-service's refresh-token lifetime.
+      REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-168h}
+    # Host port 8080 maps to the gateway's container port 8080 (PORT above).
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+  # ---- Supplier service and its database -------------------------------
+  supplier-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: supplier
+    volumes:
+      - supplier-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+
+  supplier-service:
+    build:
+      context: .
+      dockerfile: supplier-service/Dockerfile
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+    environment:
+      PORT: 8082
+      SUPPLIER_DB_URL: postgres://postgres:postgres@supplier-db:5432/supplier?sslmode=disable
+      # Asked before each delete; deletes are refused while it is unreachable.
+      ORDER_BASE_URL: http://order-service:8083
+      # Admin writes need a verified, unrevoked token (D-041, D-054). Neither is
+      # waited for at startup: the keys are fetched on the first write.
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      REDIS_URL: redis://redis:6379
+    # No `ports:` key: reachable only through the gateway, at /api/suppliers.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8082/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+  # ---- Credit service and its database ---------------------------------
+  credit-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${CREDIT_DB_USER:-credit}
+      POSTGRES_PASSWORD: ${CREDIT_DB_PASSWORD:-credit}
+      POSTGRES_DB: credit
+    volumes:
+      - credit-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CREDIT_DB_USER:-credit} -d credit"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  credit-service:
+    build:
+      context: ./credit-service
+      dockerfile: Dockerfile
+    depends_on:
+      credit-db:
+        condition: service_healthy
+      # Its readiness includes the RabbitMQ consumers, so starting first only
+      # fails health probes while it retries.
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      PORT: 8084
+      CREDIT_DB_URL: postgres://${CREDIT_DB_USER:-credit}:${CREDIT_DB_PASSWORD:-credit}@credit-db:5432/credit?sslmode=disable
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      REDIS_URL: redis://redis:6379
+      # Must match the foc user in rabbitmq/definitions.json.
+      RABBITMQ_URL: amqp://foc:foc-dev-password@rabbitmq:5672/foc
+    restart: on-failure
+    stop_grace_period: 25s
+    # No `ports:` key: reachable only through the gateway, at /api/credits.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8084/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-foc}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-foc-dev-password}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_DEFAULT_VHOST:-foc}
+    # Loopback only: for host-run services and the management UI. Compose
+    # services reach the broker at rabbitmq:5672.
+    ports:
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---- Order service and its database ----------------------------------
+  order-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: orders
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d orders"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    # Only its database: it starts without the services it calls and retries them.
+    depends_on:
+      order-db:
+        condition: service_healthy
+    environment:
+      PORT: 8083
+      ORDER_DB_URL: postgres://postgres:postgres@order-db:5432/orders?sslmode=disable
+      SUPPLIER_BASE_URL: http://supplier-service:8082
+      CREDIT_BASE_URL: http://credit-service:8084
+      # AI-generated (edited by nigeltzy): where each courier's ranking model is
+      # kept (D-095, D-099).
+      USER_BASE_URL: http://user-service:8081
+      # Must match the foc user in rabbitmq/definitions.json.
+      RABBITMQ_URL: amqp://foc:foc-dev-password@rabbitmq:5672/foc
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      REDIS_URL: redis://redis:6379
+      # Overridable from the shell; the e2e suite sets T and C in seconds.
+      ORDER_EXPIRY_PERIOD: ${ORDER_EXPIRY_PERIOD:-2h}
+      ORDER_MAX_ACTIVE_ASSIGNMENTS: ${ORDER_MAX_ACTIVE_ASSIGNMENTS:-2}
+      ORDER_CONFIRMATION_WINDOW: ${ORDER_CONFIRMATION_WINDOW:-24h}
+    restart: on-failure
+    # Above cmd/api's 20s shutdown budget, so Docker doesn't kill a request mid-write.
+    stop_grace_period: 25s
+    # No `ports:` key: reachable only through the gateway, at /api/orders.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8083/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+
+  # ---- Chat service, its database, dedicated Redis and media volume ---
+  chat-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${CHAT_DB_USER:-chat}
+      POSTGRES_PASSWORD: ${CHAT_DB_PASSWORD:-chat}
+      POSTGRES_DB: chat
+    volumes:
+      - chat-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CHAT_DB_USER:-chat} -d chat"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  chat-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - chat-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  chat-service:
+    build:
+      context: ./chat-service
+      dockerfile: Dockerfile
+    depends_on:
+      chat-db:
+        condition: service_healthy
+      chat-redis:
+        condition: service_healthy
+    environment:
+      PORT: 8085
+      CHAT_DB_URL: postgres://${CHAT_DB_USER:-chat}:${CHAT_DB_PASSWORD:-chat}@chat-db:5432/chat?sslmode=disable
+      CHAT_REDIS_URL: redis://chat-redis:6379
+      AUTH_REDIS_URL: redis://redis:6379
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      RABBITMQ_URL: amqp://foc:foc-dev-password@rabbitmq:5672/foc
+      MEDIA_STORAGE_PATH: /var/lib/foc/chat-media
+    volumes:
+      - chat-media-data:/var/lib/foc/chat-media
+    restart: on-failure
+    stop_grace_period: 25s
+    # No `ports:` key: reachable only through the gateway, at /api/chat.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8085/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+  # ---- Observability (opt-in) -------------------------------------------
+  # Started only with `docker compose --profile observability up`; config is
+  # in observability/. Alloy reads every container's log through the Docker
+  # socket and sends it to Loki, and probes each health endpoint for
+  # Prometheus. Grafana shows both.
+  loki:
+    image: grafana/loki:3.7.9
+    profiles: [observability]
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./observability/loki/config.yaml:/etc/loki/config.yaml:ro
+      - loki-data:/loki
+    # Loopback only, for the e2e suite's log check. The image has no shell or
+    # HTTP client, so it has no healthcheck; Alloy probes its /ready.
+    ports:
+      - "127.0.0.1:${LOKI_PORT:-3100}:3100"
+
+  alloy:
+    image: grafana/alloy:v1.21.3
+    profiles: [observability]
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    environment:
+      # Alloy collects only the containers of this Compose project.
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME}
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    # Time to finish sending what it holds to Loki before Docker kills it.
+    stop_grace_period: 30s
+    healthcheck:
+      # The image has bash but neither wget nor curl.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/12345 && printf 'GET /-/ready HTTP/1.0\\r\\n\\r\\n' >&3 && head -n 1 <&3 | grep -q ' 200 '"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    profiles: [observability]
+    # Alloy remote-writes the health probe results here.
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  grafana:
+    image: grafana/grafana:13.3.0
+    profiles: [observability]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/foc-overview.json
+    volumes:
+      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana/provisioning/alerting:/etc/grafana/provisioning/alerting:ro
+      - ./observability/grafana/dashboards:/etc/grafana/dashboards:ro
+    # Loopback only.
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ---- Notification service and its database ---------------------------
+  notification-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${NOTIFICATION_DB_USER:-notification}
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-notification}
+      POSTGRES_DB: notifications
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NOTIFICATION_DB_USER:-notification} -d notifications"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # An add-on (D-140): nothing depends on it, and its only dependency is its
+  # own database. It connects to the broker by itself and keeps retrying.
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    depends_on:
+      notification-db:
+        condition: service_healthy
+    environment:
+      PORT: 8086
+      NOTIFICATION_DB_URL: postgres://${NOTIFICATION_DB_USER:-notification}:${NOTIFICATION_DB_PASSWORD:-notification}@notification-db:5432/notifications?sslmode=disable
+      RABBITMQ_URL: amqp://foc:foc-dev-password@rabbitmq:5672/foc
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      REDIS_URL: redis://redis:6379
+      # C, stated in the delivered notification; the same value order-service uses.
+      ORDER_CONFIRMATION_WINDOW: ${ORDER_CONFIRMATION_WINDOW:-24h}
+    restart: on-failure
+    # Above cmd/api's 20s shutdown budget.
+    stop_grace_period: 25s
+    # No `ports:` key: reachable only through the gateway, at /api/notifications.
+    # AI-generated (edited by nigeltzy): the same healthcheck as the other app
+    # services (D-134).
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8086/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+volumes:
+  user-db-data:
+  user-ranking-db-data:
+  redis-data:
+  supplier-db-data:
+  rabbitmq-data:
+  order-db-data:
+  credit-db-data:
+  chat-db-data:
+  chat-redis-data:
+  chat-media-data:
+  notification-db-data:
+  loki-data:
+  alloy-data:

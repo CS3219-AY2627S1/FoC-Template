@@ -1,0 +1,65 @@
+// AI Assistance Disclosure:
+// Tool: Codex (GPT-5), date: 2026-09-21
+// Scope: Added route registration that constructs the grouped HTTP handlers from their dependencies.
+// Author review: COMPLETED BY ZI YANG
+
+// Package routes assembles endpoint handlers into the user-service HTTP route tree.
+package routes
+
+import (
+	"log/slog"
+
+	"foc/user-service/internal/httpapi/handlers"
+
+	"github.com/go-chi/chi/v5"
+)
+
+// Dependencies contains the grouped handler dependencies required to register routes.
+type Dependencies struct {
+	Auth              handlers.AuthDependencies
+	Profile           handlers.ProfileDependencies
+	Admin             handlers.AdminDependencies
+	System            handlers.SystemDependencies
+	TokenVerifier     handlers.TokenVerifier
+	RevocationChecker handlers.RevocationChecker
+	// Logger receives every request's access line and any panic report.
+	Logger *slog.Logger
+
+	// AI-generated (edited by nigeltzy): the ranking-model store (D-095, D-099).
+	Ranking handlers.RankingDependencies
+}
+
+// GetRoutes constructs grouped handlers and returns their route-registration function.
+func GetRoutes(deps Dependencies) func(chi.Router) {
+	authHandler := handlers.NewAuthHandler(deps.Auth)
+	profileHandler := handlers.NewProfileHandler(deps.Profile)
+	adminHandler := handlers.NewAdminHandler(deps.Admin)
+	systemHandler := handlers.NewSystemHandler(deps.System)
+	rankingHandler := handlers.NewRankingHandler(deps.Ranking)
+
+	return func(router chi.Router) {
+		router.Get("/.well-known/jwks.json", systemHandler.JWKS)
+		router.Route("/api/v1", func(router chi.Router) {
+			router.Get("/health", systemHandler.Health)
+			router.Post("/users/register", authHandler.Register)
+			router.Post("/users/resend-otp", authHandler.ResendOTP)
+			router.Post("/users/verify-otp", authHandler.VerifyOTP)
+			router.Post("/users/login", authHandler.Login)
+			router.Post("/users/refresh", authHandler.Refresh)
+			router.Post("/users/logout", authHandler.Logout)
+			// The admin list and audit log are literal paths, which chi matches
+			// before /users/{uid}.
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Get("/users", adminHandler.ListUsers)
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Get("/users/audit-log", adminHandler.AuditLog)
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Get("/users/{uid}", profileHandler.Profile)
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Put("/users/{uid}", profileHandler.UpdateProfile)
+			// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — register the
+			// approved role-change route. Author review: ZI YANG - reviewed and verified.
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Patch("/users/{uid}/role", adminHandler.UpdateRole)
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Patch("/users/{uid}/status", profileHandler.UpdateStatus)
+			// AI-generated (edited by nigeltzy): each user's own ranking model (D-095, D-099).
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Get("/users/{uid}/ranking-model", rankingHandler.Get)
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Put("/users/{uid}/ranking-model", rankingHandler.Put)
+		})
+	}
+}

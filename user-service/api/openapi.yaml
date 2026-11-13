@@ -1,0 +1,1131 @@
+# AI-generated (edited by ZI YANG): the owner-recorded API contract requires OpenAPI 3.1.0.
+openapi: 3.1.0
+info:
+  title: CampusRun User Service API
+  version: 1.0.0
+  description: The identity authority for the CampusRun platform.
+
+servers:
+  - url: http://localhost:8081
+    description: Local development server
+
+components:
+  parameters:
+    Limit:
+      in: query
+      name: limit
+      description: Rows a page holds; at most 50, which is also the default.
+      schema: {type: integer, minimum: 1, maximum: 50}
+    Offset:
+      in: query
+      name: offset
+      description: Rows to skip, for "page 3 of N".
+      schema: {type: integer, minimum: 0}
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, username, password]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Must be a valid email address ending in `@u.nus.edu`.
+        # AI-generated (edited by ZI YANG): recorded username policy constraints.
+        username:
+          type: string
+          maxLength: 128
+          description: Must contain only alphanumeric characters.
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          description: Must contain at least one uppercase letter, one lowercase letter, and one digit.
+
+    NewOtpRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Must be a valid email address ending in `@u.nus.edu`.
+
+    VerifyOtpRequest:
+      type: object
+      required: [email, otp]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Must be a valid email address ending in `@u.nus.edu`.
+        otp:
+          type: string
+          description: Must be a valid 6 digit OTP.
+
+    LoginRequest:
+      type: object
+      required: [identifier, password]
+      properties:
+        identifier:
+          type: string
+          description: Can be either email or username
+        password:
+          type: string
+          format: password
+
+    AuthResponse:
+      type: object
+      required: [accessToken, refreshToken]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    LogoutRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    UserResponse:
+      type: object
+      properties:
+        uid:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+        phone_num:
+          type: string
+        account_role:
+          type: string
+          enum: [STUDENT, ADMIN]
+        account_status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, UNVERIFIED]
+        date_created:
+          type: string
+          format: date-time
+
+    # AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — documents the
+    # restricted profile response generated from the current handler behavior.
+    # Author review: ZI YANG - validated correctness
+    RestrictedUserResponse:
+      type: object
+      additionalProperties: false
+      required: [uid, username, email, phone_num]
+      properties:
+        uid:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+        phone_num:
+          type: string
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          maxLength: 128
+          description: Must contain only alphanumeric characters.
+        currentPassword:
+          type: string
+          format: password
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          description: Must contain at least one uppercase letter, one lowercase letter, and one digit.
+        phone_num:
+          type: string
+          maxLength: 20
+
+    # AI Assistance Disclosure: Claude Code (Sonnet 5.5), 2026-11-03 — D-104,
+    # D-110, D-113, D-122: the admin account list and audit log.
+    UserListItem:
+      type: object
+      additionalProperties: false
+      required: [uid, username, email, phone_num, account_role, account_status, date_created, last_login_date]
+      properties:
+        uid: {type: string, format: uuid}
+        username: {type: string}
+        email: {type: string}
+        phone_num: {type: string}
+        account_role: {type: string, enum: [STUDENT, ADMIN]}
+        account_status: {type: string, enum: [ACTIVE, SUSPENDED, UNVERIFIED]}
+        date_created: {type: string, format: date-time}
+        last_login_date: {type: [string, 'null'], format: date-time}
+
+    UserPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserListItem'
+        total: {type: integer}
+        limit: {type: integer, maximum: 50}
+        offset: {type: integer}
+
+    AuditEntry:
+      type: object
+      additionalProperties: false
+      required: [id, occurred_at, actor_id, actor_role, action, target_type, target_id, outcome,
+                 refusal_reason, reason, before_state, after_state, additional_comments, correlation_id]
+      properties:
+        id: {type: string, format: uuid}
+        occurred_at: {type: string, format: date-time}
+        actor_id: {type: string, format: uuid}
+        actor_role: {type: string}
+        action: {type: string}
+        target_type: {type: string}
+        target_id: {type: string}
+        outcome: {type: string, enum: [succeeded, refused, failed]}
+        refusal_reason: {type: string}
+        reason: {type: string}
+        before_state: {type: [object, 'null']}
+        after_state: {type: [object, 'null']}
+        additional_comments: {type: [object, 'null']}
+        correlation_id: {type: string}
+
+    AuditPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEntry'
+        total: {type: integer}
+        limit: {type: integer, maximum: 50}
+        offset: {type: integer}
+
+    # AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — approved
+    # administrator role-change body. Author review: ZI YANG - reviewed and verified.
+    UpdateRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [STUDENT, ADMIN]
+
+    UpdateStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED]
+
+    # AI-generated (edited by nigeltzy): the ranking-model bodies (D-095, D-099).
+    RankingModelRequest:
+      type: object
+      required: [model, trained_at]
+      properties:
+        model:
+          type: object
+          description: The model as order-service builds it; user-service keeps it without reading it.
+        trained_at:
+          type: string
+          format: date-time
+    RankingModelResponse:
+      type: object
+      required: [user_id, model, trained_at, updated_at]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        model:
+          type: object
+        trained_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ErrorResponse:
+      type: object
+      # AI-generated (edited by ZI YANG): the recorded error contract always includes an error string.
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, unhealthy]
+
+    JWKSResponse:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            required: [kty, use, alg, kid, n, e]
+            properties:
+              kty:
+                type: string
+              use:
+                type: string
+              alg:
+                type: string
+              kid:
+                type: string
+              n:
+                type: string
+              e:
+                type: string
+
+paths:
+  /api/v1/health:
+    get:
+      summary: Health check
+      # AI-generated (edited by ZI YANG): health is an unauthenticated endpoint under the recorded global API rule.
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/users/register:
+    post:
+      summary: Register a new user and send OTP via email
+      # AI-generated (edited by ZI YANG): registration has no authentication middleware.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User created successfully (but awaiting email verification) with an empty response body.
+        '400':
+          description: Invalid email, missing credentials, or password policy violation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email or username already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many OTP requests for registration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Registration unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: registration unavailable
+
+  /api/v1/users/resend-otp:
+    post:
+      summary: Resend a new OTP via email to a registered but still unverified user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewOtpRequest'
+      responses:
+        '200':
+          description: New OTP sent successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+              example: {}
+        '400':
+          description: Invalid email violation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Unknown email.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          # AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents issue #31's ACTIVE/SUSPENDED conflict.
+          description: The account is not awaiting verification (ACTIVE or SUSPENDED).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many requests to resend OTP.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/verify-otp:
+    post:
+      summary: Verifies OTP via email tied to an unverified user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyOtpRequest'
+      responses:
+        '200':
+          description: Email verification successful.
+          content:
+            application/json:
+              schema:
+                type: object
+              example: {}
+        '400':
+          description: Invalid email/OTP violation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: OTP expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict. Account is already verified.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: >-
+            Too many OTP requests for this email, or the current code already
+            had 5 wrong guesses. The attempt after the fifth wrong guess
+            discards the code, so the user must request a new one.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/login:
+    post:
+      summary: Authenticate user
+      # AI-generated (edited by ZI YANG): login is public even when a global security requirement is introduced later.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Account suspended or unverified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/refresh:
+    post:
+      summary: Refresh access token
+      # AI-generated (edited by ZI YANG): refresh has no authentication middleware.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Tokens refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Unauthorized (Token invalid, expired, or ErrSessionCompromised)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Invalid request body or missing refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        # AI-generated (edited by ZI YANG): documents the owner-recorded concurrent-refresh and Redis-lock outcomes.
+        '429':
+          description: A refresh for this credential is already being processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error (e.g., Redis refresh-lock failure)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/logout:
+    post:
+      summary: Terminate session
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+      responses:
+        '204':
+          description: Session terminated successfully
+        '400':
+          description: Invalid request body, missing refresh token, or mismatched session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized. The access token is missing, malformed, or cryptographically invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error (e.g., Redis invalidation failure)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # AI Assistance Disclosure: Claude Code (Sonnet 5.5), 2026-11-03 — the admin
+  # dashboard's account list and audit log (D-110, D-121 to D-123). The shapes are
+  # proposed in ai/decisions/admin-dashboard-design.md.
+  /api/v1/users:
+    get:
+      summary: Search and list accounts (ADMIN only)
+      description: >-
+        Accounts whose username or email contains `q` anywhere, ignoring case
+        (D-123), optionally one `status` (D-121), sorted by username and paged,
+        at most 50 a page (D-104). `q` is matched literally.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: q
+          schema: {type: string, maxLength: 255}
+        - in: query
+          name: status
+          schema: {type: string, enum: [ACTIVE, SUSPENDED, UNVERIFIED]}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: One page of accounts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPage'
+        '400':
+          description: A query value that is not valid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required, including a revoked access token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Administrator access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/audit-log:
+    get:
+      summary: The admin audit log, newest first (ADMIN only)
+      description: >-
+        Every admin action on an account (suspend, reactivate, password reset,
+        profile edit) and every refused or failed attempt (D-106, D-109). Any admin
+        reads the whole log (D-110). Rows are immutable and kept 6 months (D-114).
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: action
+          # AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — include
+          # approved role changes in audit filters. Author review: ZI YANG - reviewed and verified.
+          schema: {type: string, enum: [account.suspend, account.reactivate, account.password_reset, account.update, account.change_role]}
+        - in: query
+          name: outcome
+          schema: {type: string, enum: [succeeded, refused, failed]}
+        - in: query
+          name: actor_id
+          schema: {type: string}
+        - in: query
+          name: target_id
+          schema: {type: string}
+        - in: query
+          name: from
+          description: RFC 3339 time or YYYY-MM-DD; inclusive.
+          schema: {type: string}
+        - in: query
+          name: to
+          description: RFC 3339 time or YYYY-MM-DD; exclusive.
+          schema: {type: string}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: One page of audit rows.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditPage'
+        '400':
+          description: A query value that is not valid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required, including a revoked access token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Administrator access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/{uid}:
+    get:
+      summary: Fetch profile data
+      description: >
+        Authenticated ADMIN callers receive full user details. Other
+        authenticated callers receive only uid, username, email, and phone_num.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: uid
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              # AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 —
+              # documents the handler-selected full or restricted profile body.
+              # Author review: ZI YANG - validated correctness
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/UserResponse'
+                  - $ref: '#/components/schemas/RestrictedUserResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required, including a revoked access token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error, including unreadable Redis revocation keys.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update mutable profile fields
+      description: >
+        Updates the user's username, password, or phone number. Password changes
+        require currentPassword and newPassword unless an ADMIN resets another account.
+        Authorization: The verified Bearer token must identify the caller as the
+        target user or an ADMIN.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: uid
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Invalid request body or password policy violation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: The current password is incorrect or the access token has been revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden. The caller is not an ADMIN and is attempting to modify another user's profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict. The requested username is already taken.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error, including unreadable Redis revocation keys.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/{uid}/status:
+    patch:
+      summary: Suspend or reactivate user (ADMIN only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: uid
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStatusRequest'
+      responses:
+        '200':
+          description: Status updated with an empty response body.
+        '400':
+          description: Invalid request body, account status, or user ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required, including a revoked access token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          # AI Assistance Disclosure: Claude Code (Sonnet 5.5), 2026-11-03 — records D-118 and D-119.
+          description: >-
+            Administrator access required, or the target is an administrator
+            account ("an admin account cannot be suspended"), or it is the caller's
+            own account ("you cannot suspend your own account"). No admin account
+            is suspended through the API (D-118, D-119). The refusal is recorded in
+            the audit log.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          # AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — records D-078's second conflict case.
+          description: Conflict. The last active administrator cannot be suspended, or the account has not verified its email yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error, including unreadable Redis revocation keys.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # AI-generated (edited by nigeltzy): each user's errand-ranking model, which
+  # order-service saves and loads with the courier's own token (D-095, D-099, D-100).
+  /api/v1/users/{uid}/ranking-model:
+    parameters:
+      - in: path
+        name: uid
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: The caller's own errand-ranking model
+      description: |
+        Kept for order-service as an opaque JSON object in a database separate
+        from the users database. A user may read only their own.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: The saved model
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RankingModelResponse'
+        '400':
+          description: The user ID is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required, including a revoked access token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller asked for another user's model.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: The user has no saved model yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error, including unreadable Redis revocation keys.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Save the caller's own errand-ranking model, replacing the last one
+      description: |
+        The body is held to the recorded 10 KiB limit; order-service keeps each
+        model under it (D-100). A user may save only their own.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RankingModelRequest'
+      responses:
+        '200':
+          description: The model as saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RankingModelResponse'
+        '400':
+          description: Malformed user ID, a missing model or trained_at, or a model that is not a JSON object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required, including a revoked access token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller tried to save another user's model.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error, including unreadable Redis revocation keys.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — approved
+  # role-change endpoint and failures. Author review: ZI YANG - reviewed and verified.
+  /api/v1/users/{uid}/role:
+    patch:
+      summary: Promote or demote another user (active ADMIN only)
+      description: >-
+        Only ACTIVE students can be promoted. An active administrator cannot
+        demote themselves. At least one ACTIVE ADMIN must remain. Concurrent
+        changes are serialized. A changed role invalidates the target's access
+        and refresh tokens; the target signs in again. Changes and their audit
+        entry commit together; refused or failed domain attempts are audited.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: uid
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRoleRequest'
+      responses:
+        '204':
+          description: Role updated, or already assigned. Empty response body.
+        '400':
+          description: Invalid user ID, JSON body, or account role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing, invalid, expired or revoked authentication.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an ACTIVE ADMIN, or is attempting self-demotion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Target account not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Cannot demote the last active admin, or promote an inactive student.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal failure, including Redis, database or audit persistence failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /.well-known/jwks.json:
+    get:
+      summary: Retrieve standard JSON Web Key Set
+      # AI-generated (edited by ZI YANG): JWKS has no authentication middleware.
+      security: []
+      responses:
+        '200':
+          description: JWKS payload containing active and retired public keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JWKSResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

@@ -1,0 +1,122 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Opus 5), date: 2026-09-19
+// Scope: Config plumbing for the gateway — reads env once, returns a struct.
+//   Reworked for D-023 (RS256/JWKS replaces the symmetric secret) and D-024
+//   (the gateway is not a Redis client, so RedisURL is gone).
+//   2026-09-22: RefreshTokenTTL added — the gateway now owns the refresh
+//   token's cookie and needs its Max-Age — and StaticDir, the built
+//   frontend it serves so the browser is same-origin.
+// Author review: Nigeltzy - Checked the output of this implementation code and the AI is confirmed to have generated a valid config.
+// and filled in the config as per standard procedure.
+
+// Package config reads the gateway's environment once at startup and returns a
+// Config. Nothing else in the service reads os.Getenv.
+package config
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"sort"
+	"strings"
+	"time"
+)
+
+// Config is the gateway's runtime configuration, as returned by Load.
+type Config struct {
+	// Port is the port the gateway listens on (PORT).
+	Port string
+
+	// JWKSURL is user-service's JWKS endpoint, from which the gateway fetches the
+	// RSA public keys it verifies access tokens with (JWKS_URL).
+	JWKSURL string
+
+	// RedisURL is the Redis user-service writes the access-token revocation
+	// keys to (REDIS_URL, D-054). It can carry a password, so it never goes
+	// into an error message or a log line.
+	RedisURL string
+
+	// RefreshTokenTTL is the Max-Age of the refresh-token cookie
+	// (REFRESH_TOKEN_TTL). It must equal user-service's JWT_REFRESH_TOKEN_TTL:
+	// shorter logs users out early, longer leaves a cookie the refresh call rejects.
+	RefreshTokenTTL time.Duration
+
+	// Downstream holds the base URL of each service the gateway forwards to.
+	Downstream Downstream
+}
+
+// Downstream is the set of services the gateway forwards to, one base URL each,
+// read from <SERVICE>_BASE_URL. Adding a service means a field here, its
+// variable in Load, and a row in httpapi's serviceRoutes.
+type Downstream struct {
+	User     string
+	Supplier string
+	Order    string
+	Credit   string
+	Chat     string
+	// AI-generated (edited by nigeltzy).
+	Notification string
+}
+
+// Load reads the environment and returns an error naming every required
+// variable that is unset or blank, a REFRESH_TOKEN_TTL that is not a Go
+// duration, or a REDIS_URL that is not redis:// or rediss://. There are no
+// defaults: every variable is required.
+func Load() (Config, error) {
+	rawTTL := os.Getenv("REFRESH_TOKEN_TTL")
+	ttl, err := time.ParseDuration(rawTTL)
+	if rawTTL != "" && err != nil {
+		return Config{}, fmt.Errorf("config: REFRESH_TOKEN_TTL %q is not a duration: %w", rawTTL, err)
+	}
+
+	cfg := Config{
+		Port:            os.Getenv("PORT"),
+		JWKSURL:         os.Getenv("JWKS_URL"),
+		RedisURL:        os.Getenv("REDIS_URL"),
+		RefreshTokenTTL: ttl,
+		Downstream: Downstream{
+			User:     os.Getenv("USER_BASE_URL"),
+			Supplier: os.Getenv("SUPPLIER_BASE_URL"),
+			Order:    os.Getenv("ORDER_BASE_URL"),
+			Credit:   os.Getenv("CREDIT_BASE_URL"),
+			Chat:     os.Getenv("CHAT_BASE_URL"),
+			// AI-generated (edited by nigeltzy).
+			Notification: os.Getenv("NOTIFICATION_BASE_URL"),
+		},
+	}
+
+	required := map[string]string{
+		"PORT":              cfg.Port,
+		"JWKS_URL":          cfg.JWKSURL,
+		"REDIS_URL":         cfg.RedisURL,
+		"USER_BASE_URL":     cfg.Downstream.User,
+		"SUPPLIER_BASE_URL": cfg.Downstream.Supplier,
+		"ORDER_BASE_URL":    cfg.Downstream.Order,
+		"CREDIT_BASE_URL":   cfg.Downstream.Credit,
+		"CHAT_BASE_URL":     cfg.Downstream.Chat,
+		// AI-generated (edited by nigeltzy).
+		"NOTIFICATION_BASE_URL": cfg.Downstream.Notification,
+		"REFRESH_TOKEN_TTL":     rawTTL,
+	}
+
+	var missing []string
+	for name, value := range required {
+		if strings.TrimSpace(value) == "" {
+			missing = append(missing, name)
+		}
+	}
+	// Sorted because Go randomises map iteration order: without this the
+	// error text varies run to run, which makes it untestable.
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		return Config{}, fmt.Errorf("config: required environment variables not set: %s", strings.Join(missing, ", "))
+	}
+
+	// The scheme is checked by prefix, never by echoing the value: the URL can
+	// carry a password.
+	if !strings.HasPrefix(cfg.RedisURL, "redis://") && !strings.HasPrefix(cfg.RedisURL, "rediss://") {
+		return Config{}, errors.New("config: REDIS_URL must start with redis:// or rediss://")
+	}
+
+	return cfg, nil
+}

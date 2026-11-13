@@ -1,0 +1,698 @@
+//go:build integration
+
+// AI Assistance Disclosure:
+// Tool: Antigravity, date: 2026-11-03
+// Scope: Updated integration tests for 3-table schema: verified lazy wallet init on payout, ledger-backed adjustment idempotency, and removed pending tables.
+// Author review: Reviewed by Seth
+
+package repository_test
+
+import (
+	"context"
+	"net"
+	"testing"
+	"time"
+
+	"foc/credit-service/internal/credit"
+	"foc/credit-service/internal/repository"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
+)
+
+type testEnv struct {
+	pool *pgxpool.Pool
+	repo *repository.PostgresRepository
+}
+
+func setupTestEnv(t *testing.T) *testEnv {
+	t.Helper()
+	ctx := context.Background()
+
+	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:        "postgres:16-alpine",
+			ExposedPorts: []string{"5432/tcp"},
+			Env: map[string]string{
+				"POSTGRES_DB":       "credit_test",
+				"POSTGRES_USER":     "credit",
+				"POSTGRES_PASSWORD": "secretpassword",
+			},
+			WaitingFor: wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(time.Minute),
+		},
+		Started: true,
+	})
+	require.NoError(t, err, "start PostgreSQL container")
+	t.Cleanup(func() {
+		_ = testcontainers.TerminateContainer(container)
+	})
+
+	host, err := container.Host(ctx)
+	require.NoError(t, err)
+	port, err := container.MappedPort(ctx, "5432/tcp")
+	require.NoError(t, err)
+
+	dbURL := "postgres://credit:secretpassword@" + net.JoinHostPort(host, port.Port()) + "/credit_test?sslmode=disable"
+
+	err = repository.Apply(dbURL, "file://../../migrations")
+	require.NoError(t, err, "apply migrations")
+
+	ver, dirty, err := repository.GetSchemaVersion(dbURL, "file://../../migrations")
+	require.NoError(t, err)
+	require.False(t, dirty)
+	require.Equal(t, repository.ExpectedSchemaVersion, ver)
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	require.NoError(t, err, "create pgxpool")
+	t.Cleanup(pool.Close)
+
+	repo := repository.NewPostgresRepository(pool)
+	return &testEnv{pool: pool, repo: repo}
+}
+
+func TestPostgresRepository_Integration(t *testing.T) {
+	env := setupTestEnv(t)
+	ctx := context.Background()
+
+	t.Run("AllocateInitialCredits creates wallet and is idempotent", func(t *testing.T) {
+		userID := uuid.New()
+		now := time.Now().UTC()
+
+		// 1. Initial allocation creates account with 100 available credits
+		err := env.repo.AllocateInitialCredits(ctx, userID, 100, now)
+		require.NoError(t, err)
+
+		acc, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, userID, acc.UserID)
+		require.Equal(t, int64(100), acc.AvailableCredits)
+		require.Equal(t, int64(0), acc.ReservedCredits)
+		require.Equal(t, credit.IntegrityConsistent, acc.IntegrityStatus)
+
+		// 2. Duplicate allocation is an idempotent no-op
+		err = env.repo.AllocateInitialCredits(ctx, userID, 100, now)
+		require.NoError(t, err)
+
+		acc2, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(100), acc2.AvailableCredits)
+
+		// Verify exactly 1 ledger row exists
+		var txCount int
+		require.NoError(t, env.pool.QueryRow(ctx, "SELECT COUNT(*) FROM credit_transactions WHERE user_id = $1", userID).Scan(&txCount))
+		require.Equal(t, 1, txCount)
+	})
+
+	t.Run("CreateReservation locks balance and enforces idempotency", func(t *testing.T) {
+		userID := uuid.New()
+		errandID := uuid.New()
+		now := time.Now().UTC()
+
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, userID, 100, now))
+
+		// 1. Create reservation of 50 credits
+		res, created, err := env.repo.CreateReservation(ctx, errandID, userID, 50)
+		require.NoError(t, err)
+		require.True(t, created)
+		require.Equal(t, errandID, res.ErrandID)
+		require.Equal(t, userID, res.RequesterID)
+		require.Equal(t, int64(50), res.Amount)
+		require.Equal(t, credit.ReservationStatusReserved, res.Status)
+
+		acc, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(50), acc.AvailableCredits)
+		require.Equal(t, int64(50), acc.ReservedCredits)
+
+		// 2. Idempotent repeat returns existing reservation
+		res2, created2, err := env.repo.CreateReservation(ctx, errandID, userID, 50)
+		require.NoError(t, err)
+		require.False(t, created2)
+		require.Equal(t, res.ID, res2.ID)
+
+		// 3. Duplicate errandId with different amount or requester returns conflict
+		_, _, err = env.repo.CreateReservation(ctx, errandID, userID, 60)
+		require.ErrorIs(t, err, credit.ErrReservationConflict)
+		_, _, err = env.repo.CreateReservation(ctx, errandID, uuid.New(), 50)
+		require.ErrorIs(t, err, credit.ErrReservationConflict)
+
+		// Terminal reservation returns ErrReservationStateConflict on create attempt
+		terminalErrand := uuid.New()
+		_, _, err = env.repo.CreateReservation(ctx, terminalErrand, userID, 10)
+		require.NoError(t, err)
+		require.NoError(t, env.repo.RefundReservation(ctx, terminalErrand, &userID, uuid.New(), credit.TransactionReasonErrandCancelled, time.Now().UTC()))
+		_, _, err = env.repo.CreateReservation(ctx, terminalErrand, userID, 10)
+		require.ErrorIs(t, err, credit.ErrReservationStateConflict)
+
+		// 4. Insufficient credits fails
+		errand2 := uuid.New()
+		_, _, err = env.repo.CreateReservation(ctx, errand2, userID, 60)
+		require.ErrorIs(t, err, credit.ErrInsufficientCredits)
+	})
+
+	t.Run("AdjustReservationReward increases and decreases holds", func(t *testing.T) {
+		userID := uuid.New()
+		errandID := uuid.New()
+		now := time.Now().UTC()
+
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, userID, 100, now))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, userID, 40)
+		require.NoError(t, err)
+
+		// 1. Increase reward: 40 -> 60 (requires 20 extra credits)
+		op1 := uuid.New()
+		_, res, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 1, op1)
+		require.NoError(t, err)
+		require.Equal(t, int64(60), res.Amount)
+		require.Equal(t, int64(2), res.Version)
+
+		acc, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(40), acc.AvailableCredits)
+		require.Equal(t, int64(60), acc.ReservedCredits)
+
+		// Repeated adjustment with same op1 is idempotent
+		_, resRetry, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 1, op1)
+		require.NoError(t, err)
+		require.Equal(t, res.Amount, resRetry.Amount)
+
+		// Reusing op1 for a different version is an idempotency conflict
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 2, op1)
+		require.ErrorIs(t, err, credit.ErrIdempotencyConflict)
+
+		// 2. Decrease reward: 60 -> 25 (releases 35 credits back to available)
+		op2 := uuid.New()
+		_, res2, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 25, 2, op2)
+		require.NoError(t, err)
+		require.Equal(t, int64(25), res2.Amount)
+		require.Equal(t, int64(3), res2.Version)
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 20, 1, uuid.New())
+		require.ErrorIs(t, err, credit.ErrReservationConflict)
+
+		acc2, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(75), acc2.AvailableCredits)
+		require.Equal(t, int64(25), acc2.ReservedCredits)
+
+		// A later amendment may legitimately reuse an earlier target, but must use a new operation ID.
+		op3 := uuid.New()
+		_, res3, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 3, op3)
+		require.NoError(t, err)
+		require.Equal(t, int64(60), res3.Amount)
+		require.Equal(t, int64(4), res3.Version)
+		acc3, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(40), acc3.AvailableCredits)
+		require.Equal(t, int64(60), acc3.ReservedCredits)
+
+		// 3. Unowned reservation returns ErrReservationNotFound
+		otherUser := uuid.New()
+		op4 := uuid.New()
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, otherUser, 30, 1, op4)
+		require.ErrorIs(t, err, credit.ErrReservationNotFound)
+
+		// 4. Terminal reservation returns ErrReservationStateConflict
+		terminalErrand := uuid.New()
+		_, _, err = env.repo.CreateReservation(ctx, terminalErrand, userID, 10)
+		require.NoError(t, err)
+		require.NoError(t, env.repo.RefundReservation(ctx, terminalErrand, &userID, uuid.New(), credit.TransactionReasonErrandCancelled, time.Now().UTC()))
+		_, _, err = env.repo.AdjustReservationReward(ctx, terminalErrand, userID, 20, 1, uuid.New())
+		require.ErrorIs(t, err, credit.ErrReservationStateConflict)
+	})
+
+	t.Run("AdjustReservationReward rejects insufficient credits without persisting error", func(t *testing.T) {
+		userID := uuid.New()
+		errandID := uuid.New()
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, userID, 100, time.Now().UTC()))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, userID, 90)
+		require.NoError(t, err)
+
+		opID := uuid.New()
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 110, 1, opID)
+		require.ErrorIs(t, err, credit.ErrInsufficientCredits)
+
+		var amount int64
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT amount FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&amount))
+		require.Equal(t, int64(90), amount)
+	})
+
+	t.Run("AdjustReservationReward rejects zero-delta adjustment as invalid request", func(t *testing.T) {
+		userID := uuid.New()
+		errandID := uuid.New()
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, userID, 100, time.Now().UTC()))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, userID, 50)
+		require.NoError(t, err)
+
+		opID := uuid.New()
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 50, 1, opID)
+		require.ErrorIs(t, err, credit.ErrInvalidRequest)
+
+		// Verify reservation version and amount remain completely untouched
+		var amount, version int64
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT amount, version FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&amount, &version))
+		require.Equal(t, int64(50), amount)
+		require.Equal(t, int64(1), version)
+
+		// Verify no transaction ledger row was inserted
+		var txCount int
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT COUNT(*) FROM credit_transactions WHERE operation_id = $1`, opID).Scan(&txCount))
+		require.Equal(t, 0, txCount)
+	})
+
+	t.Run("ApplyRewardSet releases only and ignores replayed PATCH operations", func(t *testing.T) {
+		userID, errandID := uuid.New(), uuid.New()
+		now := time.Now().UTC()
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, userID, 100, now))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, userID, 20)
+		require.NoError(t, err)
+
+		// An event cannot increase the secured amount, even with a newer version.
+		err = env.repo.ApplyRewardSet(ctx, errandID, &userID, uuid.New(), 30, 2, now)
+		require.ErrorIs(t, err, credit.ErrLifecycleViolation)
+		var heldAmount, heldVersion int64
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT amount, version FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&heldAmount, &heldVersion))
+		require.Equal(t, int64(20), heldAmount)
+		require.Equal(t, int64(1), heldVersion)
+
+		// A PATCH can raise the hold. Its matching event is a financial duplicate.
+		opID := uuid.New()
+		_, res, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 50, 1, opID)
+		require.NoError(t, err)
+		require.Equal(t, int64(2), res.Version)
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, &userID, opID, 50, 2, now))
+		acc, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(50), acc.ReservedCredits)
+
+		// A committed decrease releases the difference once. Older and duplicate
+		// versions are ignored without re-releasing credits.
+		decreaseEventID := uuid.New()
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, &userID, decreaseEventID, 15, 3, now))
+		accAfterDecrease, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(85), accAfterDecrease.AvailableCredits)
+		require.Equal(t, int64(15), accAfterDecrease.ReservedCredits)
+
+		// Duplicate event does not release again
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, &userID, decreaseEventID, 15, 3, now))
+		accAfterDup, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(85), accAfterDup.AvailableCredits)
+		require.Equal(t, int64(15), accAfterDup.ReservedCredits)
+
+		// Stale version (2 < 3) is rejected
+		require.ErrorIs(t, env.repo.ApplyRewardSet(ctx, errandID, &userID, uuid.New(), 10, 2, now), credit.ErrRewardSetStale)
+	})
+
+	t.Run("ApplyRewardSet forward recovery heals ghost holds and OCC rejects ghost arrivals", func(t *testing.T) {
+		userID := uuid.New()
+		errandID := uuid.New()
+		now := time.Now().UTC()
+
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, userID, 100, now))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, userID, 20)
+		require.NoError(t, err)
+
+		// 1. Legitimate raise: 20 -> 50 with currVersion 1
+		raiseOp := uuid.New()
+		_, res, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 50, 1, raiseOp)
+		require.NoError(t, err)
+		require.Equal(t, int64(50), res.Amount)
+		require.Equal(t, int64(2), res.Version)
+
+		acc, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(50), acc.AvailableCredits)
+		require.Equal(t, int64(50), acc.ReservedCredits)
+
+		// 2. OCC rejects stale request (currVersion 1 when stored is 2)
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 1, uuid.New())
+		require.ErrorIs(t, err, credit.ErrReservationConflict)
+
+		// 3. Forward recovery: Order Service timed out, kept reward at 20, advanced order to version 2,
+		// and sent errand.reward_set {amount: 20, version: 2}.
+		timeoutEventID := uuid.New()
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, &userID, timeoutEventID, 20, 2, now))
+
+		accHealed, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(80), accHealed.AvailableCredits)
+		require.Equal(t, int64(20), accHealed.ReservedCredits)
+
+		var (
+			healedAmt int64
+			healedVer int64
+		)
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT amount, version FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&healedAmt, &healedVer))
+		require.Equal(t, int64(20), healedAmt)
+		require.Equal(t, int64(2), healedVer)
+
+		// 4. Ghost Arrival: A lagging HTTP request (currVersion 1) arrives late.
+		// OCC immediately rejects it because Credit Service is at Version 2.
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 50, 1, uuid.New())
+		require.ErrorIs(t, err, credit.ErrReservationConflict)
+
+		// Balances and hold remain unchanged
+		accPostGhost, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(80), accPostGhost.AvailableCredits)
+		require.Equal(t, int64(20), accPostGhost.ReservedCredits)
+
+		// 5. Zero-Delta Forward Recovery: Suppose an errand is created at 20 (V1). An HTTP raise to 50
+		// died on the wire before reaching Credit Service. Order Service times out and emits
+		// errand.reward_set {amount: 20, version: 2}.
+		errandID2 := uuid.New()
+		_, _, err = env.repo.CreateReservation(ctx, errandID2, userID, 20)
+		require.NoError(t, err)
+
+		zeroDeltaEventID := uuid.New()
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID2, &userID, zeroDeltaEventID, 20, 2, now))
+
+		var zVer int64
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT version FROM credit_reservations WHERE errand_id = $1`, errandID2).Scan(&zVer))
+		require.Equal(t, int64(2), zVer)
+
+		// Lagging HTTP request for errandID2 with currVersion 1 is rejected by OCC
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID2, userID, 50, 1, uuid.New())
+		require.ErrorIs(t, err, credit.ErrReservationConflict)
+	})
+
+	t.Run("AdjustReservationReward allows raises after non-credit edits while rejecting stale requests", func(t *testing.T) {
+		userID := uuid.New()
+		errandID := uuid.New()
+		now := time.Now().UTC()
+
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, userID, 100, now))
+		res, _, err := env.repo.CreateReservation(ctx, errandID, userID, 20)
+		require.NoError(t, err)
+		require.Equal(t, int64(1), res.Version)
+
+		// 1. Raise after non-credit edits: order version advanced from 1 to 4 on errand edits without credit change.
+		// When raising reward to 40, order-service passes currVersion = 4 (currVersion > reservation.Version).
+		raiseOp := uuid.New()
+		_, resUpdated, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 40, 4, raiseOp)
+		require.NoError(t, err)
+		require.Equal(t, int64(40), resUpdated.Amount)
+		require.Equal(t, int64(5), resUpdated.Version) // targetVersion is currVersion + 1 = 5
+
+		acc, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(60), acc.AvailableCredits)
+		require.Equal(t, int64(40), acc.ReservedCredits)
+
+		// 2. Stale request from an older version (currVersion < reservation.Version) is rejected.
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 4, uuid.New())
+		require.ErrorIs(t, err, credit.ErrReservationConflict)
+
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 1, uuid.New())
+		require.ErrorIs(t, err, credit.ErrReservationConflict)
+
+		// 3. Subsequent raise after more non-credit edits: order version advanced to 7.
+		raiseOp2 := uuid.New()
+		_, resUpdated2, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 7, raiseOp2)
+		require.NoError(t, err)
+		require.Equal(t, int64(60), resUpdated2.Amount)
+		require.Equal(t, int64(8), resUpdated2.Version) // 7 + 1 = 8
+
+		acc2, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(40), acc2.AvailableCredits)
+		require.Equal(t, int64(60), acc2.ReservedCredits)
+	})
+
+	t.Run("RefundReservation settles cancelled and expired errands atomically", func(t *testing.T) {
+		requesterID := uuid.New()
+		errandID := uuid.New()
+		now := time.Now().UTC()
+
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, requesterID, 100, now))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, requesterID, 30)
+		require.NoError(t, err)
+
+		// Settle refund
+		eventID := uuid.New()
+		err = env.repo.RefundReservation(ctx, errandID, nil, eventID, credit.TransactionReasonErrandCancelled, now)
+		require.NoError(t, err)
+
+		acc, err := env.repo.GetAccount(ctx, requesterID)
+		require.NoError(t, err)
+		require.Equal(t, int64(100), acc.AvailableCredits)
+		require.Equal(t, int64(0), acc.ReservedCredits)
+
+		var status credit.ReservationStatus
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT status FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&status))
+		require.Equal(t, credit.ReservationStatusRefunded, status)
+
+		// Replaying same refund event is an idempotent no-op
+		err = env.repo.RefundReservation(ctx, errandID, nil, eventID, credit.TransactionReasonErrandCancelled, now)
+		require.NoError(t, err)
+
+		// Payout on a refunded reservation returns a lifecycle violation
+		courierID := uuid.New()
+		amount := int64(30)
+		err = env.repo.PayoutReservation(ctx, errandID, nil, courierID, uuid.New(), &amount, now)
+		require.ErrorIs(t, err, credit.ErrLifecycleViolation)
+	})
+
+	t.Run("PayoutReservation performs 2-step atomic lazy wallet init and settlement", func(t *testing.T) {
+		requesterID := uuid.New()
+		courierID := uuid.New() // courier wallet NOT pre-created!
+		errandID := uuid.New()
+		now := time.Now().UTC()
+
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, requesterID, 100, now))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, requesterID, 10)
+		require.NoError(t, err)
+
+		// Settle payout for 8 credits (with 2 credits surplus return to requester)
+		amount := int64(8)
+		eventID := uuid.New()
+		err = env.repo.PayoutReservation(ctx, errandID, nil, courierID, eventID, &amount, now)
+		require.NoError(t, err)
+
+		// Requester balance: 90 available before payout + 2 surplus returned = 92 available, 0 reserved
+		requester, err := env.repo.GetAccount(ctx, requesterID)
+		require.NoError(t, err)
+		require.Equal(t, int64(92), requester.AvailableCredits)
+		require.Zero(t, requester.ReservedCredits)
+
+		// Courier wallet was created on the fly with 100 starting credits + 8 earned = 108 available!
+		courier, err := env.repo.GetAccount(ctx, courierID)
+		require.NoError(t, err)
+		require.Equal(t, int64(108), courier.AvailableCredits)
+		require.Zero(t, courier.ReservedCredits)
+
+		var status credit.ReservationStatus
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT status FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&status))
+		require.Equal(t, credit.ReservationStatusPaidOut, status)
+
+		// When user.registered arrives later for this courier, it is an idempotent no-op
+		err = env.repo.AllocateInitialCredits(ctx, courierID, 100, now)
+		require.NoError(t, err)
+		courierAfterReg, err := env.repo.GetAccount(ctx, courierID)
+		require.NoError(t, err)
+		require.Equal(t, int64(108), courierAfterReg.AvailableCredits)
+
+		// Duplicate payout is an idempotent no-op
+		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, nil, courierID, eventID, &amount, now))
+
+		// Ledger audit: exactly 1 registration allocation for courier + 1 payout + 1 deduction + 1 surplus return
+		rows, err := env.pool.Query(ctx, `
+			SELECT user_id, balance_bucket, amount, reason FROM credit_transactions
+			WHERE operation_id = $1 ORDER BY balance_bucket, amount`, eventID)
+		require.NoError(t, err)
+		defer rows.Close()
+		var ledger []struct {
+			userID uuid.UUID
+			bucket string
+			amount int64
+			reason credit.TransactionReason
+		}
+		for rows.Next() {
+			var entry struct {
+				userID uuid.UUID
+				bucket string
+				amount int64
+				reason credit.TransactionReason
+			}
+			require.NoError(t, rows.Scan(&entry.userID, &entry.bucket, &entry.amount, &entry.reason))
+			ledger = append(ledger, entry)
+		}
+		require.NoError(t, rows.Err())
+		require.Len(t, ledger, 2)
+		require.Equal(t, courierID, ledger[0].userID)
+		require.Equal(t, int64(8), ledger[0].amount)
+		require.Equal(t, credit.TransactionReasonErrandCompletedPayout, ledger[0].reason)
+		require.Equal(t, requesterID, ledger[1].userID)
+		require.Equal(t, int64(-8), ledger[1].amount)
+		require.Equal(t, credit.TransactionReasonErrandCompletedDeduct, ledger[1].reason)
+
+		leftoverOpID := uuid.NewSHA1(eventID, []byte("reward_decreased"))
+		var leftoverCount int
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT COUNT(*) FROM credit_transactions WHERE operation_id = $1`, leftoverOpID).Scan(&leftoverCount))
+		require.Equal(t, 2, leftoverCount)
+
+		flagged, err := env.repo.ReconcileAccount(ctx, requesterID)
+		require.NoError(t, err)
+		require.False(t, flagged)
+	})
+
+	t.Run("settlements reject mismatched requesterId as requester mismatch", func(t *testing.T) {
+		requesterID, courierID, errandID := uuid.New(), uuid.New(), uuid.New()
+		now := time.Now().UTC()
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, requesterID, 100, now))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, requesterID, 20)
+		require.NoError(t, err)
+
+		wrongRequesterID := uuid.New()
+		amount := int64(20)
+		// Payout with wrong requesterId fails with ErrRequesterMismatch
+		err = env.repo.PayoutReservation(ctx, errandID, &wrongRequesterID, courierID, uuid.New(), &amount, now)
+		require.ErrorIs(t, err, credit.ErrRequesterMismatch)
+
+		// Refund with wrong requesterId fails with ErrRequesterMismatch
+		err = env.repo.RefundReservation(ctx, errandID, &wrongRequesterID, uuid.New(), credit.TransactionReasonErrandCancelled, now)
+		require.ErrorIs(t, err, credit.ErrRequesterMismatch)
+
+		// ApplyRewardSet with wrong requesterId fails with ErrRequesterMismatch
+		err = env.repo.ApplyRewardSet(ctx, errandID, &wrongRequesterID, uuid.New(), 15, 2, now)
+		require.ErrorIs(t, err, credit.ErrRequesterMismatch)
+
+		// Refund with correct requesterId succeeds
+		err = env.repo.RefundReservation(ctx, errandID, &requesterID, uuid.New(), credit.TransactionReasonErrandCancelled, now)
+		require.NoError(t, err)
+	})
+
+	t.Run("GetAccount and ListTransactions return virtual default 100 credits without database writes", func(t *testing.T) {
+		userID := uuid.New()
+		acc, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, userID, acc.UserID)
+		require.Equal(t, int64(100), acc.AvailableCredits)
+		require.Equal(t, int64(0), acc.ReservedCredits)
+
+		// Transaction history reflects virtual genesis allocation consistently
+		txList, err := env.repo.ListTransactions(ctx, userID, 20, nil)
+		require.NoError(t, err)
+		require.Len(t, txList.Items, 1)
+		require.Equal(t, credit.TransactionReasonRegistrationAllocation, txList.Items[0].Reason)
+		require.Equal(t, int64(100), txList.Items[0].AvailableDelta)
+		require.Equal(t, int64(0), txList.Items[0].ReservedDelta)
+
+		// Assert read-only: zero rows written to credit_accounts or credit_transactions
+		var accCount, txCount int
+		require.NoError(t, env.pool.QueryRow(ctx, "SELECT COUNT(*) FROM credit_accounts WHERE user_id = $1", userID).Scan(&accCount))
+		require.Equal(t, 0, accCount)
+		require.NoError(t, env.pool.QueryRow(ctx, "SELECT COUNT(*) FROM credit_transactions WHERE user_id = $1", userID).Scan(&txCount))
+		require.Equal(t, 0, txCount)
+	})
+
+	t.Run("CreateReservation lazily initializes missing requester wallet", func(t *testing.T) {
+		userID := uuid.New()
+		errandID := uuid.New()
+		res, created, err := env.repo.CreateReservation(ctx, errandID, userID, 30)
+		require.NoError(t, err)
+		require.True(t, created)
+		require.Equal(t, int64(30), res.Amount)
+
+		acc, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(70), acc.AvailableCredits)
+		require.Equal(t, int64(30), acc.ReservedCredits)
+	})
+
+	t.Run("RefundReservation fails and rolls back cleanly when requester account is FLAGGED", func(t *testing.T) {
+		requesterID := uuid.New()
+		errandID := uuid.New()
+		now := time.Now().UTC()
+
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, requesterID, 100, now))
+		res, created, err := env.repo.CreateReservation(ctx, errandID, requesterID, 30)
+		require.NoError(t, err)
+		require.True(t, created)
+		require.Equal(t, credit.ReservationStatusReserved, res.Status)
+
+		// Flag the requester account
+		_, err = env.pool.Exec(ctx, `
+			UPDATE credit_accounts 
+			SET integrity_status = 'FLAGGED', 
+			    integrity_flagged_at = NOW(), 
+			    integrity_reason_code = 'MANUAL_AUDIT'
+			WHERE user_id = $1`, requesterID)
+		require.NoError(t, err)
+
+		// Attempt refund on flagged account
+		eventID := uuid.New()
+		err = env.repo.RefundReservation(ctx, errandID, nil, eventID, credit.TransactionReasonErrandCancelled, now)
+		require.ErrorIs(t, err, credit.ErrAccountIntegrityFlagged)
+
+		// Crucial assertion: Reservation status MUST remain RESERVED (NOT falsely marked REFUNDED)
+		var status credit.ReservationStatus
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT status FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&status))
+		require.Equal(t, credit.ReservationStatusReserved, status)
+
+		// Balances must not have been modified by the failed refund
+		acc, err := env.repo.GetAccount(ctx, requesterID)
+		require.NoError(t, err)
+		require.Equal(t, int64(70), acc.AvailableCredits)
+		require.Equal(t, int64(30), acc.ReservedCredits)
+
+		// No refund transactions should exist in the ledger
+		var txCount int
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT COUNT(*) FROM credit_transactions WHERE operation_id = $1`, eventID).Scan(&txCount))
+		require.Equal(t, 0, txCount)
+	})
+
+	t.Run("PayoutReservation fails and rolls back cleanly when courier account is FLAGGED", func(t *testing.T) {
+		requesterID := uuid.New()
+		courierID := uuid.New()
+		errandID := uuid.New()
+		now := time.Now().UTC()
+
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, requesterID, 100, now))
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, courierID, 100, now))
+
+		_, _, err := env.repo.CreateReservation(ctx, errandID, requesterID, 30)
+		require.NoError(t, err)
+
+		// Flag the courier account
+		_, err = env.pool.Exec(ctx, `
+			UPDATE credit_accounts 
+			SET integrity_status = 'FLAGGED', 
+			    integrity_flagged_at = NOW(), 
+			    integrity_reason_code = 'MANUAL_AUDIT'
+			WHERE user_id = $1`, courierID)
+		require.NoError(t, err)
+
+		// Attempt payout to flagged courier
+		eventID := uuid.New()
+		amount := int64(30)
+		err = env.repo.PayoutReservation(ctx, errandID, nil, courierID, eventID, &amount, now)
+		require.ErrorIs(t, err, credit.ErrAccountIntegrityFlagged)
+
+		// Crucial assertion: Reservation status MUST remain RESERVED (NOT falsely marked PAID_OUT)
+		var status credit.ReservationStatus
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT status FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&status))
+		require.Equal(t, credit.ReservationStatusReserved, status)
+
+		// Balances must remain untouched
+		reqAcc, err := env.repo.GetAccount(ctx, requesterID)
+		require.NoError(t, err)
+		require.Equal(t, int64(70), reqAcc.AvailableCredits)
+		require.Equal(t, int64(30), reqAcc.ReservedCredits)
+
+		courierAcc, err := env.repo.GetAccount(ctx, courierID)
+		require.NoError(t, err)
+		require.Equal(t, int64(100), courierAcc.AvailableCredits)
+
+		// No payout transactions should exist in the ledger
+		var txCount int
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT COUNT(*) FROM credit_transactions WHERE operation_id = $1`, eventID).Scan(&txCount))
+		require.Equal(t, 0, txCount)
+	})
+}

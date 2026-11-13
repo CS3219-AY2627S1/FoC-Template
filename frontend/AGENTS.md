@@ -1,0 +1,288 @@
+# Frontend
+
+The browser client. It is the authority on presentation: screen
+organization, navigation, client-side routing and view state, form
+ergonomics, and the feedback a user gets while an action is in flight or
+after it fails, and on nothing else. Whether an errand may be accepted, a
+balance covers one, who may see a record, what a status transition means —
+each belongs to the service owning that rule. The frontend renders what the
+services return and reports what they refuse.
+
+**Stack: React + Vite, in TypeScript.** Recorded by Nigeltzy, the folder owner,
+on 2026-09-17; root §2's table carries the same row. This is the record root §1
+asks for — an agent may now write React/Vite/TS code in this folder.
+
+**What is still NOT chosen**, and still needs the owner before any code assumes
+it: state management beyond React's own hooks, a router, a component or CSS
+framework (no Tailwind, no MUI), and a linter. Assume none of them exist.
+Adding one is a stack decision, not an implementation detail — ask, and record
+the answer here before building on it (root §1).
+
+**The test runner is `vitest`** (D-029). It was chosen by the team with the
+rest of the frontend stack, but this file wrongly listed it as unchosen until
+2026-09-20 — which cost an agent a wrong turn. It shares Vite's config and
+transform, so there is no second build pipeline to keep in step. Tests live
+beside the code as `*.test.ts`. Only logic is covered today: validation rules,
+the OTP fixture's timing, the authorized transport's refresh and retry, the
+gateway login, refresh, restore and logout calls, the suppliers fixture, the
+remembered view and acting mode, the nav's role and mode rule (`views.ts`),
+the user-service profile client (`usersApi.ts`) with the contact and
+new-password checks, the order-service and credit-service clients
+(`ordersApi.ts`, `creditAccountsApi.ts`), the poller (`lib/polling.ts`), the
+error reporter (`lib/errorReporter.ts`), the
+errand countdowns, labels and error messages (`time.ts`, `format.ts`), the
+errand form's checks and amend changes, the scheduling window and date box
+(`schedule.ts`), the detail's parties and buttons, and the Credits screen's
+paging. There is no component testing
+library, so rendering is still unverified; adding one is a separate stack
+decision and still needs asking.
+<!-- AI-generated (edited by nigeltzy): Claude Code (Opus 5.5, 2026-10-31) added `schedule.ts` to this list. -->
+
+## Owner
+
+Nigeltzy (root §3). Stack and screen-flow decisions here are theirs; an agent
+implements one they have recorded and stops (root §1).
+
+## Boundaries
+
+The frontend has no database credentials at all, and needing one means the
+design went wrong. Temptations specific to this folder:
+
+- **Re-implementing a rule for instant feedback.** Errand eligibility,
+  credit sufficiency, self-acceptance checks, status transitions:
+  `order-service` and `credit-service` own these. Client-side validation
+  is UX only — required fields, formats, lengths. If the rule can reject
+  the action, let the service reject it and render the error.
+- **Treating a hidden control as a permission.** Hiding or disabling a
+  button is an affordance, not an authorization control; anyone can call
+  the API directly. The prototype's "Admin mode" checkbox is exactly this
+  trap (see Gotchas).
+- **Deriving one service's data from another's.** Need a supplier name on
+  an order card? Fetch it from `supplier-service`. Do not dig it out of
+  an order payload that does not carry it, and do not ask `order-service`
+  to start returning it — adding a field is an interface change, decided
+  by that service's owner, spec first (root §8).
+- **Editing a backend folder to unblock the UI.** `user-service`,
+  `supplier-service`, `order-service`, `credit-service` are other
+  people's folders. If the UI needs something the API does not give, stop
+  and say so (root §3).
+- **Composing across services is fine** — one view may call several
+  services. Each call still goes through that service's own client.
+
+## Layout
+
+Feature-sliced. Each feature folder maps to one backend service, so `features/`
+grows alongside the services in the repo root.
+
+```
+src/
+├── features/
+│   ├── auth/          LoginPage, authApi (fixture + gateway clients),
+│   │                  session.ts (AT attach + refresh retry)
+│   ├── suppliers/     view + components + suppliersApi.ts + types.ts,
+│   │                  suppliersFixture.ts (fixture builds only)
+│   ├── errands/       NewErrandView, MyErrandsView, FindErrandsView,
+│   │                  AllErrandsView (the dashboard's Active errands tab),
+│   │                  ErrandForm, ErrandCard, ErrandDetail,
+│   │                  ordersApi.ts + orderTypes.ts (order-service),
+│   │                  time.ts (countdowns), format.ts (labels, messages)
+│   ├── credits/       CreditsView, creditAccountsApi.ts + creditTypes.ts
+│   │                  (credit-service)
+│   ├── notifications/ NotificationsView, notificationsApi.ts
+│   │                  (notification-service), newNotifications.ts (what a
+│   │                  poll announces)
+│   ├── profile/       ProfileView, ProfileEditForms (one modal per
+│   │                  field), usersApi.ts (user-service /api/users/{uid})
+│   └── admin/         DashboardView (ADMIN sessions only; four tabs: active
+│                      errands, past errands, accounts, audit log), PastErrandsView,
+│                      AccountsPanel, AccountReview, AuditLogView, AuditList,
+│                      auditTypes.ts (audit record, paging, merging), AdminView
+│                      (an account's actions; uses profile's usersApi)
+├── components/        shared only — AppShell, Modal, Toast, MockBadge,
+│                      NeedsService, icons
+├── lib/               config.ts (env), http.ts (transport), mock.ts (fixtures),
+│                      tokens.ts (AT store), jwt.ts, lastView.ts, polling.ts,
+│                      errorReporter.ts (uncaught errors to the gateway)
+├── App.tsx            session gate, view switching, acting mode, balance
+├── views.ts           view names + the nav model, until a router is chosen
+└── main.tsx           creates the TokenStore and the error reporter once
+```
+
+Every feature folder maps to one backend service; `auth/`, `profile/` and
+`admin/` all map to user-service. `suppliers/`, `auth/`, `profile/`,
+`admin/`, `errands/` and `credits/` are all backed by real services through
+the gateway. A fixture build (`VITE_USE_FIXTURES=true`) puts
+`auth/` and `suppliers/` on fixtures, so it makes no gateway call; the
+suppliers fixture is supplier-service's seed CSV, loaded the way its
+`seed.go` loads it. `errands/` and `credits/` have no fixture: in a fixture
+build their screens show a "Needs order-service" or "Needs credit-service"
+notice (`NeedsService`) instead.
+
+`index.html` is the Vite entry document; the D1 prototype it replaced
+(`app.js` plus hand-written markup) is in this branch's history. There is no
+Dockerfile: `npm run dev` serves the app locally, and in production a static
+host (Amplify or Vercel, not yet chosen) serves the `npm run build` output and
+forwards `/auth` and `/api` to the gateway (D-033). These rules apply:
+
+- **One API client per backend service, in one dedicated directory**,
+  generated from that service's `api/openapi.yaml` (root §8). Generated
+  code is never hand-edited. No `fetch()` with a hand-written URL in a
+  component.
+- Until a spec is committed, keep each service's calls in a single
+  hand-written module with the same surface, so swapping in the generated
+  client is a one-file change.
+- **The exception:** the user-service, order-service, credit-service and
+  notification-service clients (`usersApi.ts`, `ordersApi.ts`,
+  `creditAccountsApi.ts`, `notificationsApi.ts`, with `orderTypes.ts` and
+  `creditTypes.ts`) are hand-written from their services'
+  committed specs rather than generated. The order-service and
+  credit-service files' headers name the spec and the commit they
+  transcribe; when a spec changes, the files written from it are checked
+  against it again.
+- Components take data and callbacks, not transport (root §5: data
+  coupling is the goal). Shared UI primitives stay inside `frontend/`;
+  nothing is shared with a backend service.
+
+<!-- AI-generated (edited by nigeltzy): the section below transcribes the owner's instruction in chat, 2026-10-11, recorded by Claude Code (Opus 5.5). -->
+## Profile editing and the admin screen
+
+Recorded from the owner's instruction (2026-10-11): "implement the front end
+for the changing of a user's own password, phone number and username. it
+should be individual modals (instead of changing all at once, change one by
+one). Admin dashboard can be implemented at the same time with the lookin gup
+of another user's profile (but this lookup should only be available to ADMIN
+users). Same thing with the admin resetting user's password".
+
+- Each of username, contact number and password has its own modal on the
+  Profile screen and sends only that field in user-service's
+  `UpdateProfileRequest` (its `api/openapi.yaml` on `main`).
+- A password change signs the user out: user-service revokes every session of
+  the account on success, the current one included.
+- The Admin nav item and view render only for an ADMIN session. **That is an
+  affordance, not access control** (see Gotchas): user-service's
+  `GET /api/v1/users/{uid}` answers any signed-in caller, with the restricted
+  fields for a non-admin. Making the lookup itself admin-only would be a
+  user-service change for its owner.
+- Lookup is by account ID because user-service has no endpoint to list or
+  search users.
+
+**Update (2026-11-03, D-104 to D-124).** The Admin and All errands screens are
+now one **Dashboard** (nav item `admin`) with four tabs. user-service now lists
+and searches accounts (`GET /api/users`), and each service serves its own admin
+audit log (`/api/users/audit-log`, `/api/orders/audit-log`,
+`/api/suppliers/audit-log`), which the Audit log tab merges by time; the
+shapes are in `ai/decisions/admin-dashboard-design.md`. An account's review is
+composed here from four calls to two services (D-117). The "no endpoint to list
+or search users" note above is out of date.
+
+**Update (2026-11-09, D-154).** The shell and the list screens follow a workspace
+layout. The sidebar is an icon rail that expands (remembered in `localStorage`,
+`foc.rail`). `components/Workspace.tsx` shows a list and the open item's detail
+side by side from 1100px wide (`useMediaQuery`, `lib/useMediaQuery.ts`) and in a
+`Modal` below that; arrow keys, Home and End move between rows
+(`lib/listKeys.ts`) and Escape closes the pane. A detail that holds a dialog of
+its own (an account's) cannot sit inside one, so `Workspace` takes
+`narrow="list"` and the screen decides what a narrow window shows. Rules for
+new list screens: put the detail in `Workspace`, mark the open row `selected`,
+and show a `.skeleton` while loading, not "Loading…".
+
+## Mock services — read before touching them
+
+Every screen backed by a service now calls the real one. Fixtures remain
+only for a fixture build (`VITE_USE_FIXTURES=true`), which runs sign-in, the
+profile and the suppliers on in-browser fixtures (`src/lib/mock.ts` has the
+full note). The errand and credit screens have no fixture: their mock
+modules were replaced by the order-service and credit-service clients, and a
+fixture build shows a "needs service" notice on those screens rather than
+calling a gateway it does not have.
+
+`authApi.ts` holds **two** clients — the fixtures, and a gateway-backed one
+implementing D-010..D-015 — and `App.tsx` picks between them once: the
+gateway, unless `VITE_USE_FIXTURES=true`. Every path in `ROUTES` is
+recorded: the two OTP paths (`verify`, `resend`) are the gateway's D-043
+routes onto user-service's OTP endpoints (PR #14). `<MockBadge />` on the login and profile screens
+shows only in a fixture build.
+<!-- AI-generated (edited by nigeltzy): the OTP-paths sentence above was updated by Claude Code (Opus 5.5, 2026-10-10) when the frontend was wired to D-043. -->
+
+**Those shapes are not a contract.** They were invented here to have something
+to render. An API interface belongs to its service's owner (root §1), and a
+change reaching into another service needs that owner (root §3). So:
+
+- Nobody may treat a fixture's shape as the spec for their service.
+- When a real service lands, its owner's `api/openapi.yaml` wins and the
+  fixture module is **replaced**, not reconciled. Because components only ever
+  go through the feature's api module, that is a one-file change.
+- Every screen backed by a fixture renders `<MockBadge />`, so a graded demo
+  cannot show invented figures as live data. Do not remove those badges while
+  the data is still fixture data.
+- Do not grow a fixture into a rule. Eligibility, expiry, credit sufficiency
+  and state transitions belong to the services that own them; the fixtures
+  store and return, nothing more.
+
+**Errand states.** `ErrandStatus` in `features/errands/orderTypes.ts`
+transcribes order-service's eight states, cased as its spec sends them:
+SCHEDULED, OPEN, ACCEPTED, PICKED_UP, DELIVERED, and the three final ones,
+COMPLETED, CANCELLED and EXPIRED. `SCHEDULED` and the `scheduled` timestamp
+are part of the current order-service API contract.
+<!-- AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — aligned the state note with order-service OpenAPI. -->
+Which transitions are permitted stays with
+order-service and is never worked out in this folder: each errand arrives
+with the `actions` its viewer may take, and the screens draw one button per
+action and nothing else.
+
+The campus delivery locations come from order-service
+(`GET /api/orders/locations`). The 100-credit starting allocation quoted on
+the login screen is credit-service's figure, copied by hand.
+
+## Local development
+
+- **Port 3001** (root §3) is where `npm run dev` serves the app; it stops
+  rather than moving if 3001 is taken. `compose.yaml` runs only the backend,
+  with the gateway on 8080. Backend ports are allocated in that same table —
+  8081-8084 — so read them there rather than inventing or assuming one.
+- **Env vars:** resolved in `src/lib/config.ts`, never read inline, and every
+  one goes into the root `.env.example` with a placeholder (root §9) plus this
+  folder's own. **D-010 makes this one URL, not one per service:** the gateway
+  is the only publicly reachable process, so `VITE_GATEWAY_BASE_URL` replaces
+  the per-service variables. The gateway is on **8080**, provisional (D-018).
+  Leave `VITE_GATEWAY_BASE_URL` empty: requests then use relative paths on
+  the page's own origin, and `npm run dev` proxies `/api` and `/auth` to
+  `localhost:8080` (`vite.config.ts`). `VITE_USE_FIXTURES=true` switches the
+  app onto the in-browser fixtures; nothing else does.
+- **Commands:** `npm install`, then `npm run dev` (Vite on 3001),
+  `npm run build` (typecheck + production build), `npm run preview`, and
+  `npm test` (vitest, D-029) or `npm run test:watch`. There is still no
+  `Makefile` in the repo (root §10) and no lint target — adding one means
+  choosing a linter, which is a stack decision, so ask.
+
+## Gotchas
+
+- **Nothing shipped to the browser is secret.** Not a build-time env var,
+  not an inlined constant, not a "hidden" field. No `JWT_SECRET`, no
+  database URL, no admin key ever appears in this folder.
+- **Showing the admin controls is not auth.** On the Suppliers screen,
+  `isAdmin` (App.tsx) is `session.role === "ADMIN"` from the signed-in
+  account's own profile — it only shows or hides the admin controls;
+  `suppliersApi.ts` still sends no role header. The gateway derives `role`
+  from the verified access token (D-013) and strips any claim header a
+  client supplies, so a write succeeds only for an ADMIN account regardless
+  of what the UI shows. There used to be a manual "show admin controls"
+  checkbox here (2026-09-17 to 2026-10-01); it was removed once `isAdmin`
+  could be derived from the real session instead of toggled by hand. Do not
+  build real UI on `isAdmin` or present it as access control.
+- **Tokens never go in component state or storage.** `lib/tokens.ts` keeps the
+  access token in a closure created once in `main.tsx`, and nothing writes it
+  to `localStorage`, `sessionStorage` or a cookie. The refresh token is an
+  HttpOnly cookie the gateway sets (D-033), so no code here can read it, and a
+  page reload restores the session by exchanging that cookie.
+- **Do not assume a shared error envelope.** `supplier-service` today returns
+  `{"error": "..."}` with a non-2xx status; whether the others match is an
+  interface decision for their owners, not one to standardise from here. Every
+  request path still needs loading, empty and failed states, not just the
+  success one — M1 names handling invalid and unsuccessful actions explicitly.
+- **Responsive is graded, not a nicety.** Every workflow must be usable at
+  phone width — forms, modals and tables included. Check at ~375px.
+- **Both roles must be complete.** M1 covers requester *and* courier
+  workflows; building only the requester side is the easy failure here.
+
+<!-- AI-generated (edited by nigeltzy): Claude Code (Opus 5.5), 2026-11-05 — notification-service added to the layout and the hand-written client exception (D-140 to D-146). -->

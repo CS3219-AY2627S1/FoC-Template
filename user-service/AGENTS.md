@@ -1,0 +1,550 @@
+# User Service
+
+The identity authority for the platform (mandatory requirement **M2**):
+accounts, credentials, sessions/tokens, profile information, and the role a
+person acts in — requester, courier, or admin — including the toggle between
+requester and courier. Every other service trusts the identity this one
+issues and stores only a user ID alongside its own data. In return, this
+service knows nothing about errands, credit balances, or the supplier
+catalogue, and never stores or reasons about them.
+
+## Owner
+
+Zi Yang — one developer owns this folder (root §3); every decision flagged open
+below is theirs, not an agent's.
+
+## Boundaries
+
+- **Other services asking about a user.** `order-service` needs "is this
+  user a courier?", `credit-service` "does this user exist?", `frontend` a
+  display name. Each is an HTTP call through the generated OpenAPI client,
+  or an event this service publishes — never a join, never a second
+  connection to this database.
+- **This service asking about a user's activity.** A rule like "you may not
+  switch to requester while a delivery is in flight" is an `order-service`
+  question. Either call `order-service` through its generated client or hand
+  the rule back to the owner; do not read its tables and do not mirror order
+  state here.
+- **Balances and credits belong to `credit-service`.** A profile screen
+  showing a balance is composed by the caller, not by a column added here.
+- **No shared auth package.** If this service and another both need to
+  verify a token, the duplication is correct (root §4.2). Do not create a
+  shared module or import across service modules.
+- **JWT is the recorded identity mechanism.** This service issues and validates
+  JWTs for authentication and session handling. Services verify tokens at their
+  own boundaries using the public keys and read the shared revocation keys;
+  they must not connect to this service's database or import an auth package.
+
+## Layout
+
+Migrations named `NNNNNN_<name>.{up,down}.sql`.
+
+The request schemas, response schemas, and error contracts (specifically 401 Unauthorized for expired/compromised tokens and 500 Internal Server Error for Redis failures) for /refresh, /logout, and /.well-known/jwks.json must be fully documented in `api/openapi.yaml` to comply with the project's spec-first requirement.
+
+## Packaging
+
+Always try to group all logical units together to reduce coupling and increase cohesion.
+
+In `internal` directory, it should have the following general structure:
+```
+internal/
+|- jwt/                 (contains all jwt service related files)
+|- config/              (contains all files related to extracting config information for startup)
+|- httpapi/             (contains dtos, handlers, routers, routes)
+   |- router/           (contains `router.go` so that `main.go` can call `router.Setup()`, which in turn calls private function `setUpRoutes` which groups routes obtained from `routes.GetRoutes()` for idiomatic purposes)
+   |- routes/           (contains `routes.go` which imports handlers and implements GetRoutes() which returns `func(r chi.Router)` which specifies routes and their respective handlers)
+   |- handlers/         (contains `auth_handler.go`, `profile_handler.go` and `system_handler.go` with their own dependencies)
+|- repository/          (contains all files related to postgresql database or redis)
+|- user/                (contains all domain specific functions, errors, and repository interfaces)
+|- hash/                (contains `password.go` for other modules to use its cryptographic functions)
+|- session/             (contains `auth.go`, `session.go`, and `invalidation.go` for session lifecycle and login orchestration)
+```
+
+The handlers will be imported by `routes.go` so as a package and instantiated in `GetRoutes()` instead of being passed as instantiations.
+
+All HTTP handler tests must reside directly inside the internal/httpapi/handlers/ directory. They must use package `handlers_test` (black-box testing) to prevent import cycles with the router and to ensure accurate code coverage reporting.
+
+## Bootstrap Admin Decision
+The bootstrap.go script must only execute if the users table contains zero admins of any status. Changing INITIAL_ADMIN_* environment variables after the first boot will safely do nothing.
+
+## Networking Decisions
+The user-service must only be accessible within the internal Docker network. All external traffic must route exclusively through the API Gateway. (`compose.yaml` should reflect this behaviour)
+
+## Database Decisions
+
+### PostgreSQL DB
+- Table Name: `users`
+- Fields:
+  - uid: UUID, PRIMARY KEY, unique, not null
+  - username: VARCHAR(128), not null
+  - email: VARCHAR(255), not null
+  - password: VARCHAR(255), not null
+  - phone_num: VARCHAR(20), not null
+  - date_created: TIMESTAMPTZ, not null
+  - last_login_date: TIMESTAMPTZ, NULL
+  - account_role: ENUM ('STUDENT' / 'ADMIN'), defaults to STUDENT
+  - account_status: ENUM ('ACTIVE' / 'SUSPENDED' / 'UNVERIFIED'), defaults to UNVERIFIED
+  - tokens_valid_after: TIMESTAMPTZ, not null, default NOW()
+- Indexes:
+    - `CREATE UNIQUE INDEX idx_users_email_lower ON users (LOWER(email));`
+    - `CREATE UNIQUE INDEX idx_users_username_lower ON users (LOWER(username));`
+
+- Table Name: `sessions`
+- Fields:
+  - jti: UUID, PRIMARY KEY, unique, not null
+  - created_at: TIMESTAMPTZ, not null
+  - expires_at: TIMESTAMPTZ, not null
+  - revoked_at: TIMESTAMPTZ, null
+  - token_hash: VARCHAR(255), unique, not null
+  - replaced_by_token_hash: VARCHAR(255), null
+  - uid: UUID, FOREIGN KEY (from `users` schema), not null, ON DELETE CASCADE
+
+`UID` and `date_created` shall be generated using Go (UUID package and time package in the SGT timezone respectively).
+Passwords shall be stored securely using bcrypt in the Go implementation.
+Store the user model, interface defining database operations, and business logic 
+using the repository interface under `internal/user/`. 
+
+### Repository Methods
+The `users` repository interface should include these actions: 
+1. Create, 
+2. CreateWithTask (executes a user insert, runs a provided callback function, and commits only if the callback succeeds),
+3. GetByID (get user by uuid), 
+4. GetByIdentifier (get user by username/email), 
+5. Update (update user's mutable fields, which should not allow updating uid or email), 
+6. UpdateAccountStatusByID (suspend/reactivate user by their uuid, which should update both `account_status` and `tokens_valid_after` fields in `users` atomically. Note that reactivation should not alter `tokens_valid_after` field) 
+7. UpdateLastLoginByID (update the `last_login_date` field atomically without fetching or modifying the core profile data)
+8. CountActiveAdmins (During a suspension request, if the target user is an admin and CountActiveAdmins returns 1, the domain service must abort the operation and return a specific domain error (e.g., user.ErrLastAdmin))
+9. ActivateUser (manages the strict transaction boundary for OTP verification, locking the user row, asserting its state, updating it, and writing to the outbox).
+
+Example repository method signatures:
+```Go
+    Create(ctx context.Context, u *User) error
+    // CreateWithTask manages a cross-infrastructure transaction boundary.
+    // It MUST execute the following:
+    // 1. Begin a PostgreSQL transaction (pgx.Tx).
+    // 2. INSERT the new user into the database.
+    // 3. Invoke the provided `task()` closure.
+    // 4. If `task()` returns an error, execute tx.Rollback() and bubble up the error.
+    // 5. If `task()` succeeds, execute tx.Commit().
+    CreateWithTask(ctx context.Context, u *User, task func() error) error
+	GetByID(ctx context.Context, uid uuid.UUID) (*User, error)
+	GetByIdentifier(ctx context.Context, identifier string) (*User, error)
+	Update(ctx context.Context, u *User) error
+	UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status AccountStatus) error
+    UpdateLastLoginByID(ctx context.Context, uid uuid.UUID, timestamp time.Time) error
+    CountActiveAdmins(ctx context.Context) (int, error)
+    // ActivateUser executes the final registration step after a successful Redis OTP match.
+    // It MUST execute the following within a SINGLE database transaction (pgx.Tx):
+    // 1. SELECT ... FROM users WHERE email = $1 FOR UPDATE to lock the row.
+    // 2. If the user does not exist, rollback and return user.ErrNotFound.
+    // 3. If the user's account_status is already 'ACTIVE' (or anything other than 'UNVERIFIED'),
+    //    rollback and return a specific domain error (e.g., user.ErrAccountAlreadyActive).
+    // 4. UPDATE the user's account_status to 'ACTIVE'.
+    // 5. INSERT the 'UserRegistered' event into the outbox_events table.
+    // 6. Commit the transaction.
+    ActivateUser(ctx context.Context, email string) error
+```
+
+The `sessions` repository interface should include these actions: 
+1. CreateSession, 
+2. GetSessionByHash, 
+3. RotateSession, 
+4. RevokeSessionByHash, 
+5. RevokeAllUserSessions
+
+Example repository method signatures:
+```Go
+    // CreateSession stores a newly issued refresh token during login or registration.
+	CreateSession(ctx context.Context, s *Session) error
+
+	// GetSessionByHash retrieves a session to validate an incoming refresh request.
+	GetSessionByHash(ctx context.Context, hash string) (*Session, error)
+
+    // RotateSession handles the entire refresh transaction to prevent race conditions.
+    // It MUST execute the following within a SINGLE database transaction (pgx.Tx):
+    // 1. SELECT ... FOR UPDATE to lock the old session row.
+    // 2. Perform the Replay Detection checks (checking revoked_at and replaced_by_token_hash).
+    // 3. If compromised, rollback and return ErrSessionCompromised.
+    // 4. If valid, set old session's `revoked_at` = NOW() and `replaced_by_token_hash` = newSession.TokenHash.
+    // 5. Insert newSession.
+    // 6. Commit the transaction.
+	RotateSession(ctx context.Context, oldHash string, newSession *Session) error
+
+	// RevokeSessionByHash is used during a standard logout.
+	// It finds the session by its hash and sets `revoked_at` to time.Now().
+	RevokeSessionByHash(ctx context.Context, hash string) error
+
+	// RevokeAllUserSessions terminates all sessions of a user.
+	// Triggered during ADMIN suspension or when replay detection catches a compromised token.
+	RevokeAllUserSessions(ctx context.Context, uid uuid.UUID) error
+```
+
+### Redis Configuration
+- Environment Variable: REDIS_URL (e.g., redis://localhost:6379/0).
+- Use the industry standard [github.com/redis/go-redis/v9](https://github.com/redis/go-redis/v9).
+- Key Formats:
+  - JTI Blocklist: `jti:<jti-uuid>`; value `1`; TTL is the token's remaining lifetime plus 5 seconds (the clock skew readers allow past `exp`), or 5 seconds when logout comes after `exp`. Readers reject the token when the key exists.
+  - Suspension: `suspended:uid:<user-uuid>`; value is the UTC suspension time in whole seconds formatted with `time.RFC3339Nano`; TTL is `JWT_ACCESS_TOKEN_TTL` plus 5 seconds (15 minutes 5 seconds by default). Readers reject a verified token when its `iat` is at or before the stored time, and reject it when the value does not parse.
+- **Reader rule:** Every service that verifies tokens must verify the signature and `iss`, `aud`, `exp`, and `typ` claims before reading these keys. It must take `uid` and `jti` only from the verified token. User-service is the only writer (D-054).
+- Unavailable Behavior: Fail-closed. If a `Set` operation to Redis fails during logout, the application must immediately return a 500 Internal Server Error and abort the subsequent PostgreSQL transaction, forcing the frontend client to retry.
+- The user-service should adopt the Gateway's Redis configuration: redis:7-alpine (or 8-alpine depending on Gateway) with `--appendonly yes` and a persistent volume. This guarantees state recovery across container restarts.
+
+## User Service API Endpoints
+Use Go Chi router for handling API calls. The API should handle these calls:
+1. GET /api/v1/health : Returns health status of the whole user microservice (includes Go logic layer and database health)
+2. POST /api/v1/users/register : Accepts email, username, and plaintext password. Triggers the repository Create method and publishes an event to the message broker so the Credit Service can allocate the initial credits
+3. POST /api/v1/users/login : Accepts an identifier (username or email) and plaintext password. Uses GetByIdentifier to verify credentials and returns JWT authentication/session tokens
+   - When a user successfully authenticates, the application service must call `UpdateLastLoginByID`. If this database operation fails, the service must **log the error** (preserving the underlying PostgreSQL failure details and user ID) but **must not fail the login request**. The user must still receive a `200 OK` and their token pair. Tracking login analytics is secondary and must never compromise the availability of the core authentication flow.
+4. GET /api/v1/users/{uid} : Uses GetByID to fetch public profile data for a specific user (e.g., when a requester views a courier's profile. Any authenticated user may view another user's `username`, `email`, and `phone_num`, but not `account_role`, `account_status`, or `date_created`, unless the authenticated user is an admin)
+5. PUT /api/v1/users/{uid} : Uses Update to modify mutable user profile fields, such as the username or password.
+   - For password changes, the endpoint must require the user's currentPassword in the request body alongside the newPassword. Upon a successful password change, the service must immediately revoke all of the user's active sessions (pushing existing JTIs to Redis and revoking refresh tokens in PostgreSQL) to neutralize hijacked sessions.
+   - If a user provides an incorrect currentPassword during a profile update, the service must return a 401 Unauthorized with a standardized payload (e.g., {"error": "invalid current password"}). It must not bubble up as a 500 Internal Server Error.
+   - If the authenticated principal has the ADMIN role and is modifying a different user's account, the currentPassword requirement must be bypassed. Admins are authorized to force-reset passwords without knowing the target's existing credentials. If an admin is changing their own password, the currentPassword rule still applies.
+   - a password change should utilize a mechanism similar to the existing suspension mechanism: the service updates the user's tokens_valid_after field in the users table to the current timestamp. The API Gateway will subsequently reject any existing access tokens where the iat (Issued At) claim is older than this new timestamp. The service must also call RevokeAllUserSessions to immediately invalidate all refresh tokens in PostgreSQL
+6. PATCH /api/v1/users/{uid}/status: An ADMIN-only endpoint to transition an account status between ACTIVE and SUSPENDED
+   <!-- AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — records D-078's status-route rules. -->
+   - must reject any attempt to suspend an admin if they are the last ACTIVE admin in the system.
+   - Errors: 409 conflict if attempting to suspend the last remaining active admin ({"error": "cannot suspend the last active admin"}) or transition an UNVERIFIED account ({"error": "account is not verified"})
+   <!-- AI Assistance Disclosure: Claude Code (Sonnet 5.5), 2026-11-03 — records D-118 and D-119 and the audit rows of D-106 to D-115. -->
+   - Must refuse suspending any admin account (D-118) or the caller's own account (D-119) with 403 ({"error": "an admin account cannot be suspended"} or {"error": "you cannot suspend your own account"}), before any Redis or session side effect.
+   - Every change, and every refused or failed attempt, is recorded in `admin_audit` (migration `000007`); the change and its row share one transaction. `GET /api/v1/users` (account search and list, D-121 to D-123) and `GET /api/v1/users/audit-log` (D-110) are admin-only reads, 50 rows a page at most.
+7. POST /api/v1/users/refresh : Accepts a valid refresh token. Issues a new access/refresh token pair and rotates the old refresh token in the database (uses `RotateSession` of the Session Repository's interface)
+   - Request: JSON body {"refreshToken": "string"}. No HTTP Authorization header required.
+   - Response: 200 OK with JSON {"accessToken": "string", "refreshToken": "string"}.
+   - Errors: 401 Unauthorized for an invalid or expired token. If the replay-detection mechanism triggers, return a 401 Unauthorized with a standardized error shape: {"error": "ErrSessionCompromised"}.
+8. POST /api/v1/users/logout : Accepts the current access token and refresh token. Pushes the access token's jti to the Redis blocklist and revokes the refresh token in PostgreSQL (by populating the `revoked_at` field). This must be done in the specified order strictly. If Redis fails, the service must abort the PostgreSQL transaction and return a `500 Internal Server Error`. Do not use `DELETE` on the table (uses `RevokeSessionByHash` of the Session Repository's interface)
+   - **Execution Sequence & Ownership Verification:**
+     1. Hash the incoming refresh token and query PostgreSQL to read the session. If the session is missing or already has a populated `revoked_at` field, immediately return `204 No Content` (idempotent success).
+     2. Verify that the session's `uid` matches the verified access token's `sub` claim. If they do not match, reject the request with a `400 Bad Request` (e.g., `{"error": "mismatched session"}`).
+     3. Push the access token's `jti` to the Redis blocklist with a TTL of its remaining lifetime plus 5 seconds. If the access token is in the 5-second clock-skew window (meaning its theoretical remaining lifetime is ≤ 0), the TTL is exactly 5 seconds. If the Redis `SET` operation fails, abort the transaction and return a `500 Internal Server Error`.
+     4. Revoke the refresh session in PostgreSQL by setting the `revoked_at` field to the current timestamp. Do not use `DELETE`.
+   - Request: Standard Authorization: Bearer <access_token> header, plus a JSON body {"refreshToken": "string"}.
+   - Response: 204 No Content (empty body) on success, and response should be idempotent should with 204 in case session is already revoked, or when the supplied refresh token does not exist
+   - Errors: 500 Internal Server Error if the Redis invalidation fails.
+   - Write a minimum-TTL Redis key. Set the Redis TTL to exactly the skew allowance (5 seconds) to guarantee the token is blocked for the remainder of its theoretical accepted life without crashing the Redis SET operation with a negative duration
+9. GET /.well-known/jwks.json : the token header and the JWKS payload must include a kid (Key ID) field. The User Service must support loading multiple keys simultaneously: one designated "active" key for signing new tokens, and multiple "retired" keys kept in the JWKS to verify existing tokens until their respective TTLs expire
+   - Request: Unauthenticated GET request.
+   - Response: 200 OK with the standard JWKS JSON payload containing active and retired public keys.
+   - This API endpoint is unauthenticated but remains private to the Docker network. The gateway and every service that verifies tokens may read it; it is not published to the host.
+
+Request bodies should enforce a strict 10KB (10 * 1024 bytes) limit using Go's `http.MaxBytesReader(w, r.Body, 10240)`, and return `413 Payload Too Large` and drop the connection if a client exceeds the limit.
+
+Additionally, the HTTP behaviour below should be observed:
+* Timeouts: Configure the http.Server with explicit defensive timeouts: ReadHeaderTimeout: 5s, ReadTimeout: 10s, WriteTimeout: 10s, and IdleTimeout: 120s.
+* Logging: Log all 500 Internal Server Error events with the underlying Go error message, a stack trace, and a unique Request ID. Never log plaintext passwords, bearer tokens, or PII.
+* Health Check: The /api/v1/health endpoint must fail (503 Service Unavailable) if Redis is unreachable. Because the API Gateway strictly depends on the User Service to populate the Redis blocklist and suspension keys, a disconnected Redis instance compromises the platform's security boundary.
+
+Handlers should be grouped according to functions. For example:
+1. AuthHandler (includes register, login, refresh, logout)
+2. ProfileHandler (includes profile, updateProfile, updateStatus)
+3. SystemHandler (includes health and jwks)
+Handlers should all be grouped under a package in `httpapi`.
+
+### OpenAPI Specification & API Contracts
+The API contract is defined in `api/openapi.yaml` and must strictly align with the handler implementations. The specification must use **OpenAPI 3.1.0**.
+
+**Global API Rules:**
+1. **Error Response Schema:** Every `4xx` and `5xx` response across all endpoints must strictly use a standardized `ErrorResponse` component schema: `{"error": "string"}`.
+2. **Malformed Identifiers:** Any endpoint accepting a `{uid}` path parameter must return `400 Bad Request` (not `404 Not Found`) if the provided UUID is malformed.
+3. **Public Endpoints:** Unauthenticated endpoints (health, register, login, refresh, jwks) must explicitly declare `security: []` in the OpenAPI spec to override any global security requirements.
+
+**Endpoint-Specific Contracts:**
+*   **GET /api/v1/health**
+    *   **Statuses:** `200 OK` {"status":"ok"}, `503 Service Unavailable` {"status:"unhealthy"} (e.g., when Redis is unreachable).
+*   **POST /api/v1/users/register**
+    *   **Statuses:** `201 Created`, `400 Bad Request`, `409 Conflict`, `500 Internal Server Error`.
+    *   **Schema Constraints:** The `email` field must explicitly document the `@u.nus.edu` restriction. The `phone_num` field must have `maxLength: 20`.
+*   **POST /api/v1/users/login**
+    *   **Statuses:** `200 OK`, `400 Bad Request`, `401 Unauthorized` (invalid credentials), `403 Forbidden` (account suspended), `500 Internal Server Error`.
+    *   **Schema Constraints:** Remove password length validation (8-128) from the `LoginRequest` schema. Login handlers must not enforce length limits on input; they simply pass the input to the hash comparator which will inherently fail invalid strings, returning `401`.
+*   **GET /api/v1/users/{uid}**
+    *   **Statuses:** `200 OK`, `401 Unauthorized`, `404 Not Found`, `500 Internal Server Error`.
+*   **PUT /api/v1/users/{uid}**
+    *   **Statuses:** `200 OK`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `409 Conflict`, `500 Internal Server Error`.
+    *   **Schema Constraints:** The `UpdateProfileRequest.password` field must declare the 8-128 character policy.
+    *   **Authorization:** `RequireJWT` verifies the bearer access token and checks the revocation keys; the handler takes the caller from the verified principal and ignores `X-User-ID` and `X-User-Role`.
+*   **PATCH /api/v1/users/{uid}/status**
+    *   **Statuses:** `200 OK`, `400 Bad Request`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `409 Conflict` (last admin or unverified account), `500 Internal Server Error`.
+*   **POST /api/v1/users/refresh**
+    *   **Statuses:** `200 OK`, `400 Bad Request`, `401 Unauthorized`, `429 Too Many Requests`, `500 Internal Server Error`.
+*   **POST /api/v1/users/logout**
+    *   **Statuses:** `204 No Content`, `400 Bad Request` (mismatched session), `401 Unauthorized`, `500 Internal Server Error`.
+*   **GET /.well-known/jwks.json**
+    *   **Statuses:** `200 OK`, `500 Internal Server Error`.
+    *   **Schema Constraints:** The JWKS key object schema must explicitly require the `kid` property.
+
+### JWT Signing, Key Policy, and Trust Boundary
+- Signing Algorithm & Key Type: RS256, the user service shall hold the private key to sign tokens, while the API gateway
+uses the public key to verify them.
+- Key Distribution & Rotation: via a standard /.well-known/jwks.json endpoint exposed by the User Service
+- Clock skew: 5 seconds to prevent false rejections due to server clock drift
+- Trust boundary: each service verifies the JWT at its own boundary, reads the shared revocation keys, and then passes the verified identity to its handlers. The `X-User-ID` and `X-User-Role` headers are not a substitute for service-local verification.
+- TTL: The default configurations are: JWT_ACCESS_TOKEN_TTL should be 15 minutes and JWT_REFRESH_TOKEN_TTL should be 7 days
+
+### JWT Production Key Loading
+- Key Format: PEM/string/file
+- derive the `kid` programmatically on startup by computing the SHA-256 fingerprint of the public key's DER encoding
+- Retired Keys: Supply multiple active and retired keys using a mounted JSON configuration file (e.g., keys.json) containing an array of PEM strings. The Go service parses all keys on startup, hashes them to generate their respective `kid`s, uses the newest one for signing, and exposes all of them via the /.well-known/jwks.json endpoint.
+- Store JWT_ACCESS_TOKEN_TTL and JWT_REFRESH_TOKEN_TTL as standard Go duration strings (e.g., "15m", "168h"). Parse them securely at startup using time.ParseDuration()
+
+The active key is determined by array order as follows:
+- Index [0] (The Active Key): The first key in the array is always the active signing key. The User Service uses this key to sign all new Access and Refresh tokens generated during login and token refresh requests.
+- Index [1..N] (The Retired Keys): All subsequent keys in the array are classified as "retired." They are never used to sign new tokens.
+
+### Replay detection
+If a refresh token is presented that already has a populated `revoked_at` or `replaced_by_token_hash` field in the `sessions` table,
+the system must assume a compromise and revoke all tokens associated with that user.
+
+Implementation:
+1. Hash the incoming token
+2. Call `GetSessionByHash` (must be executed within an active transaction with `SELECT ... FOR UPDATE`).
+3. Evaluate the returned Session state:
+    - **Valid:** If `RevokedAt` is NULL and `ReplacedByTokenHash` is NULL, the token is valid. Proceed with rotation.
+    - **Logged Out (Not Compromised):** If `RevokedAt` is NOT NULL but `ReplacedByTokenHash` is NULL, the token was ended via normal logout. Return `401 Unauthorized` (invalid token) but **do not** revoke other sessions.
+    - **Replay Attack (Compromised):** If `ReplacedByTokenHash` is NOT NULL, the token was previously used to issue a new session. This indicates a token theft or race condition. Call `RevokeAllUserSessions()` and return `401 Unauthorized (ErrSessionCompromised)`.
+
+The database transaction used to check the token in the `sessions` database should use Row-level locking (e.g.
+using `SELECT ... FOR UPDATE` when checking the token.
+
+A normal logout (where a token is manually revoked) must not trigger a full account lockout if that specific token is accidentally submitted again (e.g., by a stale browser tab). ErrSessionCompromised should only fire if a token was rotated (i.e., replaced_by_token_hash is populated) and then reused.
+
+To prevent race conditions where simultaneous refresh requests from the same client cause one to succeed and the other to falsely trigger replay detection, the refresh endpoint must acquire a short-lived Redis lock on the session hash before executing the rotation.
+
+### Parallel Refresh Lock & Replay Detection
+Both a Redis lock and a PostgreSQL transaction lock are required during the refresh flow.
+
+**Implementation Sequence:**
+1. **Acquire Redis Lock (Debouncing):** Before querying PostgreSQL, attempt to create a Redis key (e.g., `refresh_lock:<refresh_token_hash>`) using a `SETNX` (Set if Not Exists) operation.
+    - **TTL:** The lock must have a strict TTL of **5 seconds**.
+    - **Concurrency Rejection:** If the lock already exists, a parallel request is currently processing this exact token. Immediately return `429 Too Many Requests`. Do not execute the PostgreSQL query. This prevents accidental self-nuking.
+    - **Unavailable Behavior:** If Redis is unreachable, fail-closed. Abort the request and return `500 Internal Server Error`.
+2. **Execute PostgreSQL Transaction (Integrity):** Once the Redis lock is acquired, invoke `RotateSession`. This method must open a single transaction, use `SELECT ... FOR UPDATE` to read the row, evaluate the compromise rules (`ReplacedByTokenHash != NULL`), and perform the rotation.
+3. **Release:** The Redis lock may be explicitly deleted after the database transaction completes, or simply left to expire via its 5-second TTL.
+
+### Implementation of Access and Refresh Tokens
+The Access/Refresh Token Claims should include:
+- jti (unique uuid of the token for targeted revocation)
+- iss ('campusrun-user-service')
+- sub (uuid of user)
+- aud ('campusrun-api')
+- exp (unix timestamp to enforce lifespan)
+- iat (unix timestamp of creation)
+- typ (either "access" or "refresh")
+- role (ONLY FOR Access Token Claims. Should include user's permission level -- STUDENT or ADMIN)
+
+The user service should store a hash of the refresh token in the database (which can last 7 days). The refresh token
+will be sent from the user for verification against the database to obtain another access token. 
+
+### Flow of authentication
+First and foremost, the API Gateway will be implemented in another folder separate from the user service.
+The API Gateway will sit between the user's browser and all microservices. The API Gateway and every service that accepts protected traffic verify JWT signatures using public keys provided by user service via `/.well-known/jwks.json`, without querying the user-service database.
+Each token verifier reads the Redis blocklist to verify the access token (specifically the `jti` claim) is valid (i.e. the user has not logged out) and checks the suspension key (formatted as `suspended:uid:<user-uuid>`) using the verified `sub` claim. The gateway then injects the verified claims in headers before forwarding requests to internal APIs via REST calls.
+The API Gateway should strip any incoming `X-User-ID` and `X-User-Role` headers before injecting its own validated claims (`sub` and `role`) and ensure that all microservices are in a private VPC inaccessible from the Internet.
+Note: If the Gateway cannot reach Redis to check the blocklist and suspensions, the request must be rejected.
+Note: If PostgreSQL fails after redis suspension invalidation and refresh-session revocation, the user service should return a `500 Internal Server Error` forthe frontend client to retry the logout request. Upon receiving the retry, the user service should overwrite the exact same Redis key with the identical TTL to ensure system recovers when PostgreSQL successfully commits the transaction.
+
+When the user logs out, the frontend will send a request (containing access and refresh tokens) to the API gateway, which will be passed to the user service to invalidate the session by pushing the access token's `jti` to the redis blocklist and then revoking the refresh token from its own `sessions` database. 
+When an `ADMIN` suspends an account, the user service shall push a Redis key (e.g., `suspended:uid:<user-uuid>`) containing the current time, and then update a `tokens_valid_after` field containing the same timestamp. A reader with no session of its own rejects a verified token when its `iat` (Issued At) is at or before the stored suspension time; an unparseable value is also treated as revoked. Refresh keeps its separate before rule because it also checks the revoked session boundary.
+
+The API Gateway and every service that verifies tokens are readers of the Redis blocklist, and the user service shall be the sole writer to the Redis blocklist.
+User-service also verifies its own protected profile and status routes after JWT signature and claim validation. It reads `jti:<jti>` and `suspended:uid:<uuid>` with one Redis MGET, bounded by 500 ms, and fails closed when Redis cannot answer. A revoked token receives 401; a Redis read failure receives 500. Logout remains unauthenticated by this reader so a retry can complete the refresh-session invalidation. The TTL for a specific `jti` in Redis includes the 5-second JWT clock-skew allowance, and the TTL for a suspended:uid:<uuid> key is JWT_ACCESS_TOKEN_TTL plus the same allowance.
+
+### Username/Password Policy
+The username policy as stated in the product backlog is:
+- only contains alphanumeric characters (Explicitly restrict "alphanumeric" to strictly ASCII characters (^[a-zA-Z0-9]+$) to prevent Unicode homoglyph spoofing (e.g., Cyrillic 'а'). Uniqueness must be case-insensitive, though display casing can be preserved)
+- maximum 128 characters
+The password policy as stated in the product backlog is:
+- 8 – 128 characters (pre-hash the password with SHA-256 before passing to bcrypt to fit the 72 bytes limit)
+- at least one uppercase letter
+- at least one lowercase letter
+- at least one digit
+This policy should be checked during registration and updating profile of a user.
+
+### Email Policy
+Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddress()` to prevent malformed inputs
+
+### OTP Feature
+**1. Database & State Updates**
+*   Update the `users` table `account_status` ENUM to include an `UNVERIFIED` state.
+*   New registrations must be inserted into PostgreSQL with `account_status = 'UNVERIFIED'`.
+
+**2. OTP Generation & Redis Storage**
+*   **Generation:** Use `crypto/rand` to generate a cryptographically secure 6-digit numeric string (^[0-9]{6}$).
+*   **Storage:** Store the SHA-256 hash of the OTP in Redis using the key `otp:hash:<email>`. Never store the plaintext OTP.
+*   **Lifespan:** Set the Redis TTL for `otp:hash:<email>` to exactly 5 minutes.
+*   **Invalidation:** If a replacement OTP is requested, generating the new OTP and overwriting the existing `otp:hash:<email>` key automatically invalidates the previous one.
+
+**3. Rate Limiting (Brute-Force & Spam Prevention)**
+*   Track OTP requests using a secondary Redis integer key: `otp:count:<email>`.
+*   Every time an OTP is requested (initial or replacement), increment this key using Redis `INCR` and set its TTL to 10 minutes.
+*   If `otp:count:<email>` exceeds 3, reject any further replacement requests or verification attempts with a `429 Too Many Requests` status until the 10-minute TTL expires.
+*   Track verification attempts against the stored code with `otp:attempts:<email>`. Storing a new OTP (registration or resend) resets it to 0 with the same 5-minute TTL as `otp:hash:<email>`, so it expires with the code.
+*   `verify-otp` increments `otp:attempts:<email>` *before* comparing, so concurrent guesses cannot compare one code more than 5 times. When the count exceeds 5, delete `otp:hash:<email>` and `otp:attempts:<email>` (keep `otp:count:<email>`, so this cannot reset the resend limit) and return `429 Too Many Requests` telling the user to request a new OTP. The limit holds per counting window: a guess already in flight when a new code is stored can be compared against the new code without being counted, so each resend allows at most a few extra comparisons, and resends stay capped by `otp:count:<email>`.
+
+**4. API Endpoints & Transport Boundaries**
+*   **Modify `POST /api/v1/users/register`:**
+    *   Inserts the `UNVERIFIED` user into PostgreSQL.
+    *   Generates the OTP, hashes it, and stores it in Redis.
+    *   <!-- AI Assistance Disclosure: Codex (GPT-6), 2026-11-08 — user-authorized SendGrid delivery update; Author review: ZI YANG - verified correctness. -->
+        Dispatches the plaintext OTP to the Email Service (via SendGrid).
+    *   Does *not* publish the `UserRegistered` event for the Credit Service. (`verify-otp` queues it once the account is activated.)
+*   **New `POST /api/v1/users/resend-otp`:**
+    *   Accepts `{"email": "string"}`.
+    *   Checks the `otp:count:<email>` rate limit. If under the limit, generates a new OTP, overwrites the hash in Redis with a 5-minute TTL, and dispatches the email.
+    *   A new OTP should not be generated and resent to the client if an email is unknown or has any status other than UNVERIFIED
+*   **New `POST /api/v1/users/verify-otp`:**
+    *   Accepts `{"email": "string", "otp": "string"}`.
+    *   Hashes the provided OTP and compares it against the Redis `otp:hash:<email>` value.
+    *   **Success:** If matched, open a database transaction to update `account_status` to `ACTIVE`, delete the Redis OTP keys, and publish the `UserRegistered` event to the outbox for the Credit Service (a `user.registered` row in `outbox_events`, written in the same transaction). Return `200 OK`.
+    *   **Failure:** Return `400 Bad Request` for a mismatch, or `404 Not Found` if the OTP expired.
+
+**5. Authentication Blocking**
+*   Modify `POST /api/v1/users/login`: If credentials are valid but the user's `account_status` is `UNVERIFIED`, reject the login. Return `403 Forbidden` with a standardized error payload (e.g., `{"error": "ACCOUNT_UNVERIFIED"}`) to signal the frontend to route the user to the OTP entry screen.
+
+**6. Registration and Resend Flow**
+*   **Redis (Pre-flight):** Increment the `otp:count:<email>` rate limiter. If the limit is exceeded, immediately abort and return `429 Too Many Requests`.
+*   **Domain Orchestration (The Callback):** The Account Service invokes `usersRepo.CreateWithTask()`, passing the new `UNVERIFIED` user object and a closure containing the Redis write logic.
+*   **PostgreSQL (Open Transaction):** The repository opens a transaction and `INSERT`s the user.
+*   **Redis (Write Hash inside Callback):** The repository executes the closure. The closure attempts to write `otp:hash:<email>` with a 5-minute TTL to Redis.
+    *   **Failure:** If Redis is unreachable, the closure returns an error to the repository. The repository executes a PostgreSQL rollback and returns the error to the domain service, resulting in a `500 Internal Server Error`.
+*   **PostgreSQL (Commit):** If the closure succeeds, the repository commits the database transaction. The system of record is now secure.
+*   <!-- AI Assistance Disclosure: Codex (GPT-6), 2026-11-08 — user-authorized SendGrid delivery update; Author review: ZI YANG - verified correctness. -->
+    **SendGrid:** After `CreateWithTask` returns successfully, the domain service dispatches the plaintext OTP via SendGrid.
+    *   **Failure:** If SendGrid times out or returns a 5xx error, do not roll back the database. The user is safely stored as `UNVERIFIED`. Return a `500 Internal Server Error` to the frontend so it can display "Failed to send email." The user can simply click "Resend OTP" to trigger the resend flow, which safely overwrites the Redis hash.
+
+**7. Verification Flow**
+*   Redis: Fetch the `otp:hash:<email>`. Compare it to the client's hashed input.
+    * Failure: If missing, return 404 Not Found. If mismatched, return 400 Bad Request.
+*   Domain Orchestration: The Account Service invokes `s.repository.ActivateUser(ctx, email)`.
+*   PostgreSQL (ActivateUser Transaction):
+    * The repository executes `SELECT ... FOR UPDATE` to lock the user row.
+    * If the user is missing, it returns `user.ErrNotFound` -> API returns `404 Not Found`.
+    * If the user is already `ACTIVE`, it returns `user.ErrAccountAlreadyVerified` -> API returns `409 Conflict`.
+    * Updates `account_status` to `ACTIVE` and inserts the `UserRegistered` outbox event (routing key `user.registered`; payload `eventId`, `eventType`, `userId`, `occurredAt`).
+*   PostgreSQL (Commit): Commit the transaction. The user is now officially active and the Credit Service will eventually receive the outbox event.
+*   Redis (Cleanup): Delete the `otp:hash:<email>`, `otp:count:<email>` and `otp:attempts:<email>` keys to prevent reuse.
+    * Failure: If Redis fails to delete the key, ignore the error. Do not fail the request. If the user accidentally submits the same OTP again before the TTL expires, Step 2 will catch that the user is already ACTIVE and safely return a 409 Conflict, neutralizing the risk of a replay attack.
+
+<!--
+AI Assistance Disclosure:
+Tool: Codex (model: GPT-6), date: 2026-11-08
+Scope: Recorded the user's explicit authorization to replace Mailgun with Twilio SendGrid and update the delivery/configuration contract.
+Author review: ZI YANG — Verified correctness
+-->
+**8. SendGrid Delivery Contract**
+*   **Decision record:** On 2026-11-08, the user authorized updating this contract and implementing Twilio SendGrid in place of Mailgun. The existing OTP delivery interface and verification flow remain the integration boundary.
+*   **Configuration:** With `OTP_DELIVERY=sendgrid` (the default when unset), the service requires `SENDGRID_API_KEY` and `SENDGRID_SENDER_EMAIL`. The sender must be a verified SendGrid sender identity. With `OTP_DELIVERY=log` (local development only), it writes each code to its log and needs no SendGrid credentials. `mailgun` is no longer a supported delivery mode. Compose and the environment templates continue to default to `log` for local runs.
+*   **API Endpoint & Authentication:** Use SendGrid's global Mail Send API (`POST https://api.sendgrid.com/v3/mail/send`), with `Authorization: Bearer <SENDGRID_API_KEY>` and `Content-Type: application/json`. Use the Go standard library; no additional SDK dependency is required.
+*   **Message Content:** Send plaintext and HTML content containing `"Your CampusRun verification code is: <OTP>. This code expires in 5 minutes."` The subject is `"CampusRun Email Verification"`.
+*   **Message Body:** Set `from.email` to `SENDGRID_SENDER_EMAIL`, `personalizations[0].to[0].email` to the OTP recipient, and supply `text/plain` then `text/html` content entries. No Mailgun domain setting is required.
+*   **Timeout & Retry Behavior:** Use a five-second HTTP timeout, propagate the caller's context, and do not automatically retry. Treat HTTP 202 as accepted for delivery; any other response is a delivery error. Report the status without logging the API key, OTP, request body, or provider response body. Acceptance does not confirm inbox delivery. Existing registration/resend failure handling remains in effect.
+*   **Reference:** [Twilio SendGrid Mail Send API](https://www.twilio.com/docs/sendgrid/api-reference/mail-send/mail-send).
+
+**9. Resend Edge Cases**
+*   If an email is submitted to `/resend-otp` that does not exist in the `users` table, the service must return `404 Not Found`.
+*   If an email is submitted to `/resend-otp` but the user's `account_status` is `ACTIVE` or `SUSPENDED`, the service must not generate an OTP and must return `409 Conflict` (e.g., `{"error": "Account is already verified"}`).
+<!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — records issue #31's suspended-account rule. -->
+
+### Observability & Error Handling
+To ensure secure and traceable operational logging, the service must not rely on global loggers or silently discard underlying errors.
+
+- **Request IDs:** Use `github.com/go-chi/chi/v5/middleware.RequestID` globally in the Chi router. This automatically generates and propagates a unique request ID into every `http.Request` context.
+- **Logger Injection:** The application must use structured logging (e.g., Go 1.21's `log/slog.Logger`). The logger instance must be instantiated in `main.go` and explicitly injected into the handler constructors (e.g., `NewAuthHandler(..., logger *slog.Logger)`) to avoid mutable global state.
+- **Error Exposure & Stack Traces:** Handlers must never discard original errors. To standardize this, the HTTP transport layer must implement a centralized helper function (e.g., `writeError(ctx context.Context, w http.ResponseWriter, logger *slog.Logger, status int, rawErr error, clientMsg string)`).
+    - For `500 Internal Server Error` statuses, this helper must extract the Request ID from the context (`middleware.GetReqID(ctx)`) and capture the stack trace using `runtime/debug.Stack()`.
+    - The helper must structured-log the Request ID, the raw underlying error, and the stack trace directly to the standard output.
+    - After successfully logging the raw details, it must safely write the sanitized JSON response (e.g., `{"error": "Internal Server Error"}`) to the client.
+
+### First Admin creation
+`INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_USERNAME`, `INITIAL_ADMIN_PASSWORD` should be configured in `.env` 
+for user service to read. There should be a `bootstrap.go` file in `cmd/api/` alongside `main.go` to
+initialise the `users` table with a default admin. This bootstrap step shall be done after user repository and account service
+initialisation and before the Chi router is configured. Ensure that the admin credentials will not be leaked
+into production.
+
+<!-- AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — transcribes the -->
+<!-- human-authorized requirement for administrator role changes below. Author review: ZI YANG - reviewed and edited. -->
+### Administrator Role Changes (approved decisions)
+<!-- AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — transcribes the -->
+<!-- owner's approved API, concurrency and session decisions, including the -->
+<!-- explicit prohibition of self-demotion. Author review: ZI YANG - reviewed and edited. -->
+
+- An active administrator can promote an ACTIVE STUDENT to ADMIN and demote another ADMIN to STUDENT. A SUSPENDED student must never be promoted. An active administrator must never demote themselves, even when other active administrators exist.
+- Always retain at least one ACTIVE ADMIN; refuse a demotion that would remove the final active administrator. This strengthens the earlier requirement that counted administrators of any status.
+- API: `PATCH /api/v1/users/{uid}/role`, bearer authentication, JSON `{"role":"ADMIN"}` or `{"role":"STUDENT"}`; 204 with no body for success, including an unchanged role.
+- Errors use `{"error":"..."}`: 400 invalid user ID/body/role; 401 missing, invalid or revoked authentication; 403 caller is not an ACTIVE ADMIN or attempts self-demotion; 404 target missing; 409 final active administrator or promotion of an inactive account; 413 body over 10 KiB; 500 database, Redis or audit failure.
+- Serialize all promotions and demotions with one PostgreSQL transaction advisory lock. Lock caller and target rows in consistent ID order, then recheck the caller's current authority and the active-admin count inside the transaction. Use READ COMMITTED so reads after acquiring the lock see earlier commits.
+- Persist the role, monotonic `tokens_valid_after`, refresh-session revocations and successful audit entry in the same transaction. The existing status-update transaction must recheck the prohibition against suspending admins after locking its target, closing promotion-versus-suspension races.
+- For a changed role, publish the existing Redis cutoff before committing. Abort the change if Redis fails. Preserve the latest cutoff and sufficient TTL in every cutoff writer. A later database rollback may leave existing access tokens invalidated despite the failed role change.
+- Invalidate all target access and refresh tokens on either role change; the target signs in again for the new role. Login and refresh hold a shared account-row lock while reading current account state, issuing credentials and saving the refresh session; role updates hold an exclusive row lock. Do not return credentials until their transaction commits.
+- Audit successful changes with before/after roles, and record refused or failed attempts under the existing audit policy. Test concurrency between demotions, promotion and suspension, and login/refresh and role changes, as well as dependency failures.
+
+### Entry point of service (`cmd/api/main.go`)
+The `main.go` file should construct its dependencies in the following order:
+1. Parse environment variables (using a library like kelseyhightower/envconfig).
+2. Initialize the PostgreSQL pgxpool and the go-redis client.
+3. Initialize the JWT Key Manager (parsing PEMs and generating kids).
+4. Instantiate the Repositories (UserRepository, SessionRepository).
+5. Add default admin account if `users` table does not have at least 1 user with ADMIN role.
+6. Instantiate the background Outbox worker goroutine (`internal/relay`), which publishes `outbox_events` rows to RabbitMQ's `foc.events` exchange.
+7. Instantiate the Domain Service (injecting repos, redis client, and JWT manager).
+8. Instantiate the HTTP Handlers and mount them to the Chi router.
+
+### Miscellaneous details
+
+In the case where the PostgreSQL fails after the Redis operation completes the invalidation, the user service should:
+1. Returns a 500 Internal Server Error.
+2. The frontend (which still holds the valid refresh token) automatically retries the logout request. The Go service overwrites the exact same Redis key with the same TTL, and the database eventually commits.
+
+Events are sent to the message broker through the outbox: `internal/relay` publishes each `outbox_events` row to RabbitMQ (`RABBITMQ_URL`) with publisher confirms and retries a failed publish. The service starts without the broker; events wait in the outbox until it is reachable.
+
+<!-- AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — updates the D-078 event behavior. -->
+Accounts activated before user-service started queuing `user.registered` get that event once, from a one-off migration (`000006`): one `user.registered` row for every `ACTIVE` `STUDENT` account that has none yet, with `occurredAt` set to the account's `date_created`. `ADMIN`, `UNVERIFIED` and `SUSPENDED` accounts get none from it. An `UNVERIFIED` account gets its event when it verifies its email through `verify-otp`; a `STUDENT` reactivated through the admin status route queues the event if it has none yet. Re-running the migration queues nothing more, and rolling it back leaves the queued rows in place.
+
+Never prune `user.registered` rows from `outbox_events`: `000006`'s duplicate guard relies on them to skip accounts that already have their event.
+
+## Local development
+
+Port **8081**, database URL `USER_DB_URL` (root §3). Also the JWT settings
+used for JWT authentication and session handling and already present in the
+root `.env.example` — `JWT_KEYSET_PATH`, `JWT_ACCESS_TOKEN_TTL`, `JWT_REFRESH_TOKEN_TTL`.
+
+Developers should create a local `keys.json` file containing an array of PEM-encoded private keys, and to set `JWT_KEYSET_PATH` to point to it. The JSON file should contain only private keys, and the system will programmatically derive the public keys and kid for each entry (by computing the SHA-256 fingerprint of the extracted public key's DER encoding) on startup.
+
+The JSON file should contain a single root with a keys array. Here is an example:
+```json
+{
+  "keys": [
+    "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQ...\n-----END PRIVATE KEY-----",
+    "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQ...\n-----END PRIVATE KEY-----"
+  ]
+}
+```
+
+```bash
+go run ./cmd/api      # migrations run on startup via golang-migrate
+go test ./...
+```
+
+### Key Generation Script (`generate_jwks.py`)
+To facilitate local development and JWT integration, the service includes a Python script to generate the required RSA private keys. This script is a strict build dependency and must adhere to the following rules:
+
+*   **Product Naming:** All descriptions, comments, and CLI outputs within the script must use "CampusRun" to align with the `campusrun-user-service` token issuer and audience claims.
+*   **Strict Permission Enforcement:** The script must explicitly apply `0600` (owner read/write only) permissions to `keys.json` on *every* run using `os.fchmod(fd, 0o600)`. Relying on `os.open` creation modes is insufficient, as it leaves existing wider permissions intact.
+*   **Pipeline Failure on Error:** If the script encounters an error while generating or writing the keys, it must print the error and terminate with a non-zero exit code (e.g., `sys.exit(1)`). It must not swallow the error and exit `0`.
+*   **Local Dependencies:** Python 3 and the `cryptography` package are official prerequisites for building and running the user-service locally.
+*   **AI Disclosure:** If the script was generated by an AI, it must include the standard AI disclosure header at the top of the file and be recorded in the repository's usage log.
+
+## Gotchas
+
+- **Credentials live here, so this is the highest-risk code in the repo.**
+  Password storage and JWT handling use vetted libraries (for example,
+  `golang.org/x/crypto` for bcrypt and a maintained JWT library) — no
+  home-rolled crypto. Never log a password, hash, token or keys in `JWT_KEYSET_PATH`; keep
+  them out of DTOs and errors. JWT session invalidation must be represented by
+  an explicit service boundary; do not silently assume that stateless token
+  expiry alone satisfies logout or suspension requirements.
+- **Role changes are named operations, not a boolean parameter.** A
+  `SetRole(ctx, id, isAdmin bool)`-shaped API is control coupling (root §5);
+  the requester/courier toggle and any admin grant are separate, separately
+  authorised functions.

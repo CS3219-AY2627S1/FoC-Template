@@ -1,0 +1,729 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Opus 5.5), date: 2026-10-14
+// Scope: In-memory fakes of every order port (repository, credit, supplier,
+//   clock) that keep the same semantics as the real adapters, so rules are
+//   tested with no database (order-service/AGENTS.md, root AGENTS.md §7).
+// Author review: James Teo — reviewed and verified.
+
+// Package ordertest holds in-memory fakes of the order package's ports, for
+// tests in any order-service package.
+package ordertest
+
+import (
+	"cmp"
+	"context"
+	"errors"
+	"slices"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+
+	"foc/order-service/internal/order"
+)
+
+// Clock is a settable order.Clock.
+type Clock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+// NewClock returns a Clock stopped at t.
+func NewClock(t time.Time) *Clock { return &Clock{now: t.UTC()} }
+
+// Now returns the clock's current time.
+func (c *Clock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+// Advance moves the clock forward by d.
+func (c *Clock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
+// Suppliers is an order.SupplierDirectory backed by a map.
+type Suppliers struct {
+	mu   sync.Mutex
+	byID map[uuid.UUID]order.Supplier
+	err  error
+}
+
+// NewSuppliers returns a directory holding the given suppliers.
+func NewSuppliers(list ...order.Supplier) *Suppliers {
+	s := &Suppliers{byID: map[uuid.UUID]order.Supplier{}}
+	for _, sup := range list {
+		s.byID[sup.ID] = sup
+	}
+	return s
+}
+
+// Put adds or replaces a supplier.
+func (s *Suppliers) Put(sup order.Supplier) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.byID[sup.ID] = sup
+}
+
+// FailWith makes every lookup fail with err, as if supplier-service were
+// down; nil restores normal answers.
+func (s *Suppliers) FailWith(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.err = err
+}
+
+// Supplier implements order.SupplierDirectory.
+func (s *Suppliers) Supplier(_ context.Context, id uuid.UUID) (order.Supplier, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return order.Supplier{}, s.err
+	}
+	sup, ok := s.byID[id]
+	if !ok {
+		return order.Supplier{}, order.ErrSupplierNotFound
+	}
+	return sup, nil
+}
+
+// AdjustCall records one Credit.Adjust or Credit.Release call. OperationID
+// is set on a Release: the reward_set's eventId it is keyed on.
+type AdjustCall struct {
+	ErrandID      uuid.UUID
+	RequesterID   uuid.UUID
+	NewReward     int
+	CurrVersion   int
+	OperationID   uuid.UUID
+	CorrelationID string
+}
+
+// Credit is an order.CreditClient that keeps the amount held per errand, the
+// way credit-service's reservation would.
+type Credit struct {
+	mu       sync.Mutex
+	holds    map[uuid.UUID]int
+	reserves []order.Reservation
+	adjusts  []AdjustCall
+	// ReserveHook, when set, decides a Reserve: apply says whether credit
+	// actually holds the amount, err is what the caller sees. A lost response
+	// is apply=true with a non-nil err.
+	ReserveHook func(r order.Reservation) (apply bool, err error)
+	// AdjustHook does the same for Adjust.
+	AdjustHook func(c AdjustCall) (apply bool, err error)
+	// ReleaseHook does the same for Release.
+	ReleaseHook func(c AdjustCall) (apply bool, err error)
+	releases    []AdjustCall
+}
+
+// NewCredit returns a Credit that accepts every call.
+func NewCredit() *Credit { return &Credit{holds: map[uuid.UUID]int{}} }
+
+// Reserve implements order.CreditClient.
+func (c *Credit) Reserve(_ context.Context, r order.Reservation) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.reserves = append(c.reserves, r)
+	apply, err := true, error(nil)
+	if c.ReserveHook != nil {
+		apply, err = c.ReserveHook(r)
+	}
+	if apply {
+		c.holds[r.ErrandID] = r.Amount
+	}
+	return err
+}
+
+// Adjust implements order.CreditClient. The service calls it only for a
+// raise, so the fake only grows the hold; Release lowers it (D-102).
+func (c *Credit) Adjust(_ context.Context, errandID, requesterID uuid.UUID, newReward, currVersion int, correlationID string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	call := AdjustCall{ErrandID: errandID, RequesterID: requesterID, NewReward: newReward, CurrVersion: currVersion, CorrelationID: correlationID}
+	c.adjusts = append(c.adjusts, call)
+	apply, err := true, error(nil)
+	if c.AdjustHook != nil {
+		apply, err = c.AdjustHook(call)
+	}
+	if apply {
+		c.holds[errandID] = max(c.holds[errandID], newReward)
+	}
+	return err
+}
+
+// Release implements order.CreditClient. Like credit-service, it lowers the
+// hold to newReward (D-102).
+func (c *Credit) Release(_ context.Context, errandID, requesterID uuid.UUID, newReward, currVersion int, operationID uuid.UUID, correlationID string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	call := AdjustCall{ErrandID: errandID, RequesterID: requesterID, NewReward: newReward, CurrVersion: currVersion, OperationID: operationID, CorrelationID: correlationID}
+	c.releases = append(c.releases, call)
+	apply, err := true, error(nil)
+	if c.ReleaseHook != nil {
+		apply, err = c.ReleaseHook(call)
+	}
+	if apply {
+		c.holds[errandID] = min(c.holds[errandID], newReward)
+	}
+	return err
+}
+
+// Releases returns every Release call so far.
+func (c *Credit) Releases() []AdjustCall {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.releases)
+}
+
+// Hold returns the amount held for an errand and whether any is.
+func (c *Credit) Hold(errandID uuid.UUID) (int, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	v, ok := c.holds[errandID]
+	return v, ok
+}
+
+// Reserves returns every Reserve call so far.
+func (c *Credit) Reserves() []order.Reservation {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.reserves)
+}
+
+// Adjusts returns every Adjust call so far.
+func (c *Credit) Adjusts() []AdjustCall {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.adjusts)
+}
+
+type outboxRow struct {
+	event     order.OutboxEvent
+	published bool
+	// AI-generated (edited by nigeltzy).
+	// seq keeps events staged at the same instant in the order they were
+	// staged, since the outbox is a map and the test clock can stand still.
+	seq int
+}
+
+// Repository is an in-memory order.Repository. One mutex serializes every
+// method, which is how the conditional writes stay atomic here.
+type Repository struct {
+	mu      sync.Mutex
+	orders  map[uuid.UUID]order.Order
+	history []order.HistoryEntry
+	outbox  map[uuid.UUID]*outboxRow
+	nextSeq int
+	nextID  int64
+	fail    map[string]error
+	// audits are the admin audit rows saved, in order.
+	audits []*order.AuditEntry
+	// AfterAmendFn, when set, is returned by Amend after fn has run and
+	// before anything is written: a commit that fails after credit was called.
+	AfterAmendFn error
+	// AI-generated (edited by nigeltzy): ratings and Find errands' records
+	// (D-092, D-093); their methods are in ratings.go.
+	ratings  []order.Rating
+	shown    []ShownRow
+	searches []SearchRow
+}
+
+// NewRepository returns an empty Repository.
+func NewRepository() *Repository {
+	return &Repository{orders: map[uuid.UUID]order.Order{}, outbox: map[uuid.UUID]*outboxRow{}, fail: map[string]error{}}
+}
+
+// FailNext makes the next call to the named method (e.g. "Create") return err.
+func (r *Repository) FailNext(method string, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.fail[method] = err
+}
+
+func (r *Repository) takeFail(method string) error {
+	err := r.fail[method]
+	delete(r.fail, method)
+	return err
+}
+
+// AI-generated (edited by James Teo).
+// withHistory returns o with WithdrawnCouriers read from the history rows
+// written so far, as the real adapter reads them (D-060).
+func (r *Repository) withHistory(o order.Order) order.Order {
+	o.WithdrawnCouriers = nil
+	for _, h := range r.history {
+		if h.OrderID == o.ID && h.Action == order.ActionWithdraw && h.CourierID != nil {
+			o.WithdrawnCouriers = append(o.WithdrawnCouriers, *h.CourierID)
+		}
+	}
+	return o
+}
+
+// AI-generated (edited by James Teo).
+// withdrewFrom reports whether courierID's withdrawal from the errand is in
+// its history (D-060).
+func (r *Repository) withdrewFrom(orderID, courierID uuid.UUID) bool {
+	return slices.Contains(r.withHistory(order.Order{ID: orderID}).WithdrawnCouriers, courierID)
+}
+
+// Put stores o as is, for tests that start from a given state.
+func (r *Repository) Put(o order.Order) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.orders[o.ID] = o
+}
+
+// Events returns every outbox event with whether it was published, oldest first.
+func (r *Repository) Events() []order.OutboxEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rows := make([]*outboxRow, 0, len(r.outbox))
+	for _, row := range r.outbox {
+		rows = append(rows, row)
+	}
+	slices.SortFunc(rows, func(a, b *outboxRow) int {
+		if c := a.event.AvailableAt.Compare(b.event.AvailableAt); c != 0 {
+			return c
+		}
+		return a.seq - b.seq
+	})
+	out := make([]order.OutboxEvent, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.event)
+	}
+	return out
+}
+
+// AI-generated (edited by nigeltzy).
+// stage adds e to the outbox. The caller holds r.mu.
+func (r *Repository) stage(e order.OutboxEvent) {
+	r.nextSeq++
+	r.outbox[e.EventID] = &outboxRow{event: e, seq: r.nextSeq}
+}
+
+// EventsFor returns the events whose payload names the errand.
+func (r *Repository) EventsFor(errandID uuid.UUID) []order.OutboxEvent {
+	var out []order.OutboxEvent
+	for _, e := range r.Events() {
+		if e.Payload.ErrandID == errandID {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// MarkPublished marks an outbox event published, as the relay would.
+func (r *Repository) MarkPublished(eventID uuid.UUID) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if row, ok := r.outbox[eventID]; ok {
+		row.published = true
+	}
+}
+
+// Get implements order.Repository.
+func (r *Repository) Get(_ context.Context, id uuid.UUID) (order.Order, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.takeFail("Get"); err != nil {
+		return order.Order{}, err
+	}
+	o, ok := r.orders[id]
+	if !ok {
+		return order.Order{}, order.ErrNotFound
+	}
+	// AI-generated (edited by James Teo).
+	return r.withHistory(o), nil
+}
+
+// History implements order.Repository.
+func (r *Repository) History(_ context.Context, id uuid.UUID) ([]order.HistoryEntry, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []order.HistoryEntry
+	for _, h := range r.history {
+		if h.OrderID == id {
+			out = append(out, h)
+		}
+	}
+	return out, nil
+}
+
+// FindByRequestKey implements order.Repository.
+func (r *Repository) FindByRequestKey(_ context.Context, requesterID uuid.UUID, key string) (order.Order, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, o := range r.orders {
+		if o.RequesterID == requesterID && o.RequestKey != "" && o.RequestKey == key {
+			// AI-generated (edited by James Teo).
+			return r.withHistory(o), nil
+		}
+	}
+	return order.Order{}, order.ErrNotFound
+}
+
+// AI-generated (edited by James Teo).
+func (r *Repository) filter(keep func(order.Order) bool) []order.Order {
+	var out []order.Order
+	for _, o := range r.orders {
+		if keep(o) {
+			out = append(out, r.withHistory(o))
+		}
+	}
+	return out
+}
+
+func limited[T any](s []T, limit int) []T {
+	if limit > 0 && len(s) > limit {
+		return s[:limit]
+	}
+	return s
+}
+
+// ListOpen implements order.Repository.
+func (r *Repository) ListOpen(_ context.Context, now time.Time, limit int) ([]order.Order, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := r.filter(func(o order.Order) bool {
+		return o.State == order.StateOpen && o.ExpiresAt != nil && o.ExpiresAt.After(now)
+	})
+	slices.SortFunc(out, func(a, b order.Order) int { return b.CreatedAt.Compare(a.CreatedAt) })
+	return limited(out, limit), nil
+}
+
+// ListByRequester implements order.Repository.
+func (r *Repository) ListByRequester(_ context.Context, requesterID uuid.UUID, states []order.State, limit int) ([]order.Order, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := r.filter(func(o order.Order) bool { return o.RequesterID == requesterID && slices.Contains(states, o.State) })
+	slices.SortFunc(out, func(a, b order.Order) int { return b.StateChangedAt.Compare(a.StateChangedAt) })
+	return limited(out, limit), nil
+}
+
+// ListByCourier implements order.Repository.
+func (r *Repository) ListByCourier(_ context.Context, courierID uuid.UUID, states []order.State, limit int) ([]order.Order, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := r.filter(func(o order.Order) bool {
+		return o.CourierID != nil && *o.CourierID == courierID && slices.Contains(states, o.State)
+	})
+	slices.SortFunc(out, func(a, b order.Order) int { return b.StateChangedAt.Compare(a.StateChangedAt) })
+	return limited(out, limit), nil
+}
+
+// ListAssignmentHistory implements order.Repository.
+func (r *Repository) ListAssignmentHistory(_ context.Context, courierID uuid.UUID, limit int) ([]order.Assignment, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []order.Assignment
+	for _, h := range r.history {
+		if h.CourierID == nil || *h.CourierID != courierID {
+			continue
+		}
+		var outcome order.AssignmentOutcome
+		switch {
+		case h.Action == order.ActionWithdraw:
+			outcome = order.OutcomeReleased
+		case h.ToState == order.StateCompleted:
+			outcome = order.OutcomeCompleted
+		case h.ToState == order.StateCancelled:
+			outcome = order.OutcomeCancelled
+		default:
+			continue
+		}
+		o := r.orders[h.OrderID]
+		out = append(out, order.Assignment{
+			HistoryID:        h.ID,
+			OrderID:          h.OrderID,
+			Outcome:          outcome,
+			EndedAt:          h.OccurredAt,
+			Supplier:         o.Supplier,
+			ItemDescription:  o.ItemDescription,
+			DeliveryLocation: o.DeliveryLocation,
+			Reward:           o.Reward,
+		})
+	}
+	slices.SortFunc(out, func(a, b order.Assignment) int {
+		return cmp.Or(b.EndedAt.Compare(a.EndedAt), cmp.Compare(b.HistoryID, a.HistoryID))
+	})
+	return limited(out, limit), nil
+}
+
+// ListActive implements order.Repository.
+func (r *Repository) ListActive(_ context.Context, limit int) ([]order.Order, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := r.filter(func(o order.Order) bool { return !o.State.Final() })
+	slices.SortFunc(out, func(a, b order.Order) int { return a.StateChangedAt.Compare(b.StateChangedAt) })
+	return limited(out, limit), nil
+}
+
+// CountActiveBySupplier implements order.Repository.
+func (r *Repository) CountActiveBySupplier(_ context.Context, supplierID uuid.UUID) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.filter(func(o order.Order) bool { return o.Supplier.ID == supplierID && !o.State.Final() })), nil
+}
+
+// AI-generated (edited by James Teo).
+// CountOpenByRequester implements order.Repository.
+func (r *Repository) CountOpenByRequester(_ context.Context, requesterID uuid.UUID, now time.Time) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.countOpen(requesterID, now), nil
+}
+
+// AI-generated (edited by James Teo).
+func (r *Repository) countOpen(requesterID uuid.UUID, now time.Time) int {
+	return len(r.filter(func(o order.Order) bool {
+		return o.RequesterID == requesterID && o.State == order.StateOpen && o.ExpiresAt != nil && o.ExpiresAt.After(now)
+	}))
+}
+
+// DueForExpiry implements order.Repository.
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — fake due-scheduled query.
+func (r *Repository) DueForScheduled(_ context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	due := r.filter(func(o order.Order) bool {
+		return o.State == order.StateScheduled && o.ScheduledAt != nil && !o.ScheduledAt.After(now)
+	})
+	slices.SortFunc(due, func(a, b order.Order) int { return a.ScheduledAt.Compare(*b.ScheduledAt) })
+	return ids(limited(due, limit)), nil
+}
+
+// DueForExpiry implements order.Repository.
+func (r *Repository) DueForExpiry(_ context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	due := r.filter(func(o order.Order) bool {
+		return o.State == order.StateOpen && o.ExpiresAt != nil && !o.ExpiresAt.After(now)
+	})
+	slices.SortFunc(due, func(a, b order.Order) int { return a.ExpiresAt.Compare(*b.ExpiresAt) })
+	return ids(limited(due, limit)), nil
+}
+
+// DueForAutoConfirm implements order.Repository.
+func (r *Repository) DueForAutoConfirm(_ context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	due := r.filter(func(o order.Order) bool {
+		return o.State == order.StateDelivered && o.ConfirmBy != nil && !o.ConfirmBy.After(now)
+	})
+	slices.SortFunc(due, func(a, b order.Order) int { return a.ConfirmBy.Compare(*b.ConfirmBy) })
+	return ids(limited(due, limit)), nil
+}
+
+func ids(os []order.Order) []uuid.UUID {
+	out := make([]uuid.UUID, 0, len(os))
+	for _, o := range os {
+		out = append(out, o.ID)
+	}
+	return out
+}
+
+// QueueEvent implements order.Repository.
+func (r *Repository) QueueEvent(_ context.Context, e order.OutboxEvent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.takeFail("QueueEvent"); err != nil {
+		return err
+	}
+	r.stage(e)
+	return nil
+}
+
+// Create implements order.Repository.
+func (r *Repository) Create(_ context.Context, o order.Order, h order.HistoryEntry, guardEventID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.takeFail("Create"); err != nil {
+		return err
+	}
+	guard, ok := r.outbox[guardEventID]
+	if !ok || guard.published {
+		return order.ErrGuardGone
+	}
+	if o.RequestKey != "" {
+		for _, existing := range r.orders {
+			if existing.RequesterID == o.RequesterID && existing.RequestKey == o.RequestKey {
+				return order.ErrDuplicateRequestKey
+			}
+		}
+	}
+	// AI-generated (edited by James Teo).
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — only OPEN creates
+	// consume the requester's open-errand allowance.
+	if o.State == order.StateOpen && r.countOpen(o.RequesterID, o.CreatedAt) >= order.MaxOpenErrands {
+		return order.ErrTooManyOpen
+	}
+	delete(r.outbox, guardEventID)
+	r.orders[o.ID] = o
+	r.appendHistory(h)
+	return nil
+}
+
+func (r *Repository) appendHistory(h order.HistoryEntry) {
+	r.nextID++
+	h.ID = r.nextID
+	r.history = append(r.history, h)
+}
+
+// Transition implements order.Repository.
+func (r *Repository) Transition(_ context.Context, t order.Transition) (order.Order, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.takeFail("Transition"); err != nil {
+		return order.Order{}, err
+	}
+	o, ok := r.orders[t.OrderID]
+	if !ok || !matches(o, t) {
+		return order.Order{}, order.ErrNoMatch
+	}
+	o.State = t.ToState
+	o.CourierID = t.CourierID
+	o.ExpiresAt = t.ExpiresAt
+	o.ConfirmBy = t.ConfirmBy
+	o.StateChangedAt = t.Now
+	o.UpdatedAt = t.Now
+	o.Version++
+	r.orders[o.ID] = o
+	r.appendHistory(t.History)
+	if t.Event != nil {
+		r.stage(*t.Event)
+	}
+	if t.Audit != nil {
+		r.audits = append(r.audits, t.Audit)
+	}
+	// AI-generated (edited by James Teo).
+	return r.withHistory(o), nil
+}
+
+func matches(o order.Order, t order.Transition) bool {
+	switch {
+	case o.State != t.FromState:
+		return false
+	case t.ExpectRequesterID != nil && o.RequesterID != *t.ExpectRequesterID:
+		return false
+	case t.ExpectCourierID != nil && (o.CourierID == nil || *o.CourierID != *t.ExpectCourierID):
+		return false
+	case t.ExpectVersion != nil && o.Version != *t.ExpectVersion:
+		return false
+	case t.OpenBefore != nil && (o.ExpiresAt == nil || !o.ExpiresAt.After(*t.OpenBefore)):
+		return false
+	case t.ExpiryDueBy != nil && (o.ExpiresAt == nil || o.ExpiresAt.After(*t.ExpiryDueBy)):
+		return false
+	case t.ConfirmDueBy != nil && (o.ConfirmBy == nil || o.ConfirmBy.After(*t.ConfirmDueBy)):
+		return false
+	}
+	return true
+}
+
+// Accept implements order.Repository.
+func (r *Repository) Accept(_ context.Context, c order.AcceptCommand) (order.Order, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.takeFail("Accept"); err != nil {
+		return order.Order{}, err
+	}
+	active := r.filter(func(o order.Order) bool {
+		return o.CourierID != nil && *o.CourierID == c.CourierID &&
+			(o.State == order.StateAccepted || o.State == order.StatePickedUp)
+	})
+	if len(active) >= c.MaxActive {
+		return order.Order{}, order.ErrCourierAtCapacity
+	}
+	o, ok := r.orders[c.OrderID]
+	// AI-generated (edited by James Teo): a courier who withdrew is refused too (D-060).
+	if !ok || o.State != order.StateOpen || o.ExpiresAt == nil || !o.ExpiresAt.After(c.Now) ||
+		o.RequesterID == c.CourierID || o.Version != c.ExpectedVersion || r.withdrewFrom(o.ID, c.CourierID) {
+		return order.Order{}, order.ErrNoMatch
+	}
+	courier := c.CourierID
+	o.State = order.StateAccepted
+	o.CourierID = &courier
+	o.ExpiresAt = nil
+	o.StateChangedAt = c.Now
+	o.UpdatedAt = c.Now
+	o.Version++
+	r.orders[o.ID] = o
+	r.appendHistory(c.History)
+	if c.Event != nil {
+		r.stage(*c.Event)
+	}
+	// AI-generated (edited by James Teo).
+	return r.withHistory(o), nil
+}
+
+// Amend implements order.Repository. fn runs with the repository locked, the
+// way the real adapter holds the row lock.
+func (r *Repository) Amend(_ context.Context, id uuid.UUID, fn func(current order.Order) (*order.AmendResult, error)) (order.Order, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cur, ok := r.orders[id]
+	if !ok {
+		return order.Order{}, order.ErrNotFound
+	}
+	// AI-generated (edited by James Teo).
+	cur = r.withHistory(cur)
+	res, err := fn(cur)
+	if err != nil {
+		return order.Order{}, err
+	}
+	if res == nil {
+		return cur, nil
+	}
+	if r.AfterAmendFn != nil {
+		err := r.AfterAmendFn
+		r.AfterAmendFn = nil
+		return order.Order{}, err
+	}
+	r.orders[id] = res.Order
+	if res.History != nil {
+		r.appendHistory(*res.History)
+	}
+	if res.Event != nil {
+		r.stage(*res.Event)
+	}
+	// AI-generated (edited by James Teo).
+	return r.withHistory(res.Order), nil
+}
+
+// AmendScheduled runs the callback with the fake locked and includes its
+// requester's current OPEN count, mirroring the PostgreSQL transaction.
+func (r *Repository) AmendScheduled(_ context.Context, id uuid.UUID, now time.Time, fn func(current order.Order, openCount int) (*order.AmendResult, error)) (order.Order, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cur, ok := r.orders[id]
+	if !ok {
+		return order.Order{}, order.ErrNotFound
+	}
+	cur = r.withHistory(cur)
+	count := r.countOpen(cur.RequesterID, now)
+	res, err := fn(cur, count)
+	if err != nil {
+		return order.Order{}, err
+	}
+	if res == nil {
+		return cur, nil
+	}
+	if r.AfterAmendFn != nil {
+		err := r.AfterAmendFn
+		r.AfterAmendFn = nil
+		return order.Order{}, err
+	}
+	r.orders[id] = res.Order
+	if res.History != nil {
+		r.appendHistory(*res.History)
+	}
+	if res.Event != nil {
+		r.stage(*res.Event)
+	}
+	return r.withHistory(res.Order), nil
+}
+
+// ErrInjected is a ready-made error for FailNext and the hooks.
+var ErrInjected = errors.New("injected failure")

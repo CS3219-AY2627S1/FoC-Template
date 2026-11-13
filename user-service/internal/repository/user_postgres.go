@@ -1,0 +1,417 @@
+// AI Assistance Disclosure:
+// Tool: Codex (GPT-5), date: 2026-09-18
+// Scope: Added the PostgreSQL adapter for the recorded user repository contract.
+// Author review: COMPLETED BY ZI YANG
+
+package repository
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"foc/user-service/internal/user"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+const (
+	insertUserQuery = `
+		INSERT INTO users (
+			uid, username, email, password, phone_num, date_created,
+			last_login_date, account_role, account_status, tokens_valid_after
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+	getUserByIDQuery = `
+		SELECT uid, username, email, password, phone_num, date_created,
+			last_login_date, account_role, account_status, tokens_valid_after
+		FROM users
+		WHERE uid = $1`
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — matches the
+	// recorded case-insensitive identifier policy. Author review: ZI YANG - validated correctness.
+	getUserByIdentifierQuery = `
+		SELECT uid, username, email, password, phone_num, date_created,
+			last_login_date, account_role, account_status, tokens_valid_after
+		FROM users
+		WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)`
+	hasAdminQuery = `
+		SELECT EXISTS (
+			SELECT 1 FROM users WHERE account_role = 'ADMIN'
+		)`
+	countActiveAdminsQuery = `
+		SELECT COUNT(*) FROM users
+		WHERE account_role = 'ADMIN' AND account_status = 'ACTIVE'`
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — preserve the
+	// latest credential cutoff across concurrent profile writes. Author review: ZI YANG - reviewed and verified.
+	updateUserQuery = `
+		UPDATE users
+		SET username = $1,
+			password = $2,
+			phone_num = $3,
+			tokens_valid_after = GREATEST(tokens_valid_after, $4)
+		WHERE uid = $5`
+	updateLastLoginQuery = `UPDATE users SET last_login_date = $1 WHERE uid = $2`
+	// AI-generated (edited by ZI YANG).
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — preserve the
+	// latest cutoff across suspension and role changes. Author review: ZI YANG - reviewed and verified.
+	updateAccountStatusQuery = `
+		UPDATE users
+		SET account_status = $1::account_status,
+			tokens_valid_after = CASE
+				WHEN $1::account_status = 'SUSPENDED' THEN GREATEST(tokens_valid_after, $2)
+				ELSE tokens_valid_after
+			END
+		WHERE uid = $3`
+	lockAccountStatusQuery   = `SELECT account_status, account_role FROM users WHERE uid = $1 FOR UPDATE`
+	activateUserByEmailQuery = `UPDATE users SET account_status = 'ACTIVE' WHERE LOWER(email) = LOWER($1) AND account_status = 'UNVERIFIED'`
+	// AI-generated (edited by James Teo).
+	lockUserForActivationQuery = `SELECT uid, account_status FROM users WHERE LOWER(email) = LOWER($1) FOR UPDATE`
+	insertOutboxEventQuery     = `INSERT INTO outbox_events (event_id, routing_key, payload) VALUES ($1, $2, $3)`
+)
+
+// AI-generated (edited by ZI YANG): documents the exported repository adapter
+// and makes the suspension invalidation boundary explicit.
+// PostgresRepository stores user accounts in PostgreSQL.
+type PostgresRepository struct {
+	pool *pgxpool.Pool
+}
+
+// NewPostgresRepository returns a PostgresRepository that uses pool.
+func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
+	return &PostgresRepository{pool: pool}
+}
+
+// Create inserts a user and fills Go-generated fields that were not supplied.
+func (r *PostgresRepository) Create(ctx context.Context, u *user.User) error {
+	prepared := prepareForCreate(*u, time.Now())
+	if err := insertUser(ctx, r.pool, prepared); err != nil {
+		return err
+	}
+	*u = prepared
+	return nil
+}
+
+// CreateWithTask inserts a user, runs task while the PostgreSQL transaction
+// remains open, and commits only when task succeeds.
+func (r *PostgresRepository) CreateWithTask(ctx context.Context, u *user.User, task func() error) error {
+	if task == nil {
+		return errors.New("create task is required")
+	}
+	prepared := prepareForCreate(*u, time.Now())
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin create user transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := insertUser(ctx, tx, prepared); err != nil {
+		return err
+	}
+	if err := task(); err != nil {
+		return fmt.Errorf("run create user task: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit create user transaction: %w", err)
+	}
+	*u = prepared
+	return nil
+}
+
+type userInserter interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func insertUser(ctx context.Context, executor userInserter, prepared user.User) error {
+	_, err := executor.Exec(ctx, insertUserQuery,
+		prepared.UID,
+		prepared.Username,
+		prepared.Email,
+		prepared.PasswordHash,
+		prepared.PhoneNum,
+		prepared.DateCreated,
+		prepared.LastLoginDate,
+		prepared.AccountRole,
+		prepared.AccountStatus,
+		prepared.TokensValidAfter,
+	)
+	if err != nil {
+		return fmt.Errorf("create user: %w", mapDatabaseError(err))
+	}
+	return nil
+}
+
+// GetByID retrieves a user by UUID.
+func (r *PostgresRepository) GetByID(ctx context.Context, uid uuid.UUID) (*user.User, error) {
+	return r.get(ctx, r.pool.QueryRow(ctx, getUserByIDQuery, uid), "get user by id")
+}
+
+// GetByIdentifier retrieves a user by username or email.
+func (r *PostgresRepository) GetByIdentifier(ctx context.Context, identifier string) (*user.User, error) {
+	return r.get(ctx, r.pool.QueryRow(ctx, getUserByIdentifierQuery, identifier), "get user by identifier")
+}
+
+// HasAdmin reports whether the users table already contains an administrator.
+func (r *PostgresRepository) HasAdmin(ctx context.Context) (bool, error) {
+	var exists bool
+	if err := r.pool.QueryRow(ctx, hasAdminQuery).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check for admin: %w", err)
+	}
+	return exists, nil
+}
+
+// CountActiveAdmins reports the number of active administrator accounts.
+func (r *PostgresRepository) CountActiveAdmins(ctx context.Context) (int, error) {
+	var count int
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — implements the
+	// recorded last-active-admin guard query. Author review: ZI YANG - validated correctness.
+	if err := r.pool.QueryRow(ctx, countActiveAdminsQuery).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count active admins: %w", err)
+	}
+	return count, nil
+}
+
+// Update updates mutable user fields without changing UID or email.
+func (r *PostgresRepository) Update(ctx context.Context, u *user.User) error {
+	result, err := r.pool.Exec(ctx, updateUserQuery,
+		u.Username,
+		u.PasswordHash,
+		u.PhoneNum,
+		u.TokensValidAfter,
+		u.UID,
+	)
+	if err != nil {
+		return fmt.Errorf("update user: %w", mapDatabaseError(err))
+	}
+	if result.RowsAffected() == 0 {
+		return user.ErrNotFound
+	}
+	return nil
+}
+
+// UpdateLastLoginByID records successful authentication without modifying profile or status fields.
+func (r *PostgresRepository) UpdateLastLoginByID(ctx context.Context, uid uuid.UUID, timestamp time.Time) error {
+	result, err := r.pool.Exec(ctx, updateLastLoginQuery, timestamp, uid)
+	if err != nil {
+		return fmt.Errorf("update last login: %w", mapDatabaseError(err))
+	}
+	if result.RowsAffected() == 0 {
+		return user.ErrNotFound
+	}
+	return nil
+}
+
+// UpdateAccountStatusByID sets the account status. Suspending also sets
+// tokens_valid_after, so refresh tokens issued before it are rejected;
+// reactivating leaves it unchanged. The caller passes the timestamp so it
+// matches the suspension key written to Redis. Reactivating a SUSPENDED
+// student also queues user.registered in the same transaction, unless the
+// student already has one.
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
+func (r *PostgresRepository) UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status user.AccountStatus, tokensValidAfter time.Time) error {
+	return r.updateAccountStatus(ctx, uid, status, tokensValidAfter, nil, nil)
+}
+
+// updateAccountStatus is UpdateAccountStatusByID; a non-nil e is the admin's
+// audit row, saved in the same transaction with the before and after status of
+// the row this transaction locked (D-108).
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
+func (r *PostgresRepository) updateAccountStatus(ctx context.Context, uid uuid.UUID, status user.AccountStatus, tokensValidAfter time.Time, e *user.AuditEntry, invalidate func() error) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin account status transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var currentStatus user.AccountStatus
+	var role user.AccountRole
+	if err := tx.QueryRow(ctx, lockAccountStatusQuery, uid).Scan(&currentStatus, &role); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return user.ErrNotFound
+		}
+		return fmt.Errorf("lock account status: %w", mapDatabaseError(err))
+	}
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — recheck the
+	// approved suspension rule under the same lock as a concurrent promotion.
+	// Author review: ZI YANG - reviewed and verified.
+	if status == user.AccountStatusSuspended && role == user.AccountRoleAdmin {
+		if e != nil && e.ActorID == uid.String() {
+			return user.ErrCannotSuspendSelf
+		}
+		return user.ErrCannotSuspendAdmin
+	}
+	if e != nil && currentStatus == user.AccountStatusUnverified {
+		return user.ErrAccountUnverified
+	}
+	if invalidate != nil {
+		if err := invalidate(); err != nil {
+			return err
+		}
+	}
+	// Reuse this connection for audited revocation: another pool connection
+	// could wait indefinitely when concurrent suspensions exhaust the pool.
+	if e != nil && status == user.AccountStatusSuspended {
+		if _, err := tx.Exec(ctx, revokeAllUserSessionsQuery, tokensValidAfter, uid); err != nil {
+			return fmt.Errorf("revoke suspended sessions: %w", err)
+		}
+	}
+	if _, err := tx.Exec(ctx, updateAccountStatusQuery, status, tokensValidAfter, uid); err != nil {
+		return fmt.Errorf("update account status: %w", mapDatabaseError(err))
+	}
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — applies D-078's
+	// exactly-once reactivation event guard inside the status transaction.
+	if currentStatus == user.AccountStatusSuspended && status == user.AccountStatusActive && role == user.AccountRoleStudent {
+		event := user.NewUserRegisteredEvent(uuid.New(), uid, time.Now())
+		const queueMissingRegistrationEventQuery = `
+			INSERT INTO outbox_events (event_id, routing_key, payload)
+			SELECT $1, $2, $3
+			WHERE NOT EXISTS (
+				SELECT 1 FROM outbox_events
+				WHERE routing_key = $2 AND payload->>'userId' = $4
+			)`
+		payload, err := json.Marshal(event)
+		if err != nil {
+			return fmt.Errorf("marshal registration event: %w", err)
+		}
+		if _, err := tx.Exec(ctx, queueMissingRegistrationEventQuery, event.EventID, user.RoutingUserRegistered, payload, uid.String()); err != nil {
+			return fmt.Errorf("queue registration event: %w", err)
+		}
+	}
+	if e != nil {
+		e.BeforeState = map[string]any{"account_status": string(currentStatus)}
+		e.AfterState = map[string]any{"account_status": string(status)}
+		if err := insertAudit(ctx, tx, e); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit account status transaction: %w", err)
+	}
+	return nil
+}
+
+// AI-generated (edited by James Teo): the user.registered outbox row is written
+// in the activation transaction, so the event exists exactly when the account
+// became ACTIVE.
+// ActivateUser locks and activates a pending account, and queues its
+// user.registered event in the outbox_events table, in one transaction. Only
+// an UNVERIFIED account is changed; any other status leaves the row and the
+// outbox untouched.
+func (r *PostgresRepository) ActivateUser(ctx context.Context, email string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin activation transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var uid uuid.UUID
+	var status user.AccountStatus
+	if err := tx.QueryRow(ctx, lockUserForActivationQuery, email).Scan(&uid, &status); err != nil {
+		return fmt.Errorf("lock account for activation: %w", mapDatabaseError(err))
+	}
+	// AI-generated (edited by James Teo): only an UNVERIFIED account activates;
+	// SUSPENDED, like ACTIVE, is refused instead of reported as verified.
+	if status != user.AccountStatusUnverified {
+		return user.ErrAccountAlreadyVerified
+	}
+	if _, err := tx.Exec(ctx, activateUserByEmailQuery, email); err != nil {
+		return fmt.Errorf("activate user: %w", err)
+	}
+	event := user.NewUserRegisteredEvent(uuid.New(), uid, time.Now())
+	if err := insertOutboxEvent(ctx, tx, event.EventID, user.RoutingUserRegistered, event); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit activation transaction: %w", err)
+	}
+	return nil
+}
+
+// AI-generated (edited by James Teo).
+// insertOutboxEvent queues payload, encoded as JSON, for the relay to publish
+// under routingKey. It runs on the caller's transaction so the event commits
+// or rolls back with the change it reports.
+func insertOutboxEvent(ctx context.Context, executor userInserter, eventID uuid.UUID, routingKey string, payload any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("encode %s event %s: %w", routingKey, eventID, err)
+	}
+	if _, err := executor.Exec(ctx, insertOutboxEventQuery, eventID, routingKey, string(body)); err != nil {
+		return fmt.Errorf("queue %s event %s: %w", routingKey, eventID, err)
+	}
+	return nil
+}
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func (r *PostgresRepository) get(_ context.Context, row rowScanner, operation string) (*user.User, error) {
+	got, err := scanUser(row)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", operation, mapDatabaseError(err))
+	}
+	return got, nil
+}
+
+func scanUser(row rowScanner) (*user.User, error) {
+	got := new(user.User)
+	err := row.Scan(
+		&got.UID,
+		&got.Username,
+		&got.Email,
+		&got.PasswordHash,
+		&got.PhoneNum,
+		&got.DateCreated,
+		&got.LastLoginDate,
+		&got.AccountRole,
+		&got.AccountStatus,
+		&got.TokensValidAfter,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return got, nil
+}
+
+func prepareForCreate(u user.User, now time.Time) user.User {
+	if u.UID == uuid.Nil {
+		u.UID = uuid.New()
+	}
+	if u.DateCreated.IsZero() {
+		u.DateCreated = now.In(time.FixedZone("SGT", 8*60*60))
+	}
+	if u.AccountRole == "" {
+		u.AccountRole = user.AccountRoleStudent
+	}
+	if u.AccountStatus == "" {
+		u.AccountStatus = user.AccountStatusUnverified
+	}
+	if u.TokensValidAfter.IsZero() {
+		// AI-generated (edited by ZI YANG).
+		u.TokensValidAfter = now.Truncate(time.Second)
+	}
+	return u
+}
+
+func mapDatabaseError(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return user.ErrNotFound
+	}
+
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		switch pgErr.ConstraintName {
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — maps the
+		// recorded case-insensitive index names to existing domain errors.
+		// Author review: ZI YANG - validated correctness.
+		case "idx_users_email_lower":
+			return user.ErrDuplicateEmail
+		case "idx_users_username_lower":
+			return user.ErrDuplicateUsername
+		}
+	}
+	return err
+}

@@ -1,0 +1,145 @@
+# Supplier Service
+
+<!--
+AI Assistance Disclosure:
+Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
+Scope: Status, the "Others reading suppliers" boundary and the openapi gotcha
+  now say the interface is REST (D-055, D-074) and the gRPC direction was
+  withdrawn; the opening no longer calls this the only implemented service.
+Author review: PENDING — <reviewer to complete>
+-->
+
+Authority on campus suppliers — the stores, facilities and pickup locations an
+errand can point at (mandatory requirement M3). It owns the supplier record, the
+rules for changing one, and its own Postgres database. It deliberately knows
+nothing about errands, orders, matching, users or credits: a supplier has no
+idea it has ever been ordered from, and nothing in this folder should teach it.
+
+Its layering is the reference the other services copy (root §6 points here by
+name). Changing the *shape* of that layering is a repo-wide decision, not a
+local one.
+
+**Status: implemented and merged (PR #1).** The interface is the REST API in
+`internal/httpapi` (D-055, D-074), with the JSON shape of D-036 and the URLs of
+D-037. The gateway proxies it at `/api/suppliers`, and order-service reads and
+checks it over HTTP. A gRPC replacement was decided and then withdrawn (D-074);
+PR #8 is closed.
+
+## Owner
+
+GCheeYang (D-034). Requirements, table design and endpoint shape are theirs to
+decide, and must be recorded before an agent builds to them (root §1).
+
+## Boundaries
+
+- **`order-service`.** The pressure here is real: knowing whether a supplier is
+  referenced by a live errand needs order data. Do not add an orders table, a
+  foreign key, or a second connection string to reach for it. Delete asks
+  order-service's `GET /suppliers/{id}/active-errands` over its API
+  (`internal/orderclient`, `ORDER_BASE_URL`), forwarding the admin's token
+  (F2.2.3).
+- **`user-service`.** Admin-only endpoints need a role, not a user. Do not query
+  the users table and do not fetch a user record to inspect it — the role is the
+  `role` claim of the access token the service verifies itself (D-041), against
+  user-service's published keys and the revocation keys it writes to Redis
+  (D-054; see Gotchas).
+- **`credit-service`.** Prices, wallets and payouts are not supplier fields. A
+  supplier is a place, not a price list.
+- **`frontend`.** It will eventually want a supplier merged with data this
+  service does not hold. Compose that at the caller; do not grow a field here
+  that only another service can fill.
+- **Others reading suppliers.** Point them at this service's HTTP API.
+  order-service's `GET /suppliers/{id}` lookup (`order-service/internal/
+  supplierclient`) is the reader inside the network today, and it sends no
+  token. Never share `SUPPLIER_DB_URL`, and never factor the `Supplier` struct into a package
+  they import — a duplicated struct on their side is the correct outcome
+  (root §4.2).
+- **`../data/csv/` and `../data/images/`** are repo-level shared assets, not
+  owned here. This service only reads the CSV. Editing either is a shared-file
+  change: flag it (root §3).
+
+## Layout
+
+Module path `foc/supplier-service`. The per-file detail the other services
+mirror:
+
+```
+cmd/api/             wiring only — JSON logger (built here, passed down), config,
+                     pool, migrate, order client, token verifier, Redis client,
+                     seed, router, listen
+internal/supplier/   the domain: model.go, service.go (business rules),
+                     repository.go (the Repository *interface*), errors.go
+                     (sentinel errors the transport layer maps to status codes),
+                     service_test.go
+internal/repository/ Postgres adapter implementing supplier.Repository, via pgx
+internal/orderclient/ order-service client for the delete check, implementing
+                      supplier.ErrandCounter
+internal/httpapi/    router.go, handlers.go, dto.go — JSON shapes live in dto.go;
+                     auth.go — the token check and the admin-role guard on the
+                     write routes; logging.go — the access line every request
+                     gets and the panic recoverer
+internal/auth/       verifies access tokens against user-service's keys and
+                     checks D-054's revocation keys; a copy of order-service's
+                     package, not an import (root §4.2)
+internal/config/     Load() reads env once into a Config struct, then passed down
+seed/                first-boot CSV load; depends on the domain, not vice versa
+migrations/          golang-migrate .up/.down pairs, applied at startup from
+                     cmd/api/main.go
+```
+
+## Local development
+
+Port **8082** (root §3). Env vars `PORT`, `SUPPLIER_DB_URL`, `SEED_CSV_PATH`,
+`ORDER_BASE_URL`, `JWKS_URL` and `REDIS_URL`. This folder's `.env.example` has
+all of them with the in-network values Compose uses. The root `.env.example` has
+`SUPPLIER_DB_URL` and `SEED_CSV_PATH` in its Supplier service block, `JWKS_URL`
+and `REDIS_URL` in its API Gateway and Redis sections, and `ORDER_BASE_URL` in
+its API Gateway section; `PORT` is the default 8082 and has no placeholder.
+Admin writes need user-service's keys at `JWKS_URL` and Redis at `REDIS_URL`
+reachable; reads need neither.
+
+```bash
+go run ./cmd/api     # from supplier-service/; migrates then seeds on startup
+go test ./...        # unit tests: service layer, token check, order-service client (httptest), CSV parser, no Docker needed
+go test -tags=integration ./...   # admin writes over real PostgreSQL and Redis (testcontainers); needs Docker
+docker compose up supplier-service supplier-db    # from the repo root
+```
+
+## Gotchas
+
+- **The seed CSV is Windows-1252, not UTF-8.** `seed/seed.go` decodes it through
+  `charmap.Windows1252` because the building name "Prince George's Park" carries
+  a 0x92 curly apostrophe; read it as UTF-8 and you get mojibake in the database.
+  It also has a quoted field containing a comma and CRLF line endings — use the
+  CSV reader, never `strings.Split`.
+- **The Dockerfile's build context is the repository root**, not this folder
+  (`compose.yaml` sets `context: .` with `dockerfile: supplier-service/Dockerfile`),
+  because the image needs that shared CSV, so paths inside it start with
+  `supplier-service/`. Unusual — do not copy it as the pattern elsewhere.
+- **DELETE checks order-service, then soft-deletes** — `Service.Delete` first
+  asks order-service how many unfinished errands name the supplier (F2.2.3):
+  any, and it returns `ErrInUse` (409); no answer, and it refuses rather than
+  deletes. Otherwise it calls `repo.SoftDelete`, which sets `deleted_at` and
+  flips `is_available` to false rather than removing the row.
+- **Admin writes are authorized from the verified token, never from a header.**
+  `POST`, `PUT` and `DELETE /suppliers` pass `authenticate` (`internal/httpapi/
+  auth.go`): exactly one `Authorization: Bearer` header, RS256 signature, `iss`,
+  `aud`, `exp`, `typ` `access`, then D-054's revocation keys in Redis. The caller
+  is the token's `sub` and `role`; `X-User-Id` and `X-User-Role` are ignored
+  (D-041). 401 is a token problem only (a wrong role is 403, because the
+  frontend answers a 401 by refreshing and retrying); 503 when the keys or Redis
+  cannot be read — an admin write fails closed. Reads and `/health` need no
+  token: order-service's supplier lookup sends none.
+- **There is no `api/openapi.yaml` yet.** The contract is the hand-written REST
+  surface: the routes in `internal/httpapi/router.go` and the JSON in
+  `internal/httpapi/dto.go`, shaped per D-036 and addressed per D-037. Writing
+  the spec (D-005, root §8) is still owed.
+- <!-- AI-generated (edited by PENDING). --> **A corrected seed CSV does not reach an existing database.**
+  `seed.EnsureSeeded` only seeds when the `suppliers` table is empty, and
+  `compose.yaml` persists it in the named volume `supplier-db-data` — so
+  pulling a CSV fix (e.g. the 2026-10-01 `image_url` corrections, PR #11)
+  changes nothing for anyone whose stack already ran once. To pick up a
+  seed-data-only fix: `docker compose down` then `docker volume rm
+  <project>_supplier-db-data` before the next `docker compose up` (or, for a
+  single already-running row, `UPDATE` it directly — see PR #11's own
+  description for the exact statements used there).

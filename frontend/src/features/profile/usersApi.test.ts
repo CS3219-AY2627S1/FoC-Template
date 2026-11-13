@@ -1,0 +1,308 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Opus 5.5), date: 2026-10-11
+// Scope: Tests for the user-service profile client — the path, method and
+//   body of each call, the UserResponse mapping, and how failures surface —
+//   against a stubbed authorized transport.
+// Author review: nigeltzy — Checked that the unit tests were generated and they
+// seem valid and as expected.
+
+import { describe, expect, it, vi } from "vitest";
+import type { AuthorizedSend } from "../auth/session";
+import { NetworkError, type HttpResponse } from "../../lib/http";
+import { createUsersApi, toUserProfile, UsersApiError } from "./usersApi";
+
+const UID = "3f2b8c1e-1d2a-4b5c-8d9e-0a1b2c3d4e5f";
+
+/** The full UserResponse user-service sends to an ADMIN or after an update. */
+const FULL = {
+  uid: UID,
+  username: "student2",
+  email: "student2@u.nus.edu",
+  phone_num: "91234567",
+  account_role: "STUDENT",
+  account_status: "ACTIVE",
+  date_created: "2026-09-20T10:00:00Z",
+};
+
+/** A transport that records each request and answers with `response`. */
+function stubSend(response: HttpResponse | Error) {
+  const send = vi.fn<AuthorizedSend>(async () => {
+    if (response instanceof Error) throw response;
+    return response;
+  });
+  return { send, api: createUsersApi(send) };
+}
+
+describe("usersApi requests", () => {
+  it("fetches a profile with GET /api/users/{uid}", async () => {
+    const { send, api } = stubSend({ ok: true, status: 200, body: FULL });
+    await api.getUser(UID);
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ path: `/api/users/${UID}` }),
+    );
+    expect(send.mock.calls[0]![0].method ?? "GET").toBe("GET");
+  });
+
+  // Each update sends exactly one field, so a modal changes only its own.
+  const updates: [string, (api: ReturnType<typeof createUsersApi>) => Promise<unknown>, object][] = [
+    ["username", (api) => api.changeOwnUsername(UID, "  newname "), { username: "newname" }],
+    ["contact", (api) => api.changeOwnContact(UID, " 98765432 "), { phone_num: "98765432" }],
+    [
+      "own password",
+      (api) => api.changeOwnPassword(UID, "OldPass1", "NewPass1"),
+      { currentPassword: "OldPass1", newPassword: "NewPass1" },
+    ],
+    ["admin reset", (api) => api.resetPassword(UID, "NewPass1"), { newPassword: "NewPass1" }],
+  ];
+
+  it.each(updates)("%s sends PUT with only its own field", async (_name, call, body) => {
+    const { send, api } = stubSend({ ok: true, status: 200, body: FULL });
+    await call(api);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0]).toMatchObject({
+      path: `/api/users/${UID}`,
+      method: "PUT",
+    });
+    expect(send.mock.calls[0]![0].body).toEqual(body);
+  });
+
+  it("encodes the account ID into the path", async () => {
+    const { send, api } = stubSend({ ok: true, status: 200, body: FULL });
+    await api.getUser("a/b");
+    expect(send.mock.calls[0]![0].path).toBe("/api/users/a%2Fb");
+  });
+});
+
+describe("toUserProfile", () => {
+  it("maps a full UserResponse, renaming phone_num to contact", () => {
+    expect(toUserProfile(FULL)).toEqual({
+      uid: UID,
+      username: "student2",
+      email: "student2@u.nus.edu",
+      contact: "91234567",
+      role: "STUDENT",
+      status: "ACTIVE",
+      createdAt: "2026-09-20T10:00:00Z",
+    });
+  });
+
+  it("leaves role, status and createdAt undefined for a restricted response", () => {
+    const { uid, username, email, phone_num } = FULL;
+    const profile = toUserProfile({ uid, username, email, phone_num });
+    expect(profile.role).toBeUndefined();
+    expect(profile.status).toBeUndefined();
+    expect(profile.createdAt).toBeUndefined();
+  });
+
+  it("treats a blank contact and an unknown enum value as absent", () => {
+    const profile = toUserProfile({ ...FULL, phone_num: "  ", account_role: "OWNER" });
+    expect(profile.contact).toBeUndefined();
+    expect(profile.role).toBeUndefined();
+  });
+});
+
+describe("usersApi failures", () => {
+  it("keeps user-service's error message and status", async () => {
+    const { api } = stubSend({ ok: false, status: 409, body: { error: "username already taken" } });
+    await expect(api.changeOwnUsername(UID, "taken")).rejects.toMatchObject({
+      name: "UsersApiError",
+      message: "username already taken",
+      status: 409,
+    });
+  });
+
+  it("falls back to the status when the body has no error field", async () => {
+    const { api } = stubSend({ ok: false, status: 500, body: null });
+    await expect(api.getUser(UID)).rejects.toThrow("Request failed (500)");
+  });
+
+  it("reports a 401 on a password change as a wrong current password", async () => {
+    const { api } = stubSend({ ok: false, status: 401, body: { error: "invalid current password" } });
+    await expect(api.changeOwnPassword(UID, "wrong", "NewPass1")).rejects.toThrow(
+      "Your current password is incorrect.",
+    );
+  });
+
+  it("does not call a 401 on any other route a password problem", async () => {
+    const { api } = stubSend({ ok: false, status: 401, body: { error: "authentication required" } });
+    await expect(api.getUser(UID)).rejects.toThrow("authentication required");
+  });
+
+  it("turns a request that never arrived into status 0", async () => {
+    const { api } = stubSend(new NetworkError(""));
+    const err = await api.getUser(UID).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UsersApiError);
+    expect((err as UsersApiError).status).toBe(0);
+  });
+});
+
+// AI-generated (edited by James Teo): suspend and reactivate, against
+// user-service's PATCH /api/v1/users/{uid}/status (UpdateStatusRequest).
+describe("usersApi account status", () => {
+  const changes: [string, (api: ReturnType<typeof createUsersApi>) => Promise<void>, string][] = [
+    ["suspendUser", (api) => api.suspendUser(UID), "SUSPENDED"],
+    ["reactivateUser", (api) => api.reactivateUser(UID), "ACTIVE"],
+  ];
+
+  it.each(changes)("%s sends PATCH /api/users/{uid}/status with %s", async (_name, call, status) => {
+    const { send, api } = stubSend({ ok: true, status: 200, body: null });
+    await call(api);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0]).toMatchObject({
+      path: `/api/users/${UID}/status`,
+      method: "PATCH",
+    });
+    expect(send.mock.calls[0]![0].body).toEqual({ status });
+  });
+
+  it("resolves with nothing on user-service's empty 200", async () => {
+    const { api } = stubSend({ ok: true, status: 200, body: null });
+    await expect(api.suspendUser(UID)).resolves.toBeUndefined();
+  });
+
+  it("encodes the account ID into the status path", async () => {
+    const { send, api } = stubSend({ ok: true, status: 200, body: null });
+    await api.reactivateUser("a/b");
+    expect(send.mock.calls[0]![0].path).toBe("/api/users/a%2Fb/status");
+  });
+
+  it("keeps the last-admin conflict's message and status", async () => {
+    const { api } = stubSend({
+      ok: false,
+      status: 409,
+      body: { error: "cannot suspend the last active admin" },
+    });
+    await expect(api.suspendUser(UID)).rejects.toMatchObject({
+      name: "UsersApiError",
+      message: "cannot suspend the last active admin",
+      status: 409,
+    });
+  });
+
+  it("keeps a refusal's message and status", async () => {
+    const { api } = stubSend({ ok: false, status: 403, body: { error: "admin access required" } });
+    await expect(api.reactivateUser(UID)).rejects.toMatchObject({
+      message: "admin access required",
+      status: 403,
+    });
+  });
+
+  it("turns a status change that never arrived into status 0", async () => {
+    const { api } = stubSend(new NetworkError(""));
+    const err = await api.suspendUser(UID).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UsersApiError);
+    expect((err as UsersApiError).status).toBe(0);
+  });
+});
+
+// AI-generated (edited by Claude Code, 2026-11-09): promote and demote, against
+// user-service's PATCH /api/v1/users/{uid}/role (UpdateRoleRequest, PR #104).
+describe("usersApi account role", () => {
+  const changes: [string, (api: ReturnType<typeof createUsersApi>) => Promise<void>, string][] = [
+    ["promoteUser", (api) => api.promoteUser(UID), "ADMIN"],
+    ["demoteUser", (api) => api.demoteUser(UID), "STUDENT"],
+  ];
+
+  it.each(changes)("%s sends PATCH /api/users/{uid}/role with %s", async (_name, call, role) => {
+    const { send, api } = stubSend({ ok: true, status: 204, body: null });
+    await call(api);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0]).toMatchObject({
+      path: `/api/users/${UID}/role`,
+      method: "PATCH",
+    });
+    expect(send.mock.calls[0]![0].body).toEqual({ role });
+  });
+
+  it("resolves with nothing on user-service's empty 204", async () => {
+    const { api } = stubSend({ ok: true, status: 204, body: null });
+    await expect(api.promoteUser(UID)).resolves.toBeUndefined();
+  });
+
+  it("encodes the account ID into the role path", async () => {
+    const { send, api } = stubSend({ ok: true, status: 204, body: null });
+    await api.demoteUser("a/b");
+    expect(send.mock.calls[0]![0].path).toBe("/api/users/a%2Fb/role");
+  });
+
+  it("keeps the last-admin conflict's message and status", async () => {
+    const { api } = stubSend({
+      ok: false,
+      status: 409,
+      body: { error: "cannot demote the last active admin" },
+    });
+    await expect(api.demoteUser(UID)).rejects.toMatchObject({
+      name: "UsersApiError",
+      message: "cannot demote the last active admin",
+      status: 409,
+    });
+  });
+
+  it("keeps the inactive-student conflict's message and status", async () => {
+    const { api } = stubSend({
+      ok: false,
+      status: 409,
+      body: { error: "only an active student can be promoted" },
+    });
+    await expect(api.promoteUser(UID)).rejects.toMatchObject({
+      message: "only an active student can be promoted",
+      status: 409,
+    });
+  });
+
+  it("turns a role change that never arrived into status 0", async () => {
+    const { api } = stubSend(new NetworkError(""));
+    const err = await api.promoteUser(UID).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UsersApiError);
+    expect((err as UsersApiError).status).toBe(0);
+  });
+});
+
+describe("admin list and audit log", () => {
+  it("searches accounts with q, status and paging, leaving empty values out", async () => {
+    const { send, api } = stubSend({
+      ok: true,
+      status: 200,
+      body: {
+        items: [{ ...FULL, last_login_date: "2026-11-01T08:00:00Z" }, { ...FULL, uid: "u2", last_login_date: null }],
+        total: 120,
+        limit: 50,
+        offset: 50,
+      },
+    });
+    const page = await api.listUsers({ query: " stu ", status: "ACTIVE", limit: 50, offset: 50 });
+    const path = send.mock.calls[0]![0].path;
+    expect(path.startsWith("/api/users?")).toBe(true);
+    expect(path).toContain("q=stu");
+    expect(path).toContain("status=ACTIVE");
+    expect(path).toContain("offset=50");
+    expect(page.total).toBe(120);
+    expect(page.items[0]!.lastLoginAt).toBe("2026-11-01T08:00:00Z");
+    expect(page.items[1]!.lastLoginAt).toBeUndefined();
+  });
+
+  it("asks for the plain list when no search is given", async () => {
+    const { send, api } = stubSend({ ok: true, status: 200, body: { items: [], total: 0, limit: 50, offset: 0 } });
+    await api.listUsers();
+    expect(send.mock.calls[0]![0].path).toBe("/api/users");
+  });
+
+  it("rejects a list in the wrong shape", async () => {
+    const { api } = stubSend({ ok: true, status: 200, body: { items: "x" } });
+    await expect(api.listUsers()).rejects.toMatchObject({ status: 0 });
+  });
+
+  it("reads the audit log from /api/users/audit-log with its filters", async () => {
+    const { send, api } = stubSend({
+      ok: true,
+      status: 200,
+      body: { items: [], total: 0, limit: 50, offset: 0 },
+    });
+    await api.listAuditLog({ targetId: UID, outcome: "refused", from: "2026-11-01" });
+    const path = send.mock.calls[0]![0].path;
+    expect(path.startsWith("/api/users/audit-log?")).toBe(true);
+    expect(path).toContain(`target_id=${UID}`);
+    expect(path).toContain("outcome=refused");
+    expect(path).toContain("from=2026-11-01");
+  });
+});

@@ -1,0 +1,377 @@
+// AI Assistance Disclosure:
+// Tool: Codex (GPT-5), date: 2026-09-19
+// Scope: Added focused tests for login session creation, refresh rotation, and replay handling.
+// Author review: Repackaged and validated correctness
+
+package session
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"testing"
+	"time"
+
+	"foc/user-service/internal/hash"
+	. "foc/user-service/internal/user"
+
+	"github.com/google/uuid"
+)
+
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
+type fakeSessionRepository struct {
+	account             *User
+	credentialErr       error
+	beforeCredentials   func()
+	credentialCommitErr error
+
+	sessions       map[string]*Session
+	created        *Session
+	rotatedOldHash string
+	revokedAllFor  uuid.UUID
+	getCalls       int
+	getErr         error
+	rotateErr      error
+}
+
+func (f *fakeSessionRepository) CreateSession(_ context.Context, session *Session) error {
+	if f.sessions == nil {
+		f.sessions = make(map[string]*Session)
+	}
+	f.created = session
+	f.sessions[session.TokenHash] = session
+	return nil
+}
+
+func (f *fakeSessionRepository) GetSessionByHash(_ context.Context, hash string) (*Session, error) {
+	f.getCalls++
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
+	return f.sessions[hash], nil
+}
+
+// AI-generated (edited by ZI YANG): records lock attempts so refresh tests can prove database access is skipped on contention.
+type fakeRefreshLock struct {
+	tokenHash string
+	ttl       time.Duration
+	acquired  bool
+	err       error
+}
+
+func (f *fakeRefreshLock) Acquire(_ context.Context, tokenHash string, ttl time.Duration) (bool, error) {
+	f.tokenHash = tokenHash
+	f.ttl = ttl
+	return f.acquired, f.err
+}
+
+func newRefreshService(repository *fakeAuthRepository, sessions *fakeSessionRepository, verifier *fakeRefreshVerifier, issuer *fakeTokenIssuer, lock *fakeRefreshLock, now func() time.Time) *RefreshService {
+	return NewRefreshService(repository, sessions, verifier, issuer, lock, now)
+}
+
+func (f *fakeSessionRepository) RotateSession(_ context.Context, oldHash string, newSession *Session) error {
+	if f.rotateErr != nil {
+		return f.rotateErr
+	}
+	f.rotatedOldHash = oldHash
+	old := f.sessions[oldHash]
+	if old != nil {
+		replaced := newSession.TokenHash
+		now := time.Now()
+		old.RevokedAt = &now
+		old.ReplacedByTokenHash = &replaced
+	}
+	f.sessions[newSession.TokenHash] = newSession
+	return nil
+}
+
+func (f *fakeSessionRepository) RevokeSessionByHash(context.Context, string) error { return nil }
+
+func (f *fakeSessionRepository) RevokeAllUserSessions(_ context.Context, uid uuid.UUID) error {
+	f.revokedAllFor = uid
+	return nil
+}
+
+type fakeRefreshVerifier struct {
+	claims RefreshClaims
+	err    error
+}
+
+func (f *fakeRefreshVerifier) VerifyRefresh(context.Context, string) (RefreshClaims, error) {
+	return f.claims, f.err
+}
+
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
+func newSessionServiceFixtures(t *testing.T) (*User, *fakeAuthRepository, *fakeSessionRepository, *fakeTokenIssuer, time.Time) {
+	t.Helper()
+	passwordHash, err := hash.HashPassword("ValidPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 19, 8, 0, 0, 0, time.UTC)
+	account := &User{
+		UID:              uuid.New(),
+		PasswordHash:     passwordHash,
+		AccountStatus:    AccountStatusActive,
+		AccountRole:      AccountRoleStudent,
+		TokensValidAfter: now.Add(-time.Hour),
+	}
+	repo := &fakeAuthRepository{user: account}
+	sessions := &fakeSessionRepository{account: account, sessions: make(map[string]*Session)}
+	issuer := &fakeTokenIssuer{pair: TokenPair{
+		AccessToken:      "access",
+		RefreshToken:     "refresh",
+		RefreshJTI:       uuid.New(),
+		RefreshExpiresAt: now.Add(7 * 24 * time.Hour),
+	}}
+	return account, repo, sessions, issuer, now
+}
+
+func TestLoginServiceStoresHashedRefreshSession(t *testing.T) {
+	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	authenticator := NewAuthenticator(repo, issuer)
+	service := NewLoginService(authenticator, sessions, func() time.Time { return now }, nil)
+
+	pair, err := service.Login(context.Background(), "user@example.com", "ValidPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pair.AccessToken != "access" || sessions.created == nil {
+		t.Fatalf("login result/session = %#v/%#v", pair, sessions.created)
+	}
+	if repo.lastLogin == nil || !repo.lastLogin.Equal(now) {
+		t.Fatalf("last login = %v, want %v", repo.lastLogin, now)
+	}
+	if sessions.created.TokenHash != HashRefreshToken(pair.RefreshToken) || sessions.created.TokenHash == pair.RefreshToken {
+		t.Fatalf("stored refresh token = %q, want hash", sessions.created.TokenHash)
+	}
+	if sessions.created.UID != account.UID || sessions.created.JTI != issuer.pair.RefreshJTI {
+		t.Fatalf("stored session = %#v", sessions.created)
+	}
+}
+
+func TestLoginServiceRejectsUnverifiedAccountBeforeSessionCreation(t *testing.T) {
+	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	account.AccountStatus = AccountStatusUnverified
+	service := NewLoginService(NewAuthenticator(repo, issuer), sessions, func() time.Time { return now }, nil)
+
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — verifies the
+	// OTP gate prevents analytics, token issuance, and refresh-session storage. Author review: ZI YANG - validated correctness.
+	pair, err := service.Login(context.Background(), "user@example.com", "ValidPass1")
+	if !errors.Is(err, ErrAccountUnverified) {
+		t.Fatalf("error = %v, want ErrAccountUnverified", err)
+	}
+	if pair != (TokenPair{}) || sessions.created != nil || issuer.issuedFor != uuid.Nil || repo.lastLogin != nil {
+		t.Fatalf("login side effects = pair %#v, session %#v, issuedFor %v, lastLogin %v", pair, sessions.created, issuer.issuedFor, repo.lastLogin)
+	}
+}
+
+func TestLoginServiceLogsAFailedLastLoginUpdateWithoutFailingTheLogin(t *testing.T) {
+	tests := map[string]struct {
+		lastLoginErr error
+		wantLogged   bool
+	}{
+		"a recorded last login logs nothing":     {},
+		"a failed update is logged as a warning": {lastLoginErr: errors.New("deadlock detected"), wantLogged: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+			repo.lastLoginErr = tt.lastLoginErr
+			var logs bytes.Buffer
+			service := NewLoginService(NewAuthenticator(repo, issuer), sessions, func() time.Time { return now }, slog.New(slog.NewJSONHandler(&logs, nil)))
+
+			if _, err := service.Login(context.Background(), "user@example.com", "ValidPass1"); err != nil {
+				t.Fatalf("login error = %v, want the login to succeed", err)
+			}
+			if !tt.wantLogged {
+				if logs.Len() != 0 {
+					t.Fatalf("logs = %q, want none", logs.String())
+				}
+				return
+			}
+			var line map[string]any
+			if err := json.Unmarshal(logs.Bytes(), &line); err != nil {
+				t.Fatalf("logs = %q, want one JSON line: %v", logs.String(), err)
+			}
+			want := map[string]any{"level": "WARN", "msg": "record last login failed", "user_id": account.UID.String(), "error": "deadlock detected"}
+			for key, value := range want {
+				if line[key] != value {
+					t.Errorf("%s = %v, want %v", key, line[key], value)
+				}
+			}
+		})
+	}
+}
+
+func TestRefreshServiceRotatesTokenIssuedDuringAccountCreationSecond(t *testing.T) {
+	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	// AI-generated (edited by ZI YANG).
+	account.TokensValidAfter = now
+	oldToken := "old-refresh"
+	oldHash := HashRefreshToken(oldToken)
+	oldJTI := uuid.New()
+	sessions.sessions[oldHash] = &Session{UID: account.UID, JTI: oldJTI, TokenHash: oldHash, ExpiresAt: now.Add(time.Hour)}
+	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: oldJTI, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}
+	lock := &fakeRefreshLock{acquired: true}
+	service := newRefreshService(repo, sessions, verifier, issuer, lock, func() time.Time { return now })
+
+	if _, err := service.Refresh(context.Background(), oldToken); err != nil {
+		t.Fatal(err)
+	}
+	if sessions.rotatedOldHash != oldHash {
+		t.Fatalf("rotated hash = %q, want %q", sessions.rotatedOldHash, oldHash)
+	}
+	if lock.tokenHash != oldHash || lock.ttl != 5*time.Second {
+		t.Fatalf("lock = hash %q with TTL %v, want %q with TTL 5s", lock.tokenHash, lock.ttl, oldHash)
+	}
+	if sessions.created != nil {
+		t.Fatalf("login session unexpectedly created during refresh: %#v", sessions.created)
+	}
+}
+
+func TestRefreshServiceRevokesAllSessionsOnReplay(t *testing.T) {
+	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	oldToken := "replayed-refresh"
+	oldHash := HashRefreshToken(oldToken)
+	oldJTI := uuid.New()
+	revokedAt := now.Add(-time.Minute)
+	replacement := "replacement-session-hash"
+	sessions.sessions[oldHash] = &Session{UID: account.UID, JTI: oldJTI, TokenHash: oldHash, RevokedAt: &revokedAt, ReplacedByTokenHash: &replacement, ExpiresAt: now.Add(time.Hour)}
+	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: oldJTI, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}
+	service := newRefreshService(repo, sessions, verifier, issuer, &fakeRefreshLock{acquired: true}, func() time.Time { return now })
+
+	_, err := service.Refresh(context.Background(), oldToken)
+	if !errors.Is(err, ErrSessionCompromised) {
+		t.Fatalf("error = %v, want compromised session", err)
+	}
+	if sessions.revokedAllFor != account.UID {
+		t.Fatalf("revoked user = %v, want %v", sessions.revokedAllFor, account.UID)
+	}
+}
+
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — covers the recorded
+// stale-tab behavior after a normal logout. Author review: ZI YANG - validated correctness.
+func TestRefreshServiceDoesNotRevokeAllSessionsForNormallyRevokedToken(t *testing.T) {
+	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	oldToken := "logged-out-refresh"
+	oldHash := HashRefreshToken(oldToken)
+	oldJTI := uuid.New()
+	revokedAt := now.Add(-time.Minute)
+	sessions.sessions[oldHash] = &Session{UID: account.UID, JTI: oldJTI, TokenHash: oldHash, RevokedAt: &revokedAt, ExpiresAt: now.Add(time.Hour)}
+	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: oldJTI, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}
+	service := newRefreshService(repo, sessions, verifier, issuer, &fakeRefreshLock{acquired: true}, func() time.Time { return now })
+
+	_, err := service.Refresh(context.Background(), oldToken)
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("error = %v, want ErrSessionNotFound", err)
+	}
+	if sessions.revokedAllFor != uuid.Nil {
+		t.Fatalf("revoked all sessions for %s after ordinary logout", sessions.revokedAllFor)
+	}
+}
+
+func TestRefreshServiceRejectsUnknownSession(t *testing.T) {
+	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: uuid.New()}}
+	service := newRefreshService(repo, sessions, verifier, issuer, &fakeRefreshLock{acquired: true}, func() time.Time { return now })
+
+	_, err := service.Refresh(context.Background(), "missing-refresh")
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("error = %v, want missing session", err)
+	}
+}
+
+// AI-generated (edited by ZI YANG): refresh must enforce account status, token boundaries, session expiry, and rotation replay.
+func TestRefreshServiceRejectsRecordedInvalidStates(t *testing.T) {
+	for name, configure := range map[string]func(*User, *fakeSessionRepository, *fakeRefreshVerifier, time.Time){
+		"suspended account": func(account *User, _ *fakeSessionRepository, _ *fakeRefreshVerifier, _ time.Time) {
+			account.AccountStatus = AccountStatusSuspended
+		},
+		"token before validity boundary": func(account *User, _ *fakeSessionRepository, verifier *fakeRefreshVerifier, now time.Time) {
+			account.TokensValidAfter = now
+			verifier.claims.IssuedAt = now.Add(-time.Second)
+		},
+		"expired session": func(_ *User, sessions *fakeSessionRepository, _ *fakeRefreshVerifier, now time.Time) {
+			for _, session := range sessions.sessions {
+				session.ExpiresAt = now
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+			token, hash := "refresh", HashRefreshToken("refresh")
+			jti := uuid.New()
+			sessions.sessions[hash] = &Session{UID: account.UID, JTI: jti, TokenHash: hash, ExpiresAt: now.Add(time.Hour)}
+			verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: jti, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}
+			configure(account, sessions, verifier, now)
+			if _, err := newRefreshService(repo, sessions, verifier, issuer, &fakeRefreshLock{acquired: true}, func() time.Time { return now }).Refresh(context.Background(), token); err == nil {
+				t.Fatal("Refresh accepted invalid state")
+			}
+		})
+	}
+}
+
+func TestRefreshServiceRevokesAllSessionsWhenRotationReportsCompromise(t *testing.T) {
+	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	token, hash := "refresh", HashRefreshToken("refresh")
+	jti := uuid.New()
+	sessions.sessions[hash] = &Session{UID: account.UID, JTI: jti, TokenHash: hash, ExpiresAt: now.Add(time.Hour)}
+	sessions.rotateErr = ErrSessionCompromised
+	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: jti, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}
+	_, err := newRefreshService(repo, sessions, verifier, issuer, &fakeRefreshLock{acquired: true}, func() time.Time { return now }).Refresh(context.Background(), token)
+	if !errors.Is(err, ErrSessionCompromised) || sessions.revokedAllFor != account.UID {
+		t.Fatalf("error/revocation = %v/%v", err, sessions.revokedAllFor)
+	}
+}
+
+// AI-generated (edited by ZI YANG): concurrent refresh requests must stop before querying the session store.
+func TestRefreshServiceRejectsConcurrentRefreshBeforeDatabaseLookup(t *testing.T) {
+	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	token, hash := "refresh", HashRefreshToken("refresh")
+	jti := uuid.New()
+	sessions.sessions[hash] = &Session{UID: account.UID, JTI: jti, TokenHash: hash, ExpiresAt: now.Add(time.Hour)}
+	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: jti, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}
+
+	_, err := newRefreshService(repo, sessions, verifier, issuer, &fakeRefreshLock{acquired: false}, func() time.Time { return now }).Refresh(context.Background(), token)
+	if !errors.Is(err, ErrRefreshInProgress) {
+		t.Fatalf("error = %v, want ErrRefreshInProgress", err)
+	}
+	if sessions.getCalls != 0 {
+		t.Fatalf("GetSessionByHash calls = %d, want 0", sessions.getCalls)
+	}
+}
+
+func TestRefreshServiceFailsClosedWhenRefreshLockIsUnavailable(t *testing.T) {
+	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	token := "refresh"
+	lockFailure := errors.New("Redis unavailable")
+	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: uuid.New(), IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}
+
+	_, err := newRefreshService(repo, sessions, verifier, issuer, &fakeRefreshLock{err: lockFailure}, func() time.Time { return now }).Refresh(context.Background(), token)
+	if !errors.Is(err, lockFailure) {
+		t.Fatalf("error = %v, want Redis lock failure", err)
+	}
+	if sessions.getCalls != 0 {
+		t.Fatalf("GetSessionByHash calls = %d, want 0", sessions.getCalls)
+	}
+}
+
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — fake the new
+// credential transaction boundary for domain tests. Author review: ZI YANG - reviewed and verified.
+func (f *fakeSessionRepository) WithAccountCredentials(ctx context.Context, uid uuid.UUID, issue func(*User, SessionRepository) error) error {
+	if f.credentialErr != nil {
+		return f.credentialErr
+	}
+	if f.beforeCredentials != nil {
+		f.beforeCredentials()
+	}
+	if err := issue(f.account, f); err != nil {
+		return err
+	}
+	return f.credentialCommitErr
+}

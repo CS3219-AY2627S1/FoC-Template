@@ -1,0 +1,65 @@
+// AI Assistance Disclosure:
+// Tool: Codex (model: GPT-6), date: 2026-11-08
+// Scope: Replaced Mailgun delivery configuration and selection with SendGrid.
+// Author review: ZI YANG — reviewed and verified.
+
+// AI Assistance Disclosure:
+// Tool: Codex (GPT-5), date: 2026-09-18
+// Scope: Added environment configuration plumbing for the user-service scaffold.
+// Author review: COMPLETED BY ZI YANG
+
+// Package config loads process configuration at the service boundary.
+package config
+
+import "os"
+
+// Config contains the environment-provided settings used by user-service.
+type Config struct {
+	Port                 string
+	UserDBURL            string
+	RedisURL             string
+	JWTKeySetPath        string
+	JWTAccessTokenTTL    string
+	JWTRefreshTokenTTL   string
+	InitialAdminEmail    string
+	InitialAdminUsername string
+	InitialAdminPassword string
+	SendGridAPIKey       string
+	SendGridSenderEmail  string
+	// AI-generated (edited by James Teo): OTP_DELIVERY, "sendgrid" (the default
+	// when empty) or "log"; cmd/api validates it at startup.
+	OTPDelivery string
+	// AI-generated (edited by James Teo).
+	// RabbitMQURL is the broker the outbox relay publishes to, as set. An
+	// empty value takes cmd/api's local-development default.
+	RabbitMQURL string
+	// AI-generated (edited by nigeltzy): USER_RANKING_DB_URL, the separate
+	// database that holds ranking models (D-095).
+	RankingDBURL string
+}
+
+// Load reads the service configuration once from the process environment.
+func Load() Config {
+	return Config{
+		Port:                 os.Getenv("PORT"),
+		UserDBURL:            os.Getenv("USER_DB_URL"),
+		RedisURL:             os.Getenv("REDIS_URL"),
+		JWTKeySetPath:        os.Getenv("JWT_KEYSET_PATH"),
+		JWTAccessTokenTTL:    os.Getenv("JWT_ACCESS_TOKEN_TTL"),
+		JWTRefreshTokenTTL:   os.Getenv("JWT_REFRESH_TOKEN_TTL"),
+		InitialAdminEmail:    os.Getenv("INITIAL_ADMIN_EMAIL"),
+		InitialAdminUsername: os.Getenv("INITIAL_ADMIN_USERNAME"),
+		InitialAdminPassword: os.Getenv("INITIAL_ADMIN_PASSWORD"),
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-10-10 — loads the
+		// owner-recorded Mailgun delivery configuration once at startup.
+		// Author review: ZI YANG - validated correctness.
+		// SendGrid replaces the historical Mailgun configuration above (current disclosure at file top).
+		SendGridAPIKey:      os.Getenv("SENDGRID_API_KEY"),
+		SendGridSenderEmail: os.Getenv("SENDGRID_SENDER_EMAIL"),
+		OTPDelivery:         os.Getenv("OTP_DELIVERY"), // AI-generated (edited by James Teo).
+		// AI-generated (edited by James Teo).
+		RabbitMQURL: os.Getenv("RABBITMQ_URL"),
+		// AI-generated (edited by nigeltzy).
+		RankingDBURL: os.Getenv("USER_RANKING_DB_URL"),
+	}
+}

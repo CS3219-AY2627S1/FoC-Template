@@ -1,0 +1,130 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
+// Scope: Builds the token verifier and the Redis revocation client from
+//   JWKS_URL and REDIS_URL and hands them to the router (D-041, D-054).
+// Author review: PENDING — <reviewer to complete>
+
+package main
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/golang-migrate/migrate/v4"
+	pgxmigrate "github.com/golang-migrate/migrate/v4/database/pgx/v5"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/jackc/pgx/v5/pgxpool"
+	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"foc/supplier-service/internal/auth"
+	"foc/supplier-service/internal/config"
+	"foc/supplier-service/internal/httpapi"
+	// AI-generated (edited by James Teo).
+	"foc/supplier-service/internal/orderclient"
+	"foc/supplier-service/internal/repository"
+	"foc/supplier-service/internal/supplier"
+	"foc/supplier-service/seed"
+)
+
+func main() {
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if err := run(log); err != nil {
+		log.Error("supplier-service stopped", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run(log *slog.Logger) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	ctx := context.Background()
+
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("connect to database: %w", err)
+	}
+	defer pool.Close()
+
+	if err := runMigrations(cfg.DatabaseURL); err != nil {
+		return fmt.Errorf("run migrations: %w", err)
+	}
+
+	repo := repository.NewPostgresRepository(pool)
+	// AI-generated (edited by James Teo).
+	errands := orderclient.New(cfg.OrderBaseURL)
+	svc := supplier.NewService(repo, errands, log)
+
+	// AI-generated (edited by James Teo).
+	if err := seed.EnsureSeeded(ctx, repo, svc, cfg.SeedCSVPath); err != nil {
+		return fmt.Errorf("seed suppliers: %w", err)
+	}
+
+	// Neither user-service nor Redis is waited for here: the keys are fetched
+	// on the first admin write and go-redis connects lazily.
+	verifier := auth.NewVerifier(cfg.JWKSURL, &http.Client{Timeout: 5 * time.Second})
+	rdb, err := auth.NewRedisClient(cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer rdb.Close()
+
+	server := newHTTPServer(":"+cfg.Port, httpapi.NewRouter(svc, verifier, auth.NewRevocations(rdb), log), log)
+
+	// D-115: entries older than 6 months are removed by a scheduled job.
+	go svc.RunAuditPurge(ctx, supplier.PurgeInterval)
+
+	log.Info("supplier-service listening", "port", cfg.Port)
+	if err := server.ListenAndServe(); err != nil {
+		return fmt.Errorf("server error: %w", err)
+	}
+	return nil
+}
+
+// newHTTPServer serves handler on addr, with net/http's own errors written to
+// log at ERROR; they would otherwise go out as text through the standard log
+// package.
+func newHTTPServer(addr string, handler http.Handler, log *slog.Logger) *http.Server {
+	return &http.Server{
+		Addr:     addr,
+		Handler:  handler,
+		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelError),
+	}
+}
+
+func runMigrations(databaseURL string) error {
+	migrationsPath, err := filepath.Abs("migrations")
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(migrationsPath); err != nil {
+		migrationsPath = "/app/migrations"
+	}
+
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	driver, err := pgxmigrate.WithInstance(db, &pgxmigrate.Config{})
+	if err != nil {
+		return err
+	}
+
+	m, err := migrate.NewWithDatabaseInstance("file://"+migrationsPath, "supplier", driver)
+	if err != nil {
+		return err
+	}
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return err
+	}
+	return nil
+}
