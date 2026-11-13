@@ -1,0 +1,505 @@
+import { createHash } from 'node:crypto';
+import { Role } from '@foc/contracts';
+import { and, count, desc, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import {
+  COURIER_LOCK_INDEX,
+  errandEvents,
+  errands,
+  idempotencyKeys,
+} from '../db/schema.js';
+import { isRoleBlocked, lockUser } from '../role-blocks/role-blocks.js';
+import {
+  EDGES,
+  USER_REASONS,
+  findEdge,
+  type Col,
+  type Edge,
+  type UserRole,
+} from './edges.js';
+import { enqueueNotice } from './notice.js';
+import { payloadValid } from './payloads.js';
+import type { Status } from './status.js';
+
+export type Db = NodePgDatabase<any>;
+
+// Who is acting. Required and explicit: a missing or failed-auth user must
+// never fall through to the system, which may take system-only edges.
+export type Actor = { kind: 'user'; id: string; admin?: true } | { kind: 'system' };
+export const SYSTEM: Actor = { kind: 'system' };
+export const user = (id: string): Actor => ({ kind: 'user', id });
+// From the token's isAdmin flag; only this actor passes an admin edge.
+export const admin = (id: string): Actor => ({ kind: 'user', id, admin: true });
+
+// Stored actor_id: null = system.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const actorIdOf = (a: Actor | undefined): string | null | undefined =>
+  a?.kind === 'system'
+    ? null
+    : a?.kind === 'user' && UUID.test(a.id)
+      ? a.id.toLowerCase()
+      : undefined;
+
+export interface TransitionInput {
+  errandId: string;
+  expected: Status;
+  to: Status;
+  // Event type; only for a pair with several exits (Adjusting-Credit -> Open).
+  type?: string;
+  actor: Actor;
+  payload?: Record<string, unknown>;
+  idempotencyKey?: string;
+  // Values for the columns the edge sets (e.g. courierId on accept).
+  set?: Partial<Pick<typeof errands.$inferInsert, Col>>;
+}
+
+export type TransitionResult =
+  | { ok: true; sequenceNumber: number; replayed?: true }
+  | {
+      ok: false;
+      reason:
+        | 'ILLEGAL_TRANSITION'
+        | 'INVALID_FIELDS'
+        | 'NOT_FOUND' // errand not found
+        | 'IDEMPOTENCY_KEY_REUSED'
+        | 'FORBIDDEN' // actor may not take this edge on this errand
+        | 'COURIER_BUSY' // courier already holds an active errand
+        | 'ROLE_BLOCKED' // accepting courier has a role block
+        | 'EXPIRED' // accept or edit after expires_at
+        | 'EXPIRY_IN_PAST'; // edited duration puts expires_at at or before now
+    }
+  | { ok: false; reason: 'STATE_MISMATCH'; currentStatus: Status };
+
+const INVALID: TransitionResult = { ok: false, reason: 'INVALID_FIELDS' };
+const ILLEGAL: TransitionResult = { ok: false, reason: 'ILLEGAL_TRANSITION' };
+const BUSY: TransitionResult = { ok: false, reason: 'COURIER_BUSY' };
+const FORBIDDEN: TransitionResult = { ok: false, reason: 'FORBIDDEN' };
+const BLOCKED: TransitionResult = { ok: false, reason: 'ROLE_BLOCKED' };
+export const MAX_NOTE_WORDS = 100;
+const RELEASED = ['COURIER_BUSY', 'ROLE_BLOCKED'];
+// NOT NULL create fields an edit may change but never blank (F2.1.1 re-runs F1.1).
+const REQUIRED_TEXT: Col[] = ['deliveryDetail', 'collectionItems'];
+
+// The new duration on an expiry-editing edge, if the caller sent one.
+const expiryEditOf = (i: TransitionInput, edge: Edge): number | undefined =>
+  edge.editsExpiry ? (i.payload?.expiryDurationMinutes as number | undefined) : undefined;
+
+// Caller bugs, rejected before the transaction: not an outcome worth storing
+// under a key. Returns the refusal, or undefined when the input is well-formed.
+function validate(
+  i: TransitionInput,
+  edge: Edge | undefined,
+  actor: string | null | undefined,
+): TransitionResult | undefined {
+  // undefined = malformed actor (missing, unknown kind, bad id).
+  if (actor === undefined) return INVALID;
+  if (!edge) {
+    // A pair with several exits needs a known `type`; that is a caller bug, not an illegal edge.
+    return Array.isArray(EDGES[i.expected]?.[i.to]) ? INVALID : undefined;
+  }
+  if (!payloadValid(edge.type, i.payload)) return INVALID;
+  // `set` must carry every column this edge owns, plus only its optional ones.
+  const given = Object.entries(i.set ?? {})
+    .filter(([, v]) => v != null)
+    .map(([k]) => k as Col);
+  const allowed = [...edge.sets, ...(edge.optional ?? [])];
+  if (
+    !edge.sets.every((c) => given.includes(c)) ||
+    !given.every((c) => allowed.includes(c))
+  ) {
+    return INVALID;
+  }
+  // An in-place edit must change something.
+  if (i.expected === i.to && !given.length && expiryEditOf(i, edge) === undefined) {
+    return INVALID;
+  }
+  if (REQUIRED_TEXT.some((c) => i.set?.[c] !== undefined && !/\S/.test(String(i.set[c] ?? '')))) {
+    return INVALID;
+  }
+  // The courier is the actor who accepts, never a name passed in by the caller
+  // (so the system, whose actor is null, can never accept).
+  if (
+    edge.sets.includes('courierId') &&
+    i.set?.courierId?.toLowerCase() !== actor
+  ) {
+    return INVALID;
+  }
+  // The admin's note is mandatory and capped; the resolve route maps INVALID to 400.
+  if (edge.sets.includes('settlementNote')) {
+    const words = i.set?.settlementNote?.trim().split(/\s+/) ?? [];
+    if (words[0] === '' || words.length > MAX_NOTE_WORDS) return INVALID;
+  }
+  // An admin edge lists only 'admin'; the flag lives on the actor, not the row.
+  if (edge.who.includes('admin') && !(i.actor.kind === 'user' && i.actor.admin)) {
+    return FORBIDDEN;
+  }
+  const reason = i.set?.cancellationReason;
+  if (edge.reasons && !edge.reasons.some((r) => r === reason)) return INVALID;
+  // A reason belongs to one kind of actor: users give USER_REASONS, the system the rest.
+  if (edge.reasons && (actor !== null) !== USER_REASONS.some((r) => r === reason)) {
+    return INVALID;
+  }
+  return undefined;
+}
+
+// Columns the server stamps per request; a retry carries a new value, so they
+// stay out of the fingerprint.
+const STAMPED: string[] = ['pickedUpAt', 'deliveredAt'];
+
+// Key-ordered JSON, so the same content always hashes the same.
+const canon = (v: unknown) =>
+  JSON.stringify(v, (_, x) =>
+    x && typeof x === 'object' && !Array.isArray(x)
+      ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1)))
+      : x,
+  );
+
+const fingerprintOf = (i: TransitionInput, actor: string | null) => {
+  const set = Object.entries(i.set ?? {}).filter(([k]) => !STAMPED.includes(k));
+  const body = createHash('sha256')
+    .update(canon([Object.fromEntries(set), i.payload ?? null]))
+    .digest('hex');
+  return `${i.expected}|${i.to}|${actor ?? ''}|${i.type ?? ''}|${body}`;
+};
+
+const keyRow = (i: TransitionInput) =>
+  and(
+    eq(idempotencyKeys.errandId, i.errandId),
+    eq(idempotencyKeys.key, i.idempotencyKey!),
+  );
+
+// Claim the key. Returns the stored result when the key was already used, else
+// undefined (claimed, or no key). A concurrent claimant blocks on the insert
+// until the first commits, so it never reads a half-written outcome.
+async function claimKey(
+  tx: Db,
+  i: TransitionInput,
+  fingerprint: string,
+): Promise<TransitionResult | undefined> {
+  if (!i.idempotencyKey) return undefined;
+  const [claimed] = await tx
+    .insert(idempotencyKeys)
+    .values({ errandId: i.errandId, key: i.idempotencyKey, fingerprint })
+    .onConflictDoNothing()
+    .returning({ key: idempotencyKeys.key });
+  if (claimed) return undefined;
+
+  const [prior] = await tx.select().from(idempotencyKeys).where(keyRow(i));
+  if (prior.fingerprint !== fingerprint)
+    return { ok: false, reason: 'IDEMPOTENCY_KEY_REUSED' };
+  const out = prior.outcome as TransitionResult;
+  return out.ok ? { ...out, replayed: true } : out;
+}
+
+// Same transaction as the transition, so key, status and event commit together.
+// COURIER_BUSY and ROLE_BLOCKED are transient (the courier may free up, the
+// block expires), so their key is released and a retry runs afresh; every
+// other outcome is stored for replay.
+async function storeOutcome(
+  tx: Db,
+  i: TransitionInput,
+  result: TransitionResult,
+) {
+  if (!i.idempotencyKey) return;
+  if (!result.ok && RELEASED.includes(result.reason)) {
+    await tx.delete(idempotencyKeys).where(keyRow(i));
+    return;
+  }
+  await tx.update(idempotencyKeys).set({ outcome: result }).where(keyRow(i));
+}
+
+export function transition(
+  db: Db,
+  i: TransitionInput,
+): Promise<TransitionResult> {
+  const actor = actorIdOf(i.actor);
+  const edge = findEdge(i.expected, i.to, i.type);
+  const refused = validate(i, edge, actor);
+  if (refused) return Promise.resolve(refused);
+
+  const fingerprint = fingerprintOf(i, actor as string | null);
+
+  // Accept: validate() made the actor the courier, so this is their user id.
+  const courier = edge?.sets.includes('courierId') ? (actor as string) : undefined;
+
+  return db.transaction(async (tx): Promise<TransitionResult> => {
+    // Taken first, so a concurrent role block for this courier serializes with us.
+    if (courier) await lockUser(tx, courier);
+    const replay = await claimKey(tx, i, fingerprint);
+    if (replay) return replay;
+
+    let result: TransitionResult;
+    if (!edge) result = ILLEGAL;
+    else if (courier && (await isRoleBlocked(tx, courier, Role.Courier))) result = BLOCKED;
+    else result = await apply(tx, i, edge, actor as string | null);
+    await storeOutcome(tx, i, result);
+    return result;
+  });
+}
+
+// Row-level actor check for a user actor (race-safe: part of the UPDATE).
+const roleSql: Record<UserRole, (a: string) => SQL> = {
+  requester: (a) => eq(errands.requesterId, a),
+  courier: (a) => eq(errands.courierId, a),
+  other: (a) => ne(errands.requesterId, a),
+  admin: () => sql`true`, // validate() already checked the flag
+};
+// A null actor is the system and matches no row predicate: it passes only on
+// an edge that lists 'system'. A user passes if any of their roles holds.
+const actorOk = (edge: Edge, actor: string | null): SQL | undefined => {
+  const users = edge.who.filter((r): r is UserRole => r !== 'system');
+  if (!actor) return edge.who.includes('system') ? undefined : sql`false`;
+  return users.length ? or(...users.map((r) => roleSql[r](actor))) : sql`false`;
+};
+
+// Unique violation on the one-active-errand-per-courier index, by name.
+const isCourierBusy = (e: unknown) => {
+  const c = ((e as { cause?: object })?.cause ?? e) as {
+    code?: string;
+    constraint?: string;
+  };
+  return c.code === '23505' && c.constraint === COURIER_LOCK_INDEX;
+};
+
+// The row-level guard the UPDATE and its diagnosis share: right errand, right
+// status, permitted actor.
+const matchOf = (i: TransitionInput, edge: Edge, actor: string | null) =>
+  and(
+    eq(errands.id, i.errandId),
+    eq(errands.status, i.expected),
+    actorOk(edge, actor),
+  );
+
+const clearedOf = (edge: Edge) =>
+  Object.fromEntries(edge.clears.map((c) => [c, null]));
+
+type Returned = {
+  requesterId: string;
+  courierId: string | null;
+  rewardCredits: number;
+  settlementAmount: number | null;
+  settlementNote: string | null;
+  expiresAt: Date | null;
+};
+
+// now + the duration the requester chose, kept in the ErrandCreated payload
+// (ADR 0007). Truncated to ms so the event payload replays to the same value.
+const expiryFromCreated = (errandId: string) => sql`date_trunc('milliseconds', now()
+  + coalesce((SELECT (payload->>'expiryDurationMinutes')::int FROM errand_events
+              WHERE errand_id = ${errandId} AND sequence_number = 1), 60) * interval '1 minute')`;
+
+// F2 expiry edit: the time the errand opened + the new duration, so an edit
+// never restarts the clock.
+const expiryFromOpened = (errandId: string, minutes: number) => sql`date_trunc('milliseconds',
+  (SELECT occurred_at FROM errand_events
+   WHERE errand_id = ${errandId} AND from_status = 'Reserving-Credit' AND to_status = 'Open')
+  + ${minutes}::int * interval '1 minute')`;
+
+// The status UPDATE. Returns the new sequence number, undefined if no row
+// matched (wrong status, actor, or expired), or COURIER_BUSY.
+async function updateErrand(
+  tx: Db,
+  i: TransitionInput,
+  edge: Edge,
+  actor: string | null,
+): Promise<{ seq: number; row: Returned } | 'COURIER_BUSY' | undefined> {
+  const match = matchOf(i, edge, actor);
+  const minutes = expiryEditOf(i, edge);
+  const edited = minutes === undefined ? undefined : expiryFromOpened(i.errandId, minutes);
+  const update = (q: Db) =>
+    q
+      .update(errands)
+      .set({
+        ...i.set,
+        ...clearedOf(edge),
+        ...(edge.setsExpiry && { expiresAt: expiryFromCreated(i.errandId) }),
+        ...(edited && { expiresAt: edited }),
+        status: i.to,
+        lastSequenceNumber: sql`${errands.lastSequenceNumber} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          match,
+          edge.unexpiredOnly
+            ? or(isNull(errands.expiresAt), sql`${errands.expiresAt} > now()`)
+            : undefined,
+          edited ? sql`${edited} > now()` : undefined,
+        ),
+      )
+      .returning({
+        seq: errands.lastSequenceNumber,
+        requesterId: errands.requesterId,
+        courierId: errands.courierId,
+        rewardCredits: errands.rewardCredits,
+        settlementAmount: errands.settlementAmount,
+        settlementNote: errands.settlementNote,
+        expiresAt: errands.expiresAt,
+      });
+
+  const first = async (q: Db) => {
+    const [r] = await update(q);
+    return r && { seq: r.seq, row: r };
+  };
+  if (!edge.sets.includes('courierId')) return first(tx);
+  // Savepoint: the unique violation must not abort the whole transaction.
+  try {
+    return await tx.transaction((sp) => first(sp));
+  } catch (e) {
+    if (isCourierBusy(e)) return 'COURIER_BUSY';
+    throw e;
+  }
+}
+
+// The event records every column this edge changed, so the log can rebuild
+// the projection. The caller payload never holds a column name (payloads.ts).
+async function appendEvent(
+  tx: Db,
+  i: TransitionInput,
+  edge: Edge,
+  actor: string | null,
+  seq: number,
+  computed: Record<string, unknown> = {},
+) {
+  await tx.insert(errandEvents).values({
+    errandId: i.errandId,
+    sequenceNumber: seq,
+    type: edge.type,
+    fromStatus: i.expected,
+    toStatus: i.to,
+    payload: { ...i.payload, ...i.set, ...computed, ...clearedOf(edge) },
+    actorId: actor,
+  });
+}
+
+// The UPDATE matched nothing and wrote nothing: say why.
+async function explainNoRow(
+  tx: Db,
+  i: TransitionInput,
+  edge: Edge,
+  actor: string | null,
+): Promise<TransitionResult> {
+  const [cur] = await tx
+    .select({ status: errands.status })
+    .from(errands)
+    .where(eq(errands.id, i.errandId));
+  if (!cur) return { ok: false, reason: 'NOT_FOUND' };
+
+  // Right status but no row: the actor check, or expiry, refused it.
+  if (cur.status === i.expected) {
+    const [permitted] = await tx
+      .select({ id: errands.id })
+      .from(errands)
+      .where(matchOf(i, edge, actor));
+    if (!permitted) return { ok: false, reason: 'FORBIDDEN' };
+    if (edge.unexpiredOnly) {
+      // Still live, so the edited expiry is what failed.
+      if (expiryEditOf(i, edge) !== undefined) {
+        const [live] = await tx
+          .select({ id: errands.id })
+          .from(errands)
+          .where(
+            and(
+              eq(errands.id, i.errandId),
+              or(isNull(errands.expiresAt), sql`${errands.expiresAt} > now()`),
+            ),
+          );
+        if (live) return { ok: false, reason: 'EXPIRY_IN_PAST' };
+      }
+      return { ok: false, reason: 'EXPIRED' };
+    }
+  }
+
+  // Keyless repeat (#349): the errand's latest event is this very edge by this
+  // caller, so the request already happened.
+  const [last] = await tx
+    .select()
+    .from(errandEvents)
+    .where(eq(errandEvents.errandId, i.errandId))
+    .orderBy(desc(errandEvents.sequenceNumber))
+    .limit(1);
+  if (
+    last &&
+    last.fromStatus === i.expected &&
+    last.toStatus === i.to &&
+    last.type === edge.type &&
+    last.actorId === actor
+  ) {
+    return { ok: true, sequenceNumber: last.sequenceNumber, replayed: true };
+  }
+  return { ok: false, reason: 'STATE_MISMATCH', currentStatus: cur.status };
+}
+
+const countEvents = async (tx: Db, errandId: string, type: string) =>
+  (
+    await tx
+      .select({ n: count() })
+      .from(errandEvents)
+      .where(and(eq(errandEvents.errandId, errandId), eq(errandEvents.type, type)))
+  )[0].n;
+
+// The fields an edit can change in place, as they stand now (row locked). An edit that waits on another
+// service records them in its event, so a refusal can put them back (ADR 0014).
+async function localFieldsOf(tx: Db, errandId: string) {
+  const [r] = await tx
+    .select({
+      description: errands.description,
+      deliveryDetail: errands.deliveryDetail,
+      collectionItems: errands.collectionItems,
+      expiresAt: errands.expiresAt,
+    })
+    .from(errands)
+    .where(eq(errands.id, errandId))
+    .for('update');
+  return r && { ...r, expiresAt: r.expiresAt?.toISOString() ?? null };
+}
+
+// The `previous` of the edit still in flight: only an edit's request event carries one.
+async function restoredBy(tx: Db, errandId: string): Promise<TransitionInput['set']> {
+  const [r] = await tx
+    .select({ previous: sql<Record<string, unknown> | null>`${errandEvents.payload}->'previous'` })
+    .from(errandEvents)
+    .where(and(eq(errandEvents.errandId, errandId), sql`${errandEvents.payload}->'previous' IS NOT NULL`))
+    .orderBy(desc(errandEvents.sequenceNumber))
+    .limit(1);
+  if (!r?.previous) return undefined; // an edit that began before snapshots existed: nothing to restore
+  const { expiresAt, ...rest } = r.previous;
+  return { ...rest, expiresAt: expiresAt ? new Date(expiresAt as string) : null } as TransitionInput['set'];
+}
+
+async function apply(
+  tx: Db,
+  given: TransitionInput,
+  edge: Edge,
+  actor: string | null,
+): Promise<TransitionResult> {
+  // A refusal puts the local fields back; the restored values ride in `set`, so the event rebuilds the same row.
+  const i = edge.restores ? { ...given, set: { ...given.set, ...(await restoredBy(tx, given.errandId)) } } : given;
+  const previous = edge.snapshots ? await localFieldsOf(tx, i.errandId) : undefined;
+  const row = await updateErrand(tx, i, edge, actor);
+  if (row === 'COURIER_BUSY') return BUSY;
+  if (!row) return explainNoRow(tx, i, edge, actor);
+  await appendEvent(tx, i, edge, actor, row.seq, {
+    ...((edge.setsExpiry || expiryEditOf(i, edge) !== undefined) && { expiresAt: row.row.expiresAt }),
+    ...(previous && { previous }),
+  });
+  // Same transaction as the event: both commit or neither does (ADR 0008).
+  // Payload includes the stored columns, so the builder sees e.g. cancellationReason.
+  const notice = edge.notice?.({
+    errandId: i.errandId,
+    requesterId: row.row.requesterId,
+    courierId: row.row.courierId,
+    actorUserId: actor,
+    rewardCredits: row.row.rewardCredits,
+    settlementAmount: row.row.settlementAmount,
+    settlementNote: row.row.settlementNote,
+    payload: { ...i.payload, ...i.set },
+    attempt:
+      edge.type === 'SettlementRequested'
+        ? await countEvents(tx, i.errandId, edge.type)
+        : 1,
+    sequenceNumber: row.seq,
+  });
+  for (const n of [notice ?? []].flat()) await enqueueNotice(tx, n);
+  return { ok: true, sequenceNumber: row.seq };
+}

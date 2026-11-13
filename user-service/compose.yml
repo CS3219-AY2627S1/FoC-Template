@@ -1,0 +1,157 @@
+services:
+  user-service:
+    restart: on-failure:3
+    build:
+      context: ..
+      dockerfile: user-service/Dockerfile
+      target: development
+    image: ${FOC_IMAGE_PREFIX:-foc}/user-service:${USER_SERVICE_IMAGE_TAG:-dev}
+    command: npm run start:dev
+    depends_on:
+      user-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - DB_HOST=${USER_SERVICE_DB_HOST}
+      - DB_PORT=${USER_SERVICE_DB_PORT}
+      - DB_USERNAME=${USER_SERVICE_DB_USERNAME}
+      - DB_DATABASE=${USER_SERVICE_DB_DATABASE}
+      - DB_SYNCHRONIZE=${USER_SERVICE_DB_SYNCHRONIZE}
+      - ADMIN_BOOTSTRAP_EMAIL=${ADMIN_BOOTSTRAP_EMAIL}
+      - ADMIN_BOOTSTRAP_DISPLAY_NAME=${ADMIN_BOOTSTRAP_DISPLAY_NAME}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_USERNAME=${REDIS_USERNAME}
+      - REDIS_DB_INDEX=${REDIS_DB_INDEX}
+      - DB_PASSWORD_FILE=/run/secrets/db_password
+      - SERVER_SECRET_FILE=/run/secrets/server_secret
+      - RABBITMQ_USER=${USER_SERVICE_RABBITMQ_USER}
+      - RABBITMQ_HOST=${RABBITMQ_HOST}
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST}
+      - RABBITMQ_PASSWORD_FILE=/run/secrets/rabbitmq_user_password
+      - LOG_LEVEL=${LOG_LEVEL}
+      - JWT_PUBLIC_KEY_FILE=/run/secrets/jwt_public_key
+      - JWT_PRIVATE_KEY_FILE=/run/secrets/jwt_private_key
+      - FRONTEND_BASE_URL=${FRONTEND_BASE_URL}
+      - FRONTEND_PASSWORD_RESET_PATH=${FRONTEND_PASSWORD_RESET_PATH}
+      - ORDER_SERVICE_BASE_URL=${ORDER_SERVICE_BASE_URL}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}
+      - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://loki:3100/otlp/v1/logs}
+    secrets:
+      - db_password
+      - server_secret
+      - rabbitmq_user_password
+      - jwt_private_key
+      - jwt_public_key
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /usr/src/app
+          ignore:
+            - node_modules/
+            - dist/
+            - test/
+            - docs/
+            - .env
+            - '*.secret'
+        - action: rebuild
+          path: package.json
+        - action: sync+restart
+          path: ../packages/contracts/src
+          target: /usr/src/packages/contracts/src
+        - action: sync+restart
+          path: ../packages/contracts/tsconfig.json
+          target: /usr/src/packages/contracts/tsconfig.json
+        - action: sync+restart
+          path: ../packages/contracts/tsconfig.build.json
+          target: /usr/src/packages/contracts/tsconfig.build.json
+        - action: rebuild
+          path: ../packages/contracts/package.json
+        - action: rebuild
+          path: ../packages/contracts/package-lock.json
+        - action: sync+restart
+          path: ../packages/observability/src
+          target: /usr/src/packages/observability/src
+        - action: sync+restart
+          path: ../packages/observability/tsconfig.json
+          target: /usr/src/packages/observability/tsconfig.json
+        - action: sync+restart
+          path: ../packages/observability/tsconfig.build.json
+          target: /usr/src/packages/observability/tsconfig.build.json
+        - action: rebuild
+          path: ../packages/observability/package.json
+        - action: rebuild
+          path: ../packages/observability/package-lock.json
+        - action: sync+restart
+          path: ../packages/auth/src
+          target: /usr/src/packages/auth/src
+        - action: sync+restart
+          path: ../packages/auth/tsconfig.json
+          target: /usr/src/packages/auth/tsconfig.json
+        - action: sync+restart
+          path: ../packages/auth/tsconfig.build.json
+          target: /usr/src/packages/auth/tsconfig.build.json
+        - action: rebuild
+          path: ../packages/auth/package.json
+        - action: rebuild
+          path: ../packages/auth/package-lock.json
+        - action: sync+restart
+          path: ../packages/outbox/src
+          target: /usr/src/packages/outbox/src
+        - action: sync+restart
+          path: ../packages/outbox/tsconfig.json
+          target: /usr/src/packages/outbox/tsconfig.json
+        - action: sync+restart
+          path: ../packages/outbox/tsconfig.build.json
+          target: /usr/src/packages/outbox/tsconfig.build.json
+        - action: rebuild
+          path: ../packages/outbox/package.json
+        - action: rebuild
+          path: ../packages/outbox/package-lock.json
+
+  user-db:
+    image: postgres:18-alpine
+    restart: on-failure:3
+    environment:
+      - POSTGRES_USER=${USER_SERVICE_DB_USERNAME}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+      - POSTGRES_DB=${USER_SERVICE_DB_DATABASE}
+    volumes:
+      - user-db-data:/var/lib/postgresql
+    secrets:
+      - db_password
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:latest
+    restart: on-failure:3
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  user-db-data:
+
+secrets:
+  db_password:
+    file: secrets/db_password.secret
+  server_secret:
+    file: secrets/server_secret.secret
+  rabbitmq_user_password:
+    file: secrets/rabbitmq_user_password.secret
+  jwt_private_key:
+    file: secrets/jwt_private_key.secret
+  jwt_public_key:
+    file: secrets/jwt_public_key.secret

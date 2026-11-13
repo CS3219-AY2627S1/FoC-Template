@@ -1,0 +1,52 @@
+import Joi from 'joi';
+import {
+  outboxEnvironmentSchema,
+  validateOutboxTiming,
+} from '@foc/outbox';
+
+/**
+ * Validates the whole environment up front when the app boots.
+ *
+ * All env vars a service reads are validated here: an invalid setup fails
+ * fast with the offending keys reported together, instead of surfacing as
+ * confusing errors later at the point of use.
+ */
+export const environmentSchema = Joi.object({
+  NODE_ENV: Joi.string()
+    .valid('development', 'test', 'production')
+    .default('development'),
+  PORT: Joi.number().port().default(3000),
+  LOG_LEVEL: Joi.string()
+    .valid('debug', 'info', 'warn', 'error', 'fatal')
+    .default('log'),
+  OTEL_EXPORTER_OTLP_ENDPOINT: Joi.string().uri().default('http://localhost:4318'),
+  DB_HOST: Joi.string().hostname().required(),
+  DB_PORT: Joi.number().port().required(),
+  DB_USERNAME: Joi.string().min(1).required(),
+  DB_DATABASE: Joi.string().min(1).required(),
+  DB_PASSWORD_FILE: Joi.string().min(1).required(),
+  DB_SYNCHRONIZE: Joi.boolean().default(false),
+  ADMIN_BOOTSTRAP_EMAIL: Joi.string().email().optional(),
+  ADMIN_BOOTSTRAP_DISPLAY_NAME: Joi.string().min(1).optional(),
+  REDIS_HOST: Joi.string().hostname().required(),
+  REDIS_PORT: Joi.number().port().required(),
+  REDIS_USERNAME: Joi.string().min(1).required(),
+  REDIS_DB_INDEX: Joi.number().min(0).required(),
+  SERVER_SECRET_FILE: Joi.string().min(1).required(),
+  RABBITMQ_USER: Joi.string().min(1).required(),
+  RABBITMQ_HOST: Joi.string().hostname().required(),
+  RABBITMQ_PORT: Joi.number().port().required(),
+  RABBITMQ_VHOST: Joi.string().min(1).required(),
+  RABBITMQ_PASSWORD_FILE: Joi.string().min(1).required(),
+  JWT_PRIVATE_KEY_FILE: Joi.string().min(1).required(),
+  JWT_PUBLIC_KEY_FILE: Joi.string().min(1).required(),
+  FRONTEND_BASE_URL: Joi.string().uri().required(),
+  FRONTEND_PASSWORD_RESET_PATH: Joi.string()
+    .pattern(/^\//)
+    .default('/reset-password'),
+  ORDER_SERVICE_BASE_URL: Joi.string().uri().required(),
+})
+  .concat(outboxEnvironmentSchema)
+  .custom(validateOutboxTiming)
+  .unknown(true)
+  .prefs({ abortEarly: false, convert: true });

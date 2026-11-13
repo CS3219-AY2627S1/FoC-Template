@@ -1,0 +1,1128 @@
+import 'reflect-metadata';
+import { Test, TestingModule } from '@nestjs/testing';
+import {
+  BadRequestException,
+  ForbiddenException,
+  UnauthorizedException,
+  ValidationPipe,
+} from '@nestjs/common';
+import { UsersController } from './users.controller.js';
+import { UsersService } from './users.service.js';
+import { ConfigService } from '@nestjs/config';
+import { JwtAuthGuard } from '@foc/auth';
+import { AdminBlockGuard } from '../authorization/admin-block-guard/admin-block.guard.js';
+import { UpdateProfileDto } from './DTO/update-profile.dto.js';
+import { UpdateRolesDto } from './DTO/update-roles.dto.js';
+import { AdminUpdateUserDto } from './DTO/admin-update-user.dto.js';
+import { AdminCreateUserDto } from './DTO/admin-create-user.dto.js';
+import { ListUsersQueryDto } from './DTO/list-users.query.dto.js';
+import { ACCESS_TOKEN_COOKIE, Role } from '@foc/contracts';
+
+describe('UsersController', () => {
+  let controller: UsersController;
+  let usersService: {
+    getUserByUuid: ReturnType<typeof vi.fn>;
+    updateProfile: ReturnType<typeof vi.fn>;
+    updateRoles: ReturnType<typeof vi.fn>;
+    archiveSelf: ReturnType<typeof vi.fn>;
+    adminUpdateUser: ReturnType<typeof vi.fn>;
+    adminCreateUser: ReturnType<typeof vi.fn>;
+    listUsers: ReturnType<typeof vi.fn>;
+  };
+  let configGet: ReturnType<typeof vi.fn>;
+  let res: { clearCookie: ReturnType<typeof vi.fn> };
+
+  beforeEach(async () => {
+    usersService = {
+      getUserByUuid: vi.fn(),
+      updateProfile: vi.fn(),
+      updateRoles: vi.fn(),
+      archiveSelf: vi.fn(),
+      adminUpdateUser: vi.fn(),
+      adminCreateUser: vi.fn(),
+      listUsers: vi.fn(),
+    };
+    configGet = vi.fn(() => 'development');
+    res = { clearCookie: vi.fn() };
+
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [UsersController],
+      providers: [
+        { provide: UsersService, useValue: usersService },
+        { provide: ConfigService, useValue: { get: configGet } },
+      ],
+    })
+      // JwtAuthGuard's token verification is exercised at the e2e level; here
+      // the module-level guard is a passthrough so the controller's own
+      // behaviour under an authenticated request can be asserted directly.
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      // The Redis-backed block check is covered by AdminBlockGuard's own
+      // spec; here it is a passthrough so the controller's behaviour under an
+      // otherwise-authorized admin request can be asserted directly.
+      .overrideGuard(AdminBlockGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
+
+    controller = module.get<UsersController>(UsersController);
+  });
+
+  const ACCESS_TOKEN = 'test-access-token';
+
+  const authenticatedRequest = {
+    user: {
+      sub: '11111111-1111-4111-8111-111111111111',
+      email: 'eve@example.com',
+      displayName: 'Eve',
+      isAdmin: false,
+      roles: [] as Role[],
+    },
+    // JwtAuthGuard reads the httpOnly cookie first; user-service forwards this
+    // very token to order-service.
+    cookies: { [ACCESS_TOKEN_COOKIE]: ACCESS_TOKEN },
+  };
+
+  describe('getMe', () => {
+    it('returns the authenticated user from the database', async () => {
+      usersService.getUserByUuid.mockResolvedValue({
+        uuid: '11111111-1111-4111-8111-111111111111',
+        email: 'eve@example.com',
+        displayName: 'Eve',
+        profilePictureUrl: null,
+        roles: [Role.Requester],
+        isAdmin: false,
+      });
+
+      await expect(
+        controller.getMe(authenticatedRequest as never),
+      ).resolves.toEqual({
+        uuid: '11111111-1111-4111-8111-111111111111',
+        email: 'eve@example.com',
+        displayName: 'Eve',
+        profilePictureUrl: null,
+        roles: [Role.Requester],
+        isAdmin: false,
+      });
+      expect(usersService.getUserByUuid).toHaveBeenCalledWith(
+        '11111111-1111-4111-8111-111111111111',
+      );
+    });
+
+    it('rejects when the account no longer exists', async () => {
+      usersService.getUserByUuid.mockResolvedValue(null);
+
+      await expect(
+        controller.getMe(authenticatedRequest as never),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('updateMeProfile', () => {
+    const updatedProfile = {
+      uuid: '11111111-1111-4111-8111-111111111111',
+      email: 'eve@example.com',
+      displayName: 'Eve Newman',
+      profilePictureUrl: 'https://example.com/new.png',
+      roles: [] as Role[],
+      isAdmin: false,
+    };
+
+    it('persists the updated particulars for the authenticated user', async () => {
+      usersService.updateProfile.mockResolvedValue(updatedProfile);
+
+      await expect(
+        controller.updateMeProfile(
+          authenticatedRequest as never,
+          {
+            displayName: 'Eve Newman',
+            profilePictureUrl: 'https://example.com/new.png',
+          } as never,
+          res as never,
+        ),
+      ).resolves.toEqual(updatedProfile);
+
+      expect(usersService.updateProfile).toHaveBeenCalledWith(
+        '11111111-1111-4111-8111-111111111111',
+        {
+          displayName: 'Eve Newman',
+          profilePictureUrl: 'https://example.com/new.png',
+        },
+      );
+    });
+
+    it('clears the access token cookie when the display name changes', async () => {
+      usersService.updateProfile.mockResolvedValue(updatedProfile);
+
+      await controller.updateMeProfile(
+        authenticatedRequest as never,
+        { displayName: 'Eve Newman' } as never,
+        res as never,
+      );
+
+      // Literal options pin the wire contract: the clear must mirror the
+      // cookie's path and flags so the browser actually drops it.
+      expect(res.clearCookie).toHaveBeenCalledWith('access_token', {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: false,
+      });
+    });
+
+    it('clears the cookie as secure in production', async () => {
+      configGet.mockReturnValue('production');
+      usersService.updateProfile.mockResolvedValue(updatedProfile);
+
+      await controller.updateMeProfile(
+        authenticatedRequest as never,
+        { displayName: 'Eve Newman' } as never,
+        res as never,
+      );
+
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        ACCESS_TOKEN_COOKIE,
+        expect.objectContaining({ secure: true }),
+      );
+    });
+
+    it('keeps the session when only the profile picture changes', async () => {
+      usersService.updateProfile.mockResolvedValue({
+        ...updatedProfile,
+        displayName: 'Eve',
+      });
+
+      await controller.updateMeProfile(
+        authenticatedRequest as never,
+        { profilePictureUrl: 'https://example.com/new.png' } as never,
+        res as never,
+      );
+
+      expect(res.clearCookie).not.toHaveBeenCalled();
+    });
+
+    it('reports the updated profile after the change', async () => {
+      usersService.updateProfile.mockResolvedValue(updatedProfile);
+
+      await expect(
+        controller.updateMeProfile(
+          authenticatedRequest as never,
+          { displayName: 'Eve Newman' } as never,
+          res as never,
+        ),
+      ).resolves.toMatchObject({ displayName: 'Eve Newman' });
+    });
+  });
+
+  describe('updateMeRoles', () => {
+    it('persists the new roles for the authenticated user', async () => {
+      usersService.updateRoles.mockResolvedValue({
+        uuid: '11111111-1111-4111-8111-111111111111',
+        email: 'eve@example.com',
+        displayName: 'Eve',
+        roles: [Role.Requester, Role.Courier],
+        isAdmin: false,
+      });
+
+      await expect(
+        controller.updateMeRoles(
+          authenticatedRequest as never,
+          { roles: [Role.Requester, Role.Courier] } as never,
+          res as never,
+        ),
+      ).resolves.toEqual({ roles: [Role.Requester, Role.Courier] });
+
+      expect(usersService.updateRoles).toHaveBeenCalledWith(
+        '11111111-1111-4111-8111-111111111111',
+        [Role.Requester, Role.Courier],
+        ACCESS_TOKEN,
+      );
+    });
+
+    it('rejects when the request carries no access token', async () => {
+      // Unreachable behind JwtAuthGuard; pins the defensive branch so a
+      // tokenless request can never reach order-service unauthenticated.
+      await expect(
+        controller.updateMeRoles(
+          { user: authenticatedRequest.user } as never,
+          { roles: [Role.Requester] } as never,
+          res as never,
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(usersService.updateRoles).not.toHaveBeenCalled();
+    });
+
+    it('clears the access token cookie in development', async () => {
+      usersService.updateRoles.mockResolvedValue({ roles: [] });
+
+      await controller.updateMeRoles(
+        authenticatedRequest as never,
+        { roles: [] } as never,
+        res as never,
+      );
+
+      // Literal options pin the wire contract: the clear must mirror the
+      // cookie's path and flags so the browser actually drops it.
+      expect(res.clearCookie).toHaveBeenCalledWith('access_token', {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: false,
+      });
+    });
+
+    it('clears the cookie as secure in production', async () => {
+      configGet.mockReturnValue('production');
+      usersService.updateRoles.mockResolvedValue({ roles: [] });
+
+      await controller.updateMeRoles(
+        authenticatedRequest as never,
+        { roles: [] } as never,
+        res as never,
+      );
+
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        ACCESS_TOKEN_COOKIE,
+        expect.objectContaining({ secure: true }),
+      );
+    });
+
+    it('reports the new roles after the change', async () => {
+      usersService.updateRoles.mockResolvedValue({
+        roles: [Role.Requester],
+      });
+
+      await expect(
+        controller.updateMeRoles(
+          authenticatedRequest as never,
+          { roles: [Role.Requester] } as never,
+          res as never,
+        ),
+      ).resolves.toEqual({ roles: [Role.Requester] });
+    });
+  });
+
+  describe('archiveMe', () => {
+    it("delegates to the service to archive the caller's account (F12.1)", async () => {
+      usersService.archiveSelf.mockResolvedValue({
+        uuid: '11111111-1111-4111-8111-111111111111',
+        isArchived: true,
+      });
+
+      await expect(
+        controller.archiveMe(authenticatedRequest as never, res as never),
+      ).resolves.toEqual({
+        uuid: '11111111-1111-4111-8111-111111111111',
+        isArchived: true,
+      });
+
+      expect(usersService.archiveSelf).toHaveBeenCalledWith(
+        '11111111-1111-4111-8111-111111111111',
+        ACCESS_TOKEN,
+      );
+    });
+
+    it('rejects when the request carries no access token', async () => {
+      // Unreachable behind JwtAuthGuard; pins the defensive branch so a
+      // tokenless request can never reach order-service unauthenticated.
+      await expect(
+        controller.archiveMe(
+          { user: authenticatedRequest.user } as never,
+          res as never,
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(usersService.archiveSelf).not.toHaveBeenCalled();
+    });
+
+    it('clears the access token cookie, ending the session', async () => {
+      usersService.archiveSelf.mockResolvedValue({
+        uuid: '11111111-1111-4111-8111-111111111111',
+        isArchived: true,
+      });
+
+      await controller.archiveMe(authenticatedRequest as never, res as never);
+
+      // Literal options pin the wire contract, mirroring the roles handler.
+      expect(res.clearCookie).toHaveBeenCalledWith('access_token', {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: false,
+      });
+    });
+
+    it('clears the cookie as secure in production', async () => {
+      configGet.mockReturnValue('production');
+      usersService.archiveSelf.mockResolvedValue({
+        uuid: '11111111-1111-4111-8111-111111111111',
+        isArchived: true,
+      });
+
+      await controller.archiveMe(authenticatedRequest as never, res as never);
+
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        ACCESS_TOKEN_COOKIE,
+        expect.objectContaining({ secure: true }),
+      );
+    });
+  });
+
+  describe('adminUpdateUser', () => {
+    const adminRequest = {
+      user: { ...authenticatedRequest.user, isAdmin: true },
+      cookies: authenticatedRequest.cookies,
+    };
+
+    it('delegates to the service and projects the admin view of the result', async () => {
+      const storedRow = {
+        uuid: '22222222-2222-4222-8222-222222222222',
+        email: 'mallory@example.com',
+        displayName: 'Mallory',
+        profilePictureUrl: null,
+        roles: [] as Role[],
+        isAdmin: true,
+        isLocked: false,
+        isArchived: true,
+      };
+      usersService.adminUpdateUser.mockResolvedValue(storedRow);
+
+      await expect(
+        controller.adminUpdateUser(
+          adminRequest as never,
+          '22222222-2222-4222-8222-222222222222',
+          { isArchived: true } as never,
+        ),
+      ).resolves.toEqual({
+        uuid: '22222222-2222-4222-8222-222222222222',
+        email: 'mallory@example.com',
+        displayName: 'Mallory',
+        profilePictureUrl: null,
+        roles: [],
+        isAdmin: true,
+        isLocked: false,
+        isArchived: true,
+      });
+
+      expect(usersService.adminUpdateUser).toHaveBeenCalledWith(
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222',
+        { isArchived: true },
+        ACCESS_TOKEN,
+      );
+    });
+
+    it('rejects when the request carries no access token', async () => {
+      // Unreachable behind JwtAuthGuard; pins the defensive branch so a
+      // tokenless request can never reach order-service unauthenticated.
+      await expect(
+        controller.adminUpdateUser(
+          { user: adminRequest.user } as never,
+          '22222222-2222-4222-8222-222222222222',
+          { isArchived: true } as never,
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(usersService.adminUpdateUser).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('adminCreateUser', () => {
+    const adminRequest = {
+      user: { ...authenticatedRequest.user, isAdmin: true },
+    };
+
+    const createdUser = {
+      uuid: '22222222-2222-4222-8222-222222222222',
+      email: 'mallory@example.com',
+      displayName: 'Mallory',
+      profilePictureUrl: null,
+      roles: [Role.Requester] as Role[],
+      isAdmin: false,
+      isLocked: true,
+      isArchived: false,
+    };
+
+    it('delegates to the service with the acting admin and body', async () => {
+      usersService.adminCreateUser.mockResolvedValue(createdUser);
+
+      const body = {
+        email: 'mallory@example.com',
+        displayName: 'Mallory',
+        roles: [Role.Requester],
+      };
+
+      await expect(
+        controller.adminCreateUser(adminRequest as never, body as never),
+      ).resolves.toEqual({
+        uuid: '22222222-2222-4222-8222-222222222222',
+        displayName: 'Mallory',
+        email: 'mallory@example.com',
+        roles: [Role.Requester],
+        profilePictureUrl: null,
+        isAdmin: false,
+        isLocked: true,
+        isArchived: false,
+      });
+
+      expect(usersService.adminCreateUser).toHaveBeenCalledWith(
+        '11111111-1111-4111-8111-111111111111',
+        body,
+      );
+    });
+  });
+
+  describe('listUsers', () => {
+    // A stored row as the repository would hand it to the projectors.
+    const storedUser = {
+      uuid: '11111111-1111-4111-8111-111111111111',
+      email: 'eve@example.com',
+      displayName: 'Eve',
+      isAdmin: false,
+      isLocked: false,
+      isArchived: false,
+      roles: [Role.Requester] as Role[],
+      profilePictureUrl: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    };
+
+    const listedPage = {
+      users: [storedUser],
+      total: 1,
+      offset: 0,
+      limit: 25,
+    };
+
+    it('returns the basic field view for non-admin callers (F10.1)', async () => {
+      usersService.listUsers.mockResolvedValue(listedPage);
+
+      const query: ListUsersQueryDto = {
+        offset: 0,
+        limit: 25,
+        role: Role.Requester,
+      };
+
+      await expect(
+        controller.listUsers(authenticatedRequest as never, query),
+      ).resolves.toEqual({
+        items: [
+          {
+            uuid: '11111111-1111-4111-8111-111111111111',
+            displayName: 'Eve',
+            email: 'eve@example.com',
+            roles: [Role.Requester],
+            profilePictureUrl: null,
+          },
+        ],
+        total: 1,
+        offset: 0,
+        limit: 25,
+        hasMore: false,
+      });
+
+      // Basic callers may filter by role (F10.3); admin flags never leave
+      // the service.
+      expect(usersService.listUsers).toHaveBeenCalledWith({
+        role: Role.Requester,
+        isAdmin: undefined,
+        isLocked: undefined,
+        isArchived: undefined,
+        offset: 0,
+        limit: 25,
+      });
+    });
+
+    it('adds the account-management flags and filters for admins (F10.2/F10.4)', async () => {
+      usersService.listUsers.mockResolvedValue(listedPage);
+      const adminRequest = {
+        user: { ...authenticatedRequest.user, isAdmin: true },
+      };
+      const query: ListUsersQueryDto = {
+        offset: 0,
+        limit: 25,
+        isAdmin: false,
+        isLocked: true,
+        isArchived: false,
+      };
+
+      await expect(
+        controller.listUsers(adminRequest as never, query),
+      ).resolves.toEqual({
+        items: [
+          {
+            uuid: '11111111-1111-4111-8111-111111111111',
+            displayName: 'Eve',
+            email: 'eve@example.com',
+            roles: [Role.Requester],
+            profilePictureUrl: null,
+            isAdmin: false,
+            isLocked: false,
+            isArchived: false,
+          },
+        ],
+        total: 1,
+        offset: 0,
+        limit: 25,
+        hasMore: false,
+      });
+
+      expect(usersService.listUsers).toHaveBeenCalledWith({
+        role: undefined,
+        isAdmin: false,
+        isLocked: true,
+        isArchived: false,
+        offset: 0,
+        limit: 25,
+      });
+    });
+
+    it('rejects admin-only filters from a non-admin caller outright', async () => {
+      const query: ListUsersQueryDto = {
+        offset: 0,
+        limit: 25,
+        isLocked: false,
+      };
+
+      await expect(
+        controller.listUsers(authenticatedRequest as never, query),
+      ).rejects.toThrow(ForbiddenException);
+      expect(usersService.listUsers).not.toHaveBeenCalled();
+    });
+
+    it('reports hasMore when another page exists (N3.1.3)', async () => {
+      usersService.listUsers.mockResolvedValue({
+        users: [storedUser],
+        total: 40,
+        offset: 25,
+        limit: 25,
+      });
+
+      await expect(
+        controller.listUsers(
+          authenticatedRequest as never,
+          { offset: 25, limit: 25 } as ListUsersQueryDto,
+        ),
+      ).resolves.toMatchObject({ hasMore: true });
+    });
+
+    it('reports hasMore false on the final page (N3.1.3)', async () => {
+      usersService.listUsers.mockResolvedValue({
+        users: [storedUser, storedUser],
+        total: 27,
+        offset: 25,
+        limit: 25,
+      });
+
+      await expect(
+        controller.listUsers(
+          authenticatedRequest as never,
+          { offset: 25, limit: 25 } as ListUsersQueryDto,
+        ),
+      ).resolves.toMatchObject({ hasMore: false });
+    });
+  });
+});
+
+describe('update roles body validation', () => {
+  const pipe = new ValidationPipe({ whitelist: true, transform: true });
+  const bodyMetadata = (metatype: Function) =>
+    ({ type: 'body', metatype }) as const;
+
+  const validRoles = {
+    roles: [Role.Requester, Role.Courier],
+  };
+
+  it('accepts a valid roles body', async () => {
+    const value = await pipe.transform(
+      validRoles,
+      bodyMetadata(UpdateRolesDto),
+    );
+    expect(value).toBeInstanceOf(UpdateRolesDto);
+    expect(value).toMatchObject(validRoles);
+  });
+
+  it('accepts opting out of every role', async () => {
+    const value = await pipe.transform(
+      { roles: [] },
+      bodyMetadata(UpdateRolesDto),
+    );
+    expect(value).toBeInstanceOf(UpdateRolesDto);
+    expect(value).toMatchObject({ roles: [] });
+  });
+
+  it('tolerates duplicates, which the service normalises away', async () => {
+    const value = await pipe.transform(
+      { roles: [Role.Requester, Role.Requester] },
+      bodyMetadata(UpdateRolesDto),
+    );
+    expect(value).toBeInstanceOf(UpdateRolesDto);
+  });
+
+  it('rejects a non-array roles body', async () => {
+    await expect(
+      pipe.transform({ roles: 'requester' }, bodyMetadata(UpdateRolesDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a role that is not a participant role', async () => {
+    await expect(
+      pipe.transform({ roles: ['admin'] }, bodyMetadata(UpdateRolesDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a missing roles field', async () => {
+    await expect(
+      pipe.transform({}, bodyMetadata(UpdateRolesDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('update profile body validation', () => {
+  const pipe = new ValidationPipe({ whitelist: true, transform: true });
+  const bodyMetadata = (metatype: Function) =>
+    ({ type: 'body', metatype }) as const;
+
+  it('accepts a full valid update body', async () => {
+    const value = await pipe.transform(
+      {
+        displayName: 'Eve Newman',
+        profilePictureUrl: 'https://example.com/new.png',
+      },
+      bodyMetadata(UpdateProfileDto),
+    );
+    expect(value).toBeInstanceOf(UpdateProfileDto);
+    expect(value).toMatchObject({
+      displayName: 'Eve Newman',
+      profilePictureUrl: 'https://example.com/new.png',
+    });
+  });
+
+  it('trims the display name and accepts an explicit null picture', async () => {
+    const value = await pipe.transform(
+      { displayName: '  Eve Newman  ', profilePictureUrl: null },
+      bodyMetadata(UpdateProfileDto),
+    );
+    expect(value.displayName).toBe('Eve Newman');
+    expect(value.profilePictureUrl).toBeNull();
+  });
+
+  it('accepts an empty body as a no-op update', async () => {
+    const value = await pipe.transform({}, bodyMetadata(UpdateProfileDto));
+    expect(value).toBeInstanceOf(UpdateProfileDto);
+  });
+
+  it('rejects a display name that is too long after trimming', async () => {
+    await expect(
+      pipe.transform(
+        { displayName: 'x'.repeat(256) },
+        bodyMetadata(UpdateProfileDto),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a whitespace-only display name', async () => {
+    await expect(
+      pipe.transform({ displayName: '   ' }, bodyMetadata(UpdateProfileDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a profile picture that is not an http(s) URL', async () => {
+    await expect(
+      pipe.transform(
+        { profilePictureUrl: 'ftp://example.com/avatar.png' },
+        bodyMetadata(UpdateProfileDto),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a non-string profile picture', async () => {
+    await expect(
+      pipe.transform({ profilePictureUrl: 42 }, bodyMetadata(UpdateProfileDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('admin update user body validation', () => {
+  const pipe = new ValidationPipe({ whitelist: true, transform: true });
+  const bodyMetadata = (metatype: Function) =>
+    ({ type: 'body', metatype }) as const;
+
+  it('accepts a true Admin Status (F11.1.3)', async () => {
+    const value = await pipe.transform(
+      { isAdmin: true },
+      bodyMetadata(AdminUpdateUserDto),
+    );
+    expect(value).toBeInstanceOf(AdminUpdateUserDto);
+    expect(value).toMatchObject({ isAdmin: true });
+  });
+
+  it('accepts a false Admin Status (F11.1.3)', async () => {
+    const value = await pipe.transform(
+      { isAdmin: false },
+      bodyMetadata(AdminUpdateUserDto),
+    );
+    expect(value.isAdmin).toBe(false);
+  });
+
+  it('accepts an empty body as a no-op update', async () => {
+    const value = await pipe.transform({}, bodyMetadata(AdminUpdateUserDto));
+    expect(value).toBeInstanceOf(AdminUpdateUserDto);
+  });
+
+  it('rejects a string instead of coercing it (F11.1.3)', async () => {
+    await expect(
+      pipe.transform({ isAdmin: 'true' }, bodyMetadata(AdminUpdateUserDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a non-boolean garbage value (F11.1.3)', async () => {
+    await expect(
+      pipe.transform({ isAdmin: 'yes' }, bodyMetadata(AdminUpdateUserDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a numeric value (F11.1.3)', async () => {
+    await expect(
+      pipe.transform({ isAdmin: 1 }, bodyMetadata(AdminUpdateUserDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects null (F11.1.3)', async () => {
+    await expect(
+      pipe.transform({ isAdmin: null }, bodyMetadata(AdminUpdateUserDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('accepts an Archival Status (F12.2/F12.3)', async () => {
+    const value = await pipe.transform(
+      { isArchived: true },
+      bodyMetadata(AdminUpdateUserDto),
+    );
+    expect(value.isArchived).toBe(true);
+  });
+
+  it('accepts admin and archival statuses together', async () => {
+    const value = await pipe.transform(
+      { isAdmin: false, isArchived: true },
+      bodyMetadata(AdminUpdateUserDto),
+    );
+    expect(value).toMatchObject({ isAdmin: false, isArchived: true });
+  });
+
+  it('rejects a non-boolean Archival Status instead of coercing it', async () => {
+    await expect(
+      pipe.transform({ isArchived: 'yes' }, bodyMetadata(AdminUpdateUserDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a null Archival Status', async () => {
+    await expect(
+      pipe.transform({ isArchived: null }, bodyMetadata(AdminUpdateUserDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('accepts a valid email outside NUS domains and lowercases it (F11.1)', async () => {
+    const value = await pipe.transform(
+      { email: 'Alex.Teo@Company.COM' },
+      bodyMetadata(AdminUpdateUserDto),
+    );
+    expect(value.email).toBe('alex.teo@company.com');
+  });
+
+  it('rejects an invalid email (F11.1.2)', async () => {
+    await expect(
+      pipe.transform(
+        { email: 'not-an-email' },
+        bodyMetadata(AdminUpdateUserDto),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('accepts and trims a display name, rejecting a blank one (F11.1.2)', async () => {
+    const value = await pipe.transform(
+      { displayName: '  Alex Teo  ' },
+      bodyMetadata(AdminUpdateUserDto),
+    );
+    expect(value.displayName).toBe('Alex Teo');
+
+    await expect(
+      pipe.transform({ displayName: '   ' }, bodyMetadata(AdminUpdateUserDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('accepts a participant role set and rejects unknown roles (F11.1)', async () => {
+    const value = await pipe.transform(
+      { roles: [Role.Requester, Role.Courier] },
+      bodyMetadata(AdminUpdateUserDto),
+    );
+    expect(value.roles).toEqual([Role.Requester, Role.Courier]);
+
+    await expect(
+      pipe.transform({ roles: ['admin'] }, bodyMetadata(AdminUpdateUserDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('accepts a profile picture URL and an explicit null (F11.1.2)', async () => {
+    const value = await pipe.transform(
+      { profilePictureUrl: 'https://example.com/avatar.png' },
+      bodyMetadata(AdminUpdateUserDto),
+    );
+    expect(value.profilePictureUrl).toBe('https://example.com/avatar.png');
+
+    const cleared = await pipe.transform(
+      { profilePictureUrl: null },
+      bodyMetadata(AdminUpdateUserDto),
+    );
+    expect(cleared.profilePictureUrl).toBeNull();
+
+    await expect(
+      pipe.transform(
+        { profilePictureUrl: 'javascript:alert(1)' },
+        bodyMetadata(AdminUpdateUserDto),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a null email, display name or role set instead of treating it as absent', async () => {
+    for (const body of [
+      { email: null },
+      { displayName: null },
+      { roles: null },
+    ]) {
+      await expect(
+        pipe.transform(body, bodyMetadata(AdminUpdateUserDto)),
+      ).rejects.toThrow(BadRequestException);
+    }
+  });
+
+  it('strips a UserID from the body, which is taken from the path only (F11.1.1)', async () => {
+    const value = await pipe.transform(
+      { uuid: '11111111-1111-4111-8111-111111111111', isAdmin: true },
+      bodyMetadata(AdminUpdateUserDto),
+    );
+    expect(value).not.toHaveProperty('uuid');
+  });
+});
+
+describe('admin create user body validation', () => {
+  const pipe = new ValidationPipe({ whitelist: true, transform: true });
+  const bodyMetadata = (metatype: Function) =>
+    ({ type: 'body', metatype }) as const;
+
+  const validBody = {
+    email: 'staff@company.com',
+    displayName: 'Staff Member',
+    roles: [Role.Requester],
+    profilePictureUrl: 'https://example.com/avatar.png',
+    isAdmin: false,
+  };
+
+  it('accepts a full valid body', async () => {
+    const value = await pipe.transform(
+      validBody,
+      bodyMetadata(AdminCreateUserDto),
+    );
+    expect(value).toBeInstanceOf(AdminCreateUserDto);
+    expect(value).toMatchObject(validBody);
+  });
+
+  it('lowercases the email before validation', async () => {
+    const value = await pipe.transform(
+      { ...validBody, email: 'Staff@Company.com' },
+      bodyMetadata(AdminCreateUserDto),
+    );
+    expect(value.email).toBe('staff@company.com');
+  });
+
+  it('accepts a non-NUS email (F15.1.3)', async () => {
+    const value = await pipe.transform(
+      { ...validBody, email: 'contractor@external.io' },
+      bodyMetadata(AdminCreateUserDto),
+    );
+    expect(value.email).toBe('contractor@external.io');
+  });
+
+  it('accepts a body with only the required fields', async () => {
+    const value = await pipe.transform(
+      { email: 'staff@company.com', displayName: 'Staff Member' },
+      bodyMetadata(AdminCreateUserDto),
+    );
+    expect(value).toBeInstanceOf(AdminCreateUserDto);
+    expect(value.roles).toBeUndefined();
+    expect(value.isAdmin).toBeUndefined();
+  });
+
+  it('strips caller-supplied identity and credential fields (whitelist)', async () => {
+    const value = await pipe.transform(
+      {
+        ...validBody,
+        uuid: '11111111-1111-4111-8111-111111111111',
+        password: 'hunter2hunter2',
+        isLocked: false,
+      },
+      bodyMetadata(AdminCreateUserDto),
+    );
+    expect(value).not.toHaveProperty('uuid');
+    expect(value).not.toHaveProperty('password');
+    expect(value).not.toHaveProperty('isLocked');
+  });
+
+  it('rejects a missing email', async () => {
+    await expect(
+      pipe.transform(
+        { displayName: 'Staff' },
+        bodyMetadata(AdminCreateUserDto),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a malformed email', async () => {
+    await expect(
+      pipe.transform(
+        { email: 'not-an-email', displayName: 'Staff' },
+        bodyMetadata(AdminCreateUserDto),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a missing display name', async () => {
+    await expect(
+      pipe.transform(
+        { email: 'staff@company.com' },
+        bodyMetadata(AdminCreateUserDto),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a display name that is too long', async () => {
+    await expect(
+      pipe.transform(
+        { email: 'staff@company.com', displayName: 'x'.repeat(256) },
+        bodyMetadata(AdminCreateUserDto),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a whitespace-only display name', async () => {
+    await expect(
+      pipe.transform(
+        { email: 'staff@company.com', displayName: '   ' },
+        bodyMetadata(AdminCreateUserDto),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a non-array roles body', async () => {
+    await expect(
+      pipe.transform(
+        { ...validBody, roles: 'requester' },
+        bodyMetadata(AdminCreateUserDto),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a role that is not a participant role', async () => {
+    await expect(
+      pipe.transform(
+        { ...validBody, roles: ['admin'] },
+        bodyMetadata(AdminCreateUserDto),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a profile picture that is not an http(s) URL', async () => {
+    await expect(
+      pipe.transform(
+        { ...validBody, profilePictureUrl: 'ftp://example.com/a.png' },
+        bodyMetadata(AdminCreateUserDto),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a non-boolean Admin Status instead of coercing it', async () => {
+    await expect(
+      pipe.transform(
+        { ...validBody, isAdmin: 'true' },
+        bodyMetadata(AdminCreateUserDto),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a null Admin Status', async () => {
+    await expect(
+      pipe.transform(
+        { ...validBody, isAdmin: null },
+        bodyMetadata(AdminCreateUserDto),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('list users query validation', () => {
+  const pipe = new ValidationPipe({ whitelist: true, transform: true });
+  const queryMetadata = (metatype: Function) =>
+    ({ type: 'query', metatype }) as const;
+
+  it('defaults offset to 0 and limit to 25 (N3.1.2)', async () => {
+    const value = await pipe.transform({}, queryMetadata(ListUsersQueryDto));
+    expect(value.offset).toBe(0);
+    expect(value.limit).toBe(25);
+  });
+
+  it('accepts explicit pagination and a role filter (F10.3)', async () => {
+    const value = await pipe.transform(
+      { offset: '50', limit: '100', role: 'courier' },
+      queryMetadata(ListUsersQueryDto),
+    );
+    expect(value.offset).toBe(50);
+    expect(value.limit).toBe(100);
+    expect(value.role).toBe(Role.Courier);
+  });
+
+  it('accepts the admin-only flags as explicit booleans (F10.4)', async () => {
+    const value = await pipe.transform(
+      { isAdmin: 'true', isLocked: 'false', isArchived: 'true' },
+      queryMetadata(ListUsersQueryDto),
+    );
+    expect(value.isAdmin).toBe(true);
+    expect(value.isLocked).toBe(false);
+    expect(value.isArchived).toBe(true);
+  });
+
+  it('rejects a limit above the 1000 hard ceiling (N3.1.1)', async () => {
+    await expect(
+      pipe.transform({ limit: '1001' }, queryMetadata(ListUsersQueryDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a zero limit', async () => {
+    await expect(
+      pipe.transform({ limit: '0' }, queryMetadata(ListUsersQueryDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a negative offset', async () => {
+    await expect(
+      pipe.transform({ offset: '-1' }, queryMetadata(ListUsersQueryDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a non-integer offset', async () => {
+    await expect(
+      pipe.transform({ offset: 'abc' }, queryMetadata(ListUsersQueryDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a role that is not a participant role', async () => {
+    await expect(
+      pipe.transform({ role: 'admin' }, queryMetadata(ListUsersQueryDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a garbage admin-only flag instead of coercing it', async () => {
+    await expect(
+      pipe.transform({ isAdmin: 'yes' }, queryMetadata(ListUsersQueryDto)),
+    ).rejects.toThrow(BadRequestException);
+  });
+});

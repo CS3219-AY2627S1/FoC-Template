@@ -1,0 +1,162 @@
+import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import amqp from 'amqplib';
+import 'dotenv/config';
+
+const required = (name) => {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} is required`);
+  }
+  return value;
+};
+
+const password = (
+  await readFile(required('RABBITMQ_PASSWORD_FILE'), 'utf8')
+).replace(/[\r\n]+$/, '');
+if (!password) {
+  throw new Error('RABBITMQ_PASSWORD_FILE must not be empty');
+}
+
+const user = required('RABBITMQ_USER');
+const host = required('RABBITMQ_HOST');
+const port = required('RABBITMQ_PORT');
+const vhost = required('RABBITMQ_VHOST');
+const url =
+  `amqp://${encodeURIComponent(user)}:${encodeURIComponent(password)}@` +
+  `${host}:${port}/${encodeURIComponent(vhost)}`;
+
+const connection = await amqp.connect(url);
+const queue = `credit-service.permission-test.${randomUUID()}`;
+
+const publishConfirmed = (channel, exchange, routingKey) =>
+  new Promise((resolve, reject) => {
+    channel.publish(
+      exchange,
+      routingKey,
+      Buffer.from('{}'),
+      { persistent: true },
+      (error) => (error ? reject(error) : resolve()),
+    );
+  });
+
+const expectDenied = async (description, action) => {
+  const channel = await connection.createConfirmChannel();
+  // Permission failures close only this channel. Consume the error event so
+  // the expected broker denial cannot become an unhandled process error.
+  channel.on('error', () => undefined);
+  try {
+    await action(channel);
+  } catch {
+    console.log(`Denied as expected: ${description}`);
+    return;
+  } finally {
+    await channel.close().catch(() => undefined);
+  }
+  throw new Error(`Broker unexpectedly allowed: ${description}`);
+};
+
+try {
+  const channel = await connection.createConfirmChannel();
+  channel.on('error', () => undefined);
+
+  // Root owns foc.events. Credit Service may check and use it, while standard
+  // resource permissions keep configuration ownership outside the service.
+  await channel.checkExchange('foc.events');
+  await channel.checkExchange('foc.pubsub');
+  await channel.assertExchange('foc.credit.retry', 'direct', { durable: true });
+  await channel.assertExchange('foc.credit.back', 'direct', { durable: true });
+  await channel.assertExchange('foc.credit.dlx', 'direct', { durable: true });
+  await channel.assertQueue(queue, {
+    durable: false,
+    autoDelete: true,
+    exclusive: true,
+  });
+  await channel.bindQueue(queue, 'foc.events', 'user.registered.v1');
+  await channel.bindQueue(queue, 'foc.pubsub', 'user.registered.v1');
+
+  const { consumerTag } = await channel.consume(queue, () => undefined, {
+    noAck: false,
+  });
+  await channel.cancel(consumerTag);
+
+  for (const ingressQueue of [
+    'credit-service.credit-reservation.v1',
+    'credit-service.credit-reservation-adjustment.v1',
+    'credit-service.credit-settlement.v1',
+    'credit-service.events',
+  ]) {
+    await channel.checkQueue(ingressQueue);
+    const { consumerTag: ingressConsumerTag } = await channel.consume(
+      ingressQueue,
+      () => undefined,
+      { noAck: false },
+    );
+    await channel.cancel(ingressConsumerTag);
+  }
+
+  await publishConfirmed(
+    channel,
+    'foc.events',
+    'credit.account-initialised.v1',
+  );
+  for (const routingKey of [
+    'credit.reservation-success.v1',
+    'credit.reservation-rejected.v1',
+    'credit.reservation-adjustment-success.v1',
+    'credit.reservation-adjustment-rejected.v1',
+    'credit.transfer-succeeded.v1',
+    'credit.transfer-rejected.v1',
+    'credit.release-success.v1',
+    'credit.release-rejected.v1',
+  ]) {
+    await publishConfirmed(channel, 'foc.events', routingKey);
+  }
+  await publishConfirmed(channel, 'foc.credit.retry', queue);
+  await publishConfirmed(channel, 'foc.credit.dlx', `${queue}.dlq`);
+  await channel.deleteQueue(queue);
+  await channel.close();
+
+  await expectDenied('configure foc.events', (candidate) =>
+    candidate.assertExchange('foc.events', 'direct', { durable: true }),
+  );
+  await expectDenied('configure foc.pubsub', (candidate) =>
+    candidate.assertExchange('foc.pubsub', 'topic', { durable: true }),
+  );
+  await expectDenied('declare an Email Service queue', (candidate) =>
+    candidate.assertQueue(`email-service.permission-test.${randomUUID()}`),
+  );
+  await expectDenied('consume the Email Service queue', (candidate) =>
+    candidate.consume('otp_emails', () => undefined),
+  );
+  await expectDenied(
+    'consume an Order Service transfer outcome queue',
+    (candidate) =>
+      candidate.consume(
+        'order-service.credit-transfer-succeeded.v1',
+        () => undefined,
+      ),
+  );
+  await expectDenied(
+    'consume an Order Service release outcome queue',
+    (candidate) =>
+      candidate.consume(
+        'order-service.credit-release-rejected.v1',
+        () => undefined,
+      ),
+  );
+  await expectDenied('publish to Email Service retry resources', (candidate) =>
+    publishConfirmed(candidate, 'foc.retry', 'otp.email'),
+  );
+  await expectDenied(
+    'publish outside the shared domain exchange',
+    (candidate) =>
+      publishConfirmed(candidate, 'amq.direct', 'credit.reservation.v1'),
+  );
+
+  console.log('Credit Service RabbitMQ permissions verified');
+} finally {
+  // A denied binding can leave its temporary queue behind until this
+  // connection closes; every test queue is auto-delete and connection-scoped.
+  await connection.close().catch(() => undefined);
+}

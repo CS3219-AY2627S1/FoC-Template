@@ -1,0 +1,326 @@
+import { randomUUID } from 'node:crypto';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import {
+  DataSource,
+  type EntityManager,
+  In,
+  IsNull,
+  Not,
+  type Repository,
+} from 'typeorm';
+import { recordAudit } from '../audit/record-audit.js';
+import { buildingSnapshot } from '../audit/snapshots.js';
+import { ErrorCode } from '../common/errors/error-response.js';
+import { buildingKey } from '../common/normalise/normalise.js';
+import { Building, BuildingNameKey } from '../database/entities/index.js';
+import { isUniqueViolation } from '../database/postgres-errors.js';
+
+export interface CreateBuildingInput {
+  canonicalName: string;
+  shortName: string;
+  aliases: string[];
+  latitude: number;
+  longitude: number;
+}
+
+/**
+ * The short name of the map-pin placeholder. Name keys are unique across
+ * in-use buildings, so at most one building can carry it, and it cannot be
+ * changed once the pin exists (see updateNames).
+ */
+export const PIN_SHORT_NAME = 'PIN';
+
+/** True for the "Other (map pin)" placeholder, which stands in for a dropped pin. */
+export const isPinBuilding = (building: Pick<Building, 'shortName'>) =>
+  building.shortName === PIN_SHORT_NAME;
+
+export interface BuildingNameChanges {
+  canonicalName?: string;
+  shortName?: string;
+  aliases?: string[];
+}
+
+/**
+ * The controlled list of campus buildings (F4). Every name, short name and
+ * alias of a non-retired building is also written to building_name_keys, in
+ * the same transaction, so the database rejects a name shared between two
+ * in-use buildings (F4.2) and any spelling resolves in one lookup (F4.5).
+ */
+@Injectable()
+export class BuildingsService {
+  constructor(
+    private readonly dataSource: DataSource,
+    @InjectRepository(Building)
+    private readonly buildings: Repository<Building>,
+    @InjectRepository(BuildingNameKey)
+    private readonly nameKeys: Repository<BuildingNameKey>,
+  ) {}
+
+  /** Non-retired buildings, for selection lists and other services (F4.4). */
+  listActive(): Promise<Building[]> {
+    return this.buildings.find({
+      where: { retiredAt: IsNull() },
+      order: { canonicalName: 'ASC' },
+    });
+  }
+
+  findById(id: string): Promise<Building | null> {
+    return this.buildings.findOneBy({ id });
+  }
+
+  /**
+   * The non-retired building with this id; null when it is unknown or
+   * retired. Given a manager, it reads on that transaction's connection.
+   */
+  findInUseById(id: string, manager?: EntityManager): Promise<Building | null> {
+    const repository = manager
+      ? manager.getRepository(Building)
+      : this.buildings;
+    return repository.findOneBy({ id, retiredAt: IsNull() });
+  }
+
+  /**
+   * The non-retired building known by this canonical name, short name or
+   * alias, ignoring case and whitespace (F4.5); null when none is.
+   */
+  async resolve(name: string): Promise<Building | null> {
+    const match = await this.nameKeys.findOne({
+      where: { key: buildingKey(name) },
+      relations: { building: true },
+    });
+    return match?.building ?? null;
+  }
+
+  /**
+   * The building known by this canonical name, short name or alias, retired
+   * or not, ignoring case, whitespace and apostrophe style. Unlike resolve(),
+   * it also finds retired buildings, so the seed never creates again a
+   * building an admin retired. An in-use building wins, found by the indexed
+   * name key; only when there is none are the retired ones scanned.
+   */
+  async findByAnyName(name: string): Promise<Building | null> {
+    const inUse = await this.resolve(name);
+    if (inUse) {
+      return inUse;
+    }
+
+    const key = buildingKey(name);
+    const retired = await this.buildings.find({
+      where: { retiredAt: Not(IsNull()) },
+      order: { createdAt: 'DESC' },
+    });
+    return (
+      retired.find((building) =>
+        [building.canonicalName, building.shortName, ...building.aliases]
+          .map(buildingKey)
+          .includes(key),
+      ) ?? null
+    );
+  }
+
+  async create(input: CreateBuildingInput): Promise<Building> {
+    const building = this.buildings.create({
+      id: randomUUID(),
+      canonicalName: input.canonicalName.trim(),
+      shortName: input.shortName.trim(),
+      aliases: cleanAliases(input.aliases),
+      latitude: input.latitude,
+      longitude: input.longitude,
+      retiredAt: null,
+    });
+
+    return this.withDuplicateNamesMapped(() =>
+      this.dataSource.transaction(async (manager) => {
+        await this.assertNamesFree(manager, building);
+        const saved = await manager.save(building);
+        await this.writeNameKeys(manager, saved);
+        await recordAudit(manager, {
+          action: 'building.created',
+          targetType: 'building',
+          targetId: saved.id,
+          after: buildingSnapshot(saved),
+        });
+        return saved;
+      }),
+    );
+  }
+
+  /** Renames a building or replaces its aliases (F4.3). */
+  async updateNames(
+    id: string,
+    changes: BuildingNameChanges,
+  ): Promise<Building> {
+    return this.withDuplicateNamesMapped(() =>
+      this.dataSource.transaction(async (manager) => {
+        const building = await this.lockActive(manager, id);
+        const before = buildingSnapshot(building);
+        if (
+          isPinBuilding(building) &&
+          changes.shortName !== undefined &&
+          changes.shortName.trim() !== PIN_SHORT_NAME
+        ) {
+          throw new ConflictException({
+            code: ErrorCode.Conflict,
+            message: 'The map-pin building cannot be given another short name.',
+          });
+        }
+        if (changes.canonicalName !== undefined) {
+          building.canonicalName = changes.canonicalName.trim();
+        }
+        if (changes.shortName !== undefined) {
+          building.shortName = changes.shortName.trim();
+        }
+        if (changes.aliases !== undefined) {
+          building.aliases = cleanAliases(changes.aliases);
+        }
+
+        await this.assertNamesFree(manager, building);
+        const saved = await manager.save(building);
+        await manager.delete(BuildingNameKey, { buildingId: id });
+        await this.writeNameKeys(manager, saved);
+        await recordAudit(manager, {
+          action: 'building.updated',
+          targetType: 'building',
+          targetId: id,
+          before,
+          after: buildingSnapshot(saved),
+        });
+        return saved;
+      }),
+    );
+  }
+
+  /**
+   * Retires a building (F4.3): it stays on suppliers already referencing it
+   * (F1.8, F4.3.1) but is no longer listed or selectable, and its names become
+   * free for another building. Retiring an already retired building is a
+   * no-op.
+   */
+  async retire(id: string): Promise<Building> {
+    return this.dataSource.transaction(async (manager) => {
+      const building = await manager.findOne(Building, {
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!building) {
+        throw buildingNotFound(id);
+      }
+      if (isPinBuilding(building)) {
+        throw new ConflictException({
+          code: ErrorCode.Conflict,
+          message: 'The map-pin building cannot be retired.',
+        });
+      }
+      if (building.retiredAt !== null) {
+        return building;
+      }
+
+      const before = buildingSnapshot(building);
+      building.retiredAt = new Date();
+      const saved = await manager.save(building);
+      await manager.delete(BuildingNameKey, { buildingId: id });
+      await recordAudit(manager, {
+        action: 'building.retired',
+        targetType: 'building',
+        targetId: id,
+        before,
+        after: buildingSnapshot(saved),
+      });
+      return saved;
+    });
+  }
+
+  private async lockActive(
+    manager: EntityManager,
+    id: string,
+  ): Promise<Building> {
+    const building = await manager.findOne(Building, {
+      where: { id },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!building) {
+      throw buildingNotFound(id);
+    }
+    if (building.retiredAt !== null) {
+      throw new ConflictException({
+        code: ErrorCode.Conflict,
+        message: 'A retired building cannot be edited.',
+      });
+    }
+    return building;
+  }
+
+  /**
+   * Names the clashing spellings up front for a helpful 409. The primary key
+   * on building_name_keys still decides races (withDuplicateNamesMapped).
+   */
+  private async assertNamesFree(
+    manager: EntityManager,
+    building: Building,
+  ): Promise<void> {
+    const taken = await manager.find(BuildingNameKey, {
+      where: { key: In(nameKeysOf(building)), buildingId: Not(building.id) },
+    });
+    if (taken.length > 0) {
+      throw duplicateNames(taken.map((row) => row.key));
+    }
+  }
+
+  private async writeNameKeys(
+    manager: EntityManager,
+    building: Building,
+  ): Promise<void> {
+    await manager.insert(
+      BuildingNameKey,
+      nameKeysOf(building).map((key) => ({ key, buildingId: building.id })),
+    );
+  }
+
+  private async withDuplicateNamesMapped<T>(
+    work: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      if (isUniqueViolation(error, 'PK_building_name_keys')) {
+        throw duplicateNames([]);
+      }
+      throw error;
+    }
+  }
+}
+
+/** The distinct lookup keys for all of a building's names. */
+function nameKeysOf(building: Building): string[] {
+  return [
+    ...new Set(
+      [building.canonicalName, building.shortName, ...building.aliases].map(
+        buildingKey,
+      ),
+    ),
+  ];
+}
+
+function cleanAliases(aliases: string[]): string[] {
+  return [...new Set(aliases.map((alias) => alias.trim()).filter(Boolean))];
+}
+
+function buildingNotFound(id: string): NotFoundException {
+  return new NotFoundException({
+    code: ErrorCode.NotFound,
+    message: `Building ${id} does not exist.`,
+  });
+}
+
+function duplicateNames(keys: string[]): ConflictException {
+  const which = keys.length > 0 ? ` (${keys.join(', ')})` : '';
+  return new ConflictException({
+    code: ErrorCode.DuplicateName,
+    message: `A name, short name or alias is already used by another building${which}.`,
+  });
+}

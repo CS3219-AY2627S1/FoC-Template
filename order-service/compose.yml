@@ -1,0 +1,163 @@
+services:
+  order-service:
+    build:
+      context: ..
+      dockerfile: order-service/Dockerfile
+      target: development
+    image: ${FOC_IMAGE_PREFIX:-foc}/order-service:${ORDER_SERVICE_IMAGE_TAG:-dev}
+    command: npm run start:dev
+    restart: on-failure:3
+    depends_on:
+      order-db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - DB_HOST=${ORDER_SERVICE_DB_HOST}
+      - DB_PORT=${ORDER_SERVICE_DB_PORT}
+      - DB_USERNAME=${ORDER_SERVICE_DB_USERNAME}
+      - DB_DATABASE=${ORDER_SERVICE_DB_DATABASE}
+      - DB_SYNCHRONIZE=${ORDER_SERVICE_DB_SYNCHRONIZE}
+      - DB_PASSWORD_FILE=/run/secrets/order_db_password
+      - DB_MIGRATIONS_RUN=${ORDER_SERVICE_DB_MIGRATIONS_RUN:-true}
+      - JWT_PUBLIC_KEY_FILE=/run/secrets/jwt_public_key_order_service
+      - LOG_LEVEL=${LOG_LEVEL}
+      - RABBITMQ_USER=${ORDER_SERVICE_RABBITMQ_USER}
+      - RABBITMQ_HOST=${RABBITMQ_HOST}
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST}
+      - RABBITMQ_PASSWORD_FILE=/run/secrets/rabbitmq_password_order_service
+      - RABBITMQ_EXCHANGE=${RABBITMQ_EXCHANGE:-foc.events}
+      - RABBITMQ_RETRY_EXCHANGE=${RABBITMQ_RETRY_EXCHANGE:-foc.order.retry}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}
+      - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://loki:3100/otlp/v1/logs}
+      - RABBITMQ_RETRY_RETURN_EXCHANGE=${RABBITMQ_RETRY_RETURN_EXCHANGE:-foc.order.back}
+      - RABBITMQ_DEAD_LETTER_EXCHANGE=${RABBITMQ_DEAD_LETTER_EXCHANGE:-foc.order.dlx}
+      - RABBITMQ_PREFETCH=${RABBITMQ_PREFETCH:-10}
+      - RABBITMQ_RETRY_DELAYS_MS=${RABBITMQ_RETRY_DELAYS_MS:-1000,2000,4000,8000,16000}
+      - OUTBOX_POLL_INTERVAL_MS=${OUTBOX_POLL_INTERVAL_MS:-1000}
+      - OUTBOX_BATCH_SIZE=${OUTBOX_BATCH_SIZE:-100}
+      - OUTBOX_CONFIRM_TIMEOUT_MS=${OUTBOX_CONFIRM_TIMEOUT_MS:-20000}
+      - OUTBOX_CLAIM_LEASE_MS=${OUTBOX_CLAIM_LEASE_MS:-30000}
+      - OUTBOX_RETRY_BASE_DELAY_MS=${OUTBOX_RETRY_BASE_DELAY_MS:-1000}
+      - OUTBOX_RETRY_MAX_DELAY_MS=${OUTBOX_RETRY_MAX_DELAY_MS:-60000}
+      - OUTBOX_UNPUBLISHED_WARNING_MS=${OUTBOX_UNPUBLISHED_WARNING_MS:-60000}
+      - SWEEP_INTERVAL_MS=${SWEEP_INTERVAL_MS:-60000}
+      - RESERVING_CREDIT_TIMEOUT_MS=${RESERVING_CREDIT_TIMEOUT_MS:-300000}
+      - CREDIT_REPLY_TIMEOUT_MS=${CREDIT_REPLY_TIMEOUT_MS:-120000}
+      - CREDIT_RESEND_MAX=${CREDIT_RESEND_MAX:-3}
+      - IDEMPOTENCY_KEY_TTL_MS=${IDEMPOTENCY_KEY_TTL_MS:-604800000}
+      - ROLE_BLOCK_TTL_MS=${ROLE_BLOCK_TTL_MS:-960000}
+      - SUPPLIER_RETRY_BASE_MS=${SUPPLIER_RETRY_BASE_MS:-1000}
+      - SUPPLIER_RETRY_MAX_MS=${SUPPLIER_RETRY_MAX_MS:-300000}
+      - SUPPLIER_VALIDATION_HOLD_MS=${SUPPLIER_VALIDATION_HOLD_MS:-1800000}
+      - CAMPUS_BOUNDARY_PATH=/campus-data/campus-boundary.geojson
+    volumes:
+      # Campus boundary, read in place (never copied into the image).
+      - ../data/json:/campus-data:ro
+    secrets:
+      - order_db_password
+      - rabbitmq_password_order_service
+      - jwt_public_key_order_service
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget --no-verbose --tries=1 --spider "http://127.0.0.1:3000/health"',
+        ]
+      interval: 10s
+      timeout: 3s
+      start_period: 180s
+      retries: 5
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /usr/src/app
+          ignore:
+            - node_modules/
+            - dist/
+            - test/
+            - docs/
+            - .env
+            - '*.secret'
+        - action: rebuild
+          path: package.json
+        - action: rebuild
+          path: package-lock.json
+        - action: sync+restart
+          path: ../packages/contracts/src
+          target: /usr/src/packages/contracts/src
+        - action: sync+restart
+          path: ../packages/contracts/tsconfig.json
+          target: /usr/src/packages/contracts/tsconfig.json
+        - action: sync+restart
+          path: ../packages/contracts/tsconfig.build.json
+          target: /usr/src/packages/contracts/tsconfig.build.json
+        - action: rebuild
+          path: ../packages/contracts/package.json
+        - action: rebuild
+          path: ../packages/contracts/package-lock.json
+        - action: sync+restart
+          path: ../packages/auth/src
+          target: /usr/src/packages/auth/src
+        - action: sync+restart
+          path: ../packages/auth/tsconfig.json
+          target: /usr/src/packages/auth/tsconfig.json
+        - action: sync+restart
+          path: ../packages/auth/tsconfig.build.json
+          target: /usr/src/packages/auth/tsconfig.build.json
+        - action: rebuild
+          path: ../packages/auth/package.json
+        - action: rebuild
+          path: ../packages/auth/package-lock.json
+
+  order-db:
+    image: postgres:18-alpine
+    restart: on-failure:3
+    environment:
+      - POSTGRES_USER=${ORDER_SERVICE_DB_USERNAME}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/order_db_password
+      - POSTGRES_DB=${ORDER_SERVICE_DB_DATABASE}
+    volumes:
+      - order-db-data:/var/lib/postgresql
+    secrets:
+      - order_db_password
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Throwaway Postgres for the e2e tests (npm run db:test:up), on a host port
+  # because the dev order-db publishes none.
+  order-db-test:
+    image: postgres:18-alpine
+    profiles: ['test']
+    ports:
+      - '127.0.0.1:${ORDER_SERVICE_DB_TEST_HOST_PORT:-5440}:5432'
+    environment:
+      - POSTGRES_USER=order_service
+      - POSTGRES_PASSWORD_FILE=/run/secrets/order_db_password
+      - POSTGRES_DB=order_service_test
+    tmpfs:
+      - /var/lib/postgresql
+    secrets:
+      - order_db_password
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U order_service -d order_service_test']
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  order-db-data:
+
+secrets:
+  order_db_password:
+    file: secrets/order_db_password.secret
+  rabbitmq_password_order_service:
+    file: secrets/rabbitmq_password.secret
+  # Owned by user-service: the public half of the key pair that signs access tokens.
+  jwt_public_key_order_service:
+    file: ../user-service/secrets/jwt_public_key.secret

@@ -1,0 +1,44 @@
+services:
+  email-service:
+    restart: on-failure:3
+    build:
+      context: .
+      target: development
+    image: ${FOC_IMAGE_PREFIX:-foc}/email-service:${EMAIL_SERVICE_IMAGE_TAG:-dev}
+    environment:
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_SECURE=${SMTP_SECURE}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS_FILE=/run/secrets/smtp_password
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL}
+      - RABBITMQ_USER=${EMAIL_SERVICE_RABBITMQ_USER}
+      - RABBITMQ_HOST=${RABBITMQ_HOST}
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST}
+      - RABBITMQ_PASSWORD_FILE=/run/secrets/rabbitmq_email_password
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_USERNAME=${REDIS_USERNAME}
+      - REDIS_DB_INDEX=${REDIS_DB_INDEX}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    develop:
+      watch:
+        - action: sync+restart
+          path: .
+          target: /usr/src/app
+          ignore:
+            - node_modules/
+    secrets:
+      - smtp_password
+      - rabbitmq_email_password
+
+  papercut:
+    image: changemakerstudiosus/papercut-smtp:latest
+    ports:
+      - '127.0.0.1:3050:8080' # mail UI, loopback only; SMTP stays internal
+secrets:
+  smtp_password:
+    file: secrets/smtp_password.secret
+  rabbitmq_email_password:
+    file: secrets/rabbitmq_email_password.secret

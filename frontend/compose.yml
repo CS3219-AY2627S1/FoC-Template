@@ -1,0 +1,31 @@
+services:
+  frontend:
+    build:
+      context: .
+      target: development
+    image: ${FOC_IMAGE_PREFIX:-foc}/frontend:${FRONTEND_IMAGE_TAG:-dev}
+    environment:
+      - USER_SERVICE_URL=${USER_SERVICE_URL-http://user-service:3000}
+      - SUPPLIER_SERVICE_URL=${SUPPLIER_SERVICE_URL-http://supplier-service:3000}
+      - CREDIT_SERVICE_URL=${CREDIT_SERVICE_URL-http://credit-service:3000}
+      - ORDER_SERVICE_URL=${ORDER_SERVICE_URL-http://order-service:3000}
+      - NOTIFICATION_SERVICE_URL=${NOTIFICATION_SERVICE_URL-http://notification-service:3000}
+      - COMMS_SERVICE_URL=${COMMS_SERVICE_URL-http://comms-service:3000}
+      - RAG_SERVICE_URL=${RAG_SERVICE_URL-http://rag-service:3000}
+      - SOCKET_PATH=${SOCKET_PATH-/socket.io}
+      - CAMPUS_BOUNDARY_PATH=/campus-data/campus-boundary.geojson
+    volumes:
+      # Campus boundary, read in place (never copied into the image).
+      - ../data/json:/campus-data:ro
+    ports:
+      - '3001:3000' # 3000 is user-service
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /usr/src/app
+          ignore:
+            - node_modules/
+            - .next/
+        - action: rebuild
+          path: package.json

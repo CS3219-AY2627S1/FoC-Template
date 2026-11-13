@@ -1,0 +1,1249 @@
+import 'reflect-metadata';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
+import { DataSource } from 'typeorm';
+import { BrandsService } from '../src/brands/brands.service.js';
+import { BuildingsService } from '../src/buildings/buildings.service.js';
+import { CategoriesService } from '../src/categories/categories.service.js';
+import type { EnvironmentVariables } from '../src/config/environment.schema.js';
+import { createDatabaseOptions } from '../src/database/database-options.js';
+import {
+  Brand,
+  Building,
+  BuildingNameKey,
+  Category,
+  RequestState,
+  RequestType,
+  Supplier,
+  SupplierKind,
+  SupplierOpeningInterval,
+  SupplierRequest,
+  SupplierStatus,
+} from '../src/database/entities/index.js';
+import { ListMyRequestsQueryDto } from '../src/requests/dto/list-my-requests-query.dto.js';
+import { ListRequestsQueryDto } from '../src/requests/dto/list-requests-query.dto.js';
+import { SupplierRequestsService } from '../src/requests/supplier-requests.service.js';
+import { ListSuppliersQueryDto } from '../src/suppliers/dto/list-suppliers-query.dto.js';
+import { SupplierQueriesService } from '../src/suppliers/supplier-queries.service.js';
+import { SuppliersService } from '../src/suppliers/suppliers.service.js';
+
+const VALUES: Record<string, unknown> = {
+  CAMPUS_MIN_LATITUDE: 1.28,
+  CAMPUS_MAX_LATITUDE: 1.31,
+  CAMPUS_MIN_LONGITUDE: 103.74,
+  CAMPUS_MAX_LONGITUDE: 103.79,
+  PLACEHOLDER_IMAGE_URL: '',
+};
+const config = {
+  get: (key: string) => VALUES[key],
+} as unknown as ConfigService<EnvironmentVariables, true>;
+
+// user-service identifies users by UUID (#611).
+const BASIC_USER = '42424242-4242-4242-8242-424242424242';
+const OTHER_USER = '43434343-4343-4343-8343-434343434343';
+const ADMIN = '01010101-0101-4101-8101-010101010101';
+const OTHER_ADMIN = '02020202-0202-4202-8202-020202020202';
+
+/** The response body of a thrown HttpException. */
+async function failure(promise: Promise<unknown>) {
+  const error = await promise.then(
+    () => undefined,
+    (caught: unknown) => caught,
+  );
+  if (
+    !(error instanceof BadRequestException) &&
+    !(error instanceof ConflictException) &&
+    !(error instanceof NotFoundException)
+  ) {
+    throw new Error(`expected an HTTP error, got ${String(error)}`);
+  }
+  return {
+    status: error.getStatus(),
+    body: error.getResponse() as Record<string, unknown>,
+  };
+}
+
+describe('supplier requests (real PostgreSQL)', () => {
+  let dataSource: DataSource;
+  let suppliers: SuppliersService;
+  let queries: SupplierQueriesService;
+  let requests: SupplierRequestsService;
+  let buildings: BuildingsService;
+  let categories: CategoriesService;
+  let brands: BrandsService;
+  let com2: Building;
+  let food: Category;
+
+  beforeAll(async () => {
+    dataSource = new DataSource(
+      createDatabaseOptions({
+        DB_HOST: process.env.DB_HOST!,
+        DB_PORT: Number(process.env.DB_PORT),
+        DB_USERNAME: process.env.DB_USERNAME!,
+        DB_DATABASE: process.env.DB_DATABASE!,
+        DB_PASSWORD_FILE: process.env.DB_PASSWORD_FILE!,
+        DB_MIGRATIONS_RUN: false,
+      }),
+    );
+    await dataSource.initialize();
+    await dataSource.dropDatabase();
+    await dataSource.runMigrations({ transaction: 'all' });
+
+    suppliers = new SuppliersService(dataSource, config);
+    queries = new SupplierQueriesService(dataSource, config);
+    requests = new SupplierRequestsService(dataSource, suppliers);
+    buildings = new BuildingsService(
+      dataSource,
+      dataSource.getRepository(Building),
+      dataSource.getRepository(BuildingNameKey),
+    );
+    categories = new CategoriesService(dataSource.getRepository(Category));
+    brands = new BrandsService(dataSource.getRepository(Brand));
+  });
+
+  afterAll(async () => {
+    await dataSource?.destroy();
+  });
+
+  beforeEach(async () => {
+    await dataSource.query(`
+      TRUNCATE supplier_requests, supplier_categories, supplier_opening_intervals, suppliers, brands, categories,
+               venues, building_name_keys, buildings
+    `);
+    com2 = await buildings.create({
+      canonicalName: 'Computing 2',
+      shortName: 'COM2',
+      aliases: [],
+      latitude: 1.2939,
+      longitude: 103.7742,
+    });
+    food = await categories.create('Food');
+  });
+
+  const coolSpot = () => ({
+    name: 'Cool Spot',
+    kind: SupplierKind.Store,
+    categoryIds: [food.id],
+    buildingId: com2.id,
+    floor: '1',
+    locationDescription: 'Opp LT16',
+    coordinates: { latitude: 1.294, longitude: 103.7738 },
+  });
+
+  const listedSuppliers = async () =>
+    (await queries.list(new ListSuppliersQueryDto())).total;
+
+  const pending = () =>
+    requests.listPending(Object.assign(new ListRequestsQueryDto(), {}));
+
+  const stored = (id: string) =>
+    dataSource.getRepository(SupplierRequest).findOneByOrFail({ id });
+
+  describe('filing a creation (F7.1, F7.2)', () => {
+    it('records a Pending request and creates no supplier yet', async () => {
+      const request = await requests.submitCreation(coolSpot(), BASIC_USER);
+
+      expect(request).toMatchObject({
+        type: RequestType.Create,
+        state: RequestState.Pending,
+        submittedBy: BASIC_USER,
+        resolvedBy: null,
+        values: { name: 'Cool Spot', floor: '1', buildingId: com2.id },
+      });
+      expect(await listedSuppliers()).toBe(0);
+      await expect(pending()).resolves.toMatchObject({ total: 1 });
+    });
+
+    it('validates like a direct create, all problems in one 400 (F1.6.1)', async () => {
+      const { status, body } = await failure(
+        requests.submitCreation(
+          {
+            ...coolSpot(),
+            floor: 'Z',
+            buildingId: '00000000-0000-4000-8000-000000000001',
+          },
+          BASIC_USER,
+        ),
+      );
+
+      expect(status).toBe(400);
+      expect(
+        (body.violations as { field: string }[]).map((v) => v.field),
+      ).toEqual(expect.arrayContaining(['floor', 'buildingId']));
+      expect(await dataSource.getRepository(SupplierRequest).count()).toBe(0);
+    });
+
+    it('refuses a supplier that already exists (F1.5)', async () => {
+      await suppliers.create(coolSpot());
+
+      const { status, body } = await failure(
+        requests.submitCreation(
+          { ...coolSpot(), name: ' cool  SPOT ' },
+          BASIC_USER,
+        ),
+      );
+
+      expect(status).toBe(409);
+      expect(body.code).toBe('DUPLICATE_SUPPLIER');
+    });
+
+    it('refuses a second identical pending request, however it is spelt', async () => {
+      await requests.submitCreation(coolSpot(), BASIC_USER);
+
+      const { status, body } = await failure(
+        requests.submitCreation(
+          { ...coolSpot(), name: 'COOL spot' },
+          OTHER_USER,
+        ),
+      );
+
+      expect(status).toBe(409);
+      expect(body.code).toBe('DUPLICATE_REQUEST');
+    });
+
+    it('lets exactly one of two concurrent identical filings win', async () => {
+      const results = await Promise.allSettled([
+        requests.submitCreation(coolSpot(), BASIC_USER),
+        requests.submitCreation(coolSpot(), OTHER_USER),
+      ]);
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const [rejected] = results.filter((r) => r.status === 'rejected');
+      expect(
+        (
+          (rejected as PromiseRejectedResult).reason as ConflictException
+        ).getResponse(),
+      ).toMatchObject({ code: 'DUPLICATE_REQUEST' });
+    });
+
+    it('accepts the same request again once the first is denied', async () => {
+      const first = await requests.submitCreation(coolSpot(), BASIC_USER);
+      await requests.deny(first.id, ADMIN, 'Not a real shop');
+
+      await expect(
+        requests.submitCreation(coolSpot(), BASIC_USER),
+      ).resolves.toMatchObject({ state: RequestState.Pending });
+    });
+  });
+
+  describe('listing (F6.7)', () => {
+    it('lists only Pending requests, oldest first, with paging', async () => {
+      const first = await requests.submitCreation(coolSpot(), BASIC_USER);
+      const second = await requests.submitCreation(
+        { ...coolSpot(), floor: '2' },
+        BASIC_USER,
+      );
+      const third = await requests.submitCreation(
+        { ...coolSpot(), floor: '3' },
+        BASIC_USER,
+      );
+      await requests.deny(second.id, ADMIN, 'Duplicate');
+
+      const page = await requests.listPending(
+        Object.assign(new ListRequestsQueryDto(), { offset: 0, limit: 1 }),
+      );
+
+      expect(page).toMatchObject({
+        total: 2,
+        offset: 0,
+        limit: 1,
+        hasMore: true,
+      });
+      expect(page.items.map((r) => r.id)).toEqual([first.id]);
+      const all = await pending();
+      expect(all.items.map((r) => r.id)).toEqual([first.id, third.id]);
+    });
+
+    it('filters by type', async () => {
+      await requests.submitCreation(coolSpot(), BASIC_USER);
+
+      const updates = await requests.listPending(
+        Object.assign(new ListRequestsQueryDto(), {
+          type: RequestType.Update,
+        }),
+      );
+
+      expect(updates.total).toBe(0);
+    });
+  });
+
+  describe('approving (F6.3, F6.8, F7.3)', () => {
+    it('creates the supplier and records who approved it and when', async () => {
+      const filed = await requests.submitCreation(coolSpot(), BASIC_USER);
+
+      const approved = await requests.approve(filed.id, ADMIN);
+
+      expect(approved).toMatchObject({
+        state: RequestState.Approved,
+        resolvedBy: ADMIN,
+        submittedBy: BASIC_USER,
+      });
+      expect(approved.resolvedAt).toBeInstanceOf(Date);
+      await expect(
+        queries.get(approved.createdSupplierId!),
+      ).resolves.toMatchObject({
+        displayName: 'Cool Spot @ COM2',
+        status: 'Active',
+        version: 1,
+      });
+      expect(await listedSuppliers()).toBe(1);
+      await expect(pending()).resolves.toMatchObject({ total: 0 });
+    });
+
+    it('re-checks duplicates at approval: an admin created it meanwhile (F7.3.1)', async () => {
+      const filed = await requests.submitCreation(coolSpot(), BASIC_USER);
+      await suppliers.create(coolSpot());
+
+      const { status, body } = await failure(requests.approve(filed.id, ADMIN));
+
+      expect(status).toBe(409);
+      expect(body.code).toBe('DUPLICATE_SUPPLIER');
+      expect(body.message).toContain('stays Pending');
+      await expect(stored(filed.id)).resolves.toMatchObject({
+        state: RequestState.Pending,
+        resolvedBy: null,
+      });
+      expect(await listedSuppliers()).toBe(1);
+    });
+
+    it('changes nothing when the building was retired meanwhile (F6.8)', async () => {
+      const filed = await requests.submitCreation(coolSpot(), BASIC_USER);
+      await buildings.retire(com2.id);
+
+      const { status, body } = await failure(requests.approve(filed.id, ADMIN));
+
+      expect(status).toBe(409);
+      expect(body.code).toBe('REQUEST_NOT_APPLICABLE');
+      expect(body.message).toContain('deny it with a reason');
+      expect(body.violations).toEqual([
+        {
+          field: 'buildingId',
+          reason: 'building is retired and cannot be chosen',
+        },
+      ]);
+      await expect(stored(filed.id)).resolves.toMatchObject({
+        state: RequestState.Pending,
+      });
+      expect(await dataSource.getRepository(Supplier).count()).toBe(0);
+    });
+
+    it('lets exactly one of two admins approving at once win', async () => {
+      const filed = await requests.submitCreation(coolSpot(), BASIC_USER);
+
+      const results = await Promise.allSettled([
+        requests.approve(filed.id, ADMIN),
+        requests.approve(filed.id, OTHER_ADMIN),
+      ]);
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const [rejected] = results.filter((r) => r.status === 'rejected');
+      expect(
+        (
+          (rejected as PromiseRejectedResult).reason as ConflictException
+        ).getResponse(),
+      ).toMatchObject({ code: 'REQUEST_ALREADY_RESOLVED' });
+      expect(await dataSource.getRepository(Supplier).count()).toBe(1);
+    });
+
+    it('answers a distinct not-found for an unknown request', async () => {
+      const { status, body } = await failure(
+        requests.approve('00000000-0000-4000-8000-000000000009', ADMIN),
+      );
+
+      expect(status).toBe(404);
+      expect(body.code).toBe('REQUEST_NOT_FOUND');
+    });
+  });
+
+  describe('denying (F6.4)', () => {
+    it('records the reason, who and when, and creates nothing', async () => {
+      const filed = await requests.submitCreation(coolSpot(), BASIC_USER);
+
+      const denied = await requests.deny(filed.id, ADMIN, 'Closed down');
+
+      expect(denied).toMatchObject({
+        state: RequestState.Denied,
+        resolvedBy: ADMIN,
+        denialReason: 'Closed down',
+        createdSupplierId: null,
+      });
+      expect(denied.resolvedAt).toBeInstanceOf(Date);
+      expect(await dataSource.getRepository(Supplier).count()).toBe(0);
+    });
+
+    it('refuses acting again on a resolved request, either way (F6.3)', async () => {
+      const denied = await requests.submitCreation(coolSpot(), BASIC_USER);
+      await requests.deny(denied.id, ADMIN, 'No');
+      const approved = await requests.submitCreation(
+        { ...coolSpot(), floor: '2' },
+        BASIC_USER,
+      );
+      await requests.approve(approved.id, ADMIN);
+
+      for (const attempt of [
+        () => requests.approve(denied.id, ADMIN),
+        () => requests.deny(denied.id, ADMIN, 'Again'),
+        () => requests.deny(approved.id, ADMIN, 'Changed my mind'),
+        () => requests.approve(approved.id, ADMIN),
+      ]) {
+        const { status, body } = await failure(attempt());
+        expect(status).toBe(409);
+        expect(body.code).toBe('REQUEST_ALREADY_RESOLVED');
+      }
+      await expect(stored(denied.id)).resolves.toMatchObject({
+        denialReason: 'No',
+      });
+      expect(await dataSource.getRepository(Supplier).count()).toBe(1);
+    });
+  });
+
+  describe('filing an edit (F8.1-F8.3)', () => {
+    it('records only the supplied fields and leaves the live supplier as it is (F8.2)', async () => {
+      const { id } = await suppliers.create(coolSpot());
+
+      const request = await requests.submitUpdate(
+        id,
+        1,
+        { floor: 'b1', photoUrl: null },
+        BASIC_USER,
+      );
+
+      expect(request).toMatchObject({
+        type: RequestType.Update,
+        state: RequestState.Pending,
+        supplierId: id,
+        supplierVersion: 1,
+        submittedBy: BASIC_USER,
+        values: { floor: 'B1', photoUrl: null },
+      });
+      expect(Object.keys(request.values).sort()).toEqual(['floor', 'photoUrl']);
+      await expect(queries.get(id)).resolves.toMatchObject({
+        floor: '1',
+        version: 1,
+      });
+    });
+
+    it('validates like an admin edit, all problems in one 400', async () => {
+      const { id } = await suppliers.create(coolSpot());
+
+      const { status, body } = await failure(
+        requests.submitUpdate(
+          id,
+          1,
+          {
+            floor: 'Z',
+            categoryIds: ['00000000-0000-4000-8000-000000000002'],
+          },
+          BASIC_USER,
+        ),
+      );
+
+      expect(status).toBe(400);
+      expect(
+        (body.violations as { field: string }[]).map((v) => v.field),
+      ).toEqual(expect.arrayContaining(['floor', 'categoryIds']));
+      await expect(
+        failure(requests.submitUpdate(id, 1, {}, BASIC_USER)),
+      ).resolves.toMatchObject({ status: 400 });
+      expect(await dataSource.getRepository(SupplierRequest).count()).toBe(0);
+    });
+
+    it('answers 404 for an unknown supplier and 409 for a stale version', async () => {
+      const { id } = await suppliers.create(coolSpot());
+      await suppliers.update(id, 1, { floor: '2' });
+
+      await expect(
+        failure(
+          requests.submitUpdate(
+            '00000000-0000-4000-8000-000000000003',
+            1,
+            { floor: '3' },
+            BASIC_USER,
+          ),
+        ),
+      ).resolves.toMatchObject({
+        status: 404,
+        body: { code: 'SUPPLIER_NOT_FOUND' },
+      });
+      await expect(
+        failure(requests.submitUpdate(id, 1, { floor: '3' }, BASIC_USER)),
+      ).resolves.toMatchObject({
+        status: 409,
+        body: { code: 'VERSION_CONFLICT', currentVersion: 2 },
+      });
+    });
+
+    it('refuses an edit whose result would duplicate another supplier (F1.5.1)', async () => {
+      await suppliers.create(coolSpot());
+      const { id } = await suppliers.create({ ...coolSpot(), floor: '2' });
+
+      await expect(
+        failure(requests.submitUpdate(id, 1, { floor: '1' }, BASIC_USER)),
+      ).resolves.toMatchObject({
+        status: 409,
+        body: { code: 'DUPLICATE_SUPPLIER' },
+      });
+      // Respelling its own name is not a duplicate of itself.
+      await expect(
+        requests.submitUpdate(id, 1, { name: 'COOL  spot' }, BASIC_USER),
+      ).resolves.toMatchObject({ state: RequestState.Pending });
+    });
+
+    it('allows one pending edit per supplier, even when two are filed at once (F8.3)', async () => {
+      const { id } = await suppliers.create(coolSpot());
+
+      const results = await Promise.allSettled([
+        requests.submitUpdate(id, 1, { floor: '2' }, BASIC_USER),
+        requests.submitUpdate(id, 1, { floor: '3' }, OTHER_USER),
+      ]);
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const [rejected] = results.filter((r) => r.status === 'rejected');
+      expect(
+        (
+          (rejected as PromiseRejectedResult).reason as ConflictException
+        ).getResponse(),
+      ).toMatchObject({ code: 'DUPLICATE_REQUEST' });
+
+      // Once it is resolved, a new edit may be filed.
+      const [winner] = (await pending()).items;
+      await requests.deny(winner.id, ADMIN, 'Wrong floor');
+      await expect(
+        requests.submitUpdate(id, 1, { floor: '4' }, BASIC_USER),
+      ).resolves.toMatchObject({ state: RequestState.Pending });
+    });
+  });
+
+  describe('approving an edit (F8.4, F8.4.1)', () => {
+    it('applies the changes to the live supplier and bumps its version', async () => {
+      const { id } = await suppliers.create({
+        ...coolSpot(),
+        photoUrl: 'https://example.com/cool-spot.jpg',
+      });
+      const filed = await requests.submitUpdate(
+        id,
+        1,
+        { name: 'Cool Spot Express', photoUrl: null },
+        BASIC_USER,
+      );
+
+      const approved = await requests.approve(filed.id, ADMIN);
+
+      expect(approved).toMatchObject({
+        state: RequestState.Approved,
+        resolvedBy: ADMIN,
+        createdSupplierId: null,
+      });
+      await expect(queries.get(id)).resolves.toMatchObject({
+        name: 'Cool Spot Express',
+        thumbnailUrl: null,
+        floor: '1',
+        version: 2,
+      });
+    });
+
+    it('refuses the approval if the supplier changed since filing, changing nothing', async () => {
+      const { id } = await suppliers.create(coolSpot());
+      const filed = await requests.submitUpdate(
+        id,
+        1,
+        { floor: '2' },
+        BASIC_USER,
+      );
+      await suppliers.update(id, 1, { locationDescription: 'Near the lift' });
+
+      const { status, body } = await failure(requests.approve(filed.id, ADMIN));
+
+      expect(status).toBe(409);
+      expect(body).toMatchObject({
+        code: 'VERSION_CONFLICT',
+        currentVersion: 2,
+      });
+      await expect(stored(filed.id)).resolves.toMatchObject({
+        state: RequestState.Pending,
+      });
+      await expect(queries.get(id)).resolves.toMatchObject({
+        floor: '1',
+        locationDescription: 'Near the lift',
+        version: 2,
+      });
+    });
+
+    it('refuses the approval if the result now duplicates a newer supplier', async () => {
+      const { id } = await suppliers.create(coolSpot());
+      const filed = await requests.submitUpdate(
+        id,
+        1,
+        { floor: '2' },
+        BASIC_USER,
+      );
+      await suppliers.create({ ...coolSpot(), floor: '2' });
+
+      const { status, body } = await failure(requests.approve(filed.id, ADMIN));
+
+      expect(status).toBe(409);
+      expect(body.code).toBe('DUPLICATE_SUPPLIER');
+      await expect(stored(filed.id)).resolves.toMatchObject({
+        state: RequestState.Pending,
+      });
+      await expect(queries.get(id)).resolves.toMatchObject({ version: 1 });
+    });
+  });
+
+  describe('filing a status change (F9.3, F9.3.1, F9.3.2)', () => {
+    it('files it Pending, recording the supplier version, the status and the reason', async () => {
+      const { id } = await suppliers.create(coolSpot());
+
+      const filed = await requests.submitStatusChange(
+        id,
+        SupplierStatus.Inactive,
+        'Closed for renovation',
+        BASIC_USER,
+      );
+
+      expect(filed).toMatchObject({
+        type: RequestType.StatusChange,
+        state: RequestState.Pending,
+        supplierId: id,
+        supplierVersion: 1,
+        submittedBy: BASIC_USER,
+        values: { status: 'Inactive', reason: 'Closed for renovation' },
+      });
+      // The live supplier is unchanged until an admin approves.
+      await expect(queries.get(id)).resolves.toMatchObject({
+        status: 'Active',
+        version: 1,
+      });
+    });
+
+    it('accepts a request without a reason', async () => {
+      const { id } = await suppliers.create(coolSpot());
+
+      const filed = await requests.submitStatusChange(
+        id,
+        SupplierStatus.Inactive,
+        undefined,
+        BASIC_USER,
+      );
+
+      expect(filed.values).toEqual({ status: 'Inactive' });
+    });
+
+    it('refuses a supplier that does not exist (F9.3.1)', async () => {
+      const { status, body } = await failure(
+        requests.submitStatusChange(
+          '11111111-1111-4111-8111-111111111111',
+          SupplierStatus.Inactive,
+          undefined,
+          BASIC_USER,
+        ),
+      );
+
+      expect(status).toBe(404);
+      expect(body.code).toBe('SUPPLIER_NOT_FOUND');
+    });
+
+    it("refuses the supplier's current status (F9.3.1)", async () => {
+      const { id } = await suppliers.create(coolSpot());
+
+      const { status, body } = await failure(
+        requests.submitStatusChange(
+          id,
+          SupplierStatus.Active,
+          undefined,
+          BASIC_USER,
+        ),
+      );
+
+      expect(status).toBe(409);
+      expect(body.code).toBe('INVALID_STATUS_TRANSITION');
+      await expect(pending()).resolves.toMatchObject({ total: 0 });
+    });
+
+    it('refuses a second Pending status change for the supplier, from anyone (F9.3.2)', async () => {
+      const { id } = await suppliers.create(coolSpot());
+      await requests.submitStatusChange(
+        id,
+        SupplierStatus.Inactive,
+        undefined,
+        BASIC_USER,
+      );
+
+      const { status, body } = await failure(
+        requests.submitStatusChange(
+          id,
+          SupplierStatus.Inactive,
+          'Same again',
+          OTHER_USER,
+        ),
+      );
+
+      expect(status).toBe(409);
+      expect(body.code).toBe('DUPLICATE_REQUEST');
+    });
+
+    it('still allows a Pending edit and a Pending status change for one supplier', async () => {
+      const { id } = await suppliers.create(coolSpot());
+      await requests.submitUpdate(id, 1, { floor: '2' }, BASIC_USER);
+
+      await expect(
+        requests.submitStatusChange(
+          id,
+          SupplierStatus.Inactive,
+          undefined,
+          BASIC_USER,
+        ),
+      ).resolves.toMatchObject({ state: RequestState.Pending });
+    });
+
+    it('lets only one of two simultaneous requests through (F9.3.2)', async () => {
+      const { id } = await suppliers.create(coolSpot());
+
+      const results = await Promise.allSettled([
+        requests.submitStatusChange(
+          id,
+          SupplierStatus.Inactive,
+          undefined,
+          BASIC_USER,
+        ),
+        requests.submitStatusChange(
+          id,
+          SupplierStatus.Inactive,
+          undefined,
+          OTHER_USER,
+        ),
+      ]);
+
+      expect(results.map((r) => r.status).sort()).toEqual([
+        'fulfilled',
+        'rejected',
+      ]);
+      await expect(pending()).resolves.toMatchObject({ total: 1 });
+    });
+  });
+
+  describe('approving a status change (F9.4, F9.6)', () => {
+    it('sets the status and bumps the version, in the same step as the approval', async () => {
+      const { id } = await suppliers.create(coolSpot());
+      const filed = await requests.submitStatusChange(
+        id,
+        SupplierStatus.Inactive,
+        undefined,
+        BASIC_USER,
+      );
+
+      const approved = await requests.approve(filed.id, ADMIN);
+
+      expect(approved).toMatchObject({
+        state: RequestState.Approved,
+        resolvedBy: ADMIN,
+      });
+      await expect(queries.get(id)).resolves.toMatchObject({
+        status: 'Inactive',
+        version: 2,
+      });
+    });
+
+    it('is not blocked by an edit made since filing: only the status must differ', async () => {
+      const { id } = await suppliers.create(coolSpot());
+      const filed = await requests.submitStatusChange(
+        id,
+        SupplierStatus.Inactive,
+        undefined,
+        BASIC_USER,
+      );
+      await suppliers.update(id, 1, { locationDescription: 'Near the lift' });
+
+      await requests.approve(filed.id, ADMIN);
+
+      await expect(queries.get(id)).resolves.toMatchObject({
+        status: 'Inactive',
+        locationDescription: 'Near the lift',
+        version: 3,
+      });
+    });
+
+    it('refuses the approval if the supplier already has the status, leaving it Pending', async () => {
+      const { id } = await suppliers.create(coolSpot());
+      const filed = await requests.submitStatusChange(
+        id,
+        SupplierStatus.Inactive,
+        undefined,
+        BASIC_USER,
+      );
+      await suppliers.changeStatus(id, 1, SupplierStatus.Inactive);
+
+      const { status, body } = await failure(requests.approve(filed.id, ADMIN));
+
+      expect(status).toBe(409);
+      expect(body.code).toBe('INVALID_STATUS_TRANSITION');
+      await expect(stored(filed.id)).resolves.toMatchObject({
+        state: RequestState.Pending,
+      });
+      await expect(queries.get(id)).resolves.toMatchObject({ version: 2 });
+    });
+
+    it('can be denied with a reason, leaving the supplier unchanged', async () => {
+      const { id } = await suppliers.create(coolSpot());
+      const filed = await requests.submitStatusChange(
+        id,
+        SupplierStatus.Inactive,
+        undefined,
+        BASIC_USER,
+      );
+
+      await requests.deny(filed.id, ADMIN, 'Still open');
+
+      await expect(queries.get(id)).resolves.toMatchObject({
+        status: 'Active',
+        version: 1,
+      });
+    });
+  });
+
+  describe('brand through requests (F1.2.10, F3)', () => {
+    const brandOf = async (id: string) =>
+      (await dataSource.getRepository(Supplier).findOneByOrFail({ id }))
+        .brandId;
+
+    it('records the proposed brand with a creation request, and sets it on approval', async () => {
+      const cheers = await brands.create('Cheers');
+      const filed = await requests.submitCreation(
+        { ...coolSpot(), brandId: cheers.id },
+        BASIC_USER,
+      );
+
+      expect(filed.values.brandId).toBe(cheers.id);
+      const approved = await requests.approve(filed.id, ADMIN);
+
+      await expect(brandOf(approved.createdSupplierId!)).resolves.toBe(
+        cheers.id,
+      );
+    });
+
+    it('accepts a creation request without a brand', async () => {
+      const filed = await requests.submitCreation(coolSpot(), BASIC_USER);
+      const approved = await requests.approve(filed.id, ADMIN);
+
+      expect(filed.values).not.toHaveProperty('brandId');
+      await expect(brandOf(approved.createdSupplierId!)).resolves.toBeNull();
+    });
+
+    it('refuses an unknown or retired brand in a request, saving nothing', async () => {
+      const gone = await brands.create('Gone');
+      await brands.retire(gone.id);
+
+      for (const brandId of ['11111111-1111-4111-8111-111111111111', gone.id]) {
+        const { status, body } = await failure(
+          requests.submitCreation({ ...coolSpot(), brandId }, BASIC_USER),
+        );
+        expect(status).toBe(400);
+        expect(
+          (body.violations as { field: string }[]).map((v) => v.field),
+        ).toEqual(['brandId']);
+      }
+      await expect(
+        dataSource.getRepository(SupplierRequest).count(),
+      ).resolves.toBe(0);
+    });
+
+    it('refuses the approval if the brand was retired meanwhile, leaving it Pending', async () => {
+      const cheers = await brands.create('Cheers');
+      const filed = await requests.submitCreation(
+        { ...coolSpot(), brandId: cheers.id },
+        BASIC_USER,
+      );
+      await brands.retire(cheers.id);
+
+      const { status, body } = await failure(requests.approve(filed.id, ADMIN));
+
+      expect(status).toBe(409);
+      expect(body.code).toBe('REQUEST_NOT_APPLICABLE');
+      await expect(stored(filed.id)).resolves.toMatchObject({
+        state: RequestState.Pending,
+      });
+      await expect(listedSuppliers()).resolves.toBe(0);
+    });
+
+    it('sets and removes the brand with edit requests', async () => {
+      const cheers = await brands.create('Cheers');
+      const { id } = await suppliers.create(coolSpot());
+
+      const set = await requests.submitUpdate(
+        id,
+        1,
+        { brandId: cheers.id },
+        BASIC_USER,
+      );
+      // The live supplier keeps its brand until approval (F8.2).
+      await expect(brandOf(id)).resolves.toBeNull();
+      await requests.approve(set.id, ADMIN);
+      await expect(brandOf(id)).resolves.toBe(cheers.id);
+
+      const remove = await requests.submitUpdate(
+        id,
+        2,
+        { brandId: null },
+        BASIC_USER,
+      );
+      expect(remove.values).toEqual({ brandId: null });
+      await requests.approve(remove.id, ADMIN);
+      await expect(brandOf(id)).resolves.toBeNull();
+    });
+  });
+
+  describe('opening hours through requests (F1.2.8, F2)', () => {
+    const lunchTime = {
+      days: {
+        wed: [
+          { opens: '13:00', closes: '18:00' },
+          { opens: '09:00', closes: '12:00' },
+        ],
+      },
+    };
+    const intervalsOf = (id: string) =>
+      dataSource
+        .getRepository(SupplierOpeningInterval)
+        .find({
+          where: { supplierId: id },
+          order: { day: 'ASC', opensAt: 'ASC' },
+        })
+        .then((rows) =>
+          rows.map(({ day, opensAt, closesAt }) => ({
+            day,
+            opensAt,
+            closesAt,
+          })),
+        );
+
+    it('stores the proposed hours, in canonical form, with a creation request', async () => {
+      const filed = await requests.submitCreation(
+        { ...coolSpot(), openingHours: lunchTime },
+        BASIC_USER,
+      );
+
+      expect(filed.values.openingHours).toEqual({
+        days: {
+          wed: [
+            { opens: '09:00', closes: '12:00' },
+            { opens: '13:00', closes: '18:00' },
+          ],
+        },
+      });
+      // Not a supplier yet, so no intervals either.
+      await expect(
+        dataSource.getRepository(SupplierOpeningInterval).count(),
+      ).resolves.toBe(0);
+    });
+
+    it('refuses bad hours in a creation request with their paths, saving nothing', async () => {
+      const { status, body } = await failure(
+        requests.submitCreation(
+          {
+            ...coolSpot(),
+            openingHours: {
+              days: { mon: [{ opens: '09:00', closes: '25:00' }] },
+            },
+          },
+          BASIC_USER,
+        ),
+      );
+
+      expect(status).toBe(400);
+      expect(body.violations).toEqual([
+        {
+          field: 'openingHours.days.mon[0].closes',
+          reason: expect.any(String),
+        },
+      ]);
+      await expect(
+        dataSource.getRepository(SupplierRequest).count(),
+      ).resolves.toBe(0);
+    });
+
+    it('writes the intervals when an admin approves the creation', async () => {
+      const filed = await requests.submitCreation(
+        { ...coolSpot(), openingHours: lunchTime },
+        BASIC_USER,
+      );
+
+      const approved = await requests.approve(filed.id, ADMIN);
+
+      await expect(intervalsOf(approved.createdSupplierId!)).resolves.toEqual([
+        { day: 2, opensAt: 540, closesAt: 720 },
+        { day: 2, opensAt: 780, closesAt: 1080 },
+      ]);
+    });
+
+    it('approves open around the clock as a flag', async () => {
+      const filed = await requests.submitCreation(
+        { ...coolSpot(), openingHours: { open24Hours: true } },
+        BASIC_USER,
+      );
+
+      const approved = await requests.approve(filed.id, ADMIN);
+
+      const supplier = await dataSource
+        .getRepository(Supplier)
+        .findOneByOrFail({ id: approved.createdSupplierId! });
+      expect(supplier.open24Hours).toBe(true);
+      await expect(intervalsOf(supplier.id)).resolves.toEqual([]);
+    });
+
+    it('replaces the schedule when an admin approves an edit request', async () => {
+      const { id } = await suppliers.create({
+        ...coolSpot(),
+        openingHours: { days: { mon: [{ opens: '08:00', closes: '17:00' }] } },
+      });
+      const filed = await requests.submitUpdate(
+        id,
+        1,
+        { openingHours: lunchTime },
+        BASIC_USER,
+      );
+      // The live supplier keeps its hours until approval (F8.2).
+      await expect(intervalsOf(id)).resolves.toEqual([
+        { day: 0, opensAt: 480, closesAt: 1020 },
+      ]);
+
+      await requests.approve(filed.id, ADMIN);
+
+      await expect(intervalsOf(id)).resolves.toEqual([
+        { day: 2, opensAt: 540, closesAt: 720 },
+        { day: 2, opensAt: 780, closesAt: 1080 },
+      ]);
+      await expect(queries.get(id)).resolves.toMatchObject({ version: 2 });
+    });
+
+    it('removes the hours when an approved edit request says null', async () => {
+      const { id } = await suppliers.create({
+        ...coolSpot(),
+        openingHours: lunchTime,
+      });
+      const filed = await requests.submitUpdate(
+        id,
+        1,
+        { openingHours: null },
+        BASIC_USER,
+      );
+
+      expect(filed.values).toEqual({ openingHours: null });
+      await requests.approve(filed.id, ADMIN);
+
+      await expect(intervalsOf(id)).resolves.toEqual([]);
+    });
+
+    it('refuses bad hours in an edit request, saving nothing', async () => {
+      const { id } = await suppliers.create(coolSpot());
+
+      const { status } = await failure(
+        requests.submitUpdate(
+          id,
+          1,
+          { openingHours: { days: {} } },
+          BASIC_USER,
+        ),
+      );
+
+      expect(status).toBe(400);
+      await expect(pending()).resolves.toMatchObject({ total: 0 });
+    });
+  });
+
+  describe("a user's own requests (F6.5, F6.6, F13.6)", () => {
+    const mine = (userId: string, filters: Record<string, unknown> = {}) =>
+      requests.listMine(
+        userId,
+        Object.assign(new ListMyRequestsQueryDto(), filters),
+      );
+
+    it('lists only their own, every type and state, newest first, with the denial reason', async () => {
+      const first = await requests.submitCreation(coolSpot(), BASIC_USER);
+      const { id } = await suppliers.create({ ...coolSpot(), floor: '5' });
+      const second = await requests.submitUpdate(
+        id,
+        1,
+        { floor: '6' },
+        BASIC_USER,
+      );
+      await requests.submitCreation({ ...coolSpot(), floor: '2' }, OTHER_USER);
+      await requests.deny(first.id, ADMIN, 'Closed down');
+
+      const page = await mine(BASIC_USER);
+
+      expect(page).toMatchObject({ total: 2, hasMore: false });
+      expect(page.items.map((r) => r.id)).toEqual([second.id, first.id]);
+      expect(page.items[1]).toMatchObject({
+        state: RequestState.Denied,
+        denialReason: 'Closed down',
+      });
+    });
+
+    it('filters by state and type, with paging', async () => {
+      const first = await requests.submitCreation(coolSpot(), BASIC_USER);
+      await requests.submitCreation({ ...coolSpot(), floor: '2' }, BASIC_USER);
+      await requests.deny(first.id, ADMIN, 'No');
+
+      await expect(
+        mine(BASIC_USER, { state: RequestState.Denied }),
+      ).resolves.toMatchObject({ total: 1, items: [{ id: first.id }] });
+      await expect(
+        mine(BASIC_USER, { type: RequestType.Update }),
+      ).resolves.toMatchObject({ total: 0 });
+      await expect(
+        mine(BASIC_USER, { offset: 0, limit: 1 }),
+      ).resolves.toMatchObject({ total: 2, hasMore: true });
+    });
+
+    it('shows one request to its submitter and to admins, and 404 to anyone else', async () => {
+      const filed = await requests.submitCreation(coolSpot(), BASIC_USER);
+
+      await expect(
+        requests.get(filed.id, { id: BASIC_USER, isAdmin: false }),
+      ).resolves.toMatchObject({ id: filed.id });
+      await expect(
+        requests.get(filed.id, { id: ADMIN, isAdmin: true }),
+      ).resolves.toMatchObject({ id: filed.id });
+
+      // Exactly the answer for an id that does not exist.
+      const hidden = await failure(
+        requests.get(filed.id, { id: OTHER_USER, isAdmin: false }),
+      );
+      const unknown = await failure(
+        requests.get('00000000-0000-4000-8000-000000000009', {
+          id: OTHER_USER,
+          isAdmin: false,
+        }),
+      );
+      expect(hidden.status).toBe(404);
+      expect(hidden.body.code).toBe(unknown.body.code);
+      expect(hidden.body.message).toBe(`Request ${filed.id} does not exist.`);
+    });
+
+    it('withdraws a Pending request, recording who and when, and frees its slot', async () => {
+      const filed = await requests.submitCreation(coolSpot(), BASIC_USER);
+
+      const withdrawn = await requests.withdraw(filed.id, BASIC_USER);
+
+      expect(withdrawn).toMatchObject({
+        state: RequestState.Withdrawn,
+        resolvedBy: BASIC_USER,
+        denialReason: null,
+      });
+      expect(withdrawn.resolvedAt).toBeInstanceOf(Date);
+      await expect(pending()).resolves.toMatchObject({ total: 0 });
+      // The same request can be filed again.
+      await expect(
+        requests.submitCreation(coolSpot(), BASIC_USER),
+      ).resolves.toMatchObject({ state: RequestState.Pending });
+    });
+
+    it("refuses withdrawing someone else's request with 404, admins included (F13.6)", async () => {
+      const filed = await requests.submitCreation(coolSpot(), BASIC_USER);
+
+      for (const userId of [OTHER_USER, ADMIN]) {
+        const { status, body } = await failure(
+          requests.withdraw(filed.id, userId),
+        );
+        expect(status).toBe(404);
+        expect(body.code).toBe('REQUEST_NOT_FOUND');
+      }
+      await expect(stored(filed.id)).resolves.toMatchObject({
+        state: RequestState.Pending,
+      });
+    });
+
+    it('refuses withdrawing a resolved request, and approving a withdrawn one (F6.3)', async () => {
+      const denied = await requests.submitCreation(coolSpot(), BASIC_USER);
+      await requests.deny(denied.id, ADMIN, 'No');
+      const withdrawn = await requests.submitCreation(
+        { ...coolSpot(), floor: '2' },
+        BASIC_USER,
+      );
+      await requests.withdraw(withdrawn.id, BASIC_USER);
+
+      for (const attempt of [
+        () => requests.withdraw(denied.id, BASIC_USER),
+        () => requests.withdraw(withdrawn.id, BASIC_USER),
+        () => requests.approve(withdrawn.id, ADMIN),
+      ]) {
+        const { status, body } = await failure(attempt());
+        expect(status).toBe(409);
+        expect(body.code).toBe('REQUEST_ALREADY_RESOLVED');
+      }
+      expect(await dataSource.getRepository(Supplier).count()).toBe(0);
+    });
+
+    it('lets exactly one of a withdrawal and an approval at the same moment win', async () => {
+      const filed = await requests.submitCreation(coolSpot(), BASIC_USER);
+
+      const results = await Promise.allSettled([
+        requests.withdraw(filed.id, BASIC_USER),
+        requests.approve(filed.id, ADMIN),
+      ]);
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const final = await stored(filed.id);
+      expect([RequestState.Withdrawn, RequestState.Approved]).toContain(
+        final.state,
+      );
+      expect(await dataSource.getRepository(Supplier).count()).toBe(
+        final.state === RequestState.Approved ? 1 : 0,
+      );
+    });
+  });
+
+  describe('database rules (checked below the service)', () => {
+    const insert = (values: string) =>
+      dataSource.query(`
+        INSERT INTO supplier_requests
+          (id, type, state, supplier_id, supplier_version, payload,
+           name_key, building_id, floor, submitted_by,
+           resolved_by, resolved_at, denial_reason)
+        VALUES ${values}
+      `);
+
+    it('refuses a creation without its duplicate key', async () => {
+      await expect(
+        insert(`(gen_random_uuid(), 'Create', 'Pending', NULL, NULL, '{}',
+                 NULL, NULL, NULL, '${BASIC_USER}', NULL, NULL, NULL)`),
+      ).rejects.toMatchObject({
+        driverError: { constraint: 'CHK_supplier_requests_target' },
+      });
+    });
+
+    it('stores user ids as UUIDs, refusing anything else (#611)', async () => {
+      await expect(
+        insert(`(gen_random_uuid(), 'Create', 'Pending', NULL, NULL, '{}',
+                 'x', '${com2.id}', '1', '42', NULL, NULL, NULL)`),
+      ).rejects.toMatchObject({
+        // invalid_text_representation
+        driverError: { code: '22P02' },
+      });
+    });
+
+    it('refuses a resolved request with no resolver', async () => {
+      await expect(
+        insert(`(gen_random_uuid(), 'Create', 'Approved', NULL, NULL, '{}',
+                 'x', '${com2.id}', '1', '${BASIC_USER}', NULL, NULL, NULL)`),
+      ).rejects.toMatchObject({
+        driverError: { constraint: 'CHK_supplier_requests_resolution' },
+      });
+    });
+
+    it('refuses a denial without a reason, or with a blank one', async () => {
+      for (const reason of ['NULL', `'   '`]) {
+        await expect(
+          insert(`(gen_random_uuid(), 'Create', 'Denied', NULL, NULL, '{}',
+                   'x', '${com2.id}', '1', '${BASIC_USER}', '${ADMIN}', now(), ${reason})`),
+        ).rejects.toMatchObject({
+          driverError: { constraint: 'CHK_supplier_requests_denial_reason' },
+        });
+      }
+    });
+  });
+});

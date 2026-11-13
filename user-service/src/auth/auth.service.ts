@@ -1,0 +1,193 @@
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import type { RedisClientType } from 'redis';
+import { REDIS } from '../redis/redis.provider.js';
+import { SecretService } from '../secret/secret.service.js';
+import { registrationTokenRecordKey } from '../common/hash/token-keys.js';
+import { getRegisterUserScript } from '../scripts/retrieve-script.js';
+import {
+  EmailAlreadyRegisteredError,
+  PublicUserInfo,
+  UsersService,
+} from '../users/users.service.js';
+import { JwtService } from '@nestjs/jwt';
+import type { AccessTokenPayload } from '@foc/contracts';
+import { RefreshToken } from './refresh-token.entity.js';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { randomBytes } from 'node:crypto';
+import { hmacValue } from '../common/hash/hash.js';
+
+export const REGISTER_USER_SCRIPT = getRegisterUserScript();
+
+export interface RegisteredUser {
+  uuid: string;
+  email: string;
+  displayName: string;
+}
+
+@Injectable()
+export class AuthService {
+  constructor(
+    @Inject(REDIS) private redis: RedisClientType,
+    @InjectRepository(RefreshToken)
+    private refreshTokenRepository: Repository<RefreshToken>,
+    private secretService: SecretService,
+    private usersService: UsersService,
+    private jwtService: JwtService,
+  ) {}
+
+  /**
+   * Validates the registration token and, on success, atomically consumes it
+   * and provisions the user account bound to it.
+   *
+   * The existence check, the not-yet-consumed check and the consumption stamp
+   * share one Redis script, so a token can never be consumed without being
+   * validated, nor replayed to register a second account. Consumption happens
+   * before the account is written, so a failed insert still burns the token.
+   *
+   * Returns the provisioned user on success. Rejects with
+   * UnauthorizedException for every failed token condition (unknown/expired,
+   * already consumed) alike, and with ConflictException if the token's bound
+   * email turns out to be registered before the insert lands.
+   */
+  async registerWithToken(
+    token: string,
+    // Registration payload (validated by RegisterDto); feeds account creation
+    // in the next step of M.1.
+    displayName: string,
+    password: string,
+  ): Promise<RegisteredUser> {
+    // Obtain redis key for registration token
+    const registrationKey = registrationTokenRecordKey(
+      token,
+      this.secretService.getServerSecret(),
+    );
+
+    const result = await this.redis.eval(REGISTER_USER_SCRIPT, {
+      keys: [registrationKey],
+      arguments: [new Date().toISOString()],
+    });
+
+    if (result === 0) {
+      throw new UnauthorizedException('Invalid Registration Token');
+    }
+    const email = result as string;
+
+    try {
+      return await this.usersService.provisionUser({
+        email,
+        displayName,
+        password,
+      });
+    } catch (error) {
+      if (error instanceof EmailAlreadyRegisteredError) {
+        throw new ConflictException('Email is already registered.');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Checks whether the provided (email, password) pair matches, and if so,
+   * returns an object with an accessToken JWT & a refreshToken.
+   */
+  async checkCredentials(email: string, password: string) {
+    // Check if password matches
+    const user = await this.usersService.checkUserAndReturnInfo(
+      email,
+      password,
+    );
+    const refreshToken = await this.generateRefreshToken(user.uuid);
+
+    return {
+      accessToken: await this.signAccessToken(user),
+      refreshToken,
+    };
+  }
+
+  /**
+   * Renews the short-lived access token of the session bound to a valid
+   * refresh token.
+   */
+  async refreshSession(token: string): Promise<{ accessToken: string }> {
+    const hashedToken = hmacValue(token, this.secretService.getServerSecret());
+    const record = await this.refreshTokenRepository.findOneBy({ hashedToken });
+
+    if (record === null || record.expiresAt < new Date()) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const user = await this.usersService.getActiveUserByUuid(record.userId);
+
+    if (user === null) {
+      // throw same error (also for a locked or archived account)
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    return { accessToken: await this.signAccessToken(user) };
+  }
+
+  private async generateRefreshToken(userId: string) {
+    const token = randomBytes(32).toString('hex');
+
+    await this.refreshTokenRepository.save(
+      this.refreshTokenRepository.create({
+        hashedToken: hmacValue(token, this.secretService.getServerSecret()),
+        userId,
+      }),
+    );
+    return token;
+  }
+
+  /**
+   * Revokes the single refresh token presented by the logging-out device.
+   * The raw token is HMACed to the stored key, mirroring refreshSession's
+   * lookup. Revocation is recorded by collapsing expiresAt to the request
+   * receipt time.
+   */
+  async revokeRefreshToken(token: string) {
+    const hashedToken = hmacValue(token, this.secretService.getServerSecret());
+    await this.refreshTokenRepository.update(
+      { hashedToken },
+      { expiresAt: new Date() },
+    );
+  }
+
+  /**
+   * Revokes every refresh token held by the account in a single statement, so
+   * all rows share one revocation datetime.
+   */
+  async revokeAllRefreshTokens(userId: string) {
+    await this.refreshTokenRepository.update(
+      { userId },
+      { expiresAt: new Date() },
+    );
+  }
+
+  /**
+   * Signs the access token shared by login and refresh. The iss/iat/exp claims
+   * are added by the signer (see AuthModule's signOptions); the identity
+   * claims below feed the rest of the verified payload (F5.3: identical
+   * fields whether minted on login or refresh).
+   */
+  private async signAccessToken(
+    user: Pick<
+      PublicUserInfo,
+      'uuid' | 'email' | 'displayName' | 'isAdmin' | 'roles'
+    >,
+  ): Promise<string> {
+    const payload: Omit<AccessTokenPayload, 'iss' | 'iat' | 'exp'> = {
+      sub: user.uuid,
+      displayName: user.displayName,
+      email: user.email,
+      isAdmin: user.isAdmin,
+      roles: user.roles,
+    };
+    return this.jwtService.signAsync(payload);
+  }
+}

@@ -1,0 +1,247 @@
+import { randomUUID } from 'node:crypto';
+import { AccountEventContractValidator } from '@foc/contracts';
+import { deliveryBuilding, supplierSnapshot } from '../../test/payloads.js';
+import { CreditReplyHandler } from '../credit-replies/credit-reply.handler.js';
+import { SYSTEM } from '../lifecycle/transition.js';
+import type { IncomingDomainMessage } from '../messaging/rabbitmq-message.types.js';
+import { SUPPLIER_REPLY_SPECS } from './supplier-replies.js';
+
+const contracts = new AccountEventContractValidator();
+const errandId = randomUUID();
+const supplierId = randomUUID();
+const timestamp = '2030-01-01T00:00:00.000Z';
+
+const envelope = (payload: object, publisher = 'supplier-service') => ({
+  eventId: randomUUID(),
+  eventType: 'SupplierValidationCompleted',
+  timestamp,
+  publisher,
+  payload,
+});
+const found = (status: 'Active' | 'Inactive') =>
+  envelope({ errandId, supplierId, outcome: 'FOUND', supplier: { ...supplierSnapshot, status }, deliveryBuilding });
+const message = (body: { eventId: string }): IncomingDomainMessage => ({
+  body,
+  rawBody: Buffer.from(JSON.stringify(body)),
+  routingKey: 'supplier.validation-completed.v1',
+  eventId: body.eventId,
+  retryCount: 0,
+});
+
+function setup(
+  result: unknown = { ok: true, sequenceNumber: 2 },
+  errandSupplier: string | undefined = supplierId,
+  status = 'Pending-Supplier',
+  pin?: { latitude: number; longitude: number },
+) {
+  const lifecycle = {
+    transition: vi.fn().mockResolvedValue(result),
+    releaseCredit: vi.fn().mockResolvedValue(undefined),
+    supplierIdOf: vi.fn().mockResolvedValue(errandSupplier),
+    replyErrandOf: vi.fn().mockResolvedValue(
+      errandSupplier && { status, supplierId: errandSupplier, deliveryBuildingId: deliveryBuilding.id, storedDeliveryBuildingId: deliveryBuilding.id },
+    ),
+    pinOf: vi.fn().mockResolvedValue(pin),
+  };
+  return { lifecycle, handler: new CreditReplyHandler(SUPPLIER_REPLY_SPECS[0], lifecycle, contracts) };
+}
+
+describe('supplier validation reply', () => {
+  it('subscribes the queue seeded for it', () => {
+    expect(SUPPLIER_REPLY_SPECS.map((s) => s.queue)).toEqual([
+      'order-service.supplier-validation-completed.v1',
+    ]);
+  });
+
+  it('moves an Active supplier on, stamped with the reply time and keeping the snapshot', async () => {
+    const { lifecycle, handler } = setup();
+    const body = found('Active');
+    expect(await handler.handle(message(body))).toEqual({ outcome: 'ack' });
+    expect(lifecycle.transition).toHaveBeenCalledWith({
+      errandId,
+      expected: 'Pending-Supplier',
+      to: 'Reserving-Credit',
+      set: {
+        supplierValidatedAt: new Date(timestamp),
+        pickupName: 'Cool Spot @ COM2',
+        pickupLocation: 'COM2',
+        pickupDescription: 'Floor 1 · Next to LT19',
+        deliveryLocation: 'COM2',
+        deliveryVenue: 'Around COM2',
+        deliveryLatitude: 1.2939,
+        deliveryLongitude: 103.7742,
+      },
+      payload: { supplierEventId: body.eventId, supplier: { ...supplierSnapshot, status: 'Active' } },
+      actor: SYSTEM,
+      idempotencyKey: body.eventId,
+    });
+  });
+
+  it.each([
+    ['an Inactive supplier', found('Inactive'), 'INACTIVE'],
+    ['a missing supplier', envelope({ errandId, supplierId, outcome: 'NOT_FOUND' }), 'NOT_FOUND'],
+  ])('cancels for %s with SUPPLIER_UNAVAILABLE', async (_, body, supplierOutcome) => {
+    const { lifecycle, handler } = setup();
+    expect(await handler.handle(message(body))).toEqual({ outcome: 'ack' });
+    expect(lifecycle.transition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expected: 'Pending-Supplier',
+        to: 'Cancelled',
+        set: { cancellationReason: 'SUPPLIER_UNAVAILABLE' },
+        payload: { supplierEventId: body.eventId, supplierOutcome },
+      }),
+    );
+  });
+
+  it('cancels for a missing delivery building with BUILDING_UNAVAILABLE', async () => {
+    const { lifecycle, handler } = setup();
+    const body = envelope({ errandId, supplierId, outcome: 'BUILDING_NOT_FOUND' });
+    expect(await handler.handle(message(body))).toEqual({ outcome: 'ack' });
+    expect(lifecycle.transition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expected: 'Pending-Supplier',
+        to: 'Cancelled',
+        set: { cancellationReason: 'BUILDING_UNAVAILABLE' },
+        payload: { supplierEventId: body.eventId, supplierOutcome: 'BUILDING_NOT_FOUND' },
+      }),
+    );
+    expect(lifecycle.releaseCredit).not.toHaveBeenCalled();
+  });
+
+  it('snapshots the venue label and point when the reply carries a venue', async () => {
+    const { lifecycle, handler } = setup();
+    const deliveryVenue = { id: randomUUID(), code: 'LT19', name: null, floor: '3', coordinates: { latitude: 1.2949, longitude: 103.7737 } };
+    const body = envelope({ errandId, supplierId, outcome: 'FOUND', supplier: supplierSnapshot, deliveryBuilding, deliveryVenue });
+    await handler.handle(message(body));
+    expect(lifecycle.transition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        set: expect.objectContaining({ deliveryVenue: 'COM2 · LT19 · Level 3', deliveryLatitude: 1.2949, deliveryLongitude: 103.7737 }),
+      }),
+    );
+  });
+
+  it('keeps the stored pin and labels it Requester Delivery Location', async () => {
+    const { lifecycle, handler } = setup(undefined, supplierId, 'Pending-Supplier', { latitude: 1.3, longitude: 103.77 });
+    await handler.handle(message(found('Active')));
+    expect(lifecycle.transition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        set: expect.objectContaining({ deliveryVenue: 'Requester Delivery Location', deliveryLatitude: 1.3, deliveryLongitude: 103.77 }),
+      }),
+    );
+  });
+
+  it('cancels for a missing venue with VENUE_UNAVAILABLE and releases nothing', async () => {
+    const { lifecycle, handler } = setup();
+    const body = envelope({ errandId, supplierId, outcome: 'VENUE_NOT_FOUND' });
+    expect(await handler.handle(message(body))).toEqual({ outcome: 'ack' });
+    expect(lifecycle.transition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expected: 'Pending-Supplier',
+        to: 'Cancelled',
+        set: { cancellationReason: 'VENUE_UNAVAILABLE' },
+        payload: { supplierEventId: body.eventId, supplierOutcome: 'VENUE_NOT_FOUND' },
+      }),
+    );
+    expect(lifecycle.releaseCredit).not.toHaveBeenCalled();
+  });
+
+  it('acks a late reply for an errand already cancelled, releasing nothing', async () => {
+    const { lifecycle, handler } = setup({ ok: false, reason: 'STATE_MISMATCH', currentStatus: 'Cancelled' });
+    expect(await handler.handle(message(found('Active')))).toEqual({ outcome: 'ack' });
+    expect(lifecycle.releaseCredit).not.toHaveBeenCalled();
+  });
+
+  describe('while an edit is being re-checked (F2.1.1)', () => {
+    const revalidating = (supplier = supplierId) => setup(undefined, supplier, 'Revalidating-Supplier');
+
+    it('switches to the new supplier, building and pickup on an Active supplier', async () => {
+      const { lifecycle, handler } = revalidating();
+      const body = found('Active');
+      expect(await handler.handle(message(body))).toEqual({ outcome: 'ack' });
+      expect(lifecycle.transition).toHaveBeenCalledWith({
+        errandId,
+        expected: 'Revalidating-Supplier',
+        to: 'Open',
+        type: 'SupplierRevalidated',
+        set: {
+          supplierId,
+          deliveryBuildingId: deliveryBuilding.id,
+          supplierValidatedAt: new Date(timestamp),
+          pickupName: 'Cool Spot @ COM2',
+          pickupLocation: 'COM2',
+          pickupDescription: 'Floor 1 · Next to LT19',
+          deliveryLocation: 'COM2',
+        },
+        payload: { supplierEventId: body.eventId, supplier: { ...supplierSnapshot, status: 'Active' } },
+        actor: SYSTEM,
+        idempotencyKey: body.eventId,
+      });
+    });
+
+    it('moves the delivery point to a new building, dropping the venue or pin', async () => {
+      const { lifecycle, handler } = revalidating();
+      lifecycle.replyErrandOf.mockResolvedValue({
+        status: 'Revalidating-Supplier', supplierId, deliveryBuildingId: deliveryBuilding.id, storedDeliveryBuildingId: randomUUID(),
+      });
+      await handler.handle(message(found('Active')));
+      expect(lifecycle.transition.mock.calls[0][0].set).toMatchObject({
+        deliveryVenueId: null,
+        deliveryVenue: 'Around COM2',
+        deliveryLatitude: deliveryBuilding.coordinates.latitude,
+        deliveryLongitude: deliveryBuilding.coordinates.longitude,
+      });
+    });
+
+    it.each([
+      ['an Inactive supplier', found('Inactive'), 'INACTIVE'],
+      ['a missing supplier', envelope({ errandId, supplierId, outcome: 'NOT_FOUND' }), 'NOT_FOUND'],
+      ['a missing building', envelope({ errandId, supplierId, outcome: 'BUILDING_NOT_FOUND' }), 'BUILDING_NOT_FOUND'],
+      ['a late missing venue', envelope({ errandId, supplierId, outcome: 'VENUE_NOT_FOUND' }), 'VENUE_NOT_FOUND'],
+    ])('keeps the old supplier for %s, cancelling nothing', async (_, body, supplierOutcome) => {
+      const { lifecycle, handler } = revalidating();
+      expect(await handler.handle(message(body))).toEqual({ outcome: 'ack' });
+      expect(lifecycle.transition).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expected: 'Revalidating-Supplier',
+          to: 'Open',
+          type: 'SupplierRevalidationFailed',
+          payload: { supplierEventId: body.eventId, supplierOutcome },
+        }),
+      );
+    });
+
+    it('drops a stale reply about another supplier or building, without dead-lettering', async () => {
+      const other = revalidating(randomUUID());
+      expect(await other.handler.handle(message(found('Active')))).toEqual({ outcome: 'ack' });
+      expect(other.lifecycle.transition).not.toHaveBeenCalled();
+
+      const { lifecycle, handler } = revalidating();
+      const body = envelope({
+        errandId, supplierId, outcome: 'FOUND',
+        supplier: supplierSnapshot, deliveryBuilding: { ...deliveryBuilding, id: randomUUID() },
+      });
+      expect(await handler.handle(message(body))).toEqual({ outcome: 'ack' });
+      expect(lifecycle.transition).not.toHaveBeenCalled();
+    });
+  });
+
+  it('dead-letters a reply naming a supplier the errand does not reference', async () => {
+    const { lifecycle, handler } = setup(undefined, randomUUID());
+    const res = await handler.handle(message(found('Active')));
+    expect(res).toMatchObject({ outcome: 'dead-letter', category: 'INVALID_PAYLOAD' });
+    expect(lifecycle.transition).not.toHaveBeenCalled();
+  });
+
+  it('leaves an unknown errand to the transition, which acks it as NOT_FOUND', async () => {
+    const { lifecycle, handler } = setup({ ok: false, reason: 'NOT_FOUND' }, undefined);
+    expect(await handler.handle(message(found('Active')))).toEqual({ outcome: 'ack' });
+    expect(lifecycle.transition).toHaveBeenCalledOnce();
+  });
+
+  it('dead-letters a reply that is not from Supplier Service', async () => {
+    const { lifecycle, handler } = setup();
+    const res = await handler.handle(message(envelope({ errandId, supplierId, outcome: 'NOT_FOUND' }, 'credit-service')));
+    expect(res).toMatchObject({ outcome: 'dead-letter' });
+    expect(lifecycle.transition).not.toHaveBeenCalled();
+  });
+});

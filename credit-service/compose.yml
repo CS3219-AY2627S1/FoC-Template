@@ -1,0 +1,248 @@
+services:
+  credit-service:
+    build:
+      context: ..
+      dockerfile: credit-service/Dockerfile
+      target: development
+    image: ${FOC_IMAGE_PREFIX:-foc}/credit-service:${CREDIT_SERVICE_IMAGE_TAG:-dev}
+    command: npm run start:dev
+    restart: on-failure:3
+    depends_on:
+      credit-db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${CREDIT_SERVICE_PORT:-3000}
+      LOG_LEVEL: ${LOG_LEVEL}
+      DB_HOST: ${CREDIT_SERVICE_DB_HOST:-credit-db}
+      DB_PORT: ${CREDIT_SERVICE_DB_PORT:-5432}
+      DB_USERNAME: ${CREDIT_SERVICE_DB_USERNAME:-credit_service}
+      DB_DATABASE: ${CREDIT_SERVICE_DB_DATABASE:-credit_service}
+      DB_PASSWORD_FILE: /run/secrets/credit_db_password
+      INITIAL_CREDIT_BALANCE: ${INITIAL_CREDIT_BALANCE:-100}
+      JWT_PUBLIC_KEY_FILE: /run/secrets/jwt_public_key_credit_service
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://loki:3100/otlp/v1/logs}
+      RABBITMQ_USER: ${CREDIT_SERVICE_RABBITMQ_USER:-credit-service}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/foc}
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password_credit_service
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-foc.events}
+      RABBITMQ_PUBSUB_EXCHANGE: ${RABBITMQ_PUBSUB_EXCHANGE:-foc.pubsub}
+      RABBITMQ_EVENTS_QUEUE: ${RABBITMQ_EVENTS_QUEUE:-credit-service.events}
+      RABBITMQ_USER_REGISTERED_ROUTING_KEY: ${RABBITMQ_USER_REGISTERED_ROUTING_KEY:-user.registered.v1}
+      RABBITMQ_CREDIT_ACCOUNT_INITIALISED_ROUTING_KEY: ${RABBITMQ_CREDIT_ACCOUNT_INITIALISED_ROUTING_KEY:-credit.account-initialised.v1}
+      RABBITMQ_CREDIT_RESERVATION_QUEUE: ${RABBITMQ_CREDIT_RESERVATION_QUEUE:-credit-service.credit-reservation.v1}
+      RABBITMQ_CREDIT_RESERVATION_ROUTING_KEY: ${RABBITMQ_CREDIT_RESERVATION_ROUTING_KEY:-credit.reservation.v1}
+      RABBITMQ_CREDIT_RESERVATION_ADJUSTMENT_QUEUE: ${RABBITMQ_CREDIT_RESERVATION_ADJUSTMENT_QUEUE:-credit-service.credit-reservation-adjustment.v1}
+      RABBITMQ_CREDIT_RESERVATION_ADJUSTMENT_ROUTING_KEY: ${RABBITMQ_CREDIT_RESERVATION_ADJUSTMENT_ROUTING_KEY:-credit.reservation-adjustment.v1}
+      RABBITMQ_CREDIT_RESERVATION_SUCCESS_ROUTING_KEY: ${RABBITMQ_CREDIT_RESERVATION_SUCCESS_ROUTING_KEY:-credit.reservation-success.v1}
+      RABBITMQ_CREDIT_RESERVATION_REJECTED_ROUTING_KEY: ${RABBITMQ_CREDIT_RESERVATION_REJECTED_ROUTING_KEY:-credit.reservation-rejected.v1}
+      RABBITMQ_CREDIT_RESERVATION_ADJUSTMENT_SUCCESS_ROUTING_KEY: ${RABBITMQ_CREDIT_RESERVATION_ADJUSTMENT_SUCCESS_ROUTING_KEY:-credit.reservation-adjustment-success.v1}
+      RABBITMQ_CREDIT_RESERVATION_ADJUSTMENT_REJECTED_ROUTING_KEY: ${RABBITMQ_CREDIT_RESERVATION_ADJUSTMENT_REJECTED_ROUTING_KEY:-credit.reservation-adjustment-rejected.v1}
+      RABBITMQ_CREDIT_SETTLEMENT_QUEUE: ${RABBITMQ_CREDIT_SETTLEMENT_QUEUE:-credit-service.credit-settlement.v1}
+      RABBITMQ_CREDIT_SETTLEMENT_ROUTING_KEY: ${RABBITMQ_CREDIT_SETTLEMENT_ROUTING_KEY:-credit.settlement.v1}
+      RABBITMQ_CREDIT_SETTLEMENT_SUCCEEDED_ROUTING_KEY: ${RABBITMQ_CREDIT_SETTLEMENT_SUCCEEDED_ROUTING_KEY:-credit.settlement-succeeded.v1}
+      RABBITMQ_CREDIT_SETTLEMENT_REJECTED_ROUTING_KEY: ${RABBITMQ_CREDIT_SETTLEMENT_REJECTED_ROUTING_KEY:-credit.settlement-rejected.v1}
+      RABBITMQ_ORDER_ERRAND_COMPLETED_ROUTING_KEY: ${RABBITMQ_ORDER_ERRAND_COMPLETED_ROUTING_KEY:-order.errand-completed.v1}
+      RABBITMQ_ORDER_ERRAND_CANCELLED_ROUTING_KEY: ${RABBITMQ_ORDER_ERRAND_CANCELLED_ROUTING_KEY:-order.errand-cancelled.v1}
+      RABBITMQ_CREDIT_TRANSFER_SUCCEEDED_ROUTING_KEY: ${RABBITMQ_CREDIT_TRANSFER_SUCCEEDED_ROUTING_KEY:-credit.transfer-succeeded.v1}
+      RABBITMQ_CREDIT_TRANSFER_REJECTED_ROUTING_KEY: ${RABBITMQ_CREDIT_TRANSFER_REJECTED_ROUTING_KEY:-credit.transfer-rejected.v1}
+      RABBITMQ_CREDIT_RELEASE_SUCCESS_ROUTING_KEY: ${RABBITMQ_CREDIT_RELEASE_SUCCESS_ROUTING_KEY:-credit.release-success.v1}
+      RABBITMQ_CREDIT_RELEASE_REJECTED_ROUTING_KEY: ${RABBITMQ_CREDIT_RELEASE_REJECTED_ROUTING_KEY:-credit.release-rejected.v1}
+      RABBITMQ_RETRY_EXCHANGE: ${RABBITMQ_RETRY_EXCHANGE:-foc.credit.retry}
+      RABBITMQ_RETRY_RETURN_EXCHANGE: ${RABBITMQ_RETRY_RETURN_EXCHANGE:-foc.credit.back}
+      RABBITMQ_DEAD_LETTER_EXCHANGE: ${RABBITMQ_DEAD_LETTER_EXCHANGE:-foc.credit.dlx}
+      RABBITMQ_PREFETCH: ${RABBITMQ_PREFETCH:-10}
+      RABBITMQ_RETRY_DELAYS_MS: ${RABBITMQ_RETRY_DELAYS_MS:-1000,2000,4000,8000,16000}
+      OUTBOX_POLL_INTERVAL_MS: ${OUTBOX_POLL_INTERVAL_MS:-1000}
+      OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-100}
+      OUTBOX_CONFIRM_TIMEOUT_MS: ${OUTBOX_CONFIRM_TIMEOUT_MS:-20000}
+      OUTBOX_CLAIM_LEASE_MS: ${OUTBOX_CLAIM_LEASE_MS:-30000}
+      OUTBOX_RETRY_BASE_DELAY_MS: ${OUTBOX_RETRY_BASE_DELAY_MS:-1000}
+      OUTBOX_RETRY_MAX_DELAY_MS: ${OUTBOX_RETRY_MAX_DELAY_MS:-60000}
+      OUTBOX_UNPUBLISHED_WARNING_MS: ${OUTBOX_UNPUBLISHED_WARNING_MS:-60000}
+      CREDIT_OPERATION_CLAIM_LEASE_MS: ${CREDIT_OPERATION_CLAIM_LEASE_MS:-30000}
+      CREDIT_OPERATION_POLL_INTERVAL_MS: ${CREDIT_OPERATION_POLL_INTERVAL_MS:-1000}
+      CREDIT_OPERATION_MAX_BACKOFF_MS: ${CREDIT_OPERATION_MAX_BACKOFF_MS:-60000}
+      CREDIT_OPERATION_STUCK_AFTER_MS: ${CREDIT_OPERATION_STUCK_AFTER_MS:-60000}
+    secrets:
+      - credit_db_password
+      - rabbitmq_password_credit_service
+      - jwt_public_key_credit_service
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget --no-verbose --tries=1 --spider "http://127.0.0.1:$${PORT:-3000}/health"',
+        ]
+      interval: 10s
+      timeout: 3s
+      start_period: 180s
+      retries: 5
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /usr/src/app
+          ignore:
+            - node_modules/
+            - dist/
+            - coverage/
+            - test/
+            - .env
+            - secrets/
+        - action: rebuild
+          path: package.json
+        - action: rebuild
+          path: package-lock.json
+        - action: sync+restart
+          path: ../packages/contracts/src
+          target: /usr/src/packages/contracts/src
+        - action: sync+restart
+          path: ../packages/contracts/tsconfig.json
+          target: /usr/src/packages/contracts/tsconfig.json
+        - action: sync+restart
+          path: ../packages/contracts/tsconfig.build.json
+          target: /usr/src/packages/contracts/tsconfig.build.json
+        - action: rebuild
+          path: ../packages/contracts/package.json
+        - action: rebuild
+          path: ../packages/contracts/package-lock.json
+        - action: sync+restart
+          path: ../packages/auth/src
+          target: /usr/src/packages/auth/src
+        - action: sync+restart
+          path: ../packages/auth/tsconfig.json
+          target: /usr/src/packages/auth/tsconfig.json
+        - action: sync+restart
+          path: ../packages/auth/tsconfig.build.json
+          target: /usr/src/packages/auth/tsconfig.build.json
+        - action: rebuild
+          path: ../packages/auth/package.json
+        - action: rebuild
+          path: ../packages/auth/package-lock.json
+        - action: sync+restart
+          path: ../packages/outbox/src
+          target: /usr/src/packages/outbox/src
+        - action: sync+restart
+          path: ../packages/outbox/tsconfig.json
+          target: /usr/src/packages/outbox/tsconfig.json
+        - action: sync+restart
+          path: ../packages/outbox/tsconfig.build.json
+          target: /usr/src/packages/outbox/tsconfig.build.json
+        - action: rebuild
+          path: ../packages/outbox/package.json
+        - action: rebuild
+          path: ../packages/outbox/package-lock.json
+
+  credit-db:
+    image: postgres:18-alpine
+    restart: on-failure:3
+    environment:
+      POSTGRES_USER: ${CREDIT_SERVICE_DB_USERNAME:-credit_service}
+      POSTGRES_DB: ${CREDIT_SERVICE_DB_DATABASE:-credit_service}
+      POSTGRES_PASSWORD_FILE: /run/secrets/credit_db_password
+    volumes:
+      - credit-db-data:/var/lib/postgresql
+    secrets:
+      - credit_db_password
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  credit-db-test:
+    image: postgres:18-alpine
+    profiles: ['test']
+    ports:
+      - '${DB_TEST_HOST_PORT:-5436}:5432'
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-credit_service}
+      POSTGRES_DB: credit_service_test
+      POSTGRES_PASSWORD_FILE: /run/secrets/credit_db_password
+    tmpfs:
+      - /var/lib/postgresql
+    secrets:
+      - credit_db_password
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  credit-db-recovery:
+    image: postgres:18-alpine
+    profiles: ['recovery']
+    ports:
+      - '${DB_RECOVERY_HOST_PORT:-5437}:5432'
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-credit_service}
+      POSTGRES_DB: credit_service_recovery
+      POSTGRES_PASSWORD_FILE: /run/secrets/credit_db_password
+    volumes:
+      - /var/lib/postgresql
+    secrets:
+      - credit_db_password
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  credit-rabbitmq:
+    image: rabbitmq:4.3.6-management-alpine
+    profiles: ['test']
+    ports:
+      - '${RABBITMQ_HOST_PORT:-5675}:5672'
+      - '${RABBITMQ_MANAGEMENT_HOST_PORT:-15675}:15672'
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-credit_service_test}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-replace-me}
+    tmpfs:
+      - /var/lib/rabbitmq
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  credit-rabbitmq-recovery:
+    build:
+      context: .
+      dockerfile: test/rabbitmq-recovery.Dockerfile
+    image: credit-service-rabbitmq-recovery:local
+    profiles: ['recovery']
+    ports:
+      - '${RABBITMQ_RECOVERY_HOST_PORT:-5676}:5672'
+      - '${RABBITMQ_RECOVERY_MANAGEMENT_HOST_PORT:-15676}:15672'
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-credit_service_test}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-replace-me}
+      RABBITMQ_ERLANG_COOKIE: credit-service-recovery-cookie
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: '+S 2:2'
+      HOME: /var/lib/rabbitmq-recovery
+      RABBITMQ_MNESIA_BASE: /var/lib/rabbitmq-recovery/mnesia
+    volumes:
+      - /var/lib/rabbitmq-recovery
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  credit-db-data:
+
+secrets:
+  credit_db_password:
+    file: ./secrets/credit_db_password.secret
+  rabbitmq_password_credit_service:
+    file: ./secrets/rabbitmq_password.secret
+  jwt_public_key_credit_service:
+    file: ../user-service/secrets/jwt_public_key.secret

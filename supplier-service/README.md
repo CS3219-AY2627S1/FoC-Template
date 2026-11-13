@@ -1,0 +1,859 @@
+# Supplier Service (M.2)
+
+The Supplier Service is FoC's source of truth for **suppliers**: the physical places on campus where errand items are picked up (a shop, a facility such as a printer, or a landmark). A supplier is a **pickup point, not a shop front**. There are no menus, products, stock or prices; those are out of scope in the project brief.
+
+Other services use it like this:
+
+- **Users** browse and search suppliers when creating an errand.
+- **Users** ask for a missing supplier to be added, or for a wrong one to be corrected; an admin approves or denies the request.
+- **Admins** add, edit and deactivate suppliers, and manage categories and buildings.
+- **Order Service** checks a supplier's current details and status when an errand references it, by asking over RabbitMQ (see [§11](#11-supplier-validation-for-order-service-rabbitmq)).
+
+**Contents**:
+
+1. [Scope for D2](#1-scope-for-d2)
+2. [Tech stack, compared with the other services](#2-tech-stack-compared-with-the-other-services)
+3. [D2 point 1: Database choice and schema](#3-d2-point-1-database-choice-and-schema)
+4. [D2 point 2: Query patterns and API](#4-d2-point-2-query-patterns-and-api)
+5. [D2 points 2 and 4: Identity and roles from User Service](#5-d2-points-2-and-4-identity-and-roles-from-user-service)
+6. [D2 point 3: CRUD without a UI](#6-d2-point-3-crud-without-a-ui)
+7. [D2 point 4: End-to-end demo script](#7-d2-point-4-end-to-end-demo-script)
+8. [Build plan](#8-build-plan)
+9. [Dependencies and risks](#9-dependencies-and-risks)
+10. [Running and testing](#10-running-and-testing)
+11. [Supplier validation for Order Service (RabbitMQ)](#11-supplier-validation-for-order-service-rabbitmq)
+
+---
+
+## 1. Scope for D2
+
+D2 asks for Supplier Service **"significant progress"**: Part 2 points 1-4 of the D2 instructions. There is **no UI** for D2; point 5 (a responsive UI) comes later.
+
+| D2 point | What we show | Requirements (FR v2) |
+|---|---|---|
+| 1. DB choice + schema + metadata | PostgreSQL, the six tables, how name, type and location are stored and queried | F1, F4, F11, F12 |
+| 2. Query patterns + API + identity/roles | List, search, filter, sort, paginate and get-one through working API calls; how the user-service login is checked; what a denied request looks like | F5, F15.1-F15.5, F13 |
+| 3. CRUD through the API alone | Create, read, update, and "delete" (= set Inactive) with no UI running | F7.5, F8.6, F9, F14.1, F14.3 |
+| 4. Authenticated user → API → DB, roles differ | A basic user and an admin run the same calls and get different answers; a basic user asks for a supplier and an admin approves it | F13, F6, F7 + demo accounts + API collection |
+
+**Not in D2** (designed, built later):
+
+- **the rest of moderation:** admins amending a request before approving it (F7.4, F8.5) is not planned for D4. Requests to *add*, *edit* or *change the status of* a supplier, and following and withdrawing your own, are built (F6.1-F6.8, F7.1-F7.3.1, F8.1-F8.4.1, F9.3-F9.4, F13.6).
+- opening hours (F2): built after D2, see [Opening hours](#opening-hours-f2)
+- brands (F3): built after D2, see [Brands](#brands-f3)
+- Order validation over RabbitMQ (F15.7)
+- safe retries (F14.2): built after D2, see [Safe retries](#safe-retries-idempotency-keys-f142); the audit log (F14.4, F14.5) is built too, see [Audit log](#audit-log-f144-f145); rate limits (F16) are not built (future work)
+- images (F17)
+- hard delete (F10)
+
+---
+
+## 2. Tech stack, compared with the other services
+
+Consistency with the rest of the team comes first. New libraries need a stated reason.
+
+| Concern | Supplier Service | Same as | Notes |
+|---|---|---|---|
+| Framework | NestJS 12, TypeScript, ES modules ✅ | user-service, credit-service, order-service | |
+| Database | PostgreSQL 18 (`postgres:18-alpine`), own container `supplier-db` ✅ | user-service, credit-service, order-service | One database per service |
+| Talking to the DB | TypeORM ✅ | user-service, credit-service | order-service's open PR uses Drizzle instead |
+| Creating tables | TypeORM **migration files**, applied on startup; `synchronize` is always off ✅ | credit-service (PR #592) | user-service uses `synchronize` |
+| Config checks at startup | Joi schema; the app refuses to start on bad settings ✅ | user-service | |
+| Request validation | class-validator DTOs through one global `ValidationPipe` ✅ | user-service | **Difference:** we *reject* unknown fields instead of silently dropping them (F1.6, F1.3.2) |
+| Error format | One JSON shape for every error ✅ | none (others use Nest defaults) | Needed by F1.6.1, F14.1.1, F15.3; extends Nest's default fields |
+| Login check | The team's shared `@foc/auth` guards (RS256, public key only) over `@foc/contracts` ✅ | user-service (same package, scripts and `cookie-parser` in `main.ts`) | No token code is copied |
+| Tests | vitest (unit + e2e), supertest ✅ | user-service | DB-backed e2e uses a throwaway Postgres, like credit-service |
+| Lint | oxlint (type-aware) ✅ | user-service | |
+| Docker | Multi-stage Dockerfile built from the repo root, `compose.yml` included from the root `compose.yaml` ✅ | order-service scaffold (9253390); repo-root context as in user-service | The root context lets the image build `packages/contracts` and `packages/auth` |
+
+---
+
+## 3. D2 point 1: Database choice and schema
+
+### Why PostgreSQL
+
+Full reasoning, alternatives and consequences: [ADR 0001](../docs/adr/supplier-service/0001-database-choice.md).
+
+- **The data is structured and fixed.** Every supplier has the same fields: name, kind, building, floor, location, coordinates and status. There are no free-form documents.
+- **It is relational.** Suppliers *reference* buildings and categories, and a supplier can have several categories. The database must refuse a reference to something that doesn't exist.
+- **The database enforces the rules, not only the code.** Two admins submitting the same supplier at the same moment must not both succeed (F1.5.2). A unique constraint in the database guarantees that, and a code check alone can't.
+- **Transactions.** Every write is all-or-nothing (F14.1).
+- **The queries are filter + sort + paginate**, which SQL and indexes do well. Search is by name, building, category, kind and status, with stable page boundaries.
+- **The scale is small.** There are a few hundred suppliers on one campus, so one Postgres instance is plenty. Reads dominate, and more service replicas can share the same database.
+- **The team already runs it.** user-service and credit-service use PostgreSQL, so we reuse the same image, tooling and knowledge.
+
+**Database per service:** Supplier Service owns `supplier-db` and no other service reads it. Other services ask through the API (and, later, RabbitMQ). This keeps each service's tables private, so they can change without breaking anyone.
+
+### Schema (✅ step 3: `src/database/entities/`, migration `src/database/migrations/1790467200000-create-supplier-schema.ts`)
+
+```mermaid
+erDiagram
+    BUILDINGS ||--o{ BUILDING_NAME_KEYS : "is known by"
+    BUILDINGS ||--o{ SUPPLIERS : "houses"
+    BUILDINGS ||--o{ VENUES : "contains"
+    SUPPLIERS ||--|{ SUPPLIER_CATEGORIES : "has"
+    CATEGORIES ||--o{ SUPPLIER_CATEGORIES : "tags"
+    BRANDS |o--o{ SUPPLIERS : "groups outlets of"
+    SUPPLIERS ||--o{ SUPPLIER_OPENING_INTERVALS : "is open during"
+
+    BUILDINGS {
+        uuid id PK
+        varchar canonical_name "e.g. Computing 2"
+        varchar short_name "e.g. COM2"
+        text_array aliases "other spellings"
+        double latitude
+        double longitude
+        timestamptz retired_at "null = in use"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    VENUES {
+        uuid id PK
+        uuid building_id FK
+        varchar code "e.g. LT19, unique per building"
+        varchar name "optional"
+        varchar floor "B1-B9, 1-99, M"
+        double latitude
+        double longitude
+        timestamptz retired_at "null = in use"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    BUILDING_NAME_KEYS {
+        text key PK "normalised name, short name or alias"
+        uuid building_id FK
+    }
+    BRANDS {
+        uuid id PK
+        varchar name "1-100 chars, e.g. Cheers"
+        text name_key "lower-cased, unique among non-retired"
+        timestamptz retired_at "null = in use"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    CATEGORIES {
+        uuid id PK
+        varchar name "e.g. Food"
+        text name_key "lower-cased, unique among in-use"
+        timestamptz retired_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    SUPPLIERS {
+        uuid id PK
+        varchar name "1-100 chars"
+        text name_key "normalised name"
+        enum kind "Store | Facility | Landmark"
+        uuid building_id FK
+        uuid brand_id FK "optional, at most one (F3.4)"
+        varchar floor "B1-B9, 1-99, M"
+        varchar location_description "e.g. Next to LT19"
+        double latitude
+        double longitude
+        varchar photo_url "optional"
+        boolean open_24_hours "open around the clock (F2.2)"
+        enum status "Active | Inactive"
+        int version "starts at 1, +1 per change"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    SUPPLIER_CATEGORIES {
+        uuid supplier_id PK, FK
+        uuid category_id PK, FK
+    }
+    AUDIT_ENTRIES {
+        bigint id PK "identity: orders the log"
+        timestamptz occurred_at
+        uuid actor_id "null = the system (the seed)"
+        varchar action "e.g. supplier.updated"
+        varchar target_type "supplier | request | category | brand | building"
+        uuid target_id "no foreign key: survives hard delete"
+        jsonb before "null for a creation"
+        jsonb after
+        int version "supplier version, where applicable"
+    }
+    SUPPLIER_OPENING_INTERVALS {
+        uuid supplier_id PK, FK
+        smallint day PK "0 = Monday to 6 = Sunday"
+        smallint opens_at PK "minutes since midnight, Singapore time"
+        smallint closes_at "earlier than opens_at = overnight (F2.3)"
+    }
+    SUPPLIERS |o--o{ SUPPLIER_REQUESTS : "is the target of"
+    BUILDINGS ||--o{ SUPPLIER_REQUESTS : "is proposed in"
+    SUPPLIER_REQUESTS {
+        uuid id PK
+        enum type "Create | Update | StatusChange"
+        enum state "Pending | Approved | Denied | Withdrawn"
+        uuid supplier_id FK "Update, StatusChange"
+        int supplier_version "version the request was based on"
+        jsonb payload "the requested values"
+        text name_key "Create: duplicate key"
+        uuid building_id FK "Create: duplicate key"
+        varchar floor "Create: duplicate key"
+        uuid submitted_by "user id from the token"
+        timestamptz submitted_at
+        uuid resolved_by "who resolved it"
+        timestamptz resolved_at
+        varchar denial_reason "1-500 chars, Denied only"
+        uuid created_supplier_id FK "approved Create only"
+    }
+```
+
+| Table | Purpose | Rules the database enforces |
+|---|---|---|
+| `suppliers` | One row per pickup point | `UNIQUE (name_key, building_id, floor)` blocks duplicates, even when two requests race (F1.5, F1.5.2). CHECKs on name length, floor format, non-blank location and coordinate ranges. `building_id` must exist. |
+| `buildings` | The controlled list of campus buildings (F4) | Coordinate range CHECKs. One placeholder row, "Other (map pin)", is the building with short name `PIN` (see below). |
+| `venues` | Delivery rooms inside a building (migration `1791417600000-create-venues.ts`) | `UNIQUE (building_id, code)`; CHECKs on floor format and coordinate ranges; `building_id` must exist and a building with venues can't be deleted. Venues are retired (`retired_at`), never deleted, so past orders still resolve. |
+| `building_name_keys` | Every name, short name and alias of each in-use building, normalised | The primary key makes two in-use buildings sharing a name impossible (F4.2). Looking up a building by any name is one key lookup (F4.5). |
+| `audit_entries` (✅ step 17, migration `1791331200000-add-audit-entries.ts`) | One append-only row per committed change to a supplier, request, category, brand or building (F14.4). **No foreign keys**, so entries outlive the records they describe (F14.5) | Triggers refuse `UPDATE`, `DELETE` and `TRUNCATE`, so not even a bug in the service can alter the log (F14.5). CHECKs: the target type is one of the five, and the action is not blank. |
+| `brands` (✅ step 14, migration `1791158400000-add-brands.ts`) | The controlled list of brands: businesses with several outlets (F3). `suppliers.brand_id` is optional, at most one (F3.4) | Partial unique index on `name_key` among non-retired brands (F3.2, a retired brand's name can be reused), non-blank name CHECK. The foreign key refuses deleting a brand that suppliers hold, so brands are retired, never deleted (F1.8). |
+| `categories` | The controlled list of categories (F11) | Partial unique index on `name_key` among non-retired categories (F11.2.1) |
+| `supplier_categories` | Which categories each supplier has (many-to-many) | The primary key stops the same category being added twice (F1.2.3). A category in use can't be removed. |
+| `supplier_opening_intervals` (✅ step 13, migration `1791072000000-add-opening-hours.ts`) | One row per interval of a supplier's regular weekly hours (F2.1), plus `suppliers.open_24_hours` for open around the clock (F2.2). No rows and no flag means no fixed hours (F1.2.8) | CHECKs: day 0-6, minutes 0-1439, and opening minute different from closing minute (F2.4.2). The foreign key deletes the intervals with their supplier. |
+| `supplier_requests` (✅ step 8, migration `1790640000000-create-supplier-requests.ts`) | A basic user's request to add (and later edit or change the status of) a supplier, moderated by an admin (F6) | A partial unique index on `(name_key, building_id, floor)` among **Pending Create** requests: two identical requests can't both be pending, even when filed at the same moment (F7.2). Another on `(supplier_id, type)` among Pending non-Create requests: one pending edit per supplier (F8.3; migration `1790726400000-add-pending-target-index.ts`). CHECKs: a Create carries the duplicate key and no target supplier, the other types the reverse; Pending means no resolver, and a resolved request always records who and when; only a Denied request has a reason, never blank (F6.4). |
+
+Rules the database **can't** express are checked in the service, inside the same transaction:
+- **"at least one category"** (F1.2.3)
+- **"coordinates inside the NUS campus box"** (F1.2.7): the box comes from configuration, which a DB CHECK can't read
+- **"only non-retired buildings and categories for new values"** (F1.8)
+- **"no two opening intervals overlap"**, including an overnight interval running into the next day (F2.4.3): SQL can't compare ranges across rows this simply, so `checkOpeningHours` does it, before anything is written
+
+**System-managed fields** (`id`, `status`, `version`, `created_at`, `updated_at`) are set only by the server. A request that tries to set one is rejected (F1.3, F1.3.2).
+
+**Retire, don't delete:** buildings and categories are *retired* (`retired_at` is set), never deleted. Suppliers that already use them keep working, but they can't be chosen for new data (F1.8, F4.3.1, F11.3).
+
+**Known gap (supplier hard delete):** a supplier must not be hard-deleted while orders reference it (F5.3.1), so the delete needs to ask order-service for a usage check first. That check is not built on either side: there is no supplier delete endpoint, no order-service usage endpoint and no client here. Until it exists, do not add a delete route without it. Buildings, categories and brands need no check because they are only retired. See "Planned, not built" in `order-service/ARCHITECTURE.md`.
+
+**Why UUIDs, not auto-increment ids:**
+
+- F1.1 requires suppliers to have "a unique, system-generated, immutable identifier (UUID)", never reused and not derived from the name or location.
+- Other services store our ids: order-service's `errands.supplier_id` is a `uuid` column. credit-service also uses UUIDs.
+- Ids appear in URLs (`/suppliers/{id}`). Sequential numbers would let anyone count or step through every record; UUIDs reveal nothing.
+- The service creates the id before saving, which keeps transactions and the seed import simple.
+- The cost (16 bytes instead of 4-8, for a few hundred rows) is negligible. Buildings and categories use UUIDs too, so every id in this service works the same way.
+
+**Aliases vs `building_name_keys`:** a building has one full name, one short name and zero or more aliases, and can be found by any of them (F4.1, F4.5).
+
+- `buildings.aliases` is the record: genuinely different names as typed, e.g. `"Terrace"` for COM3, which admins see and edit. Spelling variants don't need aliases (see below).
+- `building_name_keys` is derived from it, like an index: one row per name (full, short and every alias), lower-cased with spaces removed and every apostrophe style made the same, for in-use buildings only. It is rebuilt whenever a building's names change. So "COM2", "Com 2" and "com2" are one name, as are "Prince George's Park" and "Prince George’s Park".
+- It exists because F4.2 forbids two in-use buildings sharing **any** name. A normal unique index can't span three columns plus every item in a list, but a primary key on one row per name can, so the database itself enforces the rule.
+
+**Delivery venues and the map-pin building.** A requester picks a building, then optionally a venue in it. `GET /buildings` items carry `venueCount` (active venues; 0 means skip the venue step) and `allowsPin`. `allowsPin` is true for exactly one building, the one with short name `PIN` ("Other (map pin)"; there is no column, and `building_name_keys` keeps the short name unique). It cannot be given another short name, and it is a fixed placeholder at the campus centre, created at every startup if no building has the short name `PIN` (independent of `VENUE_SEED_PATH` and `SEED_ON_STARTUP`). A pin errand sends that building's id and no venue id, so `deliveryBuildingId` stays required and the contract is unchanged; the pin's own coordinates are Order Service's concern. The service refuses to retire it, to add venues to it, or to put suppliers in it (409 / 400 `building cannot hold suppliers`). Migration `1791590400000-rename-as8-building.ts` renames "Blk AS8" to "Arts and Social Sciences 8" (keeping "Blk AS8" as an alias).
+
+### How the D2 metadata is stored and queried
+
+| Metadata | Stored as | Queried by |
+|---|---|---|
+| **Name** | `name` as typed, plus `name_key`: trimmed, spaces collapsed, lower-cased and Unicode-normalised | Case-insensitive partial match on `name_key` |
+| **Type** | `kind` (Store / Facility / Landmark, one per supplier) **and** categories (Food, Coffee…, one or more, via `supplier_categories`) | `?kind=` and `?categoryId=`, each accepting several values |
+| **Location** | building (reference) + floor + a short "how to find it" description + map coordinates | `?buildingId=` |
+| **Display name** | Not stored; derived as `"<Name> @ <Building short name>"`, e.g. `Cool Spot @ COM3` | Default sort key |
+
+### Seed data (✅ step 4: `src/seed/`)
+
+- **Source:** `data/csv/supplier-seed-data.csv`, 21 rows. Columns: Name, Type, Building, Floor, Location Description, Latitude, Longitude, StartingTime, ClosingTime, ImageURL. Compose mounts `data/csv` read-only; the file is never copied.
+- **Loaded on startup** (`SEED_ON_STARTUP`, default on). Each row goes through the same `SuppliersService.create` as the admin API, so seed data obeys every rule (F12.3).
+- **First fill only:** the startup import runs only while there are no suppliers at all. "Already present" is judged by name, so without this guard an admin's rename would make the next start create the original again. Once any supplier exists, the data belongs to the admins. (Follow-up: a stable `seed_key` per supplier would let later seed rows still be added.)
+- **Safe to run again:** rows already present are skipped, keyed by the duplicate rule (F12.1). Even two copies seeding at once end with exactly 21. The log shows e.g. `seed: 0 created, 21 already present, 0 rejected`.
+- **Buildings:** the buildings in `data/json/venues-seed.json` (61, with their aliases) resolve every building spelling in the file (F12.2.1); the supplier importer creates any that are missing first. Case, spaces and apostrophe style are ignored automatically, so "Com 2", "Com2" and "COM2" all match COM2, and "Prince George’s Park" (curly apostrophe) matches PGP. The "Terrace" alias → COM3 is in the JSON: the Terrace is the food court inside COM3, and the data file uses it as a building. Coordinates come from the JSON and are never moved by a re-run.
+- **Venues:** the same JSON holds the delivery venues. Set `VENUE_SEED_PATH` (default in the env example; compose mounts `data/json` read-only) and they load on every start, whether or not any suppliers exist and regardless of `SEED_ON_STARTUP`. Each is inserted only if missing, keyed on (building, code): a retired venue is never revived, none is added to a retired building or to the pin building, and rows flagged for review are skipped and logged. A malformed file stops startup. Running it twice changes nothing.
+- **Names:** an own-building suffix is removed ("Printer @ Com 2" → "Printer", shown as "Printer @ COM2"; F12.2.6). The Terrace outlets are named "InstaChef (Terrace)" and "Smooy (Terrace)", so they stay distinct from other outlets of the same business in COM3.
+- **Kind:** "Printer @ Com 2" is a Facility; everything else is a Store (F12.2.5).
+- **"Food/Coffee"** becomes two categories, created if missing (F12.2.2).
+- **Bad characters** from Windows-1252 encoding are repaired, e.g. `George\x92s` → `George’s` (F12.3).
+- **A bad row** is skipped and logged with its row number, field and reason; it never stops the import (F12.4).
+- **Photos** are stored where the ImageURL cell has one, otherwise none (F12.2.4). **Opening hours** come from StartingTime and ClosingTime: the same interval on all seven days, `0000hrs` to `2359hrs` meaning open 24 hours, and an overnight pair such as `1100hrs` to `0200hrs` (Supersnacks) kept as it is (F12.2.3). Blank times mean no fixed hours; an unreadable time or equal times reject the row, and the log names the cell (F12.4).
+
+---
+
+## 4. D2 point 2: Query patterns and API
+
+Built so far ✅: `GET /health`; `GET`/`POST /categories` (step 2); `GET /suppliers`, `GET /suppliers/{id}`, `GET /buildings` (step 5); `POST /suppliers`, `PATCH /suppliers/{id}`, `PUT /suppliers/{id}/status` (step 6); and the `/supplier-requests` endpoints for moderated changes (steps 8-10, 12; see [§6](#6-d2-point-3-crud-without-a-ui)). Category rename/retire, building management and status-change requests were added after D2 (see the table below).
+
+**How to call it:**
+
+- base URL `http://localhost:3002`
+- JSON in and out
+- the login cookie `access_token` comes from user-service; see [§5](#5-d2-points-2-and-4-identity-and-roles-from-user-service)
+
+### Query patterns
+
+| Pattern | Call | FR |
+|---|---|---|
+| Get one supplier by id | `GET /suppliers/{id}` | F5.9 |
+| Search by name (partial, any case), matching the supplier's own name **or its brand's name** | `GET /suppliers?name=cool` | F5.4.1 |
+| By brand | `GET /suppliers?brandId={id}` (repeatable; matches any) | F5.4.6 |
+| By location (building) | `GET /suppliers?buildingId={id}` (repeatable) | F5.4.3 |
+| By category | `GET /suppliers?categoryId={id}` (repeatable; matches any) | F5.4.2 |
+| By kind | `GET /suppliers?kind=Store` (repeatable) | F5.4.4 |
+| By status | `GET /suppliers?status=Active` (default: both) | F5.4.5, F5.7 |
+| Open now | `GET /suppliers?openNow=true`: only suppliers open at this moment in Singapore time (`false` is the same as leaving it out) | F5.4.7 |
+| Combined | `GET /suppliers?categoryId={food}&buildingId={com3}&status=Active`: filters are ANDed | F5.5 |
+| Sort | Default: display name A→Z, then id, or `?sort=name\|building\|createdAt\|updatedAt&order=asc\|desc`, always ending with id as the tie-breaker | F5.3, F5.3.1 |
+| Pages | `?offset=0&limit=25` (max 1000) | F5.2, N3.1 |
+
+Repeatable filters are passed by repeating the parameter, e.g. `?categoryId=a&categoryId=b`. Sorting uses the database's English collation (case- and punctuation-aware dictionary order).
+
+**Behaviour:**
+
+- **No match** returns `200` with an empty list and `total: 0`, not a 404 (F5.6).
+- **An unknown query parameter,** or a category or building id that doesn't exist, returns `400`, not silently ignored (F5.8).
+- **Filtering by a retired category or building** returns an empty list (F5.8.1).
+
+**List response:**
+
+```json
+{
+  "items": [
+    {
+      "id": "7c9e…",
+      "displayName": "Cool Spot @ COM3",
+      "name": "Cool Spot",
+      "brand": { "id": "…", "name": "Cheers" },
+      "kind": "Store",
+      "categories": [{ "id": "…", "name": "Food" }],
+      "building": { "id": "…", "shortName": "COM3" },
+      "floor": "1",
+      "status": "Active",
+      "isOpenNow": true,
+      "thumbnailUrl": null
+    }
+  ],
+  "total": 21,
+  "offset": 0,
+  "limit": 25,
+  "hasMore": false
+}
+```
+
+- `brand` is `{id, name}`, or `null` for a supplier without one (F5.1). A brand retired later still shows on the suppliers that hold it (F1.8).
+- `isOpenNow` is `true` or `false`, worked out when you ask, in Singapore time (F2.5), or `null` ("not applicable", F2.5.1) for a supplier without opening hours.
+- With no photo, `thumbnailUrl` is the placeholder link from the `PLACEHOLDER_IMAGE_URL` setting (F1.2.9). The setting is blank until images are hosted (step 19), so for now it is `null`.
+
+**Single supplier (`GET /suppliers/{id}`)** returns every list field plus:
+
+- `building.canonicalName`, `locationDescription`, `coordinates {latitude, longitude}`
+- `openingHours` (see [Opening hours](#opening-hours-f2); `null` when there are none) and `nextChangeAt`, the time of the next opening or closing (`null` when it never changes, or without hours)
+- `images: {original, thumbnail}`: the photo for both until thumbnails exist (F17.3), the placeholder when there's no photo, or `null` when neither is set
+- `version`, `createdAt`, `updatedAt`
+
+It also returns the version in an `ETag` header (e.g. `"3"`), which an admin edit must send back as `If-Match` (step 6). A malformed id answers 400 (`VALIDATION_FAILED`, field `id`); an unknown one 404 `SUPPLIER_NOT_FOUND`. This response is also what other services rely on: it has enough detail for them to keep their own copy (F15.1). The endpoint is read-only, so it is safe to retry (F15.4).
+
+### Audit log (F14.4, F14.5)
+
+✅ step 17. Every committed change to a **supplier, request, category, brand or building** writes an **audit entry**: who did it, what it was, which record, the record's values **before and after**, the supplier's resulting version, and when (F14.4). Think of a bank statement: every transaction gets a line in the same moment the money moves, and nobody can edit or tear out past lines.
+
+| Record | Actions recorded |
+|---|---|
+| Supplier | `supplier.created`, `supplier.updated`, `supplier.status_changed` |
+| Request | `request.submitted` (creation, edit or status change), `request.approved`, `request.denied`, `request.withdrawn` |
+| Category | `category.created`, `category.renamed`, `category.retired` |
+| Brand | `brand.created`, `brand.renamed`, `brand.retired` |
+| Building | `building.created`, `building.updated`, `building.retired` |
+
+- **Same transaction as the change.** The entry is written inside the transaction of the change it describes, so an entry exists **if and only if** the change committed: a refused change (a validation error, a duplicate, a stale version, a lost race) leaves no entry, and a change cannot commit without one. Approving a request writes two entries in one transaction: the request's, and the supplier change it caused (for example `supplier.created`), both by the approving admin. Retiring something already retired changes nothing and records nothing.
+- **Who.** The actor is the verified token's `sub`, never anything in the body (F13.1). A global interceptor, which runs after the login guard, puts it in an `AsyncLocalStorage` context for the whole request, so none of the write methods needs an extra parameter. The seed import records its entries with **no actor** (`actor_id` is null: the system).
+- **Before and after** are full snapshots of the record as plain JSON: for a supplier its name, kind, building, brand, categories, floor, location, coordinates, photo, opening hours, status and version. A creation has no `before`.
+- **Append-only (F14.5).** Database triggers refuse `UPDATE`, `DELETE` and `TRUNCATE` on `audit_entries`, so the log cannot be altered even by a bug. There is **no foreign key** to the audited record, so entries are **kept after it is hard-deleted** (a hard delete would write its own entry).
+- **Reading it.** `GET /audit-entries` is for **admins only**, newest first, with the filters `targetType`, `targetId`, `actorId` and `action`, paged like every listing (`offset`, `limit`, with `total` and `hasMore`). An unknown parameter is a 400. There is no route to write, change or delete an entry.
+- **Same principle as User Service's `user_update_audit`** (written in the same transaction, actor and target ids, the changes as JSON). Differences: ours covers five kinds of record with before and after snapshots, and the database itself enforces append-only, where theirs relies on the code never updating rows.
+- **How it is built:** `src/audit/` (the actor context and interceptor, `recordAudit`, the snapshot mappers, the read endpoint) and the `audit_entries` table. Each write method calls `recordAudit` on its own transaction. Categories and brands now save inside a transaction opened from the repository's own manager, so their constructors are unchanged.
+
+### Safe retries: idempotency keys (F14.2)
+
+✅ step 16. If a client sends a create and the connection drops before the reply, it can't tell whether the record exists. With an `Idempotency-Key` header it can simply send the request again: a repeat returns the **original answer** and nothing is created twice.
+
+**Applies to the seven endpoints that create a record (F14.2):** `POST /suppliers`, `POST /supplier-requests/creations`, `/updates` and `/status-changes`, and `POST` on `/categories`, `/brands` and `/buildings`. Approve, deny, withdraw, retire, `PATCH` and `PUT` create nothing, and edits are already protected by `If-Match` versions.
+
+| The client sends | The service answers |
+|---|---|
+| No header | As always: the work is done each time. The header is optional. |
+| A new key | The request runs. If it **succeeds**, its status, `Location`, `ETag` and body are stored under the key. |
+| The same key and the same request again, within 24 hours | The stored answer, with `Idempotent-Replayed: true`, and nothing is done again (F14.2.1) |
+| The same key for a different request | 422 `IDEMPOTENCY_KEY_REUSED`, and nothing is done (F14.2.2) |
+| The same key while the first request is still running | 409 `IDEMPOTENCY_IN_PROGRESS` with `Retry-After: 1`: try again shortly |
+| A key that is empty, over 255 characters or not printable | 400 `VALIDATION_FAILED` naming `Idempotency-Key` |
+
+- **"The same request"** means the same user, method, path, body (the order of keys doesn't matter) and `If-Match`. The same key on another endpoint, with another body or against another version is a different request. Keys belong to the user in the token, so two users can use the same key.
+- **Only a success is stored.** A failure (a validation error, a duplicate, a database outage) releases the key, so the client can correct the request and retry with the same key. That is deliberate: Order Service keeps rejections under the key too, but a corrected retry is the more useful behaviour here.
+- **After 24 hours** a key is forgotten and may be reused. An hourly job (and one at start-up) removes old keys.
+- **The login comes first.** Guards run before the key is looked at, so no token is 401 and a non-admin on an admin endpoint is 403 whatever the key.
+- **If the server dies mid-request:** its claim goes stale after 60 seconds and the retry runs again. The unique constraints on suppliers, requests, categories, brands and buildings still refuse a double create, so the worst case is a 409 where the original 201 would have been replayed.
+- **No connection is held while the request runs.** Claiming, storing and releasing are three short statements around it, so many slow requests can't exhaust the database pool.
+- **How it is built:** the `idempotency_keys` table (`(user_id, key)` is the primary key; migration `1791244800000-add-idempotency-keys.ts`), `src/idempotency/` (the service, an interceptor and the `@Idempotent()` marker on the seven handlers). The requests, suppliers, categories, brands and buildings code is unchanged.
+- **Same idea as Order Service** (`Idempotency-Key` header, an `idempotency_keys` table with a fingerprint and the stored outcome); the differences are that ours is keyed by user rather than errand, lives in a separate step rather than the same transaction, remembers keys for 24 hours rather than 7 days, and stores only successes.
+
+### Brands (F3)
+
+✅ step 14. A brand groups suppliers that are branches of the same business, such as several Cheers outlets. Each outlet is still its own supplier with its own building, floor and hours, told apart by those and by its display name (F3.4, F1.4). The brand is **optional** (F1.2.10); none of the 21 seeded suppliers has one, because the seed has no brand column and every seeded business appears once (F12.2).
+
+- **A brand** has an id, a name of 1-100 characters, and a retired flag. Names are unique among non-retired brands, ignoring case and extra spaces (409 `DUPLICATE_NAME`, F3.2); a retired brand's name can be used again. There is no logo (F3.1 makes it optional; images are out of scope).
+- **Admins** create, rename and retire brands (F3.3). A retired brand cannot be renamed. Retiring twice is harmless.
+- **Anyone logged in** can list the non-retired brands with `GET /brands` (F3.5).
+- **On a supplier:** `brandId` is an optional field of `POST /suppliers`, `PATCH /suppliers/{id}`, `POST /supplier-requests/creations` and the `changes` of `POST /supplier-requests/updates`. An unknown id is a 400 naming `brandId`. A **retired brand cannot be newly chosen**, but a supplier that already holds one keeps it and may be edited with it (F3.3.1, F1.8). On an edit, leaving it out keeps the brand, a new id changes it, and `null` removes it; any change raises the supplier's version.
+- **In requests:** a user can propose a brand in a creation or edit request, but only from the existing brands: only admins create brands. The brand is checked again when an admin approves; if it was retired meanwhile, the approval is refused with 409 `REQUEST_NOT_APPLICABLE` and the request stays Pending.
+- **Reading and filtering:** the list and detail show `brand: {id, name}` or `null` (F5.1). `GET /suppliers?brandId=` filters by one or several brands (repeatable, any match, F5.4.6): an unknown brand is a 400 (F5.8), a retired brand returns an empty list even though suppliers keep it (F5.8.1). The name search `?name=` also matches the brand's name, so `?name=cheers` finds every Cheers outlet (F5.4.1).
+- **Not in Order Service's validation reply:** the snapshot sent to Order has no brand, so the shared contract is unchanged.
+
+### Opening hours (F2)
+
+✅ step 13. `openingHours` is an optional field of a supplier, in the same body as every other field of `POST /suppliers`, `PATCH /suppliers/{id}`, `POST /supplier-requests/creations` and the `changes` of `POST /supplier-requests/updates`. A user can propose hours in a request; an admin approving it makes them live with the rest.
+
+```json
+"openingHours": { "open24Hours": true }
+
+"openingHours": { "days": {
+  "mon": [{ "opens": "09:00", "closes": "12:00" }, { "opens": "13:00", "closes": "18:00" }],
+  "sat": [{ "opens": "09:00", "closes": "13:00" }],
+  "fri": [{ "opens": "22:00", "closes": "02:00" }]
+} }
+```
+
+- **Days and times (F2.1):** days are `mon` to `sun`, times are 24-hour `HH:MM` in Singapore time. A day left out, or with no intervals, is **closed** (F2.1.2). A day may have several intervals, for example a lunch break.
+- **Overnight (F2.3):** an interval closing earlier than it opens runs into the next day and belongs to the day it opens: the Friday interval above is open until 02:00 on Saturday.
+- **Open around the clock (F2.2):** `{ "open24Hours": true }`, never combined with `days`.
+- **No hours:** leave the field out (a creation), or send `null` on an edit to remove them (F1.2.8). An empty schedule such as `{ "days": {} }` is refused.
+- **Rejected (F2.4):** a time that isn't valid `HH:MM`, opening equal to closing, and overlapping intervals, including an overnight one running into the next day (across Sunday into Monday too). Intervals that only touch (12:00 closing, 12:00 opening) are fine. Every problem comes back in one 400 with its path, e.g. `openingHours.days.mon[1]` (F1.6.1). At most 10 intervals per day.
+- **Editing:** an edit that mentions `openingHours` replaces the whole schedule and raises the supplier's version like any change, so a stale edit is still caught (F14.3). An edit that doesn't mention it leaves the hours alone.
+- **Reading (F2.5):** `GET /suppliers/{id}` returns `openingHours`, `isOpenNow` and `nextChangeAt`; the list returns `isOpenNow`. Adjacent intervals count as one, so `nextChangeAt` skips a handover with no gap. Open around the clock gives `isOpenNow: true` and `nextChangeAt: null`. Without hours, all three are `null` (F2.5.1).
+- **Filter (F5.4.7):** `openNow=true` is done in SQL, so `total` and paging are right, and it combines with the other filters (F5.5).
+
+**What opening hours do and don't do (F2.7).** They are informational only. The system never changes a supplier's status because of them, and never blocks anything. In particular, Order Service's validation reply carries only whether the supplier exists, its status and its details (§11), so an errand can still be created against a supplier that is closed right now. A frontend can show "Closed, opens 09:00" from `isOpenNow` and `nextChangeAt`; making a supplier unavailable on purpose is what Inactive is for. Checking opening hours during validation is possible future work: it needs a contract change agreed with Order Service, and the answer would only be true at validation time.
+
+### Endpoints
+
+| Method | Path | Who | What | FR |
+|---|---|---|---|---|
+| GET | `/health` | anyone, no login | Is the service up? ✅ | |
+| GET | `/suppliers` | any logged-in user | List / search / filter / sort / paginate | F5 |
+| GET | `/suppliers/{id}` | any logged-in user | One supplier in full | F5.9, F15.1 |
+| POST | `/suppliers` | **admin** | Create (starts Active); optional `openingHours` and `brandId` | F7.5, F9.1, F2, F3 |
+| PATCH | `/suppliers/{id}` | **admin** | Edit some fields (`openingHours` replaces the schedule and `brandId` sets the brand, `null` removes either); needs `If-Match` | F8.6, F14.3, F2 |
+| PUT | `/suppliers/{id}/status` | **admin** | Set Active / Inactive; needs `If-Match` | F9.2, F9.5 |
+| GET | `/categories` | any logged-in user | In-use categories | F11.4 |
+| POST | `/categories` | **admin** | Create a category | F11.2 |
+| PATCH | `/categories/{id}` | **admin** | Rename: `{"name": "..."}`; 409 `DUPLICATE_NAME` if another in-use category has it, 409 if retired | F11.2, F11.2.1 |
+| POST | `/categories/{id}/retire` | **admin** | Retire: suppliers keep it, it is no longer listed or selectable; retiring twice is harmless | F11.3, F11.3.1 |
+| GET | `/audit-entries` | **admin** | The audit log, newest first: filters `targetType`, `targetId`, `actorId`, `action`; paged | F14.4 |
+| GET | `/brands` | any logged-in user | Non-retired brands, by name: `{id, name}` | F3.5 |
+| POST | `/brands` | **admin** | Create a brand: `{"name": "..."}` (1-100 chars); 409 `DUPLICATE_NAME` if a non-retired brand has it | F3.1-F3.3 |
+| PATCH | `/brands/{id}` | **admin** | Rename: `{"name": "..."}`; 409 `DUPLICATE_NAME` if another non-retired brand has it, 409 if retired | F3.2, F3.3 |
+| POST | `/brands/{id}/retire` | **admin** | Retire: suppliers keep it, it is no longer listed or selectable; retiring twice is harmless | F3.3, F3.3.1 |
+| GET | `/buildings` | any logged-in user | In-use buildings with names, coordinates, `venueCount` and `allowsPin` | F4.4 |
+| GET | `/buildings/{id}/venues` | any logged-in user | The building's active venues (`id`, `code`, `name`, `floor`, `coordinates`): basements first, then floors, then code. 404 for an unknown or retired building | |
+| POST | `/buildings` | **admin** | Create a building: `canonicalName`, `shortName`, optional `aliases`, `coordinates` (must lie inside the campus box); 409 `DUPLICATE_NAME` if any name belongs to another in-use building | F4.3, F4.2 |
+| PATCH | `/buildings/{id}` | **admin** | Rename, or replace the aliases (at least one of `canonicalName`, `shortName`, `aliases`); coordinates are not editable; 409 if retired | F4.3 |
+| POST | `/buildings/{id}/retire` | **admin** | Retire: suppliers keep it, it is no longer listed or selectable, its names become free | F4.3, F4.3.1 |
+| POST | `/supplier-requests/creations` | any logged-in user | Ask for a supplier to be added (same body as `POST /suppliers`); 201, Pending | F7.1, F7.2 |
+| POST | `/supplier-requests/updates` | any logged-in user | Ask for a supplier to be edited: `{"supplierId": "...", "changes": {...same fields as PATCH...}}` with `If-Match`; 201, Pending | F8.1-F8.3 |
+| POST | `/supplier-requests/status-changes` | any logged-in user | Ask for a supplier to be activated or deactivated: `{"supplierId": "...", "status": "Active\|Inactive", "reason": "..."}` (reason optional, 1-500 chars); no `If-Match`; 201, Pending. 404 unknown supplier, 409 `INVALID_STATUS_TRANSITION` if it already has that status, 409 `DUPLICATE_REQUEST` if one is already pending | F9.3, F9.3.1, F9.3.2 |
+| GET | `/supplier-requests?type=&offset=&limit=` | **admin** | Pending requests, oldest first, paged | F6.7 |
+| GET | `/supplier-requests/mine?type=&state=&offset=&limit=` | any logged-in user | Their own requests, every type and state, newest first, paged; includes denial reasons | F6.5 |
+| GET | `/supplier-requests/{id}` | the submitter or an **admin** | One request; anyone else gets 404, exactly as for an unknown id | F13.6 |
+| POST | `/supplier-requests/{id}/withdraw` | the submitter only | Withdraw a Pending request; anyone else gets 404 | F6.6, F13.6 |
+| POST | `/supplier-requests/{id}/approve` | **admin** | Approve: creates the supplier, applies the edit, or sets the status | F6.3, F6.8, F7.3, F8.4, F9.4 |
+| POST | `/supplier-requests/{id}/deny` | **admin** | Deny, with `{"reason": "..."}` (1-500 chars) | F6.4 |
+
+`retire` is a `POST` action rather than `DELETE`, so it can't be confused with deleting data.
+
+### Errors
+
+Every error, from any endpoint, has one shape (✅ built in `src/common/errors/`):
+
+```json
+{
+  "statusCode": 400,
+  "error": "Bad Request",
+  "message": "Request validation failed.",
+  "code": "VALIDATION_FAILED",
+  "violations": [
+    { "field": "floor", "reason": "floor must be B1-B9, 1-99 or M" },
+    { "field": "name", "reason": "name must be 1-100 characters" }
+  ]
+}
+```
+
+- `code` is for programs; `message` is for people.
+- `violations` lists **every** bad field at once (F1.6.1).
+- `retryable: true` marks a temporary failure. It comes with a `Retry-After` header.
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `VALIDATION_FAILED` ✅ | Bad or unknown fields or query parameters |
+| 401 | `UNAUTHENTICATED` ✅ | No login cookie, or the token is invalid or expired |
+| 403 | `FORBIDDEN` ✅ | Logged in, but not an admin, on an admin endpoint |
+| 404 | `NOT_FOUND` / `SUPPLIER_NOT_FOUND` / `REQUEST_NOT_FOUND` ✅ | Unknown id (F5.9.1), or someone else's request (F13.6) |
+| 409 | `DUPLICATE_SUPPLIER`, `DUPLICATE_NAME`, `VERSION_CONFLICT`, `INVALID_STATUS_TRANSITION`, `DUPLICATE_REQUEST`, `REQUEST_ALREADY_RESOLVED`, `REQUEST_NOT_APPLICABLE`, `IDEMPOTENCY_IN_PROGRESS` ✅ | Same name+building+floor exists; the name is taken; someone else edited first (includes `currentVersion`); already in that status; an identical request (or another edit of the same supplier) is already pending; the request was already approved or denied; an approval that can no longer be applied (its building or category was retired since); an identical request with the same `Idempotency-Key` is still running |
+| 413 | `PAYLOAD_TOO_LARGE` ✅ | Request body too big |
+| 422 | `IDEMPOTENCY_KEY_REUSED` ✅ | The `Idempotency-Key` was already used for a different request (F14.2.2) |
+| 428 | `PRECONDITION_REQUIRED` ✅ | An edit sent without `If-Match` |
+| 503 | `DEPENDENCY_UNAVAILABLE` ✅ (`retryable: true`) | The database can't be reached. Never reported as "not found" (F15.3). |
+| 500 | `INTERNAL_ERROR` ✅ | Unexpected. Details are logged, never sent to the client. |
+
+---
+
+## 5. D2 points 2 and 4: Identity and roles from User Service
+
+✅ step 2. Verification uses the team's shared `@foc/auth` package (`packages/auth`), built on the token contract in `@foc/contracts`, exactly as user-service does.
+
+**How it works:**
+
+1. The user logs in at user-service: `POST localhost:3000/auth/login`.
+2. user-service sets an httpOnly cookie `access_token`: a JWT signed with **RS256** using user-service's **private** key. It has issuer `user-service` and lasts 15 minutes.
+3. The browser (or Postman) sends that cookie to `localhost:3002` too, because cookies are matched by host, not port.
+4. Supplier Service **verifies the token itself** with user-service's **public** key, mounted as a Docker secret (`JWT_PUBLIC_KEY_FILE`). Compose reads it from user-service's own key file (`../user-service/secrets/jwt_public_key.secret`, overridable with `SUPPLIER_JWT_PUBLIC_KEY_PATH`), so both services always use the same key pair. No call to user-service is needed per request, and the private key never leaves user-service. `cookie-parser` (in `main.ts`, as in user-service) turns the Cookie header into `request.cookies` for the guard.
+5. It then checks the token's contents with `validateAccessTokenPayload` from `@foc/contracts`. The claims are `sub` (user id), `email`, `displayName`, `isAdmin`, `roles`, `iss`, `iat` and `exp`.
+6. **Admin = `isAdmin: true` in the token.** `roles` (requester/courier) are errand roles and don't change supplier permissions. The FRs only distinguish Basic vs Admin (F13.3, F13.4).
+7. Identity comes **only** from the verified token, never from the request body (F13.1).
+
+**Guards run before anything else** (before validation and before the handler). Each controller applies `@UseGuards(JwtAuthGuard)`, and admin-only routes add `AdminGuard`, as in user-service:
+
+- no cookie, a bad signature, the wrong issuer, expired, or bad contents → **401** (F13.2)
+- valid, but not an admin on an admin endpoint → **403**, and the handler never runs (F13.5)
+- `/health` is the only route without a guard. An e2e test lists every registered route and fails if any other one answers without a token, so a forgotten guard is caught
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User (Postman / browser)
+    participant US as User Service :3000
+    participant G as Supplier Service guards<br/>(@foc/auth)
+    participant SS as Supplier Service<br/>controller + service
+    participant DB as supplier-db (PostgreSQL)
+
+    U->>US: POST /auth/login {email, password}
+    US->>US: check password, sign JWT (RS256, private key)<br/>claims: sub, email, displayName, isAdmin, roles
+    US-->>U: 201 + Set-Cookie access_token (15 min)
+
+    Note over U,DB: Any logged-in user reads (F13.3)
+    U->>G: GET /suppliers?buildingId=… (cookie or Bearer)
+    G->>G: JwtAuthGuard: signature (public key), issuer, expiry, claim contract
+    G->>SS: request.user = {sub, isAdmin: false, …}
+    SS->>DB: SELECT … WHERE building_id IN (…) ORDER BY … LIMIT … OFFSET …
+    DB-->>SS: rows + total
+    SS-->>U: 200 {items, total, offset, limit, hasMore}
+
+    Note over U,DB: Admin changes data (F13.4)
+    U->>G: POST /suppliers {…} (admin token)
+    G->>G: JwtAuthGuard ✓, AdminGuard: isAdmin = true ✓
+    G->>SS: body passed to SuppliersService
+    SS->>DB: one transaction: check rules + references, INSERT (unique constraint)
+    DB-->>SS: committed
+    SS-->>U: 201 + Location + ETag "1"
+
+    Note over U,DB: Denied: basic user tries an admin action (F13.5)
+    U->>G: POST /suppliers {…} (basic user's token)
+    G->>G: JwtAuthGuard ✓, AdminGuard: isAdmin = false ✗
+    G-->>U: 403 {code: "FORBIDDEN"} (handler never runs, no DB call)
+
+    Note over U,DB: Denied: no login (F13.2)
+    U->>G: GET /suppliers (no token)
+    G-->>U: 401 {code: "UNAUTHENTICATED"}
+```
+
+```mermaid
+flowchart LR
+    client["Client<br/>(Postman / future UI)"]
+    subgraph US["user-service"]
+      login["POST /auth/login<br/>signs JWT (private key)"]
+    end
+    subgraph SS["supplier-service (NestJS)"]
+      guards["@foc/auth guards<br/>JwtAuthGuard (401) · AdminGuard (403)"]
+      pipe["ValidationPipe<br/>class-validator DTOs"]
+      subgraph C["Controllers"]
+        sc["SuppliersController<br/>GET · POST · PATCH · PUT status"]
+        cc["CategoriesController<br/>GET · POST"]
+        bc["BuildingsController<br/>GET"]
+        rc["SupplierRequestsController<br/>creations · updates · mine · get<br/>withdraw · queue · approve · deny"]
+      end
+      subgraph S["Services"]
+        reads["SupplierQueriesService<br/>filters · sort · pages · lookup"]
+        writes["SuppliersService<br/>rules · If-Match version · transactions"]
+        cats["CategoriesService"]
+        blds["BuildingsService<br/>name keys"]
+        reqs["SupplierRequestsService<br/>request states · row locks"]
+      end
+      seed["SupplierSeedService<br/>(startup, idempotent)"]
+      filter["AllExceptionsFilter<br/>one error shape · 503 retryable"]
+      orm["TypeORM<br/>entities + migrations"]
+    end
+    db[("supplier-db<br/>PostgreSQL")]
+    csv[/"data/csv<br/>seed CSV (read-only mount)"/]
+    key[/"user-service JWT<br/>public key (secret)"/]
+    mq{{"RabbitMQ (later, F15.7)"}}
+    order["order-service"]
+
+    client -- "1. log in" --> login
+    login -- "access_token" --> client
+    client -- "2. API call + token" --> guards --> pipe --> C
+    key -.-> guards
+    sc --> reads
+    sc --> writes
+    cc --> cats
+    bc --> blds
+    rc --> reqs
+    reqs -- "approve = same create / update code" --> writes
+    S --> orm --> db
+    csv --> seed --> S
+    order -. "validate supplier (later)" .-> mq -.-> SS
+```
+
+**Stale claims trade-off:** a token can be up to 15 minutes old. If an admin is demoted, their token still says `isAdmin: true` until it expires. For D2 we trust the token and state the 15-minute window. The team's ADRs ([user-service 005](../docs/adr/user-service/005-user-roles-and-token-claims.md), [shared auth 0001](../docs/adr/shared-packages/0001-shared-auth-guards-package.md)) note that sensitive endpoints may need to check current state in the database; that is a team decision.
+
+---
+
+## 6. D2 point 3: CRUD without a UI
+
+✅ step 6. Everything is done through the API; no UI is needed or running.
+
+| CRUD | Call | Notes |
+|---|---|---|
+| **Create** | `POST /suppliers` | Admin. Full validation and duplicate check; field and reference problems come back together in one 400. Starts Active, version 1. Replies 201 with `Location` and `ETag`. |
+| **Read** | `GET /suppliers`, `GET /suppliers/{id}` | Any logged-in user |
+| **Update** | `PATCH /suppliers/{id}` with header `If-Match: "3"` | Admin. Only the fields sent change (`photoUrl: null` removes the photo; `categoryIds` replaces the list). The version goes up by 1, even when only categories change. An edit that would duplicate another supplier is 409 `DUPLICATE_SUPPLIER`. A retired building or category the supplier already has may stay; only newly chosen ones must be in use (F1.8). |
+| **Delete (D2)** | `PUT /suppliers/{id}/status {"status":"Inactive"}` with `If-Match` | Admin. The supplier stays in the database, tagged Inactive, and can be re-activated. Errands already created are unaffected (F9.6). |
+
+**Why "delete" means Inactive for D2:** permanent deletion (F10) has to check with Order Service that no errand ever used the supplier, and needs the admin to re-enter their password through User Service. Neither exists yet, so hard delete is scheduled last (step 21). Deactivating is also the everyday way to remove a supplier, because it keeps errand history intact.
+
+**Lost-update protection (F14.3):**
+
+- Every edit must say which version it was based on, using `If-Match`.
+- If someone changed the supplier in the meantime, the edit is refused with **409 `VERSION_CONFLICT`** and `currentVersion`, instead of silently overwriting their change. The row is locked while it is checked and changed, so of two edits sent at once with the same version, exactly one wins.
+- Setting the status it already has is **409 `INVALID_STATUS_TRANSITION`** (F9.2).
+- Missing `If-Match` → **428**.
+
+**All-or-nothing writes (F14.1):** each write runs in one database transaction. A failure saves nothing.
+
+**How to run it:** the Postman collection in [`api/`](api/README.md), folder 3 "CRUD as admin". No UI is needed or running.
+
+### Moderated changes: basic users ask, admins decide (✅ steps 8-10, 12)
+
+A basic user can't create or edit a supplier directly, but can **ask** for one to be added or edited. An admin then approves or denies the request.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending: POST /supplier-requests/creations, /updates or /status-changes
+    Pending --> Approved: admin approves (supplier created, edited or its status set)
+    Pending --> Denied: admin denies, with a reason
+    Pending --> Withdrawn: submitter withdraws
+    Approved --> [*]
+    Denied --> [*]
+    Withdrawn --> [*]
+```
+
+- **Filing (F7.1, F7.2):** the body is validated exactly like an admin's `POST /suppliers`, with every problem in one 400. It is refused with 409 `DUPLICATE_SUPPLIER` if the supplier already exists, or 409 `DUPLICATE_REQUEST` if an identical request is already pending (enforced by the database, so it holds even for two requests filed at once). The submitter comes only from the token (F13.1). The supplier **doesn't exist yet**, so it isn't listed.
+- **Approving (F6.3, F6.8, F7.3):** runs the same create code as `POST /suppliers`, in the **same transaction** as marking the request Approved. Everything is checked again at that moment: if an admin created the same supplier meanwhile (409 `DUPLICATE_SUPPLIER`), or a building or category was retired (409 `REQUEST_NOT_APPLICABLE`, with the `violations`), nothing changes and the request stays Pending. The message says so and what to do: the admin denies it with a reason, or the submitter withdraws it and files it again.
+- **Edit requests (F8.1-F8.4.1):** `changes` holds the same fields as an admin `PATCH` and is checked by the same rules, including whether the edited record would duplicate another supplier. Like an admin edit, it must send the version the user saw in `If-Match` (428 if missing, 409 `VERSION_CONFLICT` if already out of date). Only the fields sent are stored. The live supplier keeps being listed unchanged until approval (F8.2), and a supplier has at most one pending edit (F8.3, a partial unique index). Approving runs the same code as `PATCH` with the request's recorded version, so if the supplier changed after the request was filed, approval is refused with 409 `VERSION_CONFLICT` and nothing changes (F8.4.1). Admins cannot amend a request (F8.5 is not planned for D4), so the admin denies a stale one and the user files it again.
+- **Status-change requests (F9.3-F9.4):** the body is `{supplierId, status, reason?}`. It is refused with 404 if the supplier doesn't exist, and with 409 `INVALID_STATUS_TRANSITION` if the supplier already has that status (F9.3.1). A supplier has at most one pending status change (F9.3.2, the same partial unique index as edits, so a pending edit and a pending status change can sit side by side). No `If-Match` is needed: the request records the supplier's version when filed (F6.2). **Approving applies the status whatever the supplier's current version** (F9.4 only asks that the status differs), so an unrelated edit made meanwhile does not block it; the version still goes up by one. If the supplier already has the status by then, approval is refused with 409 `INVALID_STATUS_TRANSITION` and the request stays Pending.
+- **Denying (F6.4):** needs a reason of 1-500 characters, stored with who denied it and when.
+- **Following your own requests (F6.5, F6.6, F13.6):** `GET /supplier-requests/mine` lists the caller's requests of every type and state, newest first, with denial reasons. A Pending one can be withdrawn by its submitter only, which frees its slot so the same request can be filed again. Someone else's request, whether viewed or withdrawn, gets the **same 404 as an id that doesn't exist**, so ids reveal nothing. Admins can view any request, but withdraw only their own; they reject other people's by denying them.
+- **Exactly once (F6.3):** the request row is locked while it is resolved, so of two people acting at once (two admins, or an admin approving while the submitter withdraws), one wins and the other gets 409 `REQUEST_ALREADY_RESOLVED`. The allowed moves are one small table (`src/requests/request-state.ts`); Approved, Denied and Withdrawn are final.
+
+**User ids are UUIDs** (`submitted_by`, `resolved_by`), taken only from the verified token's `sub` (F13.1). They were first stored as text, while user-service ids were numbers; once user-service switched to UUIDs (#611), migration `1790899200000-store-user-ids-as-uuid.ts` made the columns `uuid`. A row with an old numeric id makes that migration fail and change nothing, instead of silently losing who acted. The ids are not foreign keys, because users live in user-service's database.
+
+---
+
+## 7. D2 point 4: End-to-end demo script
+
+✅ step 7. The whole demo is a Postman collection: [`api/supplier-service.postman_collection.json`](api/README.md), run against `docker compose up` from the repo root. Every request checks its own result (green ticks). The same requests run as a basic user or an admin, with each user's token.
+
+| Folder | As | What it shows | D2 |
+|---|---|---|---|
+| **0 Setup** | both | Log in at user-service; each user's token is saved | 4 |
+| **1 Query patterns** | basic user | List with pagination → search by name → by building (location) → by category → combined + sorted → next page → one supplier with its `ETag` → 404 → 400 listing every bad parameter | 2 |
+| **2 Denied requests** | nobody / basic user | No login → **401**; basic user creating, editing or deactivating a supplier, or creating a category → **403**, nothing changed | 2, 4 |
+| **3 CRUD as admin** | admin | Create **201** (version 1) → same again **409** → every problem in one **400** → read back → edit without `If-Match` **428** → edit (version 2) → out-of-date edit **409** with `currentVersion` → deactivate, D2's "delete" (version 3) → again **409** → gone from the Active list → still readable, tagged Inactive | 3 |
+| **4 Supplier requests** | basic user, then admin | Basic user asks for a supplier **201** Pending → same again **409** → not listed yet → basic user lists or approves requests **403** → admin lists pending → approves **200** (supplier created) → again **409** → now listed → basic user asks to edit it **201** → without `If-Match` **428** → a second edit **409** → live record unchanged → admin approves → edit applied, version 2 → a second creation request: deny with a blank reason **400**, then with a reason **200** → basic user lists their own requests (with the denial reason) and views the denied one → unknown request **404** → a third request: admin withdraws it **404** (not theirs), basic user withdraws it **200**, again **409** | 3, 4 |
+
+---
+
+## 8. Build plan
+
+Branches are few and large: one per area, each merged into `supplier-service` by one PR.
+
+| Step | What | FRs | Branch | Status |
+|---|---|---|---|---|
+| 1 | Scaffold: app, config, DB wiring, migrations, Docker, error format | groundwork for F1.7, F14.1.1, F15.3 | `scaffold` | ✅ merged (#598) |
+| 2 | Auth: check the user-service login token; first endpoints `GET`/`POST /categories` | F13.1-F13.5, F11.2 (create), F11.4 | `auth` | ✅ built |
+| 3 | Data model, categories, buildings (no endpoints yet) | F1.1, F1.2.1-F1.2.7, F1.2.9, F1.3-F1.8, F4.1, F4.2, F4.5, F11.1, F11.3 | `database` | ✅ built (services only; endpoints in `auth`/`crud`) |
+| 4 | Seed import | F12.1, F12.2.1, F12.2.2, F12.2.4-F12.2.6, F12.3, F12.4 | `database` | ✅ built |
+| 5 | Read: list, filter, sort, get one; category/building lists | F5.1-F5.9.1 (not F5.4.6/F5.4.7), F15.1-F15.5, F4.4, F11.4 | `crud` | ✅ built |
+| 6 | Create, update, status (admin) | F7.5, F8.6, F9.1, F9.2, F9.5, F9.6, F14.1, F14.3 | `crud` | ✅ built (category/building admin after D2) |
+| 7 | D2 deliverables: Postman collection, diagrams, DB-choice ADR (demo accounts: see §9) | none | `crud` | ✅ built |
+| 8 | Request basics: the requests table, states, admin list, approve, deny | F6.1-F6.4, F6.7, F6.8 | `crud` | ✅ built |
+| 9 | "Add supplier" requests | F7.1-F7.3.1 | `crud` | ✅ built (F7.4 amend: after D2) |
+| 10 | "Edit supplier" requests | F8.1-F8.4.1 | `crud` | ✅ built (F8.5 amend: after D2) |
+| 12 | My requests, withdraw | F6.5, F6.6, F13.6 | `crud` | ✅ built |
+| 11 | "Change status" requests | F9.3, F9.3.1, F9.3.2, F9.4 | `moderation` | ✅ built |
+| 13 | Opening hours | F1.2.8, F2.1-F2.5, F2.7, F12.2.3, F5.4.7 (not F2.6, overrides) | `moderation` (same branch) | ✅ built |
+| 14 | Brands | F1.2.10, F3.1-F3.5, F5.4.6, F5.4.1 (brand name), F5.1 (brand) (no logo) | `moderation` (same branch) | ✅ built |
+| 16 | Safe retries: idempotency keys | F14.2, F14.2.1, F14.2.2 | `moderation` (same branch) | ✅ built |
+| 17 | Audit log | F14.4, F14.5 | `moderation` (same branch) | ✅ built |
+| 18 | Rate limits | F16 | none | ✗ not built (future work) |
+| 15b | Supplier validation for Order Service over RabbitMQ | F15.7-F15.7.8, F13.7 | `order-integration` (+ `contracts`, PR #642) | ✅ built and switched on ([§11](#11-supplier-validation-for-order-service-rabbitmq)); Order Service's side to come |
+
+---
+
+## 9. Dependencies and risks
+
+| Risk | Impact | Owner / action |
+|---|---|---|
+| ~~user-service tokens lack `isAdmin` and `roles`~~ | ✅ Resolved by #600: login tokens carry `{sub, email, displayName, isAdmin, roles}` and pass the shared contract | none |
+| ~~The bootstrap admin can't log in~~ (created Locked, random password) | ✅ Resolved by #609: a password reset sets a new password **and unlocks** the account, so the bootstrap admin can be activated (see [`api/README.md`](api/README.md#demo-accounts)) | none |
+| ~~User ids change from numbers to UUIDs (#611)~~ | ✅ Done: tokens carry a UUID `sub`; request user-id columns migrated to `uuid` (`1790899200000-store-user-ids-as-uuid.ts`) | none |
+| Hard delete needs Order's "is this supplier used?" check and User's password re-entry proof | No hard delete for D2 (deactivate instead) | Order + User, later sprints |
+| The team hasn't decided on stale-claims handling | Explained as a trade-off in [§5](#5-d2-points-2-and-4-identity-and-roles-from-user-service) | Team decision |
+
+---
+
+## 10. Running and testing
+
+**Run with the whole stack** (always from the **repo root**: Compose names the project after the folder it runs in, so the containers are `foc-supplier-service-1` and `foc-supplier-db-1`, image `foc-supplier-service`. Running `docker compose` inside `supplier-service/` would start a separate project named `supplier-service`, with its own empty database):
+
+```sh
+cp supplier-service/secrets/supplier_db_password.secret.example \
+   supplier-service/secrets/supplier_db_password.secret   # then set a password
+cp env/supplier-service.env.example env/supplier-service.env  # loaded by compose.yaml
+cp env/shared.env.example env/shared.env                      # if not done yet
+cp supplier-service/secrets/rabbitmq_password.secret.example \
+   supplier-service/secrets/rabbitmq_password.secret   # the team's supplier-service broker password
+docker compose up
+```
+
+Supplier Service also needs user-service's JWT key pair, set up as part of user-service (`user-service/secrets/jwt_public_key.secret`). Supplier Service only reads the public key, from that file; point `SUPPLIER_JWT_PUBLIC_KEY_PATH` elsewhere if needed.
+
+| What | Where |
+|---|---|
+| Supplier Service | Through the frontend at `http://localhost:3001/api/suppliers`; directly at `http://127.0.0.1:3002` only with `compose.debug.yaml` (`SUPPLIER_SERVICE_HOST_PORT`) |
+| supplier-db | Internal only; `127.0.0.1:5438` with `compose.debug.yaml` (`SUPPLIER_DB_HOST_PORT`) |
+| Test database | `localhost:5439` (`SUPPLIER_DB_TEST_HOST_PORT`), only with the `test` profile |
+| Test RabbitMQ | `localhost:5677`, web page `http://localhost:15677` (`supplier_service_test` / `supplier_service_test`), only with the `test` profile |
+
+Every setting has a default, so no env file is needed to run it. All settings are listed in `env/supplier-service.env.example`. The Docker-level ones use a `SUPPLIER_` prefix so they can't collide with other services' `DB_*` values, and `compose.yml` maps them onto the app's own names.
+
+**Campus bounding box** (F1.2.7): supplier coordinates must lie inside it. Defaults: latitude 1.28–1.31, longitude 103.74–103.79 (covers every seed supplier). Set with `SUPPLIER_CAMPUS_MIN_LATITUDE`, `…_MAX_LATITUDE`, `…_MIN_LONGITUDE`, `…_MAX_LONGITUDE` (the app reads them as `CAMPUS_*`).
+
+**Develop and test** (in `supplier-service/`):
+
+```sh
+npm install
+npm run start:dev          # watch mode
+npm run lint               # oxlint
+npm test                   # unit tests
+npm run test:e2e           # end-to-end tests (database faked)
+npm run db:test:up         # start the throwaway test database (port 5439; needs Docker)
+npm run test:integration   # tests against that real PostgreSQL: constraints, races, no schema drift
+npm run broker:test:up     # start the throwaway test RabbitMQ (port 5677; needs Docker)
+npm run test:messaging     # supplier validation through that broker and database (§11)
+npm run demo:validation    # the D3 demo transcript (§11)
+npm run broker:test:down
+npm run db:test:down
+npm run build
+```
+
+**Migrations** (tables are only ever changed through these):
+
+```sh
+npm run migration:generate -- src/database/migrations/<Name>
+npm run migration:run
+npm run migration:show
+npm run migration:revert
+```
+Pending migrations are applied automatically on startup (`DB_MIGRATIONS_RUN`, default `true`).
+
+---
+
+## 11. Supplier validation for Order Service (RabbitMQ)
+
+✅ built, tested and switched on (step 15b; F15.7–F15.7.8, F13.7). Supplier Service has its own broker login in the shared `rabbitmq/definitions.json`, limited to its own `foc.supplier.*` exchanges and `supplier-service.*` queues. Its request queue and Order Service's reply queue are predeclared there, and `src/messaging/rabbitmq-topology.contract.spec.ts` checks all of it. Its password is the `supplier_rabbitmq_password` secret (`secrets/rabbitmq_password.secret`); CI generates its own. Order Service still has to publish the request and consume the reply on its side.
+
+**What it does.** A new errand waits in Order Service's `Pending-Supplier` state until Supplier Service confirms its supplier. Order Service **asks by message** and Supplier Service **answers by message**, through RabbitMQ: there's no direct API call. The two messages were agreed with the order-service owner ([ADR 0002](../docs/adr/supplier-service/0002-supplier-validation-messages.md)), and their schemas are in the shared contracts (`packages/contracts/src/domain-events/events/supplier-validation-{requested,completed}/v1/`).
+
+| Message | Routing key | Sent by | Contents |
+|---|---|---|---|
+| The question | `order.supplier-validation-requested.v1` | order-service | `errandId`, `supplierId`, `deliveryBuildingId`, optional `deliveryVenueId` (only with a building) |
+| The answer | `supplier.validation-completed.v1` | supplier-service | `errandId`, `supplierId`, `outcome`: `FOUND` with the supplier's status, version, name, display name, building, floor, location description and coordinates, plus the delivery building (`id`, `shortName`, `canonicalName`); `NOT_FOUND` (no such supplier); `BUILDING_NOT_FOUND` (the supplier exists, the delivery building doesn't); or `VENUE_NOT_FOUND` (supplier and building exist, the venue is unknown, retired or in another building). `FOUND` also carries the delivery venue (`id`, `code`, `name`, `floor`, `coordinates`) when one was asked for |
+
+**Why messages, not an API call:**
+- Order Service already waits in `Pending-Supplier`.
+- No service-to-service login is needed (each service has its own broker login, F13.7).
+- Errands keep being created if Supplier Service is down: questions wait in its queue.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant OS as Order Service
+    participant MQ as RabbitMQ (foc.events)
+    participant C as Consumer + handler
+    participant DB as supplier-db
+    participant R as Outbox relay
+
+    OS->>MQ: order.supplier-validation-requested.v1
+    MQ->>C: deliver from supplier-service.order-supplier-validation-requested.v1
+    C->>C: check against the contract (and publisher = order-service)
+    alt malformed or wrong publisher
+        C->>MQ: dead-letter (…requested.v1.dlq), no retry
+    else valid
+        C->>DB: one transaction: lock event id, inbox already has it? → skip
+        C->>DB: look up supplier, then the delivery building, then the venue in it → build FOUND / NOT_FOUND / BUILDING_NOT_FOUND / VENUE_NOT_FOUND reply, check it against its contract
+        C->>DB: insert reply into outbox_events + request into inbox_events, commit
+        C->>MQ: acknowledge (only after the commit)
+        R->>DB: claim unpublished replies
+        R->>MQ: publish supplier.validation-completed.v1 (publisher confirms)
+        MQ->>OS: deliver to order-service.supplier-validation-completed.v1
+    end
+    Note over C,MQ: database unreachable → nothing committed, retried after 1, 2, 4, 8, 16 s, then dead-lettered; never NOT_FOUND
+```
+
+**The rules:**
+- **Facts only.** An Inactive supplier is `FOUND` with `status: "Inactive"`; Order Service decides what that means for the errand (F15.2).
+- **Exactly one answer per question.** `inbox_events` records each answered request, keyed by its event id, with the reply it produced, in the same transaction as the reply in `outbox_events` (F15.7.3). A redelivery is acknowledged without a second reply (F15.7.4); an event id reused for different content is dead-lettered.
+- **Temporary rollout bridge.** Until Order Service's change is in main, the contract makes `deliveryBuildingId` (and the `FOUND` reply's `deliveryBuilding`) optional. A question without a building id is answered the old way: `FOUND` with no building check. This is removed, with its tests, when the contract makes the field required again (marked `TODO(rollout)` in `src/validation/supplier-validation.service.ts`).
+- **Delivery building checked in the same round trip** (Order Service ADR 0011). The building is checked only for a supplier that exists: `NOT_FOUND` (no supplier) wins over `BUILDING_NOT_FOUND`. A retired building counts as unknown, so Order Service only needs to say "pick another building".
+- **Delivery venue checked in the same round trip.** Precedence: `NOT_FOUND`, then `BUILDING_NOT_FOUND`, then `VENUE_NOT_FOUND`. A venue id sent with the map-pin building is `VENUE_NOT_FOUND`. A question without a venue id behaves and hashes exactly as before, so in-flight messages never conflict after rollout; reusing an event id with a different venue is a conflict.
+- **`NOT_FOUND`, `BUILDING_NOT_FOUND` and `VENUE_NOT_FOUND` mean "does not exist"**, never "couldn't read the database" (F15.7.5).
+- **Bad questions aren't retried:** missing or unknown fields, or not from `order-service`, go straight to the dead-letter queue and are logged (F15.7.6, F13.7).
+- **Acknowledged only after the reply is committed** to the outbox (F15.7.8). The relay publishes it with broker confirmation (`@foc/outbox`).
+
+**Where it lives:**
+
+| Part | Files |
+|---|---|
+| Handler, service, consumer start-up, module | `src/validation/` |
+| RabbitMQ consumer (copied from credit-service, as order-service did) | `src/messaging/` |
+| Contract validator module | `src/contracts/contracts.module.ts` |
+| Wired into the app | `src/app.module.ts` (`ValidationModule`, `OutboxModule.forRootAsync`); e2e specs replace the broker parts via `test/without-broker.ts` |
+| Broker setup | `rabbitmq/definitions.json` (login, permissions, queues, bindings), `scripts/ci-stack-secrets.sh` (CI password), root `compose.yaml` (starts after RabbitMQ is healthy) |
+| Tables | `inbox_events`, `outbox_events`: migration `1790985600000-create-inbox-and-outbox-events.ts` |
+| Settings | `RABBITMQ_*` and `OUTBOX_*` in `src/config/environment.schema.ts` and `env/supplier-service.env.example`. This service's own exchanges are `foc.supplier.retry` / `.back` / `.dlx`, and its queue is `supplier-service.order-supplier-validation-requested.v1` |
+
+**Tests:**
+- unit: the handler's outcomes, the consumer start-up, and the shared broker setup (`rabbitmq-topology.contract.spec.ts`)
+- integration, against real PostgreSQL: FOUND (with the building) / Inactive / NOT_FOUND / BUILDING_NOT_FOUND (unknown and retired) / VENUE_NOT_FOUND (unknown, retired, other building, pin building), a redelivery, two copies at once, a reused event id, a data-store failure that writes nothing
+- `test:messaging`, against a real throwaway RabbitMQ: one question → exactly one reply, a redelivery → one reply, malformed → dead-letter
+
+**Demo (D3):** `npm run db:test:up && npm run broker:test:up && npm run demo:validation`. It runs the real consumer, handler, outbox and relay against the test broker and test database, plays Order Service's part, and prints:
+
+```
+1. An Active supplier
+  → Order Service asks (event a3d37432): is supplier 07ea8c47 OK, and delivery building 5c1e9b20?
+  ← Supplier Service answers: FOUND: Cool Spot @ COM2, Active, version 1, floor 1; deliver to COM2 (Computing 2)
+2. An Inactive supplier (Order Service decides what that means)
+  ← Supplier Service answers: FOUND: Old Kiosk @ COM2, Inactive, version 2, floor 2
+3. A supplier that does not exist
+  ← Supplier Service answers: NOT_FOUND
+4. A real supplier, but an unknown delivery building
+  ← Supplier Service answers: BUILDING_NOT_FOUND
+5. Neither exists (the missing supplier is reported first)
+  ← Supplier Service answers: NOT_FOUND
+5a. A delivery venue inside the building
+  ← Supplier Service answers: FOUND: …; deliver to COM2 (Computing 2), room LT19
+5b. A venue that does not exist (the supplier and building are fine)
+  ← Supplier Service answers: VENUE_NOT_FOUND
+6. The same question delivered twice
+  → … no second answer: it was already in the inbox
+7. A malformed question
+  ✗ moved to the dead-letter queue …requested.v1.dlq, no answer, no retry
+```
+
+Watch the queues on the test broker's web page while it runs: `http://localhost:15677`.

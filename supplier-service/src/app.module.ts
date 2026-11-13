@@ -1,0 +1,81 @@
+import { FocAuthModule } from '@foc/auth';
+import { OutboxModule } from '@foc/outbox';
+import { Module } from '@nestjs/common';
+import { LoggerModule } from 'nestjs-pino';
+import { pinoHttpOptions } from '@foc/observability';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_FILTER, APP_PIPE } from '@nestjs/core';
+import { readJwtPublicKey } from './auth/jwt-public-key.js';
+import { AuditModule } from './audit/audit.module.js';
+import { BrandsModule } from './brands/brands.module.js';
+import { BuildingsModule } from './buildings/buildings.module.js';
+import { CategoriesModule } from './categories/categories.module.js';
+import { AllExceptionsFilter } from './common/errors/all-exceptions.filter.js';
+import { createValidationPipe } from './common/validation/validation.pipe.js';
+import {
+  type EnvironmentVariables,
+  environmentSchema,
+} from './config/environment.schema.js';
+import { DatabaseModule } from './database/database.module.js';
+import { IdempotencyModule } from './idempotency/idempotency.module.js';
+import { HealthController } from './health/health.controller.js';
+import { MessagingModule } from './messaging/messaging.module.js';
+import { RABBITMQ_CONNECTION_URL } from './messaging/rabbitmq-connection-url.provider.js';
+import { RequestsModule } from './requests/requests.module.js';
+import { SeedModule } from './seed/seed.module.js';
+import { SuppliersModule } from './suppliers/suppliers.module.js';
+import { ValidationModule } from './validation/validation.module.js';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      cache: true,
+      validationSchema: environmentSchema,
+    }),
+    LoggerModule.forRoot({ pinoHttp: pinoHttpOptions('supplier-service') }),
+    // The team's shared access-token verification (@foc/auth, as in
+    // user-service): controllers apply JwtAuthGuard / AdminGuard. Only the
+    // public key is needed; the signing key never leaves user-service.
+    FocAuthModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<EnvironmentVariables, true>) => ({
+        publicKey: readJwtPublicKey(
+          config.get('JWT_PUBLIC_KEY_FILE', { infer: true }),
+        ),
+      }),
+    }),
+    DatabaseModule,
+    AuditModule,
+    IdempotencyModule,
+    BrandsModule,
+    BuildingsModule,
+    CategoriesModule,
+    SuppliersModule,
+    RequestsModule,
+    SeedModule,
+    // Answers Order Service's supplier-validation requests over RabbitMQ
+    // (F15.7); the outbox relay publishes the replies (F15.7.3).
+    ValidationModule,
+    OutboxModule.forRootAsync({
+      imports: [DatabaseModule, MessagingModule],
+      inject: [ConfigService, RABBITMQ_CONNECTION_URL],
+      useFactory: (
+        config: ConfigService<EnvironmentVariables, true>,
+        rabbitMqUrl: string,
+      ) => ({
+        exchange: config.getOrThrow('RABBITMQ_EXCHANGE'),
+        appId: 'supplier-service',
+        rabbitMqUrl,
+      }),
+    }),
+  ],
+  controllers: [HealthController],
+  providers: [
+    // Registered as providers rather than in main.ts so e2e tests that boot
+    // AppModule get exactly the same pipe and filter as production.
+    { provide: APP_PIPE, useFactory: createValidationPipe },
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+  ],
+})
+export class AppModule {}

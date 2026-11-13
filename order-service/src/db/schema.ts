@@ -1,0 +1,212 @@
+import { sql } from 'drizzle-orm';
+import {
+  check,
+  doublePrecision,
+  index,
+  uniqueIndex,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
+import { CANCELLATION_REASONS } from '../lifecycle/edges.js';
+import { ACTIVE_STATUSES, statusEnum } from '../lifecycle/status.js';
+
+export { statusEnum };
+
+export const COURIER_LOCK_INDEX = 'errands_one_active_per_courier';
+
+const ts = (name: string) => timestamp(name, { withTimezone: true });
+
+// Projection: one row per errand, updated in the same transaction as each event.
+export const errands = pgTable(
+  'errands',
+  {
+    id: uuid('id').primaryKey(),
+    requesterId: uuid('requester_id').notNull(),
+    status: statusEnum('status').notNull(),
+    lastSequenceNumber: integer('last_sequence_number').notNull().default(0),
+    idempotencyKey: text('idempotency_key'),
+
+    //columns here are to allow for sorting and filtering
+    courierId: uuid('courier_id'),
+    supplierId: uuid('supplier_id').notNull(),
+    supplierValidatedAt: ts('supplier_validated_at'),
+    description: text('description'), // optional delivery instructions
+    pickupLocation: text('pickup_location'),
+    pickupName: text('pickup_name'), // supplier display name, from the supplier snapshot
+    pickupDescription: text('pickup_description'), // floor and spot, from the supplier snapshot
+    deliveryBuildingId: uuid('delivery_building_id').notNull(),
+    deliveryDetail: text('delivery_detail').notNull(), // requester's room or level; never sent to supplier-service
+    deliveryLocation: text('delivery_location'), // building short name, from the delivery building snapshot
+    // Delivery point for the courier's navigation. A pin is stored at creation; at
+    // validation these are overwritten with the venue point, or the building point
+    // when neither venue nor pin was given. Null until then (and on older errands).
+    deliveryVenueId: uuid('delivery_venue_id'), // kept so a resent validation request asks the same question
+    deliveryLatitude: doublePrecision('delivery_latitude'),
+    deliveryLongitude: doublePrecision('delivery_longitude'),
+    deliveryVenue: text('delivery_venue'), // display label, snapshotted at Pending-Supplier -> Reserving-Credit
+    rewardCredits: integer('reward_credits').notNull(),
+    collectionItems: text('collection_items').notNull(), // read-only; never filtered or sorted
+    // F2: the supplier and building an edit asked for, held while Revalidating-Supplier.
+    pendingSupplierId: uuid('pending_supplier_id'),
+    pendingDeliveryBuildingId: uuid('pending_delivery_building_id'),
+
+    // ADR 0007: set on Reserving-Credit -> Open as that time + the requester's
+    // duration (F1.7.3, kept in the ErrandCreated payload); null until then.
+    expiresAt: ts('expires_at'),
+    pickedUpAt: ts('picked_up_at'), // starts the 24h Picked Up -> Cancelled timer
+    deliveredAt: ts('delivered_at'), // starts the 24h Delivered -> Completed timer (ADR 0007)
+
+    cancellationReason: text('cancellation_reason'),
+    // Dispute resolution: the admin's settlement, set on SettlementRequested and
+    // cleared on a credit rejection. Shown to the parties only once Resolved.
+    settlementAmount: integer('settlement_amount'), // courier's share, 0..rewardCredits
+    settlementNote: text('settlement_note'),
+    createdAt: ts('created_at').notNull().defaultNow(),
+    // the in-flight hold-window sweeps read this as "time entered the
+    // status" (only transition() writes the row, and in-flight refuses every
+    // other transition). Breaks if a non-transition write to errands is ever
+    // added; then add an explicit in-flight timestamp.
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    unique().on(t.requesterId, t.idempotencyKey),
+    index().on(t.status, t.expiresAt),
+    index().on(t.status, t.pickedUpAt),
+    index().on(t.status, t.deliveredAt),
+    index().on(t.courierId, t.status),
+    // One active errand per courier (F5.6); keep in step with the accept edge.
+    uniqueIndex(COURIER_LOCK_INDEX)
+      .on(t.courierId)
+      .where(
+        sql`${t.status} IN (${sql.join(
+          ACTIVE_STATUSES.map((s) => sql.raw(`'${s}'`)),
+          sql`, `,
+        )})`,
+      ),
+    check(
+      'errands_cancellation_reason_valid',
+      sql`${t.cancellationReason} IN (${sql.join(
+        CANCELLATION_REASONS.map((r) => sql.raw(`'${r}'`)),
+        sql`, `,
+      )})`,
+    ),
+    check(
+      'errands_settlement_amount_valid',
+      sql`${t.settlementAmount} IS NULL OR ${t.settlementAmount} BETWEEN 0 AND ${t.rewardCredits}`,
+    ),
+    index().on(t.requesterId, t.status),
+  ],
+);
+
+// Event store
+export const errandEvents = pgTable(
+  'errand_events',
+  {
+    errandId: uuid('errand_id')
+      .notNull()
+      .references(() => errands.id),
+    sequenceNumber: integer('sequence_number').notNull(), // issued by errands.last_sequence_number
+    type: text('type').notNull(),
+    fromStatus: statusEnum('from_status'), // null on ErrandCreated (ADR 0005)
+    toStatus: statusEnum('to_status').notNull(),
+    schemaVersion: integer('schema_version').notNull().default(1),
+    payload: jsonb('payload').notNull(), //relavent information regarding each state will be stored here
+    actorId: uuid('actor_id'), // null = system actor (sweeps, credit and supplier replies)
+    occurredAt: ts('occurred_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.errandId, t.sequenceNumber] })],
+);
+
+// Strict replay: the first outcome for a key, stored verbatim.
+// No FK: a NOT_FOUND outcome is stored too.
+export const idempotencyKeys = pgTable(
+  'idempotency_keys',
+  {
+    errandId: uuid('errand_id').notNull(),
+    key: text('key').notNull(),
+    fingerprint: text('fingerprint').notNull(), // expected|to|actor|type|hash(set, payload)
+    outcome: jsonb('outcome'), // set before the claiming transaction commits
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.errandId, t.key] }),
+    index().on(t.createdAt), // the retention sweep deletes oldest first
+  ],
+);
+
+// Owned by the sweep; kept off `errands` so only transition() writes the projection.
+export const supplierValidationRetries = pgTable(
+  'supplier_validation_retries',
+  {
+    errandId: uuid('errand_id').primaryKey(),
+    attempts: integer('attempts').notNull().default(0),
+    nextRetryAt: ts('next_retry_at').notNull(),
+    // Which request the attempts count for: 0 = the first validation, else the
+    // sequence number of the SupplierRevalidationRequested event (F2).
+    round: integer('round').notNull().default(0),
+  },
+  (t) => [index().on(t.nextRetryAt)],
+);
+
+// Transactional outbox (credit ADR 0004): notices are inserted in the same
+// transaction as the state change and published to the broker by the relay.
+export const outboxEvents = pgTable(
+  'outbox_events',
+  {
+    eventId: uuid('event_id').primaryKey(),
+    eventType: text('event_type').notNull(),
+    routingKey: text('routing_key').notNull(),
+    envelope: jsonb('envelope').$type<Record<string, unknown>>().notNull(),
+    createdAt: ts('created_at').notNull().defaultNow(),
+    nextAttemptAt: ts('next_attempt_at').notNull().defaultNow(),
+    publishedAt: ts('published_at'),
+    attemptCount: integer('attempt_count').notNull().default(0),
+    lastError: text('last_error'),
+    claimedBy: text('claimed_by'),
+    claimedUntil: ts('claimed_until'),
+  },
+  (t) => [
+    check('outbox_events_attempt_count_check', sql`${t.attemptCount} >= 0`),
+    //publisher only cares about the evemts that have not been published
+    index('outbox_events_unpublished_idx')
+      .on(t.nextAttemptAt, t.createdAt, t.eventId)
+      .where(sql`${t.publishedAt} IS NULL`),  
+  ],
+);
+
+// Short-lived block on a participant role (F10): a stale access token may still
+// carry the role, so create/accept refuse while `expires_at` is in the future.
+export const roleBlocks = pgTable(
+  'role_blocks',
+  {
+    userId: uuid('user_id').notNull(),
+    role: text('role').notNull(),
+    expiresAt: ts('expires_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.role] })],
+);
+
+// Dispute resolution: one optional, immutable account per party on an Incomplete
+// errand. Not a lifecycle transition, so it writes no event and is not rebuilt.
+export const disputeReports = pgTable(
+  'dispute_reports',
+  {
+    errandId: uuid('errand_id')
+      .notNull()
+      .references(() => errands.id),
+    authorId: uuid('author_id').notNull(),
+    role: text('role').notNull(), // 'requester' | 'courier'
+    body: text('body').notNull(),
+    createdAt: ts('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.errandId, t.authorId] }),
+    check('dispute_reports_role_valid', sql`${t.role} IN ('requester', 'courier')`),
+  ],
+);

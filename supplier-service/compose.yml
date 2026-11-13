@@ -1,0 +1,168 @@
+# Host-facing values are read from SUPPLIER_*-prefixed variables so that one
+# shared root .env cannot hand this service another service's DB_* settings.
+# Inside the container the app reads plain DB_* names, like every service.
+services:
+  supplier-service:
+    build:
+      # Repository root, as in user-service, so packages/ (the shared
+      # @foc/contracts and @foc/auth) can be built into the image.
+      context: ..
+      dockerfile: supplier-service/Dockerfile
+      target: development
+    image: ${FOC_IMAGE_PREFIX:-foc}/supplier-service:${SUPPLIER_IMAGE_TAG:-dev}
+    restart: on-failure:3
+    command: npm run start:dev
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3000
+      LOG_LEVEL: ${SUPPLIER_LOG_LEVEL:-log}
+      DB_HOST: supplier-db
+      DB_PORT: 5432
+      DB_USERNAME: ${SUPPLIER_DB_USERNAME:-supplier_service}
+      DB_DATABASE: ${SUPPLIER_DB_DATABASE:-supplier_service}
+      DB_PASSWORD_FILE: /run/secrets/supplier_db_password
+      DB_MIGRATIONS_RUN: ${SUPPLIER_DB_MIGRATIONS_RUN:-true}
+      CAMPUS_MIN_LATITUDE: ${SUPPLIER_CAMPUS_MIN_LATITUDE:-1.28}
+      CAMPUS_MAX_LATITUDE: ${SUPPLIER_CAMPUS_MAX_LATITUDE:-1.31}
+      CAMPUS_MIN_LONGITUDE: ${SUPPLIER_CAMPUS_MIN_LONGITUDE:-103.74}
+      CAMPUS_MAX_LONGITUDE: ${SUPPLIER_CAMPUS_MAX_LONGITUDE:-103.79}
+      SEED_ON_STARTUP: ${SUPPLIER_SEED_ON_STARTUP:-true}
+      SEED_CSV_PATH: /seed-data/supplier-seed-data.csv
+      VENUE_SEED_PATH: /venue-seed-data/venues-seed.json
+      JWT_PUBLIC_KEY_FILE: /run/secrets/supplier_jwt_public_key
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-http://loki:3100/otlp/v1/logs}
+      PLACEHOLDER_IMAGE_URL: ${SUPPLIER_PLACEHOLDER_IMAGE_URL:-}
+      # The broker connection is shared (env/shared.env); the login is this
+      # service's own broker user in rabbitmq/definitions.json (F13.7).
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/foc}
+      RABBITMQ_USER: ${SUPPLIER_RABBITMQ_USER:-supplier-service}
+      RABBITMQ_PASSWORD_FILE: /run/secrets/supplier_rabbitmq_password
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-foc.events}
+      RABBITMQ_RETRY_EXCHANGE: ${RABBITMQ_RETRY_EXCHANGE:-foc.supplier.retry}
+      RABBITMQ_RETRY_RETURN_EXCHANGE: ${RABBITMQ_RETRY_RETURN_EXCHANGE:-foc.supplier.back}
+      RABBITMQ_DEAD_LETTER_EXCHANGE: ${RABBITMQ_DEAD_LETTER_EXCHANGE:-foc.supplier.dlx}
+      RABBITMQ_PREFETCH: ${RABBITMQ_PREFETCH:-10}
+      RABBITMQ_RETRY_DELAYS_MS: ${RABBITMQ_RETRY_DELAYS_MS:-1000,2000,4000,8000,16000}
+      RABBITMQ_SUPPLIER_VALIDATION_QUEUE: ${RABBITMQ_SUPPLIER_VALIDATION_QUEUE:-supplier-service.order-supplier-validation-requested.v1}
+      RABBITMQ_SUPPLIER_VALIDATION_REQUESTED_ROUTING_KEY: ${RABBITMQ_SUPPLIER_VALIDATION_REQUESTED_ROUTING_KEY:-order.supplier-validation-requested.v1}
+      RABBITMQ_SUPPLIER_VALIDATION_COMPLETED_ROUTING_KEY: ${RABBITMQ_SUPPLIER_VALIDATION_COMPLETED_ROUTING_KEY:-supplier.validation-completed.v1}
+      OUTBOX_POLL_INTERVAL_MS: ${OUTBOX_POLL_INTERVAL_MS:-1000}
+      OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-100}
+      OUTBOX_CONFIRM_TIMEOUT_MS: ${OUTBOX_CONFIRM_TIMEOUT_MS:-20000}
+      OUTBOX_CLAIM_LEASE_MS: ${OUTBOX_CLAIM_LEASE_MS:-30000}
+      OUTBOX_RETRY_BASE_DELAY_MS: ${OUTBOX_RETRY_BASE_DELAY_MS:-1000}
+      OUTBOX_RETRY_MAX_DELAY_MS: ${OUTBOX_RETRY_MAX_DELAY_MS:-60000}
+      OUTBOX_UNPUBLISHED_WARNING_MS: ${OUTBOX_UNPUBLISHED_WARNING_MS:-60000}
+    volumes:
+      # The template's seed file, read in place (never copied into the image).
+      - ../data/csv:/seed-data:ro
+      # Buildings and delivery venues, read in place the same way.
+      - ../data/json:/venue-seed-data:ro
+    secrets:
+      - supplier_db_password
+      - supplier_jwt_public_key
+      - supplier_rabbitmq_password
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget --no-verbose --tries=1 --spider "http://127.0.0.1:3000/health"',
+        ]
+      interval: 10s
+      timeout: 3s
+      start_period: 180s
+      retries: 5
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /usr/src/app
+          ignore:
+            - node_modules/
+            - dist/
+            - coverage/
+            - test/
+            - secrets/
+        - action: rebuild
+          path: package.json
+        - action: rebuild
+          path: package-lock.json
+
+  supplier-db:
+    image: postgres:18-alpine
+    restart: on-failure:3
+    environment:
+      POSTGRES_USER: ${SUPPLIER_DB_USERNAME:-supplier_service}
+      POSTGRES_DB: ${SUPPLIER_DB_DATABASE:-supplier_service}
+      POSTGRES_PASSWORD_FILE: /run/secrets/supplier_db_password
+    volumes:
+      - supplier-db-data:/var/lib/postgresql
+    secrets:
+      - supplier_db_password
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Throwaway database for DB-backed tests: npm run db:test:up / db:test:down.
+  supplier-db-test:
+    image: postgres:18-alpine
+    profiles: ['test']
+    ports:
+      - '${SUPPLIER_DB_TEST_HOST_PORT:-5439}:5432'
+    environment:
+      POSTGRES_USER: ${SUPPLIER_DB_USERNAME:-supplier_service}
+      POSTGRES_DB: supplier_service_test
+      POSTGRES_PASSWORD_FILE: /run/secrets/supplier_db_password
+    tmpfs:
+      - /var/lib/postgresql
+    secrets:
+      - supplier_db_password
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  # Throwaway RabbitMQ for the messaging tests (as credit-service's
+  # credit-rabbitmq): npm run broker:test:up / broker:test:down. Its login is
+  # test-only and the broker keeps nothing (tmpfs).
+  supplier-rabbitmq-test:
+    image: rabbitmq:4-management-alpine
+    profiles: ['test']
+    ports:
+      - '${SUPPLIER_RABBITMQ_TEST_HOST_PORT:-5677}:5672'
+      - '${SUPPLIER_RABBITMQ_TEST_MANAGEMENT_HOST_PORT:-15677}:15672'
+    environment:
+      RABBITMQ_DEFAULT_USER: supplier_service_test
+      RABBITMQ_DEFAULT_PASS: supplier_service_test
+    tmpfs:
+      - /var/lib/rabbitmq
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  supplier-db-data:
+
+secrets:
+  supplier_db_password:
+    file: ./secrets/supplier_db_password.secret
+  # user-service's JWT public key: read from user-service's own file so both
+  # services always use the same key pair. Override the path if it moves.
+  supplier_jwt_public_key:
+    file: ${SUPPLIER_JWT_PUBLIC_KEY_PATH:-../user-service/secrets/jwt_public_key.secret}
+  # This service's broker password; its hash is in rabbitmq/definitions.json.
+  supplier_rabbitmq_password:
+    file: ./secrets/rabbitmq_password.secret

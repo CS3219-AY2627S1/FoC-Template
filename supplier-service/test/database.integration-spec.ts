@@ -1,0 +1,480 @@
+import 'reflect-metadata';
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
+import { DataSource } from 'typeorm';
+import { BuildingsService } from '../src/buildings/buildings.service.js';
+import { CategoriesService } from '../src/categories/categories.service.js';
+import type { EnvironmentVariables } from '../src/config/environment.schema.js';
+import { createDatabaseOptions } from '../src/database/database-options.js';
+import {
+  Building,
+  BuildingNameKey,
+  Category,
+  Supplier,
+  SupplierKind,
+} from '../src/database/entities/index.js';
+import { SuppliersService } from '../src/suppliers/suppliers.service.js';
+
+const CAMPUS: Record<string, number> = {
+  CAMPUS_MIN_LATITUDE: 1.28,
+  CAMPUS_MAX_LATITUDE: 1.31,
+  CAMPUS_MIN_LONGITUDE: 103.74,
+  CAMPUS_MAX_LONGITUDE: 103.79,
+};
+
+describe('supplier schema (real PostgreSQL)', () => {
+  let dataSource: DataSource;
+  let buildings: BuildingsService;
+  let categories: CategoriesService;
+  let suppliers: SuppliersService;
+
+  beforeAll(async () => {
+    dataSource = new DataSource(
+      createDatabaseOptions({
+        DB_HOST: process.env.DB_HOST!,
+        DB_PORT: Number(process.env.DB_PORT),
+        DB_USERNAME: process.env.DB_USERNAME!,
+        DB_DATABASE: process.env.DB_DATABASE!,
+        DB_PASSWORD_FILE: process.env.DB_PASSWORD_FILE!,
+        DB_MIGRATIONS_RUN: false,
+      }),
+    );
+    await dataSource.initialize();
+    await dataSource.dropDatabase();
+    await dataSource.runMigrations({ transaction: 'all' });
+
+    buildings = new BuildingsService(
+      dataSource,
+      dataSource.getRepository(Building),
+      dataSource.getRepository(BuildingNameKey),
+    );
+    categories = new CategoriesService(dataSource.getRepository(Category));
+    suppliers = new SuppliersService(dataSource, {
+      get: (key: string) => CAMPUS[key],
+    } as unknown as ConfigService<EnvironmentVariables, true>);
+  });
+
+  afterAll(async () => {
+    await dataSource?.destroy();
+  });
+
+  beforeEach(async () => {
+    await dataSource.query(`
+      TRUNCATE inbox_events, outbox_events, supplier_requests, supplier_categories, supplier_opening_intervals, suppliers, categories,
+               venues, building_name_keys, buildings
+    `);
+  });
+
+  async function com3() {
+    return buildings.create({
+      canonicalName: 'Computing 3',
+      shortName: 'COM3',
+      aliases: ['Com 3', 'Terrace'],
+      latitude: 1.2949,
+      longitude: 103.7743,
+    });
+  }
+
+  async function supplierInput() {
+    const building = await com3();
+    const food = await categories.create('Food');
+    return {
+      name: 'Cool Spot',
+      kind: SupplierKind.Store,
+      categoryIds: [food.id],
+      buildingId: building.id,
+      floor: '1',
+      locationDescription: 'Next to the lift',
+      coordinates: { latitude: 1.2951, longitude: 103.7737 },
+    };
+  }
+
+  describe('migration', () => {
+    it('matches the entities exactly (no schema drift)', async () => {
+      const pending = await dataSource.driver.createSchemaBuilder().log();
+      expect(pending.upQueries.map((query) => query.query)).toEqual([]);
+    });
+
+    it('creates the named constraints the service relies on', async () => {
+      const constraints = await dataSource.query<{ conname: string }[]>(`
+        SELECT conname FROM pg_constraint
+        WHERE connamespace = 'public'::regnamespace
+      `);
+      expect(constraints.map(({ conname }) => conname)).toEqual(
+        expect.arrayContaining([
+          'PK_building_name_keys',
+          'UQ_suppliers_name_key_building_floor',
+          'CHK_suppliers_floor',
+          'FK_suppliers_building',
+          'UQ_venues_building_code',
+          'CHK_venues_floor',
+          'FK_venues_building',
+          'FK_supplier_categories_category',
+          'PK_inbox_events',
+          'FK_inbox_events_reply',
+          'PK_outbox_events',
+          'CHK_outbox_events_attempt_count',
+        ]),
+      );
+    });
+
+    it('moves E3 and E4 to the corrected coordinates, only while still at the old ones', async () => {
+      const at = async (shortName: string, lat: number, lng: number) =>
+        (
+          await buildings.create({
+            canonicalName: `Block ${shortName}`,
+            shortName,
+            aliases: [],
+            latitude: lat,
+            longitude: lng,
+          })
+        ).id;
+      const e3 = await at('E3', 1.299434, 103.75263);
+      const e4 = await at('E4', 1.3, 103.77); // set by an admin since
+      const coords = async (id: string) =>
+        (
+          await dataSource.query<{ latitude: number; longitude: number }[]>(
+            'SELECT latitude, longitude FROM buildings WHERE id = $1',
+            [id],
+          )
+        )[0];
+
+      // The coordinate migration is second to last (the AS8 rename follows).
+      await dataSource.undoLastMigration({ transaction: 'all' });
+      await dataSource.undoLastMigration({ transaction: 'all' });
+      await dataSource.runMigrations({ transaction: 'all' });
+      expect(await coords(e3)).toEqual({
+        latitude: 1.299484,
+        longitude: 103.771747,
+      });
+      expect(await coords(e4)).toEqual({ latitude: 1.3, longitude: 103.77 });
+
+      await dataSource.undoLastMigration({ transaction: 'all' });
+      await dataSource.undoLastMigration({ transaction: 'all' });
+      expect(await coords(e3)).toEqual({
+        latitude: 1.299434,
+        longitude: 103.75263,
+      });
+      expect(await coords(e4)).toEqual({ latitude: 1.3, longitude: 103.77 });
+      await dataSource.runMigrations({ transaction: 'all' });
+    });
+
+    it('renames AS8, keeps "Blk AS8" as an alias, and reverts; another building is untouched', async () => {
+      const at = async (canonicalName: string, shortName: string) =>
+        (
+          await buildings.create({
+            canonicalName,
+            shortName,
+            aliases: [],
+            latitude: 1.296252,
+            longitude: 103.772093,
+          })
+        ).id;
+      const as8 = await at('Blk AS8', 'AS8');
+      const other = await at('Blk AS7', 'AS7');
+      const state = async () =>
+        (
+          await dataSource.query<
+            {
+              canonical_name: string;
+              aliases: string[];
+              keys: string[] | null;
+            }[]
+          >(
+            `SELECT b.canonical_name, b.aliases,
+                    (SELECT array_agg(key ORDER BY key) FROM building_name_keys
+                      WHERE building_id = b.id) AS keys
+               FROM buildings b WHERE b.id = $1`,
+            [as8],
+          )
+        )[0];
+
+      await dataSource.undoLastMigration({ transaction: 'all' });
+      await dataSource.runMigrations({ transaction: 'all' });
+      expect(await state()).toEqual({
+        canonical_name: 'Arts and Social Sciences 8',
+        aliases: ['Blk AS8'],
+        keys: ['artsandsocialsciences8', 'as8', 'blkas8'],
+      });
+      expect((await buildings.resolve('Blk AS8'))?.id).toBe(as8);
+      expect((await buildings.findById(other))?.canonicalName).toBe('Blk AS7');
+
+      await dataSource.undoLastMigration({ transaction: 'all' });
+      expect(await state()).toEqual({
+        canonical_name: 'Blk AS8',
+        aliases: [],
+        keys: ['as8', 'blkas8'],
+      });
+      await dataSource.runMigrations({ transaction: 'all' });
+    });
+
+    it('reverts cleanly and runs again', async () => {
+      // Venues is the third-to-last migration; the last two only alter rows.
+      await dataSource.undoLastMigration({ transaction: 'all' });
+      await dataSource.undoLastMigration({ transaction: 'all' });
+      await dataSource.undoLastMigration({ transaction: 'all' });
+      await expect(
+        dataSource.query(`SELECT to_regclass('venues') AS t`),
+      ).resolves.toEqual([{ t: null }]);
+
+      await dataSource.runMigrations({ transaction: 'all' });
+      await expect(
+        dataSource.query(`SELECT to_regclass('venues') AS t`),
+      ).resolves.toEqual([{ t: 'venues' }]);
+    });
+  });
+
+  describe('database rules (checked below the service)', () => {
+    it('records an answered request only together with its reply (F15.7.3)', async () => {
+      const reply = '9b2e4f6a-1c3d-4e5f-8a7b-2c4d6e8f0a1b';
+      const answer = (eventId: string, replyId: string) =>
+        dataSource.query(
+          `INSERT INTO inbox_events
+             (event_id, event_type, payload_hash, processed_at, reply_event_id)
+           VALUES ($1, 'SupplierValidationRequested', repeat('a', 64), now(), $2)`,
+          [eventId, replyId],
+        );
+
+      // No reply in the outbox yet: refused.
+      await expect(
+        answer('6f1c2a4e-8b3d-4c5e-9f7a-1b2c3d4e5f60', reply),
+      ).rejects.toMatchObject({
+        driverError: { code: '23503', constraint: 'FK_inbox_events_reply' },
+      });
+
+      await dataSource.query(
+        `INSERT INTO outbox_events (event_id, event_type, routing_key, envelope)
+         VALUES ($1, 'SupplierValidationCompleted', 'supplier.validation-completed.v1', '{}')`,
+        [reply],
+      );
+      await answer('6f1c2a4e-8b3d-4c5e-9f7a-1b2c3d4e5f60', reply);
+
+      // The same request id again: refused, so it is never answered twice.
+      await expect(
+        answer('6f1c2a4e-8b3d-4c5e-9f7a-1b2c3d4e5f60', reply),
+      ).rejects.toMatchObject({
+        driverError: { code: '23505', constraint: 'PK_inbox_events' },
+      });
+    });
+
+    it('rejects a malformed floor and out-of-range coordinates', async () => {
+      const building = await com3();
+      const insert = (floor: string, latitude: number) =>
+        dataSource.query(
+          `INSERT INTO suppliers (id, name, name_key, kind, building_id, floor,
+             location_description, latitude, longitude)
+           VALUES (gen_random_uuid(), 'X', 'x', 'Store', $1, $2, 'here', $3, 103.77)`,
+          [building.id, floor, latitude],
+        );
+
+      await expect(insert('01', 1.29)).rejects.toMatchObject({
+        driverError: { code: '23514', constraint: 'CHK_suppliers_floor' },
+      });
+      await expect(insert('1', 91)).rejects.toMatchObject({
+        driverError: { code: '23514', constraint: 'CHK_suppliers_latitude' },
+      });
+    });
+
+    it('rejects a malformed venue floor, out-of-range coordinates and a repeated code', async () => {
+      const building = await com3();
+      const insert = (code: string, floor: string, latitude: number) =>
+        dataSource.query(
+          `INSERT INTO venues (id, building_id, code, floor, latitude, longitude)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, 103.77)`,
+          [building.id, code, floor, latitude],
+        );
+
+      await expect(insert('A', '03', 1.29)).rejects.toMatchObject({
+        driverError: { code: '23514', constraint: 'CHK_venues_floor' },
+      });
+      await expect(insert('A', 'B1', 91)).rejects.toMatchObject({
+        driverError: { code: '23514', constraint: 'CHK_venues_latitude' },
+      });
+      await insert('A', 'B1', 1.29);
+      await expect(insert('A', '2', 1.29)).rejects.toMatchObject({
+        driverError: { code: '23505', constraint: 'UQ_venues_building_code' },
+      });
+    });
+
+    it('refuses to delete a building that still has venues', async () => {
+      const building = await com3();
+      await dataSource.query(
+        `INSERT INTO venues (id, building_id, code, floor, latitude, longitude)
+         VALUES (gen_random_uuid(), $1, 'A', '1', 1.29, 103.77)`,
+        [building.id],
+      );
+
+      await expect(
+        dataSource.query(`DELETE FROM buildings WHERE id = $1`, [building.id]),
+      ).rejects.toMatchObject({
+        driverError: { code: '23001', constraint: 'FK_venues_building' },
+      });
+    });
+  });
+
+  describe('suppliers', () => {
+    it('creates an Active supplier at version 1 with its categories', async () => {
+      const saved = await suppliers.create(await supplierInput());
+
+      const stored = await dataSource.getRepository(Supplier).findOneOrFail({
+        where: { id: saved.id },
+        relations: { categoryLinks: true },
+      });
+      expect(stored).toMatchObject({
+        name: 'Cool Spot',
+        nameKey: 'cool spot',
+        status: 'Active',
+        version: 1,
+      });
+      expect(stored.categoryLinks).toHaveLength(1);
+    });
+
+    it('lets exactly one of two concurrent identical submissions win (F1.5.2)', async () => {
+      const input = await supplierInput();
+
+      const results = await Promise.allSettled([
+        suppliers.create(input),
+        suppliers.create({ ...input, name: '  COOL   spot ' }),
+      ]);
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const [rejected] = results.filter((r) => r.status === 'rejected');
+      expect((rejected as PromiseRejectedResult).reason).toBeInstanceOf(
+        ConflictException,
+      );
+      expect(await dataSource.getRepository(Supplier).count()).toBe(1);
+    });
+
+    it('allows the same name on another floor', async () => {
+      const input = await supplierInput();
+      await suppliers.create(input);
+
+      await expect(
+        suppliers.create({ ...input, floor: '2' }),
+      ).resolves.toMatchObject({ floor: '2' });
+    });
+
+    it('persists nothing when a category does not exist', async () => {
+      const input = await supplierInput();
+
+      await expect(
+        suppliers.create({
+          ...input,
+          categoryIds: ['00000000-0000-4000-8000-000000000000'],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(await dataSource.getRepository(Supplier).count()).toBe(0);
+    });
+
+    it('accepts ids written in upper case (review #605)', async () => {
+      const input = await supplierInput();
+
+      const saved = await suppliers.create({
+        ...input,
+        buildingId: input.buildingId.toUpperCase(),
+        categoryIds: input.categoryIds.map((id) => id.toUpperCase()),
+      });
+
+      expect(saved.buildingId).toBe(input.buildingId);
+    });
+
+    it('makes a create wait for a building being retired, then refuses it (review #605)', async () => {
+      const input = await supplierInput();
+      const retiring = dataSource.createQueryRunner();
+      await retiring.connect();
+      await retiring.startTransaction();
+      try {
+        // Another admin is mid-way through retiring the building.
+        await retiring.query(
+          `SELECT id FROM buildings WHERE id = $1 FOR UPDATE`,
+          [input.buildingId],
+        );
+        await retiring.query(
+          `UPDATE buildings SET retired_at = now() WHERE id = $1`,
+          [input.buildingId],
+        );
+
+        const create = suppliers.create(input);
+        const settled = vi.fn();
+        void create.then(settled, settled);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        // The create's shared lock waits for the retire to finish.
+        expect(settled).not.toHaveBeenCalled();
+
+        await retiring.commitTransaction();
+        await expect(create).rejects.toBeInstanceOf(BadRequestException);
+        expect(await dataSource.getRepository(Supplier).count()).toBe(0);
+      } finally {
+        if (retiring.isTransactionActive) {
+          await retiring.rollbackTransaction();
+        }
+        await retiring.release();
+      }
+    });
+
+    it('keeps a retired building on existing suppliers but refuses it for new ones (F1.8)', async () => {
+      const input = await supplierInput();
+      const existing = await suppliers.create(input);
+      await buildings.retire(input.buildingId);
+
+      await expect(
+        dataSource.getRepository(Supplier).findOneBy({ id: existing.id }),
+      ).resolves.toMatchObject({ buildingId: input.buildingId });
+      await expect(
+        suppliers.create({ ...input, floor: '3' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('buildings', () => {
+    it('resolves any spelling, ignoring case and spaces (F4.5)', async () => {
+      const building = await com3();
+
+      await expect(buildings.resolve('terrace')).resolves.toMatchObject({
+        id: building.id,
+      });
+      await expect(buildings.resolve('COM 3')).resolves.toMatchObject({
+        id: building.id,
+      });
+      await expect(buildings.resolve('COM4')).resolves.toBeNull();
+    });
+
+    it('refuses a name already used by another in-use building (F4.2)', async () => {
+      await com3();
+
+      await expect(
+        buildings.create({
+          canonicalName: 'The Terrace',
+          shortName: 'TRC',
+          aliases: ['TERRACE'],
+          latitude: 1.295,
+          longitude: 103.774,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('frees a retired building’s names for reuse', async () => {
+      const old = await com3();
+      await buildings.retire(old.id);
+
+      await expect(com3()).resolves.toMatchObject({ shortName: 'COM3' });
+      await expect(buildings.listActive()).resolves.toHaveLength(1);
+    });
+  });
+
+  describe('categories', () => {
+    it('keeps names unique among in-use categories only (F11.2.1)', async () => {
+      const food = await categories.create('Food');
+
+      await expect(categories.create(' FOOD ')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+
+      await categories.retire(food.id);
+      await expect(categories.create('food')).resolves.toMatchObject({
+        name: 'food',
+      });
+      await expect(categories.listActive()).resolves.toHaveLength(1);
+    });
+  });
+});

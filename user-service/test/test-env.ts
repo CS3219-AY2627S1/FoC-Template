@@ -1,0 +1,33 @@
+// Seeds minimal, valid placeholder values for every env var required by
+// src/config/environment.schema.ts. ConfigModule.forRoot validates the
+// environment while AppModule compiles — before any provider overrides apply —
+// so e2e specs that boot the full AppModule must have these set regardless of
+// what infra they later override. Process env takes precedence over the local
+// .env file in @nestjs/config, so this is hermetic even on machines whose
+// .env is absent.
+export function seedTestEnvironment(): void {
+  process.env.LOG_LEVEL = 'error';
+  process.env.DB_HOST = 'localhost';
+  process.env.DB_PORT = '5432';
+  process.env.DB_USERNAME = 'test';
+  process.env.DB_DATABASE = 'test';
+  process.env.DB_SYNCHRONIZE = 'false';
+  process.env.DB_PASSWORD_FILE = '/run/secrets/db_password';
+  process.env.ADMIN_BOOTSTRAP_EMAIL = 'admin@example.com';
+  process.env.ADMIN_BOOTSTRAP_DISPLAY_NAME = 'Test Admin';
+  process.env.REDIS_HOST = 'localhost';
+  process.env.REDIS_PORT = '6379';
+  process.env.REDIS_USERNAME = 'default';
+  process.env.REDIS_DB_INDEX = '0';
+  process.env.SERVER_SECRET_FILE = '/run/secrets/server_secret';
+  process.env.RABBITMQ_USER = 'user-service';
+  process.env.RABBITMQ_HOST = 'localhost';
+  process.env.RABBITMQ_PORT = '5672';
+  process.env.RABBITMQ_VHOST = '/foc';
+  process.env.RABBITMQ_PASSWORD_FILE = '/run/secrets/rabbitmq_password';
+  process.env.JWT_PRIVATE_KEY_FILE = '/run/secrets/jwt_private_key';
+  process.env.JWT_PUBLIC_KEY_FILE = '/run/secrets/jwt_public_key';
+  process.env.FRONTEND_BASE_URL = 'http://localhost:5173';
+  process.env.FRONTEND_PASSWORD_RESET_PATH = '/reset-password';
+  process.env.ORDER_SERVICE_BASE_URL = 'http://localhost:3004';
+}

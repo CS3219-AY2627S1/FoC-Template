@@ -1,0 +1,35 @@
+# order-service
+
+Module M.3: errand lifecycle, state model, expiry. Emits credit lifecycle
+notices plus `ErrandAccepted`, `ErrandDelivered`, and external
+`CourierCancelled` notices for Communication Service, and `RequesterErrandCancelled` / `RequesterEditFailed` notices for Notification Service.
+
+Read `CONTEXT.md` (terms), `ARCHITECTURE.md` (state model, write path) first. ADRs are in `../docs/adr/order-service/`.
+
+## Stack
+
+NestJS 12 (ESM, `.js` import suffixes), PostgreSQL 18, Drizzle ORM (`drizzle-kit` migrations in `drizzle/`), Joi env validation, Vitest, oxlint. Hand-rolled event sourcing (ADR 0001); RabbitMQ for cross-service notices (ADR 0002) through a transactional outbox (ADR 0008).
+
+## Commands
+
+Run from `order-service/`:
+
+- `npm run start:dev`: watch mode (in Docker, via `docker compose up --watch` from the repo root).
+- `npm run build` / `npm run lint`
+- `npm test`: unit specs (`src/**/*.spec.ts`). `npm run test:e2e`: `**/*.e2e-spec.ts`, against `order-db-test` (`npm run db:test:up` first, 127.0.0.1:5440; `db:test:down` removes it).
+- `npm run test:messaging`: real-broker publisher test; needs `RABBITMQ_URL` (an `order-service` login on a running broker).
+- `npm run db:generate`: generate a migration after editing `src/db/schema.ts`. `npm run db:migrate`: apply it.
+
+## Rules
+
+- Only the Lifecycle module (`src/lifecycle/`) writes errand state. Every write, from a request, a notice reply or a sweep, goes through the one transition function (conditional `UPDATE … WHERE status = expected` + `INSERT errand_events` in one transaction).
+- Sweeps live in `src/sweeps/` and call `transition()` with `SYSTEM`; one advisory lock per tick covers all of them. Resend bookkeeping (`supplier_validation_retries`) and outbox re-queues are the only other rows a sweep writes; never put it on `errands`.
+- Every `transition()` caller passes the actor explicitly: `user(id)` from an authenticated request, `SYSTEM` from message consumers and sweeps. Never default to `SYSTEM`. Callers must handle the refusals `FORBIDDEN`, `COURIER_BUSY` (not stored under an idempotency key, so retry-able), `EXPIRED` (accept only; the errand stays `Open` for the sweep to cancel) and `IDEMPOTENCY_KEY_REUSED`.
+- Cancellation reasons are tied to the actor: `REQUESTER_CANCELLED` is user-only, every other reason system-only (`USER_REASONS` in `edges.ts`). The set is also a DB CHECK.
+- Allowed transitions live in `src/lifecycle/status.ts` (`ALLOWED`); change them there and in `ARCHITECTURE.md` §2 together.
+- Sub-states (`Pending-Supplier`, `Reserving-Credit`) are shown as `Pending` at the API. `Transferring-Credit` is shown as its own `Processing transfer` (it can still end in `Incomplete`, so it must never read as `Completed`). `Adjusting-Credit`, `Revalidating-Supplier` and `Editing` (ADR 0006, 0013) are shown together as `Updating`; `Settling-Credit` (ADR 0006) is shown as `Incomplete`. Couriers still see an `Updating` errand but cannot accept it. A `from`/`to` pair with several exits (`Adjusting-Credit` → `Open`, `Revalidating-Supplier` → `Open`) is picked by `TransitionInput.type`.
+- Edits (`PATCH /v1/errands/:id`, ADR 0014) are one transition each, routed by which fields the body carries, never by current values, so an idempotent retry takes the same edge. An edge with `snapshots` records the local fields in its event as `previous`; an edge with `restores` (every refusal of an edit) puts them back inside `transition()`, so callers never restore by hand.
+- Notices for other services go through the outbox (ADR 0008): insert with `enqueueOutbox(tx, event)` (`src/outbox/outbox.store.ts`) inside the same transaction as the state change, never publish to the broker directly. Delivery is at least once. `transition()` calls it through the edge's `notice` builder (`src/lifecycle/notice.ts`, validated against `@foc/contracts` before insert); to emit a notice from an edge, add a `notice` to it in `edges.ts`. `createErrand()` writes the supplier validation request (`order.supplier-validation-requested.v1`) in its transaction.
+- Migrations are applied on startup unless `DB_MIGRATIONS_RUN=false` (before the outbox relay's first poll, which would crash on missing tables). With it off, a fresh DB needs `npm run db:migrate`.
+- New env vars: add to `src/config/environment.schema.ts`, `compose.yml` and `../env/order-service.env.example` (shared ones in `../env/shared.env.example`).
+- DB and RabbitMQ passwords are Docker secrets (`secrets/order_db_password.secret`, `secrets/rabbitmq_password.secret`, copy from the `.example`); never commit them. The RabbitMQ one must match the `order-service` hash in `../rabbitmq/definitions.json`.

@@ -1,0 +1,306 @@
+import { Role } from '@foc/contracts';
+import { Inject, Injectable } from '@nestjs/common';
+import { type AnyColumn, and, asc, count, desc, eq, gt, inArray, ne, or, sql } from 'drizzle-orm';
+import { DB } from '../db/db.module.js';
+import { disputeReports, errandEvents, errands } from '../db/schema.js';
+import { CREDIT_SETTLEMENT_REJECTED, CREDIT_TRANSFER_REJECTED, SETTLEMENT_REQUESTED } from '../lifecycle/edges.js';
+import type { Db } from '../lifecycle/transition.js';
+import { INTERNAL_STATUSES_OF, OFFERED, toApiStatus } from './api-status.js';
+import type { ListErrandsQuery, ListSort, MineErrandsQuery, PageQuery } from './errands.dto.js';
+
+const ORDER: Record<ListSort, () => ReturnType<typeof asc>[]> = {
+  expiring: () => [asc(errands.expiresAt)],
+  newest: () => [desc(errands.createdAt)],
+  credits: () => [desc(errands.rewardCredits)],
+};
+
+// The response allowlist: never idempotencyKey or lastSequenceNumber.
+// The parties' ids and the cancellation reason are added only for the parties; the
+// settlement amount and note only for a party on a Resolved errand (a rejection clears them).
+const toView = (r: typeof errands.$inferSelect, callerId?: string) => ({
+  id: r.id,
+  status: toApiStatus(r.status),
+  supplierId: r.supplierId,
+  pickupLocation: r.pickupLocation,
+  pickupName: r.pickupName,
+  pickupDescription: r.pickupDescription,
+  deliveryLocation: r.deliveryLocation,
+  deliveryDetail: r.deliveryDetail,
+  deliveryVenue: r.deliveryVenue,
+  deliveryLatitude: r.deliveryLatitude,
+  deliveryLongitude: r.deliveryLongitude,
+  collectionItems: r.collectionItems,
+  description: r.description,
+  rewardCredits: r.rewardCredits,
+  expiresAt: r.expiresAt,
+  createdAt: r.createdAt,
+  ...(callerId !== undefined && (callerId === r.requesterId || callerId === r.courierId)
+    ? {
+        requesterId: r.requesterId,
+        courierId: r.courierId,
+        cancellationReason: r.cancellationReason,
+        ...(r.status === 'Resolved'
+          ? { settlementAmount: r.settlementAmount, settlementNote: r.settlementNote }
+          : {}),
+      }
+    : {}),
+});
+
+// Admin allowlist (F9.3.3): adds the internal sub-state and lifecycle timestamps.
+const toAdminView = (r: typeof errands.$inferSelect) => ({
+  ...toView(r, r.requesterId),
+  internalStatus: r.status,
+  pickedUpAt: r.pickedUpAt,
+  deliveredAt: r.deliveredAt,
+  updatedAt: r.updatedAt,
+});
+
+// Dispute detail allowlists: rows are never returned as stored, so a new column stays
+// private until it is added here. errandId is dropped (it is in the URL).
+const toEventView = (e: typeof errandEvents.$inferSelect) => ({
+  sequenceNumber: e.sequenceNumber,
+  type: e.type,
+  fromStatus: e.fromStatus,
+  toStatus: e.toStatus,
+  payload: e.payload,
+  actorId: e.actorId,
+  occurredAt: e.occurredAt,
+});
+const toReportView = (r: typeof disputeReports.$inferSelect) => ({
+  authorId: r.authorId,
+  role: r.role,
+  body: r.body,
+  createdAt: r.createdAt,
+});
+
+// Why an errand entered Incomplete: a rejected credit transfer is a system fault (nobody
+// to blame, nothing to report); ErrandIncomplete is the requester disputing a delivery.
+type EnteredIncomplete = { type: string; payload: unknown };
+const causeOf = (e?: EnteredIncomplete) =>
+  e?.type === CREDIT_TRANSFER_REJECTED
+    ? { cause: 'SYSTEM_FAILURE' as const, causeReason: ((e.payload as { reason?: string } | null)?.reason ?? null) }
+    : { cause: 'REQUESTER_DISPUTE' as const, causeReason: null };
+
+// The read side. Owns every errand SELECT; never writes (Lifecycle stays the
+// only writer) and never calls transition().
+@Injectable()
+export class ErrandsQueryService {
+  constructor(@Inject(DB) private readonly db: Db) {}
+
+  // Courier browse list: open, unexpired errands that are not the caller's own.
+  async list(callerId: string, q: ListErrandsQuery) {
+    const sameText = (col: AnyColumn, v: string) =>
+      sql`lower(${col}) = lower(${v})`;
+    const rows = await this.db
+      .select()
+      .from(errands)
+      .where(
+        and(
+          inArray(errands.status, [...OFFERED]),
+          gt(errands.expiresAt, sql`now()`),
+          ne(errands.requesterId, callerId),
+          q.pickupBuilding ? sameText(errands.pickupLocation, q.pickupBuilding) : undefined,
+          q.deliveryBuilding ? sameText(errands.deliveryLocation, q.deliveryBuilding) : undefined,
+          q.minCredits ? sql`${errands.rewardCredits} >= ${q.minCredits}` : undefined,
+        ),
+      )
+      .orderBy(...ORDER[q.sort](), asc(errands.id))
+      .limit(q.limit)
+      .offset(q.offset);
+    return { items: rows.map((r) => toView(r)), limit: q.limit, offset: q.offset };
+  }
+
+  // The caller's errands, as requester or courier, newest first.
+  async mine(callerId: string, q: MineErrandsQuery) {
+    const rows = await this.partyRows(callerId, q);
+    const flags = await this.reportFlags(callerId, rows);
+    return {
+      items: rows.map((r) => ({ ...toView(r, callerId), ...flags.get(r.id) })),
+      limit: q.limit,
+      offset: q.offset,
+    };
+  }
+
+  // Report state for the caller's Incomplete errands (Settling-Credit included, which the
+  // API shows as Incomplete): hasReported is the caller's own report only, never the other
+  // side's; canReport mirrors ReportsService.submit, so the app can hide a form that would 409.
+  private async reportFlags(callerId: string, rows: (typeof errands.$inferSelect)[]) {
+    const inDispute = rows.filter((r) => (INTERNAL_STATUSES_OF.Incomplete as readonly string[]).includes(r.status));
+    const flags = new Map<string, { hasReported: boolean; canReport: boolean; cause: 'SYSTEM_FAILURE' | 'REQUESTER_DISPUTE' }>();
+    if (inDispute.length === 0) return flags;
+    const ids = inDispute.map((r) => r.id);
+    const reported = await this.db
+      .select({ id: disputeReports.errandId })
+      .from(disputeReports)
+      .where(and(inArray(disputeReports.errandId, ids), eq(disputeReports.authorId, callerId)));
+    const requested = await this.db
+      .selectDistinct({ id: errandEvents.errandId })
+      .from(errandEvents)
+      .where(and(inArray(errandEvents.errandId, ids), eq(errandEvents.type, SETTLEMENT_REQUESTED)));
+    const reportedIds = new Set(reported.map((x) => x.id));
+    const requestedIds = new Set(requested.map((x) => x.id));
+    const causes = await this.causes(ids);
+    for (const r of inDispute) {
+      const hasReported = reportedIds.has(r.id);
+      const c = causes.get(r.id)!;
+      flags.set(r.id, {
+        hasReported,
+        canReport:
+          r.status === 'Incomplete' && !hasReported && !requestedIds.has(r.id) && c.cause !== 'SYSTEM_FAILURE',
+        cause: c.cause,
+      });
+    }
+    return flags;
+  }
+
+  // The event of each errand's first entry into Incomplete (a rejected settlement re-enters later).
+  private async causes(ids: string[]) {
+    const rows = await this.db
+      .selectDistinctOn([errandEvents.errandId], {
+        id: errandEvents.errandId,
+        type: errandEvents.type,
+        payload: errandEvents.payload,
+      })
+      .from(errandEvents)
+      .where(and(inArray(errandEvents.errandId, ids), eq(errandEvents.toStatus, 'Incomplete')))
+      .orderBy(errandEvents.errandId, asc(errandEvents.sequenceNumber));
+    const map = new Map(rows.map((x) => [x.id, causeOf(x)]));
+    for (const id of ids) if (!map.has(id)) map.set(id, causeOf());
+    return map;
+  }
+
+  async ofUserForAdmin(userId: string, q: MineErrandsQuery) {
+    const rows = await this.partyRows(userId, q);
+    return { items: rows.map(toAdminView), limit: q.limit, offset: q.offset };
+  }
+
+  // Dispute queue: every Incomplete errand, including the in-flight Settling-Credit
+  // (`internalStatus` tells them apart), longest-disputed first: by the first time it
+  // entered Incomplete, so a rejected settlement keeps its place. `reports` says which
+  // side filed one, never what it says.
+  async disputeQueue(q: PageQuery) {
+    const rows = await this.db
+      .select({
+        errand: errands,
+        reporters: sql<string[]>`coalesce((select array_agg(${disputeReports.role}) from ${disputeReports} where ${disputeReports.errandId} = ${errands.id}), '{}')`,
+      })
+      .from(errands)
+      .where(inArray(errands.status, [...INTERNAL_STATUSES_OF.Incomplete]))
+      .orderBy(
+        sql`(select min(${errandEvents.occurredAt}) from ${errandEvents} where ${errandEvents.errandId} = ${errands.id} and ${errandEvents.toStatus} = 'Incomplete')`,
+        asc(errands.id),
+      )
+      .limit(q.limit)
+      .offset(q.offset);
+    const causes = await this.causes(rows.map((r) => r.errand.id));
+    return {
+      items: rows.map(({ errand, reporters }) => ({
+        ...toAdminView(errand),
+        ...causes.get(errand.id),
+        reports: { requester: reporters.includes('requester'), courier: reporters.includes('courier') },
+      })),
+      limit: q.limit,
+      offset: q.offset,
+    };
+  }
+
+  // Null (a 404) when the errand is unknown or not Incomplete (Settling-Credit counts).
+  async disputeDetail(id: string) {
+    // One snapshot, so the errand, reports and events can't disagree if a transition lands mid-read.
+    return this.db.transaction(
+      async (tx) => {
+        const [errand] = await tx
+          .select()
+          .from(errands)
+          .where(and(eq(errands.id, id), inArray(errands.status, [...INTERNAL_STATUSES_OF.Incomplete])));
+        if (!errand) return null;
+        const reports = await tx.select().from(disputeReports).where(eq(disputeReports.errandId, id)).orderBy(asc(disputeReports.createdAt));
+        const events = await tx.select().from(errandEvents).where(eq(errandEvents.errandId, id)).orderBy(asc(errandEvents.sequenceNumber));
+        const latestRejection = events.findLast((e) => e.type === CREDIT_SETTLEMENT_REJECTED) ?? null;
+        return {
+          errand: { ...toAdminView(errand), ...causeOf(events.find((e) => e.toStatus === 'Incomplete')) },
+          reports: reports.map(toReportView),
+          events: events.map(toEventView),
+          latestRejection: latestRejection && toEventView(latestRejection),
+        };
+      },
+      { isolationLevel: 'repeatable read', accessMode: 'read only' },
+    );
+  }
+
+  // What the resolve route checks before settling: the errand's status and reward,
+  // and its credit rejections in the last hour (the retry cap counts the event log).
+  async resolveGate(id: string) {
+    const [errand] = await this.db
+      .select({ status: errands.status, rewardCredits: errands.rewardCredits })
+      .from(errands)
+      .where(eq(errands.id, id));
+    if (!errand) return undefined;
+    const [{ n }] = await this.db
+      .select({ n: count() })
+      .from(errandEvents)
+      .where(
+        and(
+          eq(errandEvents.errandId, id),
+          eq(errandEvents.type, CREDIT_SETTLEMENT_REJECTED),
+          gt(errandEvents.occurredAt, new Date(Date.now() - 3_600_000)),
+        ),
+      );
+    return { ...errand, recentRejections: n };
+  }
+
+  private partyRows(userId: string, q: MineErrandsQuery) {
+    const asRequester = eq(errands.requesterId, userId);
+    const asCourier = eq(errands.courierId, userId);
+    const side =
+      q.role === Role.Requester ? asRequester
+      : q.role === Role.Courier ? asCourier
+      : or(asRequester, asCourier);
+    return this.db
+      .select()
+      .from(errands)
+      .where(
+        and(
+          side,
+          q.status ? inArray(errands.status, [...INTERNAL_STATUSES_OF[q.status]]) : undefined,
+        ),
+      )
+      .orderBy(desc(errands.createdAt), asc(errands.id))
+      .limit(q.limit)
+      .offset(q.offset);
+  }
+
+  // Parties see any status, expired or not (expiresAt tells the app); everyone
+  // else only an Open, unexpired errand. Otherwise null, which the controller makes a 404.
+  async detail(callerId: string, id: string) {
+    const [row] = await this.db.select().from(errands).where(eq(errands.id, id));
+    if (!row) return null;
+    const party = callerId === row.requesterId || callerId === row.courierId;
+    const open =
+      (OFFERED as readonly string[]).includes(row.status) &&
+      row.expiresAt !== null &&
+      row.expiresAt > new Date();
+    if (!party && !open) return null;
+    return {
+      ...toView(row, callerId),
+      ...(party ? (await this.reportFlags(callerId, [row])).get(row.id) : {}),
+      ...(callerId === row.requesterId ? { lastEditResult: await this.lastEditResult(id) } : {}),
+    };
+  }
+
+  // Which step of the last edit was refused, read from the latest event so it clears itself
+  // on the next one (a new edit, an accept, a cancel). Null when the last event is anything else.
+  private async lastEditResult(id: string): Promise<{ step: 'supplier' | 'credit'; outcome: string } | null> {
+    const [last] = await this.db
+      .select({ type: errandEvents.type, payload: errandEvents.payload })
+      .from(errandEvents)
+      .where(eq(errandEvents.errandId, id))
+      .orderBy(desc(errandEvents.sequenceNumber))
+      .limit(1);
+    const p = (last?.payload ?? {}) as { supplierOutcome?: string; reason?: string };
+    if (last?.type === 'EditFailed' || last?.type === 'SupplierRevalidationFailed') {
+      return { step: 'supplier', outcome: p.supplierOutcome! };
+    }
+    return last?.type === 'CreditAdjustmentFailed' ? { step: 'credit', outcome: p.reason! } : null;
+  }
+}

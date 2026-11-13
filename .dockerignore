@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+**/coverage
+**/.git
+**/.gitignore
+**/.env
+env
+**/.env.*
+!**/.env.example
+**/secrets
+**/data
+**/docs
+**/*.secret
+**/*.log
+**/*.tsbuildinfo
