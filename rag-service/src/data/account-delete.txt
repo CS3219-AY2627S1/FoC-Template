@@ -1,0 +1,4 @@
+Title: Deleting your account
+Questions: How do I delete my account? Can I close my account? How do I remove my data? Can I deactivate my account?
+
+Accounts cannot be deleted in the app at the moment. There is no delete option on the Profile page, and administrators cannot delete accounts in the app either. The app has no form for requesting it yet.

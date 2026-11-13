@@ -1,0 +1,5 @@
+$kind: http-request
+name: last message
+url: "{{messageServiceUrl}}/messages/last-message/{{otherUserId}}"
+method: GET
+order: 500

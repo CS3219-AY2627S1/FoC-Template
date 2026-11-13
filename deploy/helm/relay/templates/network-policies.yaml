@@ -1,0 +1,162 @@
+{{- if .Values.networkPolicies }}
+{{- /*
+compose.yaml keeps the databases on a network the web client is not part of (edge and backend).
+Inside Kubernetes every pod can reach every other pod, so these rules rebuild that separation and
+go one step further: a database only accepts the service it belongs to. Traffic from the node
+itself (health checks, kubectl port-forward) is always allowed.
+*/}}
+{{- $traefik := dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" "kube-system")) "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "traefik")) }}
+# Nothing reaches a pod in this namespace unless one of the rules below allows it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  labels:
+    {{- include "relay.labels" (dict "root" $ "name" "relay") | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# The gateway takes requests from Traefik, the way in from outside, and from the load test.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway
+  labels:
+    {{- include "relay.labels" (dict "root" $ "name" "relay") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: gateway
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - {{- toYaml $traefik | nindent 10 }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: loadtest
+---
+# Services take requests from the gateway and from each other, for example the authorization
+# check every service makes at the user-service.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: services
+  labels:
+    {{- include "relay.labels" (dict "root" $ "name" "relay") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: service
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [gateway, service]
+{{- range $db, $config := .Values.databases }}
+{{- $kind := index $.Values.databaseKinds $config.kind }}
+{{- $clients := list }}
+{{- range $name, $svc := $.Values.services }}
+{{- range $svc.waitFor }}
+{{- if hasPrefix (printf "%s:" $db) . }}
+{{- $clients = append $clients $name }}
+{{- end }}
+{{- end }}
+{{- end }}
+---
+# {{ $db }} only accepts the services that list it in waitFor.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $db }}
+  labels:
+    {{- include "relay.labels" (dict "root" $ "name" $db) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $db }}
+  policyTypes: [Ingress]
+  {{- if $clients }}
+  ingress:
+    - from:
+        {{- range $clients }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ . }}
+        {{- end }}
+      ports:
+        - port: {{ $kind.port }}
+  {{- else }}
+  ingress: []
+  {{- end }}
+{{- end }}
+---
+# The broker only takes the services, not the gateway.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: broker
+  labels:
+    {{- include "relay.labels" (dict "root" $ "name" "broker") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: broker
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: service
+      ports:
+        - port: 5672
+---
+# Mailpit: its inbox through Traefik under /mail/, its SMTP port only for the services that send
+# email (mailpit.senders).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mailpit
+  labels:
+    {{- include "relay.labels" (dict "root" $ "name" "mailpit") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mailpit
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - {{- toYaml $traefik | nindent 10 }}
+      ports:
+        - port: 8025
+    - from:
+        {{- range .Values.mailpit.senders }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ . }}
+        {{- end }}
+      ports:
+        - port: 1025
+{{- if .Values.ingress.tls }}
+---
+# The short-lived pod cert-manager starts so Let's Encrypt can check the host name. Without this
+# rule the certificate could not be renewed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: acme-solver
+  labels:
+    {{- include "relay.labels" (dict "root" $ "name" "relay") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - {{- toYaml $traefik | nindent 10 }}
+{{- end }}
+{{- end }}

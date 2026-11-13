@@ -1,0 +1,77 @@
+{{- with .Values.broker }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: broker
+  labels:
+    {{- include "relay.labels" (dict "root" $ "name" "broker") | nindent 4 }}
+spec:
+  # RabbitMQ names its data after the host name. A StatefulSet keeps the name (broker-0), so
+  # queued messages survive a restart, like the fixed hostname in compose.yaml.
+  serviceName: broker
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: broker
+  template:
+    metadata:
+      labels:
+        {{- include "relay.labels" (dict "root" $ "name" "broker") | nindent 8 }}
+      annotations:
+        {{- include "relay.secretChecksum" $ | nindent 8 }}
+    spec:
+      containers:
+        - name: rabbitmq
+          image: {{ .image }}
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              value: {{ .user | quote }}
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.name }}
+                  key: BROKER_PASSWORD
+          ports:
+            - name: amqp
+              containerPort: 5672
+            - name: management
+              containerPort: 15672
+          # A port check, not rabbitmq-diagnostics: the CLI runs as root and, on the very first
+          # start, can create the Erlang cookie before RabbitMQ does, which then cannot read it.
+          # The AMQP port only opens once the broker has fully started.
+          readinessProbe:
+            tcpSocket:
+              port: amqp
+            periodSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: {{ .size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: broker
+  labels:
+    {{- include "relay.labels" (dict "root" $ "name" "broker") | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: broker
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: amqp
+    - name: management
+      port: 15672
+      targetPort: management
+{{- end }}

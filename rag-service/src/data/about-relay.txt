@@ -1,0 +1,6 @@
+Title: What Relay is
+Questions: What is this app? What is Relay? What is Friend on Campus? What is FoC? Is Relay the same as Friend on Campus? Why is the project called Friend on Campus? How does the platform work? Who can use it?
+
+Relay is an errand platform for NUS students. A student who needs something collected from a store or facility on campus posts an errand. Another student accepts it, collects the items and delivers them, and the student who posted it pays them in credits. Credits only exist inside Relay and have no money value. You need an NUS email address to create an account, and the same account can both post errands and deliver them.
+
+Friend on Campus (FoC) is not the name of the app. It is the name of the course project Relay was built for: the NUS module CS3219 asked student teams to build a campus errand platform under that working title, and Relay is this team's app for it. The product itself is always called Relay.

@@ -1,0 +1,121 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc"],
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }],
+    "no-restricted-imports": [
+      "error",
+      { "paths": [{ "name": "react-router-dom", "message": "react-router-dom is gone in v8. Import from react-router." }] }
+    ]
+  },
+  // Import boundaries between the areas of src. src/app may import everything, so it has no block.
+  // An override replaces the whole rule, so every block repeats the react-router-dom entry.
+  // Allowlists use "group" with ! patterns: oxlint ignores a regex it cannot compile, such as a
+  // lookahead, without a warning. Check that a forbidden import still fails after every change.
+  "overrides": [
+    {
+      "files": ["src/lib/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [{ "name": "react-router-dom", "message": "react-router-dom is gone in v8. Import from react-router." }],
+            "patterns": [
+              {
+                "regex": "^(@/|\\.\\./)",
+                "message": "src/lib imports nothing else from src. Keep lib files directly in src/lib and import another one with ./ (for example ./http)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/components/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [{ "name": "react-router-dom", "message": "react-router-dom is gone in v8. Import from react-router." }],
+            "patterns": [
+              {
+                "group": ["@/**", "!@/lib/**"],
+                "message": "src/components may only import @/lib. Keep components directly in src/components, import another one with ./Name and pass data in through props."
+              },
+              {
+                "regex": "^\\.\\./",
+                "message": "src/components may only import @/lib. Keep components directly in src/components, import another one with ./Name and pass data in through props."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/api/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [{ "name": "react-router-dom", "message": "react-router-dom is gone in v8. Import from react-router." }],
+            "patterns": [
+              {
+                "group": ["@/**", "!@/lib/**"],
+                "message": "src/api/<service> may only import @/lib. Keep its files directly in the service folder and import them with ./"
+              },
+              {
+                "regex": "^\\.\\./",
+                "message": "src/api/<service> may only import @/lib. Keep its files directly in the service folder and import them with ./"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // Files in a folder of a feature, such as pages/ and components/. One ../ stays in the feature.
+      "files": ["src/features/*/*/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [{ "name": "react-router-dom", "message": "react-router-dom is gone in v8. Import from react-router." }],
+            "patterns": [
+              {
+                "group": ["@/**", "!@/lib/**", "!@/components/**", "!@/api/**"],
+                "message": "A feature may only import @/lib, @/components and @/api/<service>, and its own files with relative paths. Never another feature or src/app."
+              },
+              {
+                "regex": "^\\.\\./\\.\\./",
+                "message": "This import leaves your feature folder, or your file sits deeper than one folder such as pages/ or components/. Use @/lib, @/components or @/api/<service>; other features are off limits."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // Files directly in a feature, such as routes.ts. Here even one ../ leaves the feature.
+      "files": ["src/features/*/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [{ "name": "react-router-dom", "message": "react-router-dom is gone in v8. Import from react-router." }],
+            "patterns": [
+              {
+                "group": ["@/**", "!@/lib/**", "!@/components/**", "!@/api/**"],
+                "message": "A feature may only import @/lib, @/components and @/api/<service>, and its own files with relative paths. Never another feature or src/app."
+              },
+              {
+                "regex": "^\\.\\./",
+                "message": "This import leaves your feature folder. Use @/lib, @/components or @/api/<service>; other features are off limits."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

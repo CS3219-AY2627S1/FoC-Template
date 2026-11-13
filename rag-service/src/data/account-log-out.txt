@@ -1,0 +1,6 @@
+Title: How to log out
+Questions: How do I log out? How do I sign out? Where is the logout button? Why was I logged out? How long do I stay logged in?
+
+On a large screen, press Log out at the bottom of the sidebar. On a phone or small window, open Profile and press Log out at the bottom of the page.
+
+You are logged out automatically after 7 days without using the app, and after 30 days in any case, even if you use it every day. Someone changing the password from another device also logs you out here. Log in again to continue. If you use a shared computer, log out when you are done.

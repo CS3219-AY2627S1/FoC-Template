@@ -1,0 +1,12 @@
+Title: Finding pickup locations
+Questions: What is a supplier? Where can I pick up from? How do I search for a store? Which places are available? What stores are on the platform? Can I add a new store? How do I save a favorite? Which store is nearest to me? Which stores are open now?
+
+A supplier is a store, facility or landmark on campus where errands can be picked up from. Each has a name, a type (Food, Food/Coffee, Shopping or Printing), a campus zone, a building and address, a short description of how to find it, and opening hours. Some also have a photo, a phone number or an email address.
+
+When posting an errand, press Choose a pickup location to pick one. You can search by name and filter by type.
+
+The supplier list is at /suppliers; type it into the address bar, as the menu has no entry for it yet. It has search, filters for type and zone, Open now, Favorites, and Sort by Nearest to me, which asks your browser for your location. Mark a supplier with the heart to add it to your favorites. Open a supplier to see its opening hours, where to find it with an Open in Google Maps link, and its contact details.
+
+Zones are Central, Computing, Science, Engineering, Medicine, Business and Residences. Filtering by Food does not include Food/Coffee, which is a type of its own.
+
+Only administrators can add or change suppliers, from the Suppliers page in the admin console. Students cannot add one.

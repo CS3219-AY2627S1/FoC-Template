@@ -1,0 +1,6 @@
+Title: Getting help
+Questions: How do I contact support? Who can I talk to? Is there a help desk? What can this assistant do? Can you see my account? Can you do this for me? How do I open the assistant? Where did my chat go?
+
+This assistant answers questions about how Relay works and how to do things in it. Open it with the round button in the bottom right corner of any page; it opens a small chat window called AI Help Assistant above the button. Close it with the X in the window, by pressing the button again, or with Esc. The button is hidden in the Relay conversation under Messages. Your questions stay while you move between pages, but are gone when you reload the page or log out. The assistant cannot see your account, your errands or your balance, and it cannot make changes for you. The answers come from the help documents, so it may not know about something they do not cover. You can ask 10 questions per minute; after that it asks you to wait a minute.
+
+The app has no support email, phone number or help desk page at the moment. Administrators run the platform, but there is no form for contacting them yet. If someone on one of your errands caused a problem, use Report a problem on the errand page.

@@ -1,0 +1,13 @@
+Title: What the errand statuses mean
+Questions: What does Pending mean? What does Reserving credits mean? What does Open mean? What does Accepted mean? What does Picked up mean? What does Delivered mean? What does Completed mean? What does Expired mean? What is the status of my errand?
+
+Pending: the errand was just posted and its credits are being reserved. It shows "Reserving credits…" and becomes Open a moment later.
+Open: posted and waiting for a courier.
+Accepted: a courier has taken the errand.
+Picked up: the courier has collected the items.
+Delivered: the courier has marked the items as handed over, and the requester still has to confirm.
+Completed: the requester confirmed delivery, and the credits went to the courier.
+Cancelled: the requester cancelled the errand and the reserved credits were released.
+Expired: no courier accepted it by its needed-by time, and the reserved credits were released.
+
+The usual order is Open, Accepted, Picked up, Delivered, Completed. Cancelled and Expired are final outcomes where no credits are paid. The errand page shows these steps as Progress.

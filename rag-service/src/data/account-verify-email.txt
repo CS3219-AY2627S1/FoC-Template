@@ -1,0 +1,8 @@
+Title: How to verify your email
+Questions: How do I verify my account? Where do I enter the code? Where is my verification code? I did not get the email. How do I get a new code?
+
+After signing up you land on the Verify your email page. Enter your NUS email and the 6-digit code from the email, then press Verify. You then go to the Log in page with your email filled in, and only need your password.
+
+If no code arrived, check your spam folder and that you typed the right email, then press Send a new code on the same page. If the page shows a notice saying "Test mode: no real email is sent", open the test inbox linked in that notice and copy your code from there.
+
+If you left the page, log in with your email and password, then follow the Verify your email link.

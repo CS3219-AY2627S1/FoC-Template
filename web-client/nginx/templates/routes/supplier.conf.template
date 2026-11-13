@@ -1,0 +1,10 @@
+# Routes for the supplier-service. Only the paths below are reachable from the browser;
+# /health falls through to the JSON 404 in default.conf.
+location ~ ^/api/supplier/suppliers(/|$) {
+  # A photo upload is about 1.75 MB at most, above nginx's default of 1 MB. The supplier-service
+  # keeps its own, smaller limit on every other route.
+  client_max_body_size 2m;
+  set $upstream ${SUPPLIER_SERVICE_URL};
+  rewrite ^/api/supplier(/.*)$ $1 break;
+  proxy_pass $upstream;
+}

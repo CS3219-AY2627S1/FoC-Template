@@ -1,0 +1,6 @@
+Title: How to edit your profile
+Questions: How do I change my name? How do I change my username? Can I change my email? Where do I see my account details? How do I update my profile?
+
+Open Profile to see your account details. To change them, choose Edit profile, edit Full name or Username and press Save changes. You return to Profile with the message "Profile saved". The username follows the same rules as at sign-up and must not be in use by someone else.
+
+Your NUS email and the date you joined are shown but cannot be edited. There is no way to change your email address in the app. After changing your username, log in with the new username or with your email.

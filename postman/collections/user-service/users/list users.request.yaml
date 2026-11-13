@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{userServiceUrl}}/users?page=1&pageSize=20"
+method: GET
+queryParams:
+  page: "1"
+  pageSize: "20"
+body:
+  type: json
+  content: |-
+    {
+        "username": "felixhg"
+    }
+order: 4483048199907423

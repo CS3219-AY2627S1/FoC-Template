@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailpit
+  labels:
+    {{- include "relay.labels" (dict "root" $ "name" "mailpit") | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mailpit
+  template:
+    metadata:
+      labels:
+        {{- include "relay.labels" (dict "root" $ "name" "mailpit") | nindent 8 }}
+    spec:
+      containers:
+        - name: mailpit
+          image: {{ .Values.mailpit.image }}
+          env:
+            # Served under /mail/ on the same host as the app, so one address and one certificate cover both.
+            - name: MP_WEBROOT
+              value: /mail/
+            {{- if .Values.mailpit.auth }}
+            # Asks for a user name and password before showing any mail or answering the API.
+            - name: MAILPIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: MAILPIT_PASSWORD
+            - name: MP_UI_AUTH
+              value: "{{ .Values.mailpit.user }}:$(MAILPIT_PASSWORD)"
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8025
+            - name: smtp
+              containerPort: 1025
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailpit
+  labels:
+    {{- include "relay.labels" (dict "root" $ "name" "mailpit") | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: mailpit
+  ports:
+    - name: http
+      port: 8025
+      targetPort: http
+    - name: smtp
+      port: 1025
+      targetPort: smtp

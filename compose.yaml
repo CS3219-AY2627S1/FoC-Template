@@ -1,0 +1,329 @@
+name: relay
+
+services:
+
+  rag-service:
+    build: ./rag-service
+    environment:
+      PORT: 3080
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      USER_SERVICE_URL: http://user-service:3000
+    ports:
+      - "127.0.0.1:3080:3080"
+    depends_on:
+      user-service:
+        condition: service_healthy
+    healthcheck:
+      # The image has no wget or curl, and urlopen raises on an error status.
+      test: [ "CMD", "/app/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3080/health/', timeout=2)" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      # Loading the embedding model can take much longer on a slow or busy machine.
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - edge
+
+  user-service:
+    build: ./user-service
+    environment:
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      MONGO_URL: mongodb://user-db:27017/user-service
+      BROKER_URL: amqp://${BROKER_USER:-relay}:${BROKER_PASSWORD:-change-me}@broker:5672
+      ORDER_SERVICE_URL: http://order-service:3000
+      OTP_SECRET: ${OTP_SECRET:-dev-only-otp-secret-do-not-use-in-production}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-Relay <no-reply@relay.local>}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@nus.edu.sg}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      SEED_DEMO_STUDENTS: ${SEED_DEMO_STUDENTS:-true}
+      SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-change-me}
+    # Published to this machine only, so /internal/authorize cannot be reached from the network.
+    ports:
+      - "127.0.0.1:3001:3000"
+    networks:
+      - edge
+      - backend
+    # Not tied to the broker: while it is down the service keeps serving and announcements wait.
+    depends_on:
+      user-db:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:3000/health" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  user-db:
+    image: mongo:8
+    volumes:
+      - user-db-data:/data/db
+    ports:
+      - "127.0.0.1:27017:27017"
+    networks:
+      - backend
+    healthcheck:
+      test: [ "CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  message-service:
+    build: ./message-service
+    environment:
+      PORT: 3008
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      MONGO_URL: mongodb://message-db:27017/message-service #uses the container port
+      BROKER_URL: amqp://${BROKER_USER:-relay}:${BROKER_PASSWORD:-change-me}@broker:5672
+      USER_SERVICE_URL: http://user-service:3000
+      ORDER_SERVICE_URL: http://order-service:3000
+    ports:
+      - "127.0.0.1:3008:3008"
+    networks:
+      - edge
+      - backend
+    depends_on:
+      message-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3008/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  message-db:
+    image: mongo:8 #Pulls mongo image 8 
+    volumes:
+      - message-db-data:/data/db # source/desination stored on my machine/stored inside container
+    ports:
+      - "127.0.0.1:27018:27017" #only on specific interfaces: local port on my machine to docker port
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped #makes the container restart automaticly 
+
+  mailpit:
+    image: axllent/mailpit:v1.31.6
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
+    networks:
+      - backend
+    restart: unless-stopped
+
+  broker:
+    image: rabbitmq:4.3-management-alpine
+    # RabbitMQ keeps its data under a node name taken from the hostname. A fixed hostname keeps
+    # queued messages when the container is recreated.
+    hostname: broker
+    environment:
+      RABBITMQ_DEFAULT_USER: ${BROKER_USER:-relay}
+      RABBITMQ_DEFAULT_PASS: ${BROKER_PASSWORD:-change-me}
+    # AMQP for services run outside compose, and the management UI. Both on this machine only.
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    networks:
+      - backend
+    volumes:
+      - broker-data:/var/lib/rabbitmq
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  supplier-service:
+    build:
+      context: .
+      dockerfile: supplier-service/Dockerfile
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SUPPLIER_SERVICE_PORT: ${SUPPLIER_SERVICE_PORT:-3002}
+      SUPPLIER_DATABASE_URL: postgres://${SUPPLIER_DB_USER:-supplier}:${SUPPLIER_DB_PASSWORD:-change-me}@supplier-db:5432/${SUPPLIER_DB_NAME:-supplier}
+      USER_SERVICE_URL: http://user-service:3000
+      SUPPLIER_TIMEZONE: ${SUPPLIER_TIMEZONE:-Asia/Singapore}
+      SUPPLIER_SEED_ON_STARTUP: ${SUPPLIER_SEED_ON_STARTUP:-true}
+      SUPPLIER_AUTH_CACHE_SECONDS: ${SUPPLIER_AUTH_CACHE_SECONDS:-5}
+      SUPPLIER_READ_CACHE_SECONDS: ${SUPPLIER_READ_CACHE_SECONDS:-2}
+    ports:
+      - "127.0.0.1:${SUPPLIER_SERVICE_PORT:-3002}:${SUPPLIER_SERVICE_PORT:-3002}"
+    networks:
+      - edge
+      - backend
+    # Not tied to the user-service: while that is down every request is refused,
+    # and the supplier-service itself keeps running (N6.1.2).
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  supplier-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${SUPPLIER_DB_USER:-supplier}
+      POSTGRES_PASSWORD: ${SUPPLIER_DB_PASSWORD:-change-me}
+      POSTGRES_DB: ${SUPPLIER_DB_NAME:-supplier}
+    # Published to this machine only. The password is a placeholder for local use.
+    ports:
+      - "127.0.0.1:${SUPPLIER_DB_PORT:-5433}:5432"
+    networks:
+      - backend
+    volumes:
+      - supplier-db-data:/var/lib/postgresql/data
+      # Gives the tests a database of their own, so they never touch real data.
+      - ./supplier-service/db/create-test-database.sql:/docker-entrypoint-initdb.d/create-test-database.sql:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  credit-service:
+    build: ./credit-service
+    environment:
+      MONGO_URL: mongodb://credit-db:27017/credit-service?directConnection=true
+      USER_SERVICE_URL: http://user-service:3000
+      BROKER_URL: amqp://${BROKER_USER:-relay}:${BROKER_PASSWORD:-change-me}@broker:5672
+    ports:
+      - "127.0.0.1:3004:3002"
+    networks:
+      - edge
+      - backend
+    depends_on:
+      credit-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  credit-db:
+    image: mongo:8
+    # Single-node replica set so credit-service can use multi-document transactions (N4.1.2).
+    command: [ "--replSet", "rs0", "--bind_ip_all" ]
+    volumes:
+      - credit-db-data:/data/db
+    networks:
+      - backend
+    # Idempotent self-init: the first healthy check initiates the set, later checks just confirm it.
+    healthcheck:
+      test: [ "CMD-SHELL", "mongosh --quiet --eval \"try { rs.status().ok } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'credit-db:27017'}]}).ok }\" | grep -q 1" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    restart: unless-stopped
+
+  order-service:
+    build: ./order-service
+    environment:
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgres://${ORDER_DB_USER:-order_service}:${ORDER_DB_PASSWORD:-change-me}@order-db:5432/${ORDER_DB_NAME:-orders}
+      USER_SERVICE_URL: http://user-service:3000
+      SUPPLIER_SERVICE_URL: http://supplier-service:${SUPPLIER_SERVICE_PORT:-3002}
+      CREDIT_SERVICE_URL: http://credit-service:3002
+      BROKER_URL: amqp://${BROKER_USER:-relay}:${BROKER_PASSWORD:-change-me}@broker:5672
+    ports:
+      - "127.0.0.1:3003:3000"
+    networks:
+      - edge
+      - backend
+    depends_on:
+      order-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  recommendation-service:
+    build: ./recommendation-service
+    environment:
+      PORT: 3006
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      USER_SERVICE_URL: http://user-service:3000
+      BROKER_URL: amqp://${BROKER_USER:-relay}:${BROKER_PASSWORD:-change-me}@broker:5672
+      FEATURE_STORE: memory
+    ports:
+      - "127.0.0.1:3006:3006"
+    networks:
+      - edge
+      - backend
+    restart: unless-stopped
+
+  order-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${ORDER_DB_USER:-order_service}
+      POSTGRES_PASSWORD: ${ORDER_DB_PASSWORD:-change-me}
+      POSTGRES_DB: ${ORDER_DB_NAME:-orders}
+    ports:
+      - "127.0.0.1:5434:5432"
+    networks:
+      - backend
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  web-client:
+    build: ./web-client
+    environment:
+      USER_SERVICE_URL: http://user-service:3000
+      RAG_SERVICE_URL: http://rag-service:3080
+      SUPPLIER_SERVICE_URL: http://supplier-service:${SUPPLIER_SERVICE_PORT:-3002}
+      CREDIT_SERVICE_URL: http://credit-service:3002
+      RECOMMENDATION_SERVICE_URL: http://recommendation-service:3006
+      MESSAGE_SERVICE_URL: http://message-service:3008
+      # Locally every email lands in Mailpit, so the verify page links to it. Set it to empty to hide the hint.
+      ORDER_SERVICE_URL: http://order-service:3000
+      DEV_MAILBOX_URL: ${DEV_MAILBOX_URL-http://localhost:8025}
+    ports:
+      - "8080:8080"
+    networks:
+      - edge
+    # No depends_on on purpose: nginx looks the services up per request, so the web client
+    # starts and stays up while a service is down or being replaced (N6.1.2).
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  user-db-data:
+  message-db-data:
+  supplier-db-data:
+  credit-db-data:
+  broker-data:
+  order-db-data:
+
+    # edge connects the web client to the services, backend connects the services to their databases
+    # and infrastructure. The web client is only on edge, so the gateway has no route to any database.
+networks:
+  edge:
+  backend:

@@ -1,0 +1,4 @@
+Title: How to log in
+Questions: How do I log in? How do I sign in? Can I log in with my username? Can I log in with my email?
+
+Go to the Log in page, enter your username or your NUS email in the first field, enter your password, and press Log in. Either the username or the email works. Capital letters in the username do not matter. You stay logged in on that browser, so you do not need to log in on every visit. If you were sent to the Log in page from another page, you return to that page after logging in.

@@ -1,0 +1,8 @@
+$kind: http-request
+url: "{{userServiceUrl}}/reports?state=Open&page=1&pageSize=20"
+method: GET
+queryParams:
+  state: Open
+  page: "1"
+  pageSize: "20"
+order: 3000

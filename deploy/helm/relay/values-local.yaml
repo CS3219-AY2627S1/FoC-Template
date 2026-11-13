@@ -1,0 +1,7 @@
+# Laptop with k3d: deploy/scripts/local-up.sh builds the images with docker compose, imports them
+# into the cluster and sets images.tag to a fresh tag, so changed code always reaches the pods.
+images:
+  prefix: relay-
+  tag: latest
+  # Imported images only exist inside the cluster, there is nothing to pull.
+  pullPolicy: Never

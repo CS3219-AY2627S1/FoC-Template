@@ -1,0 +1,38 @@
+name: commit-lint
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  check:
+    name: commit-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check pull request title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if ! echo "$TITLE" | grep -Eq '^(feat|fix|chore|docs|refactor|test)(\([a-z0-9-]+\))?: .+'; then
+            echo "PR title must look like '<type>: <description>' with type feat, fix, chore, docs, refactor or test."
+            echo "Got: $TITLE"
+            exit 1
+          fi
+
+      - name: Check commit messages
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          bad=0
+          while IFS= read -r line; do
+            if ! echo "$line" | grep -Eq '^(feat|fix|chore|docs|refactor|test)(\([a-z0-9-]+\))?: .+'; then
+              echo "::error::Commit does not follow '<type>: <description>': $line"
+              bad=1
+            fi
+          done < <(git log --no-merges --format=%s "$BASE".."$HEAD")
+          exit $bad

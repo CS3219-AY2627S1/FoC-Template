@@ -1,0 +1,10 @@
+Title: Common error pages and messages
+Questions: What does Access denied mean? What does Error 403 mean? What does Error 404 mean? Why do I see No connection or Temporarily unavailable? Why does the page say Not built yet? Something went wrong.
+
+"Administrator access required" (Error 403): the page is for administrators and your account is not one.
+"Access denied": you are not allowed to do this, or your session has ended. Try logging in again.
+"Page not found" (Error 404): the address does not exist or has moved. Press Back to start.
+"No connection": the app could not reach the server. Check your internet and press Try again.
+"Temporarily unavailable": the server has a problem. Press Try again after a moment.
+"Something went wrong": press Reload page.
+"Not built yet": this page has not been finished.

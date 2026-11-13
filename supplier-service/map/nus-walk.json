@@ -1,0 +1,14 @@
+{
+  "version": "2026-11-09",
+  "area": {
+    "south": 1.2696,
+    "west": 103.7494,
+    "north": 1.3236,
+    "east": 103.8034
+  },
+  "points": 49816,
+  "links": 111754,
+  "source": "OpenStreetMap, through the Overpass API",
+  "licence": "Open Database License (ODbL) 1.0",
+  "attribution": "© OpenStreetMap contributors"
+}

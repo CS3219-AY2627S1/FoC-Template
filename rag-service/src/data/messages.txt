@@ -1,0 +1,12 @@
+Title: Messages and chatting about an errand
+Questions: How do I message someone? How do I contact my courier? How do I talk to the requester? Where are my messages? Why can't I send a message? Why is the chat closed? What is the Relay conversation? Can I message any student?
+
+Every errand has its own chat between its requester and its courier. You cannot message other students.
+
+The chat opens when a courier accepts the errand. Open it on the errand page (View details), or press Chat on the errand card on the Errands page. Type in the box under the messages and press Send; the other person sees it right away.
+
+When the errand is completed, cancelled or expires, the chat closes. It shows "This chat is closed. Earlier messages stay here." and you can still read it.
+
+Messages in the main menu lists your chats, newest first, one row per errand with the other person's name, "Errand #" and its number, and the number of unread messages. Open a row to go to that errand's chat.
+
+The conversation called Relay holds messages from the app itself, such as the welcome message. You cannot reply to it. To ask the assistant a question, use the round button in the bottom right corner instead.

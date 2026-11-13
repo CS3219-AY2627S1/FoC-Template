@@ -1,0 +1,454 @@
+/* Recurring shapes of the design. Components compose with these. */
+
+/* Glass surface */
+.ds-surface {
+  background: var(--ds-color-surface);
+  backdrop-filter: blur(var(--ds-blur-glass)) saturate(var(--ds-saturate-glass));
+  -webkit-backdrop-filter: blur(var(--ds-blur-glass))
+    saturate(var(--ds-saturate-glass));
+  border: 1px solid var(--ds-color-border-glass);
+  border-radius: var(--ds-radius-card);
+  box-shadow: var(--ds-elevation-card);
+}
+
+.ds-surface--chrome {
+  background: var(--ds-color-surface-chrome);
+  backdrop-filter: blur(var(--ds-blur-chrome))
+    saturate(var(--ds-saturate-glass));
+  -webkit-backdrop-filter: blur(var(--ds-blur-chrome))
+    saturate(var(--ds-saturate-glass));
+}
+
+.ds-surface--sunken {
+  background: var(--ds-color-surface-sunken);
+  backdrop-filter: blur(var(--ds-blur-soft)) saturate(var(--ds-saturate-soft));
+  -webkit-backdrop-filter: blur(var(--ds-blur-soft))
+    saturate(var(--ds-saturate-soft));
+  border-color: var(--ds-color-border-glass-soft);
+  border-radius: var(--ds-radius-inset);
+  box-shadow: var(--ds-elevation-inset);
+}
+
+.ds-surface--panel {
+  border-radius: var(--ds-radius-panel);
+  box-shadow: var(--ds-elevation-panel);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ds-surface {
+    background: rgb(255 255 255 / 0.88);
+  }
+}
+
+/* Hairlines */
+.ds-hairline {
+  height: 1px;
+  border: 0;
+  background: var(--ds-color-border);
+}
+
+.ds-rows > * + * {
+  border-top: 1px solid var(--ds-color-border);
+}
+
+/* Buttons */
+.ds-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  min-height: var(--ds-control-h-md);
+  padding: var(--ds-space-2) var(--ds-space-4);
+  border: 1px solid transparent;
+  border-radius: var(--ds-radius-button);
+  font-size: var(--ds-text-md);
+  font-weight: var(--ds-weight-button);
+  letter-spacing: var(--ds-tracking-normal);
+    /* Long labels wrap instead of pushing the layout wider than the screen (N5.1). */
+  max-width: 100%;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    transform var(--ds-motion-hover),
+    border-color var(--ds-motion-hover),
+    background-color var(--ds-motion-hover);
+}
+
+/* 44px touch targets below md, a slimmer control where a pointer is likely. */
+@media (min-width: 48rem) {
+  .ds-btn {
+    min-height: var(--ds-control-h-compact);
+  }
+}
+
+.ds-btn:active:not(:disabled) {
+  transform: scale(var(--ds-press-scale));
+}
+
+.ds-btn:disabled,
+.ds-btn[aria-disabled='true'] {
+  opacity: 0.42;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.ds-btn--primary {
+  background: var(--ds-color-accent);
+  color: var(--ds-color-accent-on);
+  box-shadow: var(--ds-elevation-accent);
+}
+
+.ds-btn--primary:hover:not(:disabled) {
+  background: var(--ds-color-accent-hover);
+}
+
+.ds-btn--glass {
+  background: var(--ds-color-surface-selected);
+  border-color: var(--ds-color-border);
+  color: var(--ds-color-text);
+  box-shadow: var(--ds-elevation-button);
+}
+
+.ds-btn--glass:hover:not(:disabled) {
+  border-color: var(--ds-color-border-strong);
+}
+
+.ds-btn--text {
+  min-width: var(--ds-tap-target-min);
+  padding: var(--ds-space-2) var(--ds-space-1);
+  background: none;
+  color: var(--ds-color-accent);
+  font-size: var(--ds-text-sm);
+  box-shadow: none;
+}
+
+/* Below md every target stays 44px tall (house rule); from md the text button sits flush
+   with the text around it. */
+@media (min-width: 48rem) {
+  .ds-btn--text {
+    min-width: auto;
+    min-height: auto;
+  }
+}
+
+.ds-btn--text:hover:not(:disabled) {
+  color: var(--ds-color-accent-hover);
+}
+
+.ds-btn--icon {
+  min-width: var(--ds-tap-target-min);
+  min-height: var(--ds-tap-target-min);
+  padding: var(--ds-space-2);
+}
+
+/* Status badges */
+.ds-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  padding: var(--ds-space-0-5) var(--ds-space-2);
+  border-radius: var(--ds-radius-chip);
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-medium);
+  line-height: var(--ds-leading-snug);
+  white-space: nowrap;
+}
+
+.ds-badge--danger {
+  background: var(--ds-color-danger-surface);
+  color: var(--ds-color-danger);
+}
+.ds-badge--info {
+  background: var(--ds-color-info-surface);
+  color: var(--ds-color-info);
+}
+.ds-badge--success {
+  background: var(--ds-color-success-surface);
+  color: var(--ds-color-success);
+}
+.ds-badge--neutral {
+  background: var(--ds-color-neutral-surface);
+  color: var(--ds-color-neutral);
+}
+
+/* Labels */
+.ds-label {
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-semibold);
+  letter-spacing: var(--ds-tracking-label);
+  text-transform: uppercase;
+  color: var(--ds-color-text-subtle);
+  line-height: var(--ds-leading-snug);
+}
+
+.ds-field-label {
+  display: block;
+  margin: 0 0 var(--ds-space-2);
+  font-size: var(--ds-text-sm);
+  font-weight: var(--ds-weight-medium);
+  color: var(--ds-color-text);
+}
+
+/* Fields */
+.ds-field {
+  width: 100%;
+  min-height: var(--ds-control-h-md);
+  padding: var(--ds-space-3) var(--ds-space-4);
+  border: 1px solid var(--ds-color-border);
+  border-radius: var(--ds-radius-field);
+  background: var(--ds-color-surface-selected);
+  box-shadow: var(--ds-elevation-field);
+  color: var(--ds-color-text);
+  font: inherit;
+  font-size: var(--ds-text-base);
+  transition:
+    border-color var(--ds-motion-hover),
+    background-color var(--ds-motion-hover);
+}
+
+/* The ring of a focused field is its border and a soft halo, replacing the global outline. */
+.ds-field:focus-visible {
+  outline: none;
+  border-color: var(--ds-color-accent);
+  box-shadow: var(--ds-elevation-field-focus);
+}
+
+.ds-field::placeholder {
+  color: var(--ds-color-text-subtle);
+}
+
+.ds-field[aria-invalid='true'] {
+  border-color: var(--ds-color-danger-mark);
+  background: var(--ds-color-danger-surface);
+}
+
+.ds-field-error {
+  margin-top: var(--ds-space-2);
+  color: var(--ds-color-danger);
+  font-size: var(--ds-text-sm);
+  font-weight: var(--ds-weight-medium);
+}
+
+/* Segmented control */
+.ds-segmented {
+  display: inline-flex;
+  align-items: center;
+  /* Too many options for a small phone scroll inside the control, not the page (N5.1). */
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 3px;
+  border: 1px solid var(--ds-color-border-glass-soft);
+  border-radius: var(--ds-radius-chip);
+  background: var(--ds-color-track);
+}
+
+.ds-segmented > * {
+  /* Options keep their width and the control scrolls, instead of squeezing labels together. */
+  flex-shrink: 0;
+  min-width: var(--ds-tap-target-min);
+  min-height: var(--ds-tap-target-min);
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border: 0;
+  border-radius: var(--ds-radius-chip);
+  background: none;
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-semibold);
+  color: var(--ds-color-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* 44px targets below md (house rule), the compact pill from md up. */
+@media (min-width: 48rem) {
+  .ds-segmented > * {
+    min-height: auto;
+  }
+}
+
+.ds-segmented > [aria-selected='true'],
+.ds-segmented > [aria-pressed='true'],
+.ds-segmented > [data-selected='true'] {
+  background: var(--ds-color-surface-selected);
+  color: var(--ds-color-text);
+  box-shadow: var(--ds-elevation-selected);
+}
+
+/* Numerals */
+.ds-num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--ds-tracking-num);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.ds-stat-value {
+  font-size: var(--ds-text-4xl);
+  font-weight: var(--ds-weight-bold);
+  letter-spacing: var(--ds-tracking-num);
+  line-height: var(--ds-leading-none);
+  color: var(--ds-color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.ds-stat-unit {
+  font-size: var(--ds-text-lg);
+  font-weight: var(--ds-weight-bold);
+  color: var(--ds-color-text-muted);
+  letter-spacing: var(--ds-tracking-tight);
+}
+
+/* Credit movements: out of the wallet is accent, in is success. */
+.ds-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--ds-weight-bold);
+  letter-spacing: var(--ds-tracking-num);
+}
+.ds-amount--out {
+  color: var(--ds-color-accent);
+}
+.ds-amount--in {
+  color: var(--ds-color-success);
+}
+
+/* Placeholder for surfaces that are not built yet */
+.ds-placeholder {
+  display: flex;
+  align-items: flex-end;
+  padding: var(--ds-space-3);
+  border: 1px solid var(--ds-color-border-glass-soft);
+  border-radius: var(--ds-radius-inset);
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--ds-ink-a10) 0 1.5px,
+    transparent 1.5px 8px
+  );
+}
+
+.ds-placeholder > span {
+  padding: var(--ds-space-1) var(--ds-space-2);
+  border-radius: var(--ds-radius-chip);
+  background: rgb(255 255 255 / 0.8);
+  color: var(--ds-color-text-muted);
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-button);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Chart bar */
+.ds-bar {
+  height: 9px;
+  border-radius: var(--ds-radius-chip);
+  background: var(--ds-chart-series-1);
+}
+
+/* Loading placeholder bar (N5.2). LoadingState adds animate-pulse; reduced motion stops it. */
+.ds-skeleton {
+  display: block;
+  height: var(--ds-space-4);
+  border-radius: var(--ds-radius-tile);
+  background: var(--ds-color-track);
+}
+
+/* Notice: a tinted box for information, confirmations and refused actions (N5.4). */
+.ds-notice {
+  display: grid;
+  gap: var(--ds-space-1);
+  padding: var(--ds-space-4);
+  border: 1px solid;
+  border-radius: var(--ds-radius-inset);
+  color: var(--ds-color-text);
+}
+
+.ds-notice--info {
+  background: var(--ds-color-info-surface);
+  border-color: transparent;
+}
+
+.ds-notice--success {
+  background: var(--ds-color-success-surface);
+  border-color: transparent;
+}
+
+.ds-notice--danger {
+  background: var(--ds-color-danger-surface);
+  border-color: transparent;
+}
+
+/* Select: the native arrow differs per browser, so it is hidden and SelectField draws its own. */
+.ds-select {
+  appearance: none;
+  padding-right: var(--ds-space-10);
+}
+
+/* A button whose request is running stays fully visible, so it reads as busy, not as unavailable. */
+.ds-btn[aria-busy='true'] {
+  opacity: 1;
+  cursor: progress;
+}
+
+/* Sidebar navigation item. NavLink marks the current page with aria-current="page". */
+.ds-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  min-height: var(--ds-control-h-md);
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border-radius: var(--ds-radius-button);
+  color: var(--ds-color-text-muted);
+  font-size: var(--ds-text-md);
+  font-weight: var(--ds-weight-medium);
+  transition:
+    background-color var(--ds-motion-hover),
+    color var(--ds-motion-hover);
+}
+
+.ds-nav-item:hover {
+  background: var(--ds-color-surface-hover);
+  color: var(--ds-color-text);
+}
+
+.ds-nav-item[aria-current='page'] {
+  background: var(--ds-color-accent-subtle);
+  color: var(--ds-color-accent-on-tint);
+}
+
+@media (min-width: 48rem) {
+  .ds-nav-item {
+    min-height: var(--ds-control-h-compact);
+  }
+}
+
+
+/* Mobile tab bar: a floating pill at the bottom of the screen, below lg. */
+.ds-tabbar {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--ds-space-1);
+  padding: var(--ds-space-1);
+  border: 1px solid var(--ds-color-border-glass);
+  border-radius: var(--ds-radius-chip);
+  background: var(--ds-color-surface-chrome);
+  backdrop-filter: blur(var(--ds-blur-chrome)) saturate(var(--ds-saturate-glass));
+  -webkit-backdrop-filter: blur(var(--ds-blur-chrome)) saturate(var(--ds-saturate-glass));
+  box-shadow: var(--ds-elevation-panel);
+}
+
+.ds-tabbar-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-1);
+  min-height: var(--ds-tap-target-min);
+  padding: var(--ds-space-2) var(--ds-space-1);
+  border-radius: var(--ds-radius-chip);
+  color: var(--ds-color-text-muted);
+  font-size: var(--ds-text-xs);
+  font-weight: var(--ds-weight-medium);
+}
+
+.ds-tabbar-item[aria-current='page'] {
+  background: var(--ds-color-accent-subtle);
+  color: var(--ds-color-accent-on-tint);
+}

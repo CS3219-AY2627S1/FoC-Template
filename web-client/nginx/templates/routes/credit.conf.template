@@ -1,0 +1,10 @@
+# Routes for the credit-service. Only the browser-facing reads are reachable here:
+# the balance (F4.1.4), an account's transaction history (F4.5.3), and the whole ledger
+# for the admin dashboard (F4.5.3, administrators only, enforced by the service). announce,
+# the reservation mutations and the per-errand ledger are service-to-service only, so they
+# fall through to the JSON 404.
+location ~ ^/api/credit/(account/[^/]+/balance|transactions|transactions/user/[^/]+)$ {
+  set $upstream ${CREDIT_SERVICE_URL};
+  rewrite ^/api/credit(/.*)$ $1 break;
+  proxy_pass $upstream;
+}

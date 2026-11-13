@@ -1,0 +1,7 @@
+$kind: http-request
+url: "{{userServiceUrl}}/users?q=adm&state=Active"
+method: GET
+queryParams:
+  q: adm
+  state: Active
+order: 4483500000000000

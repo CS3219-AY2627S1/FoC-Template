@@ -1,0 +1,45 @@
+{
+    "name": "message-service",
+    "version": "0.1.0",
+    "private": true,
+    "description": "Direct messages between Relay accounts, live over Socket.IO",
+    "type": "module",
+    "dependencies": {
+        "amqplib": "^2.2.0",
+        "cookie-parser": "^1.4.7",
+        "express": "^5.2.1",
+        "helmet": "^8.3.0",
+        "mongoose": "^9.10.2",
+        "pino": "^10.4.0",
+        "socket.io": "^4.8.4",
+        "zod": "^4.6.5"
+    },
+    "scripts": {
+        "dev": "node --watch --env-file-if-exists=.env src/index.ts",
+        "start": "node src/index.ts",
+        "typecheck": "tsc --noEmit",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage"
+    },
+    "devDependencies": {
+        "@types/cookie-parser": "^1.4.10",
+        "@types/express": "^5.0.6",
+        "@types/node": "^24.19.2",
+        "@types/supertest": "^7.2.1",
+        "@vitest/coverage-v8": "^5.0.1",
+        "mongodb-memory-server": "^11.3.0",
+        "pino-pretty": "^13.1.3",
+        "socket.io-client": "^4.8.4",
+        "supertest": "^7.3.0",
+        "typescript": "^7.0.2",
+        "vitest": "^5.0.1"
+    },
+    "main": "index.js",
+    "directories": {
+        "test": "test"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC"
+}

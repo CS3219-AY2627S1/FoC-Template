@@ -1,0 +1,8 @@
+# Terraform's working files and state. The state stays on the laptop that runs terraform;
+# the lock file is committed, so everyone gets the same provider versions.
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+
+# Passwords and tokens for the cloud. Never in Git.
+*.env

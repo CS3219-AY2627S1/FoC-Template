@@ -1,0 +1,8 @@
+Title: The admin console
+Questions: How do I open the admin console? Where is the admin page? How do I become an administrator? What can administrators do? How do I leave the admin console?
+
+The admin console is for accounts with the administrator role. The student app has no link to it, so go to /admin by typing the address. Its menu has Orders, Students, Reports, Suppliers and Credits. Leave admin console returns to the student app. Accounts that are not administrators see the page "Administrator access required".
+
+You cannot give yourself the administrator role. An existing administrator has to grant it.
+
+Administrators look up accounts, suspend and reinstate them, grant or remove the administrator role, decide reports, follow every credit movement, and create, update or deactivate suppliers.

@@ -1,0 +1,10 @@
+$kind: http-request
+url: "{{userServiceUrl}}/users/me"
+method: PATCH
+body:
+  type: json
+  content: |-
+    {
+        "username": "felixhg"
+    }
+order: 4465595831282140

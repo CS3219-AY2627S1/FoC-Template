@@ -1,0 +1,4 @@
+Title: Who pays for the items
+Questions: How do I pay for the items? Who pays the store? Do credits pay for my food? Can I pay in the app? How does the courier get their money back?
+
+The app does not handle payment for the items themselves, and there is no checkout. Credits only reward the courier for doing the errand, and are not used to pay the store. Paying for the items happens outside the platform, so agree on this between requester and courier, for example in the errand chat.

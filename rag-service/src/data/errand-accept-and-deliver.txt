@@ -1,0 +1,11 @@
+Title: How to accept and deliver an errand
+Questions: How do I accept an errand? How do I deliver? How do I earn credits? How do I mark something as picked up? Why can't I accept this errand? Can I accept my own errand? Who confirms delivery? Can I give an errand back? Where are my deliveries?
+
+The Errands page has three tabs: Browse open lists the open errands of other students, My requests the errands you posted, and My deliveries the errands you accepted.
+
+1. In Browse open, press Accept errand on an errand. You are now its courier and it moves to My deliveries.
+2. After collecting the items, press Mark picked up.
+3. After handing them over, press Mark delivered.
+4. The requester presses Confirm delivery / Pay courier, the errand becomes Completed and the credits are transferred to you.
+
+An errand has only one courier, and only an Open errand can be accepted. You cannot accept it once someone else has, once its needed-by time has passed, or if it is your own. Only the courier can mark Picked up and Delivered, and only the requester can confirm. A courier cannot give an accepted errand back; if you cannot do it, tell the requester in the errand chat, since only the requester can cancel. Once an errand is accepted, only its requester and courier can see it.

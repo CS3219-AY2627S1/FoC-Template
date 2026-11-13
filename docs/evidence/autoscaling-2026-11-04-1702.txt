@@ -1,0 +1,280 @@
+Autoscaling evidence for N6.3, 2026-11-04 09:02 UTC
+k6: 20 virtual users for 5m, requests for the own profile through the gateway
+Rule: target 70 % of the CPU request, scale out after 120 s above it, scale in after 300 s below
+
+== 09:02:37 UTC
+credit-service     6     70    1     1
+supplier-service   0     70    1     1
+user-service       9     70    1     1
+web-client         1     70    1     1
+== 09:02:52 UTC
+credit-service     6     70    1     1
+supplier-service   3     70    1     1
+user-service       13    70    1     1
+web-client         1     70    1     1
+== 09:03:08 UTC
+credit-service     7     70    1     1
+supplier-service   3     70    1     1
+user-service       76    70    1     1
+web-client         30    70    1     1
+== 09:03:23 UTC
+credit-service     7      70    1     1
+supplier-service   2      70    1     1
+user-service       1140   70    1     1
+web-client         227    70    1     1
+== 09:03:39 UTC
+credit-service     7      70    1     1
+supplier-service   1      70    1     1
+user-service       1152   70    1     1
+web-client         227    70    1     1
+== 09:03:55 UTC
+credit-service     5      70    1     1
+supplier-service   2      70    1     1
+user-service       1087   70    1     1
+web-client         249    70    1     1
+== 09:04:10 UTC
+credit-service     4      70    1     1
+supplier-service   5      70    1     1
+user-service       741    70    1     1
+web-client         1342   70    1     1
+== 09:04:25 UTC
+credit-service     4      70    1     1
+supplier-service   1      70    1     1
+user-service       913    70    1     1
+web-client         1863   70    1     1
+== 09:04:41 UTC
+credit-service     5      70    1     1
+supplier-service   2      70    1     1
+user-service       1038   70    1     1
+web-client         593    70    1     1
+== 09:04:56 UTC
+credit-service     9      70    1     1
+supplier-service   2      70    1     1
+user-service       1055   70    1     1
+web-client         264    70    1     1
+== 09:05:11 UTC
+credit-service     6      70    1     1
+supplier-service   2      70    1     1
+user-service       850    70    1     2
+web-client         1223   70    1     2
+== 09:05:27 UTC
+credit-service     6      70    1     1
+supplier-service   1      70    1     1
+user-service       853    70    2     3
+web-client         1349   70    2     3
+== 09:05:42 UTC
+credit-service     6     70    1     1
+supplier-service   2     70    1     1
+user-service       724   70    3     4
+web-client         193   70    3     4
+== 09:05:57 UTC
+credit-service     5     70    1     1
+supplier-service   4     70    1     1
+user-service       680   70    4     4
+web-client         158   70    4     4
+== 09:06:13 UTC
+credit-service     3     70    1     1
+supplier-service   1     70    1     1
+user-service       523   70    4     4
+web-client         111   70    4     4
+== 09:06:28 UTC
+credit-service     3     70    1     1
+supplier-service   1     70    1     1
+user-service       479   70    4     4
+web-client         183   70    4     4
+== 09:06:43 UTC
+credit-service     3     70    1     1
+supplier-service   1     70    1     1
+user-service       517   70    4     4
+web-client         113   70    4     4
+== 09:06:59 UTC
+credit-service     3     70    1     1
+supplier-service   1     70    1     1
+user-service       506   70    4     4
+web-client         146   70    4     4
+== 09:07:14 UTC
+credit-service     6     70    1     1
+supplier-service   1     70    1     1
+user-service       448   70    4     4
+web-client         204   70    4     4
+== 09:07:29 UTC
+credit-service     2     70    1     1
+supplier-service   1     70    1     1
+user-service       455   70    4     4
+web-client         243   70    4     4
+== 09:07:44 UTC
+credit-service     3     70    1     1
+supplier-service   1     70    1     1
+user-service       500   70    4     4
+web-client         182   70    4     4
+== 09:08:00 UTC
+credit-service     10    70    1     1
+supplier-service   1     70    1     1
+user-service       487   70    4     4
+web-client         187   70    4     4
+== 09:08:15 UTC
+credit-service     2     70    1     1
+supplier-service   1     70    1     1
+user-service       444   70    4     4
+web-client         252   70    4     4
+== 09:08:30 UTC
+credit-service     3     70    1     1
+supplier-service   1     70    1     1
+user-service       454   70    4     4
+web-client         191   70    4     4
+== 09:08:45 UTC
+credit-service     2     70    1     1
+supplier-service   2     70    1     1
+user-service       497   70    4     4
+web-client         85    70    4     4
+-- load finished 09:09:01 UTC, watching the scale-in
+== 09:09:01 UTC
+credit-service     2     70    1     1
+supplier-service   1     70    1     1
+user-service       365   70    4     4
+web-client         215   70    4     4
+== 09:09:31 UTC
+credit-service     2     70    1     1
+supplier-service   1     70    1     1
+user-service       3     70    4     4
+web-client         1     70    4     4
+== 09:10:02 UTC
+credit-service     3     70    1     1
+supplier-service   1     70    1     1
+user-service       3     70    4     4
+web-client         1     70    4     4
+== 09:10:32 UTC
+credit-service     3     70    1     1
+supplier-service   1     70    1     1
+user-service       4     70    4     4
+web-client         1     70    4     4
+== 09:11:02 UTC
+credit-service     3     70    1     1
+supplier-service   1     70    1     1
+user-service       6     70    4     4
+web-client         1     70    4     4
+== 09:11:33 UTC
+credit-service     3     70    1     1
+supplier-service   1     70    1     1
+user-service       4     70    4     4
+web-client         1     70    4     4
+== 09:12:03 UTC
+credit-service     2     70    1     1
+supplier-service   1     70    1     1
+user-service       4     70    4     4
+web-client         1     70    4     4
+== 09:12:33 UTC
+credit-service     3     70    1     1
+supplier-service   1     70    1     1
+user-service       8     70    4     4
+web-client         1     70    4     4
+== 09:13:03 UTC
+credit-service     3     70    1     1
+supplier-service   1     70    1     1
+user-service       4     70    4     4
+web-client         1     70    4     4
+== 09:13:34 UTC
+credit-service     3     70    1     1
+supplier-service   1     70    1     1
+user-service       4     70    4     4
+web-client         1     70    4     4
+== 09:14:04 UTC
+credit-service     2     70    1     1
+supplier-service   1     70    1     1
+user-service       4     70    4     4
+web-client         1     70    4     3
+== 09:14:36 UTC
+credit-service     3     70    1     1
+supplier-service   1     70    1     1
+user-service       4     70    1     1
+web-client         1     70    1     1
+== 09:15:07 UTC
+credit-service     2     70    1     1
+supplier-service   1     70    1     1
+user-service       4     70    1     1
+web-client         1     70    1     1
+== 09:15:38 UTC
+credit-service     2     70    1     1
+supplier-service   1     70    1     1
+user-service       5     70    1     1
+web-client         1     70    1     1
+
+== Scaling events
+TIME                   SERVICE            MESSAGE
+2026-11-04T09:01:58Z   user-service       failed to get cpu utilization: unable to get metrics for resource cpu: no metrics returned from resource metrics API
+2026-11-04T09:01:58Z   web-client         invalid metrics (1 invalid out of 1), first error is: failed to get cpu resource metric value: failed to get cpu utilization: unable to get metrics for resource cpu: no metrics returned from resource metrics API
+2026-11-04T09:01:58Z   supplier-service   failed to get cpu utilization: unable to get metrics for resource cpu: no metrics returned from resource metrics API
+2026-11-04T09:01:58Z   supplier-service   invalid metrics (1 invalid out of 1), first error is: failed to get cpu resource metric value: failed to get cpu utilization: unable to get metrics for resource cpu: no metrics returned from resource metrics API
+2026-11-04T09:01:58Z   web-client         failed to get cpu utilization: unable to get metrics for resource cpu: no metrics returned from resource metrics API
+2026-11-04T09:01:58Z   user-service       invalid metrics (1 invalid out of 1), first error is: failed to get cpu resource metric value: failed to get cpu utilization: unable to get metrics for resource cpu: no metrics returned from resource metrics API
+2026-11-04T09:02:13Z   supplier-service   invalid metrics (1 invalid out of 1), first error is: failed to get cpu resource metric value: failed to get cpu utilization: did not receive metrics for targeted pods (pods might be unready)
+2026-11-04T09:02:13Z   web-client         failed to get cpu utilization: did not receive metrics for targeted pods (pods might be unready)
+2026-11-04T09:02:13Z   user-service       failed to get cpu utilization: did not receive metrics for targeted pods (pods might be unready)
+2026-11-04T09:02:13Z   user-service       invalid metrics (1 invalid out of 1), first error is: failed to get cpu resource metric value: failed to get cpu utilization: did not receive metrics for targeted pods (pods might be unready)
+2026-11-04T09:02:13Z   credit-service     failed to get cpu utilization: did not receive metrics for targeted pods (pods might be unready)
+2026-11-04T09:02:13Z   web-client         invalid metrics (1 invalid out of 1), first error is: failed to get cpu resource metric value: failed to get cpu utilization: did not receive metrics for targeted pods (pods might be unready)
+2026-11-04T09:02:13Z   supplier-service   failed to get cpu utilization: did not receive metrics for targeted pods (pods might be unready)
+2026-11-04T09:02:13Z   credit-service     invalid metrics (1 invalid out of 1), first error is: failed to get cpu resource metric value: failed to get cpu utilization: did not receive metrics for targeted pods (pods might be unready)
+2026-11-04T09:04:59Z   user-service       New size: 2; reason: cpu resource utilization (percentage of request) above target
+2026-11-04T09:04:59Z   web-client         New size: 2; reason: cpu resource utilization (percentage of request) above target
+2026-11-04T09:05:14Z   user-service       New size: 3; reason: cpu resource utilization (percentage of request) above target
+2026-11-04T09:05:14Z   web-client         New size: 3; reason: cpu resource utilization (percentage of request) above target
+2026-11-04T09:05:29Z   user-service       New size: 4; reason: cpu resource utilization (percentage of request) above target
+2026-11-04T09:05:29Z   web-client         New size: 4; reason: cpu resource utilization (percentage of request) above target
+2026-11-04T09:13:59Z   web-client         New size: 3; reason: All metrics below target
+2026-11-04T09:14:14Z   web-client         New size: 1; reason: All metrics below target
+2026-11-04T09:14:15Z   user-service       New size: 1; reason: All metrics below target
+
+== user-service instances: created and ready
+POD                             CREATED                READY_SINCE
+user-service-68f6d55d56-vgrt6   2026-11-04T09:01:49Z   2026-11-04T09:01:55Z
+
+== k6 summary
+
+
+  █ THRESHOLDS 
+
+    http_req_failed
+    ✓ 'rate<0.01' rate=0.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 204776  568.408476/s
+    checks_succeeded...: 100.00% 204776 out of 204776
+    checks_failed......: 0.00%   0 out of 204776
+
+    ✓ profile answered 200
+
+    HTTP
+    http_req_duration..............: avg=32ms    min=2.09ms med=21.92ms max=378.13ms p(90)=71.24ms p(95)=90.63ms
+      { expected_response:true }...: avg=32ms    min=2.09ms med=21.92ms max=378.13ms p(90)=71.24ms p(95)=90.63ms
+    http_req_failed................: 0.00%  0 out of 204777
+    http_reqs......................: 204777 568.411252/s
+
+    EXECUTION
+    iteration_duration.............: avg=32.27ms min=2.25ms med=22.17ms max=378.28ms p(90)=71.62ms p(95)=91.06ms
+    iterations.....................: 204776 568.408476/s
+    vus............................: 1      min=1           max=20
+    vus_max........................: 20     min=20          max=20
+
+    NETWORK
+    data_received..................: 222 MB 616 kB/s
+    data_sent......................: 37 MB  102 kB/s
+
+
+
+
+== user-service containers started and stopped (added after the run from the pod events; the first Started per pod is the wait-for-dependencies init container)
+TIME                   POD                                 REASON
+2026-11-04T09:01:50Z   user-service-68f6d55d56-vgrt6       Started
+2026-11-04T09:01:52Z   user-service-68f6d55d56-vgrt6       Started
+2026-11-04T09:05:01Z   user-service-68f6d55d56-zwqgv       Started
+2026-11-04T09:05:03Z   user-service-68f6d55d56-zwqgv       Started
+2026-11-04T09:05:15Z   user-service-68f6d55d56-9mnc6       Started
+2026-11-04T09:05:18Z   user-service-68f6d55d56-9mnc6       Started
+2026-11-04T09:05:30Z   user-service-68f6d55d56-9lxml       Started
+2026-11-04T09:05:32Z   user-service-68f6d55d56-9lxml       Started
+2026-11-04T09:14:15Z   user-service-68f6d55d56-9lxml       Killing
+2026-11-04T09:14:15Z   user-service-68f6d55d56-9mnc6       Killing
+2026-11-04T09:14:15Z   user-service-68f6d55d56-zwqgv       Killing

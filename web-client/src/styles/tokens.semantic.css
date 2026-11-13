@@ -1,0 +1,110 @@
+/* Roles. Components use these, never the primitives. */
+
+:root {
+  /* Backdrop */
+  --ds-color-backdrop: var(--ds-wall-base);
+  --ds-gradient-backdrop:
+    radial-gradient(70% 50% at 0% 0%, var(--ds-peach-wash) 0%, transparent 60%),
+    radial-gradient(60% 45% at 100% 0%, var(--ds-violet-wash) 0%, transparent 62%),
+    radial-gradient(80% 50% at 50% 110%, var(--ds-teal-wash) 0%, transparent 60%),
+    linear-gradient(var(--ds-wall-top), var(--ds-wall-bottom));
+
+  /* Surfaces */
+  --ds-color-surface: var(--ds-glass);
+  --ds-color-surface-raised: var(--ds-glass-hi);
+  --ds-color-surface-sunken: var(--ds-glass-lo);
+  --ds-color-surface-chrome: var(--ds-glass-chrome);
+  --ds-color-surface-selected: var(--ds-glass-strong);
+  --ds-color-track: var(--ds-ink-a06);
+  --ds-color-surface-hover: var(--ds-ink-a04);
+
+  /* Text. Subtle is for labels and placeholders, never for prose. */
+  --ds-color-text: var(--ds-ink);
+  --ds-color-text-muted: var(--ds-ink-a60);
+  --ds-color-text-subtle: var(--ds-ink-a40);
+  --ds-color-text-on-accent: #ffffff;
+  --ds-color-text-link: var(--ds-coral-600);
+  --ds-color-text-link-hover: var(--ds-coral-700);
+
+  /* Borders */
+  --ds-color-border: var(--ds-ink-a10);
+  --ds-color-border-strong: var(--ds-ink-a16);
+  --ds-color-border-glass: var(--ds-ink-a07);
+  --ds-color-border-glass-soft: var(--ds-ink-a06);
+
+  /* Accent */
+  --ds-color-accent: var(--ds-coral-600);
+  --ds-color-accent-hover: var(--ds-coral-700);
+  --ds-color-accent-on-tint: var(--ds-coral-800);
+  --ds-color-accent-subtle: var(--ds-tint-accent);
+  --ds-color-accent-on: #ffffff;
+  --ds-gradient-accent: linear-gradient(
+    var(--ds-coral-500),
+    var(--ds-coral-600)
+  );
+
+  /* Status. Open is danger, accepted and picked up are info, completed is
+     success, cancelled and expired are neutral. */
+  --ds-color-danger: var(--ds-coral-800);
+  --ds-color-danger-surface: var(--ds-tint-accent);
+  --ds-color-danger-mark: var(--ds-coral-600);
+
+  --ds-color-info: var(--ds-violet-600);
+  --ds-color-info-surface: var(--ds-tint-violet);
+  --ds-color-info-mark: var(--ds-violet-500);
+
+  --ds-color-success: var(--ds-teal-700);
+  --ds-color-success-surface: var(--ds-tint-teal);
+  --ds-color-success-mark: var(--ds-teal-500);
+
+  --ds-color-neutral: var(--ds-ink-a60);
+  --ds-color-neutral-surface: var(--ds-tint-ink);
+  --ds-color-neutral-mark: var(--ds-ink-a40);
+
+  --ds-color-warning: var(--ds-coral-700);
+  --ds-color-warning-surface: var(--ds-tint-accent);
+
+  /* Focus */
+  --ds-color-focus-ring: var(--ds-coral-600);
+  --ds-focus-ring-width: 2px;
+  --ds-focus-ring-offset: 3px;
+  /* Room kept free when focus scrolls into view: a little air above, the floating tab
+     bar below. */
+  --ds-focus-scroll-top: var(--ds-space-6);
+  --ds-focus-scroll-bottom: calc(var(--ds-space-24) + var(--ds-space-4));
+
+  /* Shape */
+  --ds-radius-card: var(--ds-radius-sm);
+  --ds-radius-panel: var(--ds-radius-lg);
+  --ds-radius-inset: var(--ds-radius-xs);
+  --ds-radius-button: var(--ds-radius-xs);
+  --ds-radius-field: var(--ds-radius-xs);
+  --ds-radius-tile: var(--ds-radius-xs);
+  --ds-radius-chip: var(--ds-radius-full);
+
+  /* Elevation */
+  --ds-elevation-card: var(--ds-shadow-card);
+  --ds-elevation-inset: var(--ds-shadow-inset);
+  --ds-elevation-button: var(--ds-shadow-button);
+  --ds-elevation-selected: var(--ds-shadow-segment);
+  --ds-elevation-panel: var(--ds-shadow-panel);
+  --ds-elevation-accent: var(--ds-shadow-accent);
+  --ds-elevation-field: var(--ds-shadow-field);
+  --ds-elevation-field-focus: var(--ds-shadow-field-focus);
+
+  /* Motion */
+  --ds-motion-hover: var(--ds-duration-fast) var(--ds-ease-standard);
+  --ds-motion-enter: var(--ds-duration-base) var(--ds-ease-emphasized);
+
+  /* Charts */
+  --ds-chart-series-1: linear-gradient(
+    90deg,
+    var(--ds-coral-300),
+    var(--ds-coral-600)
+  );
+  --ds-chart-series-1-solid: var(--ds-coral-600);
+  --ds-chart-series-2-solid: var(--ds-violet-500);
+  --ds-chart-series-3-solid: var(--ds-teal-500);
+  --ds-chart-grid: var(--ds-color-border);
+  --ds-chart-axis-text: var(--ds-color-text-subtle);
+}

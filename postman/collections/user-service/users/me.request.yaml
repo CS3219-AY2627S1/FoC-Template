@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{userServiceUrl}}/users/me"
+method: GET
+order: 1790221337002

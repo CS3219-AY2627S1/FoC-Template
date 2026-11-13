@@ -1,0 +1,4 @@
+Title: Things the app does not do
+Questions: Can I see the menu? Can I track my courier? Can I order a specific product? Does the app show stock? Is there live tracking? Can I see where my courier is on a map?
+
+The app does not show store menus, product catalogues or stock, so it cannot tell you whether a store has an item or what it costs. You describe what you need in the errand. There is no checkout or payment for items. When posting an errand you mark the drop-off point on a map and see the walk from the pickup, but there is no live tracking of the courier, so follow progress through the errand status and the errand chat instead.

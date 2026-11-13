@@ -1,0 +1,19 @@
+$kind: http-request
+url: "{{userServiceUrl}}/auth/verify"
+method: POST
+body:
+  type: json
+  content: |-
+    {
+        "email": "felix@u.nus.edu",
+        "code": "{{otpCode}}"
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.sendRequest(pm.environment.get("mailpitUrl") + "/api/v1/message/latest", (err, res) => {
+          const match = res.json().Text.match(/\b\d{6}\b/);
+          pm.environment.set("otpCode", match ? match[0] : "");
+      });
+    language: text/javascript
+order: 3102390322685278

@@ -1,0 +1,10 @@
+# Routes for the user-service. Only the paths below are reachable from the browser;
+# /internal and /health fall through to the JSON 404 in default.conf.
+location ~ ^/api/user/(auth|users|reports)(/|$) {
+  # A variable makes nginx look the service up per request instead of once at start-up,
+  # so the web client starts and stays up while the user-service is down (N6.1.2).
+  set $upstream ${USER_SERVICE_URL};
+  # Strip the gateway prefix: /api/user/users/me reaches the service as /users/me.
+  rewrite ^/api/user(/.*)$ $1 break;
+  proxy_pass $upstream;
+}

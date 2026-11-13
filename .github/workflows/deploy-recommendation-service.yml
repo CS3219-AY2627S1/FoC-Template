@@ -1,0 +1,60 @@
+name: deploy recommendation-service
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-recommendation-service
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ap-southeast-1
+  ECR_REPOSITORY: recommendation-service
+
+jobs:
+  test:
+    name: typecheck and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: recommendation-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: recommendation-service/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  deploy:
+    name: build, push to ECR, deploy App Runner
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: recommendation-service
+          file: recommendation-service/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:dev
+      - name: Deploy the API service
+        run: aws apprunner start-deployment --service-arn "${{ secrets.APP_RUNNER_API_ARN }}"
+      - name: Deploy the consumer service
+        run: aws apprunner start-deployment --service-arn "${{ secrets.APP_RUNNER_CONSUMER_ARN }}"

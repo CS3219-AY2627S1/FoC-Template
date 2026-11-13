@@ -1,0 +1,12 @@
+Title: What works in the admin console
+Questions: How do I see all students? How do I manage users as admin? How do I suspend an account? How do I make someone an administrator? How do I add a supplier as admin? How do I deactivate a supplier? How do I decide a report? How do I see orders as admin? Where do I see all credit movements?
+
+Students lists every account. Open one to see its details, state history, reports and credit balance, to suspend or reinstate it with a reason of 20 to 500 characters, or to make it an administrator or remove that role. You cannot edit or delete an account from this page.
+
+Reports lists reports by state: Open, Dismissed or Actioned. Open a report and give a justification of 20 to 500 characters, then press Dismiss report or Suspend account.
+
+Suppliers lists suppliers. Press Add supplier to create one, or open one to edit it and to deactivate or reactivate it.
+
+Credits lists every credit movement of every student, newest first, with its time, student, type, errand and amount. Search by a student's account id to see only theirs.
+
+Orders is not finished and currently shows "Not built yet", so you cannot see orders there yet. Problems with an errand reach administrators as reports.

@@ -1,0 +1,4 @@
+Title: Suspended accounts
+Questions: What does suspended mean? Why was my account suspended? How do I get my account back? Can I appeal a suspension?
+
+A suspended account cannot log in, and the Log in page shows "This account is suspended". While suspended, the account is refused everywhere in the app. Suspension is decided by administrators, and you cannot lift it yourself. The app does not currently offer a page for appealing a suspension or seeing the reason for it.

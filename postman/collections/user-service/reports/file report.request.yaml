@@ -1,0 +1,12 @@
+$kind: http-request
+url: "{{userServiceUrl}}/reports"
+method: POST
+body:
+  type: json
+  content: |-
+    {
+        "reportedId": "{{targetUserId}}",
+        "errandId": "42",
+        "reason": "Took the food and never delivered it"
+    }
+order: 1000

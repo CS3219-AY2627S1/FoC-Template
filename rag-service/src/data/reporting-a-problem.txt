@@ -1,0 +1,12 @@
+Title: Reporting a problem with an errand
+Questions: How do I report someone? My courier did not deliver. The courier says it was delivered but I did not get it. The requester did not confirm. The other person did not pay me. Someone behaved badly. What if something goes wrong with my errand? Can I open a dispute? What happens after I report someone?
+
+If something went wrong with an errand, for example your items never arrived although the courier marked it Delivered, or the requester does not confirm, report the other person on that errand. Reports are how every problem with an errand reaches the administrators; there is no separate dispute process.
+
+1. Open the errand under Errands and choose View details.
+2. Press Report a problem at the top of the page.
+3. Describe what happened in 20 to 500 characters and press Send report.
+
+The button appears once a courier has accepted the errand, because only the requester and the courier can report each other, also after the errand has ended. You can report an errand once. An administrator reads every report and either dismisses it or suspends the reported account.
+
+If the courier marked the errand Delivered but you did not get your items, do not press Confirm delivery, because confirming pays the courier.

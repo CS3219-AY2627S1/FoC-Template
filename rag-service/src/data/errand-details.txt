@@ -1,0 +1,10 @@
+Title: The errand page
+Questions: Where do I see the details of my errand? What does View details show? Who can see my errand? How do I see the progress of my errand? Where is the chat for my errand? What is my role on this errand?
+
+Press View details on an errand card to open its page. It shows:
+Progress: the steps from Posted to Confirmed and paid, with the current one marked.
+Details: the pickup supplier, the drop-off location, the needed-by time, the items, the reward, your role (Requester or Courier), and when it was posted and last updated.
+The chat with the other person on the errand, once a courier has accepted it.
+Report a problem at the top, to report the other person on the errand.
+
+Anyone can see an Open errand, because couriers browse them. Once it is accepted, only its requester and courier can open it; for everyone else it no longer exists.

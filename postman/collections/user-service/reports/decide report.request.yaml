@@ -1,0 +1,11 @@
+$kind: http-request
+url: "{{userServiceUrl}}/reports/{{reportId}}/decision"
+method: POST
+body:
+  type: json
+  content: |-
+    {
+        "outcome": "Actioned",
+        "justification": "Chat log confirms the errand was never delivered"
+    }
+order: 5000

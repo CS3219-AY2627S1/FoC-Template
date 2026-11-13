@@ -1,0 +1,11 @@
+$kind: http-request
+name: "verify: resend code"
+url: "{{userServiceUrl}}/auth/verify/resend"
+method: POST
+body:
+  type: json
+  content: |-
+    {
+        "email": "felix@u.nus.edu"
+    }
+order: 4261362344771990

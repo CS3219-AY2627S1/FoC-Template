@@ -1,0 +1,12 @@
+$kind: http-request
+name: "login: email"
+url: "{{userServiceUrl}}/auth/login"
+method: POST
+body:
+  type: json
+  content: |-
+    {
+        "identifier": "felix@u.nus.edu",
+        "password": "test1234"
+    }
+order: 4338661430629124

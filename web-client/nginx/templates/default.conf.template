@@ -1,0 +1,51 @@
+# DNS server for looking up the services (Docker's internal DNS, later kube-dns). Filled in at start.
+resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;
+
+server {
+  listen 8080;
+  root /usr/share/nginx/html;
+
+  # When nginx cannot reach a service (stopped, restarting, unknown), answer in the same
+  # JSON error shape as the services, so the client handles it like any other error.
+  error_page 502 503 504 = @unavailable;
+
+  # Liveness check for Docker and later Kubernetes. Never touches a service.
+  location = /healthz {
+    access_log off;
+    default_type text/plain;
+    return 200 "ok\n";
+  }
+
+  # Settings the app reads from the environment of this container, so one image fits every place
+  # it runs. DEV_MAILBOX_URL is the local test inbox (Mailpit); it stays empty where real emails go out.
+  location = /api/config {
+    default_type application/json;
+    add_header Cache-Control "no-store";
+    return 200 '{"devMailboxUrl":"${DEV_MAILBOX_URL}"}';
+  }
+
+  # Each service routes its own paths in its own file (from step 6 on).
+  include /etc/nginx/conf.d/routes/*.conf;
+
+  # Any /api path no service file claimed. This is what keeps /internal unreachable.
+  location /api/ {
+    default_type application/json;
+    return 404 '{"error":{"code":"NOT_FOUND","message":"No such API route"}}';
+  }
+
+  location @unavailable {
+    default_type application/json;
+    return 503 '{"error":{"code":"SERVICE_UNAVAILABLE","message":"This part of Relay is not reachable right now"}}';
+  }
+
+  # Vite puts a content hash in every file name here, so browsers may cache them for a year.
+  location /assets/ {
+    expires 1y;
+  }
+
+  # SPA fallback: every other path gets index.html and React Router picks the page.
+  location / {
+    try_files $uri /index.html;
+    expires -1;
+  }
+}

@@ -1,0 +1,8 @@
+Title: Cancelled and expired errands
+Questions: How do I cancel an errand? What happens if nobody accepts my errand? Do I get my credits back? What does expired mean? When does an errand expire? Can I cancel after pickup? Can the courier cancel?
+
+Only the requester can cancel an errand, and only while it is Open or Accepted. On the Errands page under My requests, press Cancel request on the errand and confirm. Once the items are picked up it can no longer be cancelled. The courier cannot cancel.
+
+An Open errand expires at its needed-by time if nobody has accepted it by then.
+
+If an errand is cancelled or expires, the credits reserved for it are released back to your available balance, and no credits go to anyone else. You do not need to do anything to get them back.

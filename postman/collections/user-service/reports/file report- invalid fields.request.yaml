@@ -1,0 +1,13 @@
+$kind: http-request
+name: "file report: invalid fields"
+url: "{{userServiceUrl}}/reports"
+method: POST
+body:
+  type: json
+  content: |-
+    {
+        "reportedId": "",
+        "errandId": "",
+        "reason": "Too short"
+    }
+order: 2000

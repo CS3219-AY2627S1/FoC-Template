@@ -1,0 +1,8 @@
+Title: Supplier opening hours and availability
+Questions: Is this store open? What time does it close? What does inactive mean? Why can't I choose this supplier? What time zone are the hours in?
+
+Whether a supplier is open is worked out from its opening hours on Singapore time. A supplier is open from its opening time up to, but not including, its closing time. Some are open around the clock, and some close after midnight. When a supplier is closed, the app shows when it next opens.
+
+Inactive means an administrator has taken the supplier off the platform. You cannot post an errand with an inactive supplier, or with one that is closed at the time you need the items by.
+
+The hours in these documents are the starting data. Administrators can change them, so the supplier's page in the app is the one to trust.

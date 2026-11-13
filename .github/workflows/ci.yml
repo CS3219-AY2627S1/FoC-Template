@@ -1,0 +1,353 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+
+# A newer push to the same branch or pull request cancels the run that is still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      user-service: ${{ steps.filter.outputs.user-service }}
+      supplier-service: ${{ steps.filter.outputs.supplier-service }}
+      order-service: ${{ steps.filter.outputs.order-service }}
+      credit-service: ${{ steps.filter.outputs.credit-service }}
+      recommendation-service: ${{ steps.filter.outputs.recommendation-service }}
+      message-service: ${{ steps.filter.outputs.message-service }}
+      rag-service: ${{ steps.filter.outputs.rag-service }}
+      web-client: ${{ steps.filter.outputs.web-client }}
+      compose: ${{ steps.filter.outputs.compose }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          # A change to this workflow runs every job, so a new or changed job is tested in its pull request.
+          filters: |
+            workflow: &workflow
+              - '.github/workflows/ci.yml'
+            user-service:
+              - *workflow
+              - 'user-service/**'
+            supplier-service:
+              - *workflow
+              - 'supplier-service/**'
+              - 'data/csv/**'
+            order-service:
+              - *workflow
+              - 'order-service/**'
+            credit-service:
+              - *workflow
+              - 'credit-service/**'
+            recommendation-service:
+              - *workflow
+              - 'recommendation-service/**'
+            message-service:
+              - *workflow
+              - 'message-service/**'
+            rag-service:
+              - *workflow
+              - 'rag-service/**'
+            web-client:
+              - *workflow
+              - 'web-client/**'
+            compose:
+              - *workflow
+              - 'compose.yaml'
+              - '*/Dockerfile'
+              - '*/.dockerignore'
+              - '*-service/**'
+              - 'data/csv/**'
+              - 'web-client/nginx/**'
+
+  user-service:
+    name: user-service
+    needs: changes
+    if: needs.changes.outputs.user-service == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: user-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: user-service/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  supplier-service:
+    name: supplier-service
+    needs: changes
+    if: needs.changes.outputs.supplier-service == 'true'
+    runs-on: ubuntu-latest
+    # Without a database the API tests are skipped, so they get a real one.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: supplier
+          POSTGRES_PASSWORD: supplier
+          POSTGRES_DB: supplier_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U supplier -d supplier_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      SUPPLIER_TEST_DATABASE_URL: postgres://supplier:supplier@localhost:5432/supplier_test
+    defaults:
+      run:
+        working-directory: supplier-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: supplier-service/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  order-service:
+    name: order-service
+    needs: changes
+    if: needs.changes.outputs.order-service == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: order-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: order-service/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  credit-service:
+    name: credit-service
+    needs: changes
+    if: needs.changes.outputs.credit-service == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: credit-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: credit-service/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  recommendation-service:
+    name: recommendation-service
+    needs: changes
+    if: needs.changes.outputs.recommendation-service == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: recommendation-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: recommendation-service/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  message-service:
+    name: message-service
+    needs: changes
+    if: needs.changes.outputs.message-service == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: message-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: message-service/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  rag-service:
+    name: rag-service
+    needs: changes
+    if: needs.changes.outputs.rag-service == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rag-service
+    steps:
+      - uses: actions/checkout@v7
+      # The same uv version as in the rag-service Dockerfile. It also installs the Python of .python-version.
+      - run: pipx install uv==0.8.14
+      - run: uv sync --frozen
+      # Downloads the embedding model on the first run; the tests never call Claude.
+      - run: uv run --frozen python -m unittest discover -s tests -v
+
+  web-client:
+    name: web-client
+    needs: changes
+    if: needs.changes.outputs.web-client == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-client
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web-client/package-lock.json
+      - run: npm ci
+      # Lint first: it also enforces the import boundaries between the areas of src.
+      - run: npm run lint
+      - run: npm run build
+
+  compose:
+    name: compose
+    needs: changes
+    if: needs.changes.outputs.compose == 'true'
+    # Pinned: ubuntu-latest now ships kernel 6.19+, which mongo:8 refuses to boot on
+    # (MongoDB SERVER-121912), so every mongo service is unhealthy and the stack never comes up.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start the system the way N6.1.1 promises
+        run: docker compose up --build --detach --wait --wait-timeout 180
+      - name: Check the user-service answers
+        run: curl --fail --silent --show-error http://localhost:3001/health
+      # Status codes are compared on purpose, since 401 and 404 are the right answers here.
+      - name: Check the web client and its gateway
+        run: |
+          failed=0
+          check() {
+            status=$(curl --silent --output /dev/null --write-out '%{http_code}' "http://localhost:8080$1")
+            echo "$1 answered $status, expected $2"
+            [ "$status" = "$2" ] || failed=1
+          }
+          check /healthz 200
+          check /profile 200
+          check /api/user/users/me 401
+          check /api/supplier/suppliers 401
+          check /api/user/internal/authorize 404
+          exit $failed
+      - name: Show logs
+        if: failure()
+        run: docker compose logs
+      - name: Stop
+        if: always()
+        run: docker compose down --volumes
+
+  publish:
+    name: publish ${{ matrix.service }}
+    # An image is only published when the tests of its service did not fail.
+    needs: [user-service, supplier-service, order-service, credit-service, recommendation-service, message-service, rag-service, web-client, compose]
+    # Runs after a merge into dev or main, also when the jobs above were skipped because nothing changed.
+    # dev publishes too, so the cloud deployment can run the current integration state.
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && !failure() && !cancelled()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      # One image failing to build does not hold back the others.
+      fail-fast: false
+      matrix:
+        include:
+          - service: user-service
+            context: user-service
+            dockerfile: user-service/Dockerfile
+          # Built from the repository root, because its seed file lives in data/csv.
+          - service: supplier-service
+            context: .
+            dockerfile: supplier-service/Dockerfile
+          - service: web-client
+            context: web-client
+            dockerfile: web-client/Dockerfile
+          - service: credit-service
+            context: credit-service
+            dockerfile: credit-service/Dockerfile
+          - service: order-service
+            context: order-service
+            dockerfile: order-service/Dockerfile
+          - service: recommendation-service
+            context: recommendation-service
+            dockerfile: recommendation-service/Dockerfile
+          - service: message-service
+            context: message-service
+            dockerfile: message-service/Dockerfile
+          - service: rag-service
+            context: rag-service
+            dockerfile: rag-service/Dockerfile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v6
+        id: meta
+        with:
+          images: ghcr.io/ay2627s1-cs3219-p26/${{ matrix.service }}
+          # Every image carries its commit SHA and its branch name (dev or main); main also gets latest.
+          tags: |
+            type=sha
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+      - uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # Continuous deployment: a running cloud instance switches to the images just published for dev.
+  # A stopped instance is left alone; it picks them up on its next start.
+  deploy:
+    name: deploy to aws
+    needs: publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.publish.result == 'success'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/cloud.yml
+    with:
+      action: restart

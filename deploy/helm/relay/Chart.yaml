@@ -1,0 +1,5 @@
+apiVersion: v2
+name: relay
+description: Every Relay container in one Kubernetes release, the same on a laptop (k3d) and in the cloud (k3s on EC2).
+type: application
+version: 0.1.0

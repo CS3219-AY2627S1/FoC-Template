@@ -1,0 +1,158 @@
+/* Maps the semantic tokens onto Tailwind utilities.
+   The `initial` lines clear Tailwind's own palette and scales, so only the
+   tokens below are available as classes. */
+
+@theme inline {
+  --color-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --text-*: initial;
+  --font-*: initial;
+  --tracking-*: initial;
+  --leading-*: initial;
+  --ease-*: initial;
+  --blur-*: initial;
+
+  /* Colors */
+  --color-backdrop: var(--ds-color-backdrop);
+
+  --color-surface: var(--ds-color-surface);
+  --color-surface-raised: var(--ds-color-surface-raised);
+  --color-surface-sunken: var(--ds-color-surface-sunken);
+  --color-surface-chrome: var(--ds-color-surface-chrome);
+  --color-surface-selected: var(--ds-color-surface-selected);
+  --color-track: var(--ds-color-track);
+
+  --color-ink: var(--ds-color-text);
+  --color-muted: var(--ds-color-text-muted);
+  --color-subtle: var(--ds-color-text-subtle);
+  --color-on-accent: var(--ds-color-text-on-accent);
+
+  --color-border: var(--ds-color-border);
+  --color-border-glass: var(--ds-color-border-glass);
+  --color-border-glass-soft: var(--ds-color-border-glass-soft);
+
+  --color-accent: var(--ds-color-accent);
+  --color-accent-hover: var(--ds-color-accent-hover);
+  --color-accent-on-tint: var(--ds-color-accent-on-tint);
+  --color-accent-subtle: var(--ds-color-accent-subtle);
+
+  --color-danger: var(--ds-color-danger);
+  --color-danger-surface: var(--ds-color-danger-surface);
+  --color-danger-mark: var(--ds-color-danger-mark);
+
+  --color-info: var(--ds-color-info);
+  --color-info-surface: var(--ds-color-info-surface);
+  --color-info-mark: var(--ds-color-info-mark);
+
+  --color-success: var(--ds-color-success);
+  --color-success-surface: var(--ds-color-success-surface);
+  --color-success-mark: var(--ds-color-success-mark);
+
+  --color-neutral: var(--ds-color-neutral);
+  --color-neutral-surface: var(--ds-color-neutral-surface);
+  --color-neutral-mark: var(--ds-color-neutral-mark);
+
+  --color-warning: var(--ds-color-warning);
+  --color-warning-surface: var(--ds-color-warning-surface);
+
+  /* Shape */
+  --radius-card: var(--ds-radius-card);
+  --radius-panel: var(--ds-radius-panel);
+  --radius-inset: var(--ds-radius-inset);
+  --radius-button: var(--ds-radius-button);
+  --radius-field: var(--ds-radius-field);
+  --radius-tile: var(--ds-radius-tile);
+  --radius-chip: var(--ds-radius-chip);
+
+  /* Elevation */
+  --shadow-card: var(--ds-elevation-card);
+  --shadow-inset: var(--ds-elevation-inset);
+  --shadow-button: var(--ds-elevation-button);
+  --shadow-selected: var(--ds-elevation-selected);
+  --shadow-panel: var(--ds-elevation-panel);
+  --shadow-accent: var(--ds-elevation-accent);
+
+  /* Typography */
+  --font-sans: var(--ds-font-sans);
+  --font-mono: var(--ds-font-mono);
+
+  --text-2xs: var(--ds-text-2xs);
+  --text-xs: var(--ds-text-xs);
+  --text-sm: var(--ds-text-sm);
+  --text-base: var(--ds-text-base);
+  --text-lg: var(--ds-text-lg);
+  --text-xl: var(--ds-text-xl);
+  --text-2xl: var(--ds-text-2xl);
+  --text-3xl: var(--ds-text-3xl);
+  --text-4xl: var(--ds-text-4xl);
+  --text-5xl: var(--ds-text-5xl);
+
+  --leading-none: var(--ds-leading-none);
+  --leading-tight: var(--ds-leading-tight);
+  --leading-snug: var(--ds-leading-snug);
+  --leading-normal: var(--ds-leading-normal);
+  --leading-relaxed: var(--ds-leading-relaxed);
+
+  --tracking-label: var(--ds-tracking-label);
+  --tracking-normal: var(--ds-tracking-normal);
+  --tracking-body: var(--ds-tracking-body);
+  --tracking-tight: var(--ds-tracking-tight);
+  --tracking-tighter: var(--ds-tracking-tighter);
+  --tracking-num: var(--ds-tracking-num);
+
+  /* Motion */
+  --ease-standard: var(--ds-ease-standard);
+  --ease-emphasized: var(--ds-ease-emphasized);
+
+  /* Blur */
+  --blur-glass: var(--ds-blur-glass);
+  --blur-chrome: var(--ds-blur-chrome);
+  --blur-soft: var(--ds-blur-soft);
+
+  /* Layout: max-w-layout caps the content width on very wide screens */
+  --container-layout: var(--ds-layout-max);
+}
+
+/* Literal values, not var() references: media queries cannot resolve custom
+   properties, so breakpoints have to be readable at build time. Base styles
+   must work at 320px, so build up with md: and lg: rather than down. */
+@theme {
+  --spacing: 0.25rem;
+
+  --breakpoint-sm: 30rem;
+  --breakpoint-md: 48rem;
+  --breakpoint-lg: 64rem;
+  --breakpoint-xl: 80rem;
+  --breakpoint-2xl: 100rem;
+}
+
+@utility glass {
+  backdrop-filter: blur(var(--ds-blur-glass)) saturate(var(--ds-saturate-glass));
+  -webkit-backdrop-filter: blur(var(--ds-blur-glass))
+    saturate(var(--ds-saturate-glass));
+}
+
+@utility glass-soft {
+  backdrop-filter: blur(var(--ds-blur-soft)) saturate(var(--ds-saturate-soft));
+  -webkit-backdrop-filter: blur(var(--ds-blur-soft))
+    saturate(var(--ds-saturate-soft));
+}
+
+@utility bg-accent-gradient {
+  background-image: var(--ds-gradient-accent);
+}
+
+@utility bg-backdrop-mesh {
+  background-color: var(--ds-color-backdrop);
+  background-image: var(--ds-gradient-backdrop);
+}
+
+@utility tap-target {
+  min-inline-size: var(--ds-tap-target-min);
+  min-block-size: var(--ds-tap-target-min);
+}
+
+@utility nums-tabular {
+  font-variant-numeric: tabular-nums;
+}

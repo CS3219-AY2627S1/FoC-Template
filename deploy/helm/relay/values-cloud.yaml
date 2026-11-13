@@ -1,0 +1,22 @@
+# EC2 with k3s (deploy/terraform). The images come from GHCR, where CI publishes them after every
+# merge into dev. deploy/scripts/deploy.sh creates the Secrets and sets ingress.host.
+images:
+  prefix: ghcr.io/ay2627s1-cs3219-p26/
+  tag: dev
+  # dev moves with every merge, so a starting pod always fetches the newest one.
+  pullPolicy: Always
+  # The GHCR packages are private; deploy.sh creates this pull secret.
+  pullSecrets: [ghcr]
+
+# deploy.sh creates relay-secrets from deploy/cloud-secrets.env, with random passwords.
+secrets:
+  create: false
+
+ingress:
+  tls: true
+
+services:
+  user-service:
+    env:
+      # The session cookie only travels over HTTPS.
+      COOKIE_SECURE: "true"

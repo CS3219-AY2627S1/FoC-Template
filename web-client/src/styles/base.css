@@ -1,0 +1,197 @@
+/* Element defaults */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* A control that gets keyboard focus is scrolled clear of the floating tab bar instead of
+     ending up under it (WCAG 2.4.11). */
+  scroll-padding-top: var(--ds-focus-scroll-top);
+  scroll-padding-bottom: var(--ds-focus-scroll-bottom);
+}
+
+/* From lg there is a sidebar instead of the tab bar. */
+@media (min-width: 64rem) {
+  html {
+    scroll-padding-bottom: 0;
+  }
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  min-width: var(--ds-layout-min);
+
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-text-base);
+  line-height: var(--ds-leading-normal);
+  letter-spacing: var(--ds-tracking-body);
+  font-weight: var(--ds-weight-regular);
+  color: var(--ds-color-text);
+  text-wrap: pretty;
+
+  /* Words that do not fit, like long e-mail addresses or ids, break instead of widening the page (N5.1). */
+  overflow-wrap: break-word;
+
+  background-color: var(--ds-color-backdrop);
+  background-image: var(--ds-gradient-backdrop);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-size: cover;
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Headings */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0;
+  color: var(--ds-color-text);
+  font-weight: var(--ds-weight-semibold);
+  line-height: var(--ds-leading-tight);
+  letter-spacing: var(--ds-tracking-tight);
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: var(--ds-text-2xl);
+}
+h2 {
+  font-size: var(--ds-text-lg);
+}
+h3 {
+  font-size: var(--ds-text-lg);
+}
+h4,
+h5,
+h6 {
+  font-size: var(--ds-text-base);
+  letter-spacing: var(--ds-tracking-tight);
+}
+
+@media (min-width: 48rem) {
+  h1 {
+    font-size: var(--ds-text-3xl);
+  }
+  h2 {
+    font-size: var(--ds-text-xl);
+  }
+}
+
+p {
+  margin: 0;
+}
+
+/* Links */
+a {
+  color: var(--ds-color-text-link);
+  text-decoration: none;
+  font-weight: var(--ds-weight-semibold);
+  transition: color var(--ds-motion-hover);
+}
+
+a:hover {
+  color: var(--ds-color-text-link-hover);
+}
+
+/* Forms */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  margin: 0;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+button:disabled,
+[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
+::placeholder {
+  color: var(--ds-color-text-subtle);
+  opacity: 1;
+}
+
+/* Media */
+img,
+svg,
+video,
+canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Focus */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: var(--ds-focus-ring-width) solid var(--ds-color-focus-ring);
+  outline-offset: var(--ds-focus-ring-offset);
+}
+
+/* Containers that only get focus from code, like <main> after the skip link, need no ring. */
+[tabindex='-1']:focus-visible {
+  outline: none;
+}
+
+/* Tables */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--ds-text-sm);
+}
+
+th {
+  text-align: left;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border-bottom: 1px solid var(--ds-color-border);
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ds-color-text-subtle);
+}
+
+td {
+  padding: var(--ds-space-3);
+  border-bottom: 1px solid rgb(20 18 31 / 0.06);
+}
+
+::selection {
+  background: var(--ds-color-accent-subtle);
+  color: var(--ds-color-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

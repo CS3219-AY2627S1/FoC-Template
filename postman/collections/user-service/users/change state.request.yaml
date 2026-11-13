@@ -1,0 +1,11 @@
+$kind: http-request
+url: "{{userServiceUrl}}/users/{{targetUserId}}/state"
+method: PUT
+body:
+  type: json
+  content: |-
+    {
+        "state": "Suspended",
+        "reason": "Did not deliver three accepted errands"
+    }
+order: 4504000000000000

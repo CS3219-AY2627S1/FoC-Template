@@ -1,0 +1,87 @@
+{{- range $name, $db := .Values.databases }}
+{{- $kind := index $.Values.databaseKinds $db.kind | required (printf "databases.%s.kind must be one of: %s" $name (keys $.Values.databaseKinds | sortAlpha | join ", ")) }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "relay.labels" (dict "root" $ "name" $name) | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- include "relay.labels" (dict "root" $ "name" $name) | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ $db.kind }}
+          image: {{ $db.image | default $kind.image }}
+          {{- with ($db.args | default $kind.args) }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: db
+              containerPort: {{ $kind.port }}
+          {{- if or $db.env $db.passwordKey }}
+          env:
+            {{- with $db.passwordKey }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.name }}
+                  key: {{ . }}
+            {{- end }}
+            {{- range $key, $value := $db.env }}
+            - name: {{ $key }}
+              value: {{ toString $value | quote }}
+            {{- end }}
+          {{- end }}
+          # The real check (mongosh, pg_isready) only runs until it passes once: mongosh is a whole
+          # Node.js program, and running it every few seconds cost about a fifth of a CPU per Mongo.
+          startupProbe:
+            exec:
+              command:
+                {{- toYaml ($db.ready | default $kind.ready) | nindent 16 }}
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 60
+          # Afterwards a cheap port check is enough to notice that the database has gone away.
+          readinessProbe:
+            tcpSocket:
+              port: db
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: {{ $kind.dataPath }}
+          resources:
+            {{- toYaml ($db.resources | default $kind.resources) | nindent 12 }}
+  # The volume belongs to the StatefulSet and survives pod restarts and chart upgrades.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: {{ $db.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "relay.labels" (dict "root" $ "name" $name) | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+  ports:
+    - name: db
+      port: {{ $kind.port }}
+      targetPort: db
+{{- end }}

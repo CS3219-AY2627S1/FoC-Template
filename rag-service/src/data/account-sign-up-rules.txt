@@ -1,0 +1,9 @@
+Title: Rules for the sign-up form
+Questions: Why is my sign-up refused? Why is my email not accepted? Can I use Gmail? What are the password rules? What usernames are allowed? What does "is already in use" mean?
+
+NUS email: must end with @u.nus.edu or @nus.edu.sg. Other addresses such as Gmail are refused.
+Username: 3 to 30 characters, using only letters, digits, dot, underscore and hyphen. Capital letters do not make a username different, so Alex and alex count as the same name.
+Password: 8 to 128 characters.
+Full name: required, at most 100 characters.
+
+"is already in use" means another account already has that email or username. If the email is yours, try logging in instead. If the account was never verified, log in and follow the Verify your email link.

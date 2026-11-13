@@ -1,0 +1,18 @@
+# Routes for the message-service. Only the paths below are reachable from the browser;
+# /health and /rag fall through to the JSON 404 in default.conf.
+location ~ ^/api/message/messages(/|$) {
+  set $upstream ${MESSAGE_SERVICE_URL};
+  rewrite ^/api/message(/.*)$ $1 break;
+  proxy_pass $upstream;
+}
+
+# Socket.IO starts with HTTP polling and then upgrades to a WebSocket, which nginx only
+# passes on with HTTP/1.1 and the Upgrade headers forwarded.
+location ~ ^/api/message/socket\.io(/|$) {
+  set $upstream ${MESSAGE_SERVICE_URL};
+  rewrite ^/api/message(/.*)$ $1 break;
+  proxy_http_version 1.1;
+  proxy_set_header Upgrade $http_upgrade;
+  proxy_set_header Connection $http_connection;
+  proxy_pass $upstream;
+}

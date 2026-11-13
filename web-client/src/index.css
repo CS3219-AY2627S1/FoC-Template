@@ -1,0 +1,10 @@
+@import 'tailwindcss';
+
+/* Markdown is documentation, not a source of utility classes. */
+@source not '../*.md';
+
+@import './styles/tokens.primitives.css' layer(theme);
+@import './styles/tokens.semantic.css' layer(theme);
+@import './styles/theme.css';
+@import './styles/base.css' layer(base);
+@import './styles/patterns.css' layer(components);

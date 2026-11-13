@@ -1,0 +1,14 @@
+Title: How to post an errand
+Questions: How do I post an errand? How do I request something? How do I get something delivered? How do I create a request? Why was my errand refused? How many items can I add? How many credits can I offer? How many credits should I offer? What does Suggest do?
+
+1. Open Post an errand in the main menu.
+2. Press Choose a pickup location and pick the store or facility. You can search by name and filter by type.
+3. Enter the Drop-off location, for example COM3 or Kent Ridge MRT, then press Pick on map and mark the drop-off point. The point is required. Once both ends are set, the walk from the pickup is shown.
+4. Set Needed by. It starts at the next full hour at least one hour from now.
+5. Enter the Items, separated by commas, for example coffee, sandwich. An errand has 1 to 10 items.
+6. Enter the Credits for the courier, from 1 to 50. Press Suggest to fill in a suggested reward from the usual rate for such an errand; you can still change it.
+7. Press Post errand.
+
+The credits are reserved from your available balance, so you need enough available credits. The errand shows "Reserving credits…" for a moment, then becomes Open for other students to accept. You find it on the Errands page under My requests.
+
+An errand is refused if the needed-by time is in the past, or if the pickup supplier is inactive or closed at that time. The form names the field that is wrong. Choose another supplier or time.

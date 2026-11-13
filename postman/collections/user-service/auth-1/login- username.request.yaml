@@ -1,0 +1,12 @@
+$kind: http-request
+name: "login: username"
+url: "{{userServiceUrl}}/auth/login"
+method: POST
+body:
+  type: json
+  content: |-
+    {
+        "identifier": "admin",
+        "password": "change-me"
+    }
+order: 4312788868781692

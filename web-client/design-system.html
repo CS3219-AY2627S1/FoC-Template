@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Design system</title>
+
+    <link rel="stylesheet" href="./src/styles/tokens.primitives.css" />
+    <link rel="stylesheet" href="./src/styles/tokens.semantic.css" />
+    <link rel="stylesheet" href="./src/styles/base.css" />
+    <link rel="stylesheet" href="./src/styles/patterns.css" />
+
+    <style>
+      .page {
+        max-width: var(--ds-layout-max);
+        margin-inline: auto;
+        padding: var(--ds-space-8) var(--ds-layout-gutter) var(--ds-space-24);
+      }
+      @media (min-width: 48rem) {
+        .page {
+          padding-inline: var(--ds-space-12);
+        }
+      }
+      section {
+        margin-block-start: var(--ds-space-16);
+      }
+      h3 {
+        margin-block: var(--ds-space-8) var(--ds-space-3);
+      }
+      .grid {
+        display: grid;
+        gap: var(--ds-space-3);
+        grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--ds-space-3);
+        align-items: center;
+      }
+      .swatch {
+        padding: var(--ds-space-4);
+        border-radius: var(--ds-radius-inset);
+        border: 1px solid var(--ds-color-border);
+        background: rgb(255 255 255 / 0.5);
+      }
+      .swatch .chip {
+        height: 3.25rem;
+        border-radius: var(--ds-radius-tile);
+        border: 1px solid var(--ds-color-border);
+        margin-block-end: var(--ds-space-3);
+      }
+      .swatch b {
+        display: block;
+        font-size: var(--ds-text-sm);
+        margin-block-end: var(--ds-space-1);
+      }
+      code {
+        font-family: var(--ds-font-mono);
+        font-size: var(--ds-text-2xs);
+        letter-spacing: 0;
+        color: var(--ds-color-text-muted);
+        word-break: break-all;
+      }
+      .swatch code {
+        display: block;
+      }
+      .demo {
+        padding: var(--ds-space-6);
+        border-radius: var(--ds-radius-inset);
+        border: 1px dashed var(--ds-color-border);
+      }
+      td.tok {
+        width: 9rem;
+      }
+      .shape {
+        width: 8rem;
+        height: 4.5rem;
+        display: grid;
+        place-items: center;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="page">
+      <header class="ds-surface" style="padding: var(--ds-space-8)">
+        <p class="ds-label">Friend on Campus</p>
+        <h1 style="margin-block-start: var(--ds-space-3)">Design system</h1>
+      </header>
+
+      <section>
+        <h2>Backdrop</h2>
+        <div
+          class="demo"
+          style="
+            background-color: var(--ds-color-backdrop);
+            background-image: var(--ds-gradient-backdrop);
+            min-height: 15rem;
+            display: grid;
+            place-items: center;
+          "
+        >
+          <div class="ds-surface" style="padding: var(--ds-space-6)">
+            <p class="ds-label">Frosted surface</p>
+            <p style="margin-block-start: var(--ds-space-2)">
+              <code>--ds-color-surface</code> over
+              <code>--ds-gradient-backdrop</code>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Colour</h2>
+
+        <h3>Surfaces and text</h3>
+        <div class="grid">
+          <div class="swatch">
+            <div class="chip" style="background: var(--ds-color-surface)"></div>
+            <b>Surface</b><code>--ds-color-surface</code>
+          </div>
+          <div class="swatch">
+            <div
+              class="chip"
+              style="background: var(--ds-color-surface-raised)"
+            ></div>
+            <b>Surface raised</b><code>--ds-color-surface-raised</code>
+          </div>
+          <div class="swatch">
+            <div
+              class="chip"
+              style="background: var(--ds-color-surface-sunken)"
+            ></div>
+            <b>Surface sunken</b><code>--ds-color-surface-sunken</code>
+          </div>
+          <div class="swatch">
+            <div class="chip" style="background: var(--ds-color-text)"></div>
+            <b>Text</b><code>--ds-color-text</code>
+          </div>
+          <div class="swatch">
+            <div
+              class="chip"
+              style="background: var(--ds-color-text-muted)"
+            ></div>
+            <b>Text muted</b><code>--ds-color-text-muted</code>
+          </div>
+          <div class="swatch">
+            <div
+              class="chip"
+              style="background: var(--ds-color-text-subtle)"
+            ></div>
+            <b>Text subtle</b><code>--ds-color-text-subtle</code>
+          </div>
+        </div>
+
+        <h3>Accent and status</h3>
+        <div class="grid">
+          <div class="swatch">
+            <div
+              class="chip"
+              style="background-image: var(--ds-gradient-accent)"
+            ></div>
+            <b>Accent gradient</b><code>--ds-gradient-accent</code>
+          </div>
+          <div class="swatch">
+            <div class="chip" style="background: var(--ds-color-accent)"></div>
+            <b>Accent</b><code>--ds-color-accent</code>
+          </div>
+          <div class="swatch">
+            <div class="chip" style="background: var(--ds-color-danger)"></div>
+            <b>Danger</b><code>--ds-color-danger</code>
+          </div>
+          <div class="swatch">
+            <div class="chip" style="background: var(--ds-color-info)"></div>
+            <b>Info</b><code>--ds-color-info</code>
+          </div>
+          <div class="swatch">
+            <div class="chip" style="background: var(--ds-color-success)"></div>
+            <b>Success</b><code>--ds-color-success</code>
+          </div>
+          <div class="swatch">
+            <div class="chip" style="background: var(--ds-color-neutral)"></div>
+            <b>Neutral</b><code>--ds-color-neutral</code>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Typography</h2>
+        <div class="ds-surface" style="padding: var(--ds-space-6)">
+          <table>
+            <tbody>
+              <tr>
+                <td class="tok"><code>--ds-text-5xl</code></td>
+                <td
+                  style="
+                    font-size: var(--ds-text-5xl);
+                    font-weight: var(--ds-weight-bold);
+                    letter-spacing: var(--ds-tracking-tighter);
+                    line-height: var(--ds-leading-none);
+                  "
+                >
+                  Relay
+                </td>
+              </tr>
+              <tr>
+                <td class="tok"><code>--ds-text-3xl</code></td>
+                <td
+                  style="
+                    font-size: var(--ds-text-3xl);
+                    font-weight: var(--ds-weight-bold);
+                    letter-spacing: var(--ds-tracking-tighter);
+                  "
+                >
+                  New errand
+                </td>
+              </tr>
+              <tr>
+                <td class="tok"><code>--ds-text-xl</code></td>
+                <td
+                  style="
+                    font-size: var(--ds-text-xl);
+                    font-weight: var(--ds-weight-bold);
+                    letter-spacing: var(--ds-tracking-tighter);
+                  "
+                >
+                  Section heading
+                </td>
+              </tr>
+              <tr>
+                <td class="tok"><code>--ds-text-lg</code></td>
+                <td
+                  style="
+                    font-size: var(--ds-text-lg);
+                    font-weight: var(--ds-weight-bold);
+                    letter-spacing: var(--ds-tracking-tight);
+                  "
+                >
+                  CoffeeBean @ COM3
+                </td>
+              </tr>
+              <tr>
+                <td class="tok"><code>--ds-text-base</code></td>
+                <td>Body, 16px</td>
+              </tr>
+              <tr>
+                <td class="tok"><code>--ds-text-sm</code></td>
+                <td
+                  style="
+                    font-size: var(--ds-text-sm);
+                    color: var(--ds-color-text-muted);
+                  "
+                >
+                  Table cells, navigation
+                </td>
+              </tr>
+              <tr>
+                <td class="tok"><code>--ds-text-xs</code></td>
+                <td
+                  style="
+                    font-size: var(--ds-text-xs);
+                    color: var(--ds-color-text-muted);
+                  "
+                >
+                  Chips, field labels
+                </td>
+              </tr>
+              <tr>
+                <td class="tok"><code>--ds-text-2xs</code></td>
+                <td><span class="ds-label">Uppercase micro label</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Shape</h2>
+        <div class="row">
+          <div
+            class="ds-surface shape"
+            style="border-radius: var(--ds-radius-chip)"
+          >
+            <code>chip 999</code>
+          </div>
+          <div
+            class="ds-surface shape"
+            style="border-radius: var(--ds-radius-button)"
+          >
+            <code>button 18</code>
+          </div>
+          <div
+            class="ds-surface shape"
+            style="border-radius: var(--ds-radius-field)"
+          >
+            <code>field 16</code>
+          </div>
+          <div
+            class="ds-surface shape"
+            style="border-radius: var(--ds-radius-card)"
+          >
+            <code>card 26</code>
+          </div>
+          <div
+            class="ds-surface shape"
+            style="border-radius: var(--ds-radius-panel)"
+          >
+            <code>panel 30</code>
+          </div>
+          <div
+            class="ds-surface shape"
+            style="width: 4.5rem; border-radius: var(--ds-radius-tile)"
+          >
+            <code>tile 12</code>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Patterns</h2>
+
+        <h3>Buttons</h3>
+        <div class="demo row">
+          <button class="ds-btn ds-btn--primary">Post errand</button>
+          <button class="ds-btn ds-btn--glass">Pay courier</button>
+          <button class="ds-btn ds-btn--text">Change</button>
+          <button class="ds-btn ds-btn--primary" disabled>Unavailable</button>
+        </div>
+
+        <h3>Status badges</h3>
+        <div class="demo row">
+          <span class="ds-badge ds-badge--danger">Open</span>
+          <span class="ds-badge ds-badge--danger">Stalled 2 h</span>
+          <span class="ds-badge ds-badge--info">Accepted</span>
+          <span class="ds-badge ds-badge--info">Picked up</span>
+          <span class="ds-badge ds-badge--success">Completed</span>
+          <span class="ds-badge ds-badge--neutral">Expired</span>
+          <span class="ds-badge ds-badge--neutral">Cancelled</span>
+        </div>
+
+        <h3>Fields</h3>
+        <div class="demo" style="display: grid; gap: var(--ds-space-4)">
+          <div>
+            <label class="ds-field-label" for="email">NUS email</label>
+            <input class="ds-field" id="email" value="e0123456@u.nus.edu" />
+          </div>
+          <div>
+            <label class="ds-field-label" for="pw">Password</label>
+            <input
+              class="ds-field"
+              id="pw"
+              type="password"
+              aria-invalid="true"
+              value="wrongpass"
+            />
+            <p class="ds-field-error">Email or password is incorrect</p>
+          </div>
+        </div>
+
+        <h3>Segmented control</h3>
+        <div class="demo row">
+          <div class="ds-segmented">
+            <button data-selected="true">ASAP</button>
+            <button>30 min</button>
+            <button>1 hr</button>
+            <button>Scheduled</button>
+          </div>
+          <div class="ds-segmented">
+            <button data-selected="true">Nearest</button>
+            <button>Reward</button>
+            <button>Newest</button>
+          </div>
+        </div>
+
+        <h3>Stats and credit amounts</h3>
+        <div class="demo row" style="align-items: stretch">
+          <div
+            class="ds-surface"
+            style="padding: var(--ds-space-5); flex: 1 1 11rem"
+          >
+            <p class="ds-label">Available</p>
+            <p style="margin-block-start: var(--ds-space-3)">
+              <span class="ds-stat-value">42</span>
+              <span class="ds-stat-unit">CR</span>
+            </p>
+          </div>
+          <div
+            class="ds-surface"
+            style="padding: var(--ds-space-5); flex: 1 1 11rem"
+          >
+            <p class="ds-label">Held</p>
+            <p style="margin-block-start: var(--ds-space-3)">
+              <span class="ds-stat-value" style="color: var(--ds-color-accent)"
+                >8</span
+              >
+            </p>
+          </div>
+          <div
+            class="ds-surface"
+            style="padding: var(--ds-space-5); flex: 2 1 18rem"
+          >
+            <div class="ds-rows">
+              <div
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  padding-block: var(--ds-space-2);
+                "
+              >
+                <span>Reserve</span
+                ><span class="ds-amount ds-amount--out">-8</span>
+              </div>
+              <div
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  padding-block: var(--ds-space-2);
+                "
+              >
+                <span>Transfer in</span
+                ><span class="ds-amount ds-amount--in">+6</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <h3>Chart bars and placeholder</h3>
+        <div class="demo" style="display: grid; gap: var(--ds-space-5)">
+          <div style="display: grid; gap: var(--ds-space-2)">
+            <div class="ds-bar" style="width: 82%"></div>
+            <div class="ds-bar" style="width: 54%"></div>
+            <div class="ds-bar" style="width: 31%"></div>
+          </div>
+          <div class="ds-placeholder" style="height: 7rem">
+            <span>Campus map</span>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Elevation</h2>
+        <div class="row">
+          <div
+            class="swatch"
+            style="box-shadow: var(--ds-elevation-card); flex: 1 1 11rem"
+          >
+            <b>Card</b><code>--ds-elevation-card</code>
+          </div>
+          <div
+            class="swatch"
+            style="box-shadow: var(--ds-elevation-button); flex: 1 1 11rem"
+          >
+            <b>Button</b><code>--ds-elevation-button</code>
+          </div>
+          <div
+            class="swatch"
+            style="box-shadow: var(--ds-elevation-panel); flex: 1 1 11rem"
+          >
+            <b>Panel</b><code>--ds-elevation-panel</code>
+          </div>
+          <div
+            class="swatch"
+            style="box-shadow: var(--ds-elevation-accent); flex: 1 1 11rem"
+          >
+            <b>Accent</b><code>--ds-elevation-accent</code>
+          </div>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

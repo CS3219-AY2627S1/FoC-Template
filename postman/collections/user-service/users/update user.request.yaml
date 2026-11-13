@@ -1,0 +1,10 @@
+$kind: http-request
+url: "{{userServiceUrl}}/users/{{targetUserId}}"
+method: PATCH
+body:
+  type: json
+  content: |-
+    {
+        "fullName": "Felix Haag 2"
+    }
+order: 4500218477370676

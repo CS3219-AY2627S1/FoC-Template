@@ -1,0 +1,8 @@
+Title: Your credit balance and wallet
+Questions: How many credits do I have? Where is my balance? What does available mean? What does reserved mean? Why are some of my credits reserved? Why did my balance go down when I posted? Where is my credit history? What do the transaction types mean?
+
+Your balance is on the Wallet page, and on a large screen also at the bottom of the sidebar. It has three parts. Available credits are the ones you can use for a new errand. Reserved credits are held for errands you posted that are not finished. Total is the two together.
+
+The Wallet page also lists your transactions, newest first. Allocation is credits you were given, Reserved is credits held for an errand, Transfer is credits paid for a completed errand, and Released is credits returned to you.
+
+When you post an errand, its credits move from available to reserved. When it is completed, they go to the courier. When it is cancelled or expires, they return to available.

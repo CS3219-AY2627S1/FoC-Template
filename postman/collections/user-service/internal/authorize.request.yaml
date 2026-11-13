@@ -1,0 +1,15 @@
+$kind: http-request
+url: "{{userServiceUrl}}/internal/authorize"
+method: POST
+body:
+  type: json
+  content: |-
+    {
+        "token": "{{sessionToken}}",
+        "requiredRole": "administrator"
+    }
+scripts:
+  - type: afterResponse
+    code: pm.environment.set("sessionToken", pm.cookies.get("relay_session"));
+    language: text/javascript
+order: 1790225987682

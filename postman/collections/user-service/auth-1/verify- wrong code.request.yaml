@@ -1,0 +1,12 @@
+$kind: http-request
+name: "verify: wrong code"
+url: "{{userServiceUrl}}/auth/verify"
+method: POST
+body:
+  type: json
+  content: |-
+    {
+        "email": "felix@u.nus.edu",
+        "code": "000000"
+    }
+order: 3221234139696824

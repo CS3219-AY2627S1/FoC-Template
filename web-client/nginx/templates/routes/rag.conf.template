@@ -1,0 +1,7 @@
+
+# Only the exact path: without the slash FastAPI redirects to the service's internal address.
+location ~ ^/api/rag/query/$ {
+  set $upstream ${RAG_SERVICE_URL}; #Defines upstream variable as rag service url
+  rewrite ^/api/rag(/.*)$ $1 break; #captures averything after slash
+  proxy_pass $upstream; 
+}

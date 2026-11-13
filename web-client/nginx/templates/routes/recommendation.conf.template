@@ -1,0 +1,7 @@
+# Routes for the recommendation-service. Only the browser-facing read is reachable here:
+# POST /recommendations (F6). health and any internal paths fall through to the JSON 404.
+location ~ ^/api/recommendation/recommendations(/|$) {
+  set $upstream ${RECOMMENDATION_SERVICE_URL};
+  rewrite ^/api/recommendation(/.*)$ $1 break;
+  proxy_pass $upstream;
+}

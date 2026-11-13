@@ -1,0 +1,650 @@
+{
+  "info": {
+    "name": "Supplier Service",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Mirrors the demo.sh workflow. Start the stack first: docker compose up --build\n\nRun folders in order. Each Login request captures the session cookie into a collection variable used by the requests that follow.\n\nPorts: user-service 3001, supplier-service 3002, mailpit 8025."
+  },
+  "variable": [
+    { "key": "user_url",      "value": "http://localhost:3001" },
+    { "key": "supplier_url",  "value": "http://localhost:3002" },
+    { "key": "mail_url",      "value": "http://localhost:8025" },
+    { "key": "admin_session", "value": "" },
+    { "key": "member_session","value": "" },
+    { "key": "supplier_id",   "value": "" },
+    { "key": "student_id",    "value": "" },
+    { "key": "student_email", "value": "" },
+    { "key": "verify_code",   "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0 – Health",
+      "item": [
+        {
+          "name": "Supplier service health",
+          "request": {
+            "method": "GET",
+            "url": "{{supplier_url}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test('up', () => pm.response.to.have.status(200))"] }
+            }
+          ]
+        },
+        {
+          "name": "User service health",
+          "request": {
+            "method": "GET",
+            "url": "{{user_url}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test('up', () => pm.response.to.have.status(200))"] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1 – Login (admin + member)",
+      "description": "Run these two before any other folder. They capture the session cookies.",
+      "item": [
+        {
+          "name": "Admin login",
+          "request": {
+            "method": "POST",
+            "url": "{{user_url}}/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"identifier\":\"admin\",\"password\":\"change-me\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const cookie = pm.cookies.get('relay_session');",
+                  "if (cookie) pm.collectionVariables.set('admin_session', cookie);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register demo member",
+          "request": {
+            "method": "POST",
+            "url": "{{user_url}}/auth/register",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fullName\":\"Demo Student\",\"email\":\"demo@u.nus.edu\",\"username\":\"demostudent\",\"password\":\"demo-pass-123\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201 created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('student_id', body.id);",
+                  "pm.collectionVariables.set('student_email', 'demo@u.nus.edu');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check verification email (Mailpit)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{mail_url}}/api/v1/search?query=to:{{student_email}}",
+              "host": ["{{mail_url}}"],
+              "path": ["api", "v1", "search"],
+              "query": [{ "key": "query", "value": "to:{{student_email}}" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('email arrived', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "const text = JSON.stringify(body);",
+                  "const match = text.match(/verification code is (\\d{6})/);",
+                  "if (match) {",
+                  "  pm.collectionVariables.set('verify_code', match[1]);",
+                  "  console.log('Code:', match[1]);",
+                  "} else {",
+                  "  console.warn('Code not found yet – retry in a moment');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify email",
+          "request": {
+            "method": "POST",
+            "url": "{{user_url}}/auth/verify",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{student_email}}\",\"code\":\"{{verify_code}}\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test('200 verified', () => pm.response.to.have.status(200));"] }
+            }
+          ]
+        },
+        {
+          "name": "Member login",
+          "request": {
+            "method": "POST",
+            "url": "{{user_url}}/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"identifier\":\"demo@u.nus.edu\",\"password\":\"demo-pass-123\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const cookie = pm.cookies.get('relay_session');",
+                  "if (cookie) pm.collectionVariables.set('member_session', cookie);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 – Query patterns (member)",
+      "description": "Requires member_session from folder 1.",
+      "item": [
+        {
+          "name": "List all suppliers",
+          "request": {
+            "method": "GET",
+            "url": "{{supplier_url}}/suppliers",
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Search by keyword – coffee",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{supplier_url}}/suppliers?q=coffee",
+              "host": ["{{supplier_url}}"],
+              "path": ["suppliers"],
+              "query": [{ "key": "q", "value": "coffee" }]
+            },
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Multi-word keyword – prince george",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{supplier_url}}/suppliers?q=prince+george",
+              "host": ["{{supplier_url}}"],
+              "path": ["suppliers"],
+              "query": [{ "key": "q", "value": "prince george" }]
+            },
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Filter by type – Printing",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{supplier_url}}/suppliers?type=Printing",
+              "host": ["{{supplier_url}}"],
+              "path": ["suppliers"],
+              "query": [{ "key": "type", "value": "Printing" }]
+            },
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Filter by type – Food/Coffee",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{supplier_url}}/suppliers?type=Food%2FCoffee",
+              "host": ["{{supplier_url}}"],
+              "path": ["suppliers"],
+              "query": [{ "key": "type", "value": "Food/Coffee" }]
+            },
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Filter by zone – Central",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{supplier_url}}/suppliers?zone=Central",
+              "host": ["{{supplier_url}}"],
+              "path": ["suppliers"],
+              "query": [{ "key": "zone", "value": "Central" }]
+            },
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Filter by building – COM2",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{supplier_url}}/suppliers?building=COM2",
+              "host": ["{{supplier_url}}"],
+              "path": ["suppliers"],
+              "query": [{ "key": "building", "value": "COM2" }]
+            },
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Combined filter – zone + type + keyword",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{supplier_url}}/suppliers?zone=Central&type=Food%2FCoffee&q=roaster",
+              "host": ["{{supplier_url}}"],
+              "path": ["suppliers"],
+              "query": [
+                { "key": "zone", "value": "Central" },
+                { "key": "type", "value": "Food/Coffee" },
+                { "key": "q",    "value": "roaster" }
+              ]
+            },
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Pagination – page 2",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{supplier_url}}/suppliers?page=2",
+              "host": ["{{supplier_url}}"],
+              "path": ["suppliers"],
+              "query": [{ "key": "page", "value": "2" }]
+            },
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Pagination – pageSize > 20 is rejected",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{supplier_url}}/suppliers?pageSize=21",
+              "host": ["{{supplier_url}}"],
+              "path": ["suppliers"],
+              "query": [{ "key": "pageSize", "value": "21" }]
+            },
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('400 too large', () => pm.response.to.have.status(400));"] } }]
+        },
+        {
+          "name": "Get supplier by id",
+          "request": {
+            "method": "GET",
+            "url": "{{supplier_url}}/suppliers/{{supplier_id}}",
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Availability – open (Monday 10:00 SGT)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{supplier_url}}/suppliers/{{supplier_id}}/availability?at=2026-10-05T10:00:00%2B08:00",
+              "host": ["{{supplier_url}}"],
+              "path": ["suppliers", "{{supplier_id}}", "availability"],
+              "query": [{ "key": "at", "value": "2026-10-05T10:00:00+08:00" }]
+            },
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Availability – closed (Monday 19:00 SGT)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{supplier_url}}/suppliers/{{supplier_id}}/availability?at=2026-10-05T19:00:00%2B08:00",
+              "host": ["{{supplier_url}}"],
+              "path": ["suppliers", "{{supplier_id}}", "availability"],
+              "query": [{ "key": "at", "value": "2026-10-05T19:00:00+08:00" }]
+            },
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "3 – Access control",
+      "description": "Shows who may do what. Requires admin_session and member_session from folder 1.",
+      "item": [
+        {
+          "name": "No session → 401",
+          "request": {
+            "method": "GET",
+            "url": "{{supplier_url}}/suppliers"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('401 unauthenticated', () => pm.response.to.have.status(401));"] } }]
+        },
+        {
+          "name": "Forged session → 403",
+          "request": {
+            "method": "GET",
+            "url": "{{supplier_url}}/suppliers",
+            "header": [{ "key": "Cookie", "value": "relay_session=forged-session-value" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('403 forbidden', () => pm.response.to.have.status(403));"] } }]
+        },
+        {
+          "name": "Member cannot create → 403",
+          "request": {
+            "method": "POST",
+            "url": "{{supplier_url}}/suppliers",
+            "header": [
+              { "key": "Cookie", "value": "relay_session={{member_session}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Hacked\",\"type\":\"Food\",\"zone\":\"Central\",\"building\":\"X\",\"address\":\"X\",\"hours\":[{\"day\":\"monday\",\"opens\":\"09:00\",\"closes\":\"18:00\"}]}"
+            }
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('403 member cannot create', () => pm.response.to.have.status(403));"] } }]
+        },
+        {
+          "name": "Member cannot update → 403",
+          "request": {
+            "method": "PATCH",
+            "url": "{{supplier_url}}/suppliers/{{supplier_id}}",
+            "header": [
+              { "key": "Cookie", "value": "relay_session={{member_session}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"name\":\"Hacked\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('403 member cannot update', () => pm.response.to.have.status(403));"] } }]
+        },
+        {
+          "name": "Member cannot deactivate → 403",
+          "request": {
+            "method": "DELETE",
+            "url": "{{supplier_url}}/suppliers/{{supplier_id}}",
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('403 member cannot deactivate', () => pm.response.to.have.status(403));"] } }]
+        },
+        {
+          "name": "Non-existent id gives same 403 (no info leak)",
+          "request": {
+            "method": "DELETE",
+            "url": "{{supplier_url}}/suppliers/00000000-0000-4000-8000-000000000000",
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('403 same answer regardless of id', () => pm.response.to.have.status(403));"] } }]
+        },
+        {
+          "name": "Admin with empty body → 400 (not 403, so it was allowed)",
+          "request": {
+            "method": "POST",
+            "url": "{{supplier_url}}/suppliers",
+            "header": [
+              { "key": "Cookie", "value": "relay_session={{admin_session}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('400 allowed but body invalid', () => pm.response.to.have.status(400));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "4 – CRUD (admin)",
+      "description": "Create → read → update → deactivate → reactivate. Requires admin_session and member_session from folder 1. The created supplier id is saved to {{supplier_id}}.",
+      "item": [
+        {
+          "name": "Create with invalid data → 400",
+          "request": {
+            "method": "POST",
+            "url": "{{supplier_url}}/suppliers",
+            "header": [
+              { "key": "Cookie", "value": "relay_session={{admin_session}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"hours\":[{\"day\":\"monday\",\"opens\":\"25:00\",\"closes\":\"18:00\"}]}"
+            }
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('400 validation error', () => pm.response.to.have.status(400));"] } }]
+        },
+        {
+          "name": "CREATE supplier",
+          "request": {
+            "method": "POST",
+            "url": "{{supplier_url}}/suppliers",
+            "header": [
+              { "key": "Cookie", "value": "relay_session={{admin_session}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Demo Cafe\",\"type\":\"Food\",\"zone\":\"Central\",\"building\":\"Central Library\",\"address\":\"Central Library, Level 1\",\"description\":\"Demo supplier\",\"contact\":{\"phone\":\"6516 1234\",\"email\":\"demo@example.com\"},\"hours\":[{\"day\":\"monday\",\"opens\":\"09:00\",\"closes\":\"18:00\"},{\"day\":\"tuesday\",\"opens\":\"09:00\",\"closes\":\"18:00\"}]}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201 created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('supplier_id', body.id);",
+                  "console.log('supplier_id:', body.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "READ back (as member)",
+          "request": {
+            "method": "GET",
+            "url": "{{supplier_url}}/suppliers/{{supplier_id}}",
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 visible to member', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "UPDATE name and hours",
+          "request": {
+            "method": "PATCH",
+            "url": "{{supplier_url}}/suppliers/{{supplier_id}}",
+            "header": [
+              { "key": "Cookie", "value": "relay_session={{admin_session}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Demo Cafe (renamed)\",\"hours\":[{\"day\":\"saturday\",\"opens\":\"10:00\",\"closes\":\"14:00\"}]}"
+            }
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 updated', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "UPDATE id is rejected → 400",
+          "request": {
+            "method": "PATCH",
+            "url": "{{supplier_url}}/suppliers/{{supplier_id}}",
+            "header": [
+              { "key": "Cookie", "value": "relay_session={{admin_session}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"id\":\"00000000-0000-4000-8000-000000000000\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('400 id cannot change', () => pm.response.to.have.status(400));"] } }]
+        },
+        {
+          "name": "DEACTIVATE (DELETE)",
+          "request": {
+            "method": "DELETE",
+            "url": "{{supplier_url}}/suppliers/{{supplier_id}}",
+            "header": [{ "key": "Cookie", "value": "relay_session={{admin_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 deactivated', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Still retrievable by id after deactivation",
+          "request": {
+            "method": "GET",
+            "url": "{{supplier_url}}/suppliers/{{supplier_id}}",
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 still readable', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Not in normal listing after deactivation",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{supplier_url}}/suppliers?q=Demo+Cafe",
+              "host": ["{{supplier_url}}"],
+              "path": ["suppliers"],
+              "query": [{ "key": "q", "value": "Demo Cafe" }]
+            },
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200, zero results', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().items.length).to.equal(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Found when filtering by Inactive",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{supplier_url}}/suppliers?status=Inactive&q=Demo",
+              "host": ["{{supplier_url}}"],
+              "path": ["suppliers"],
+              "query": [
+                { "key": "status", "value": "Inactive" },
+                { "key": "q",      "value": "Demo" }
+              ]
+            },
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Availability orderable=false when Inactive",
+          "request": {
+            "method": "GET",
+            "url": "{{supplier_url}}/suppliers/{{supplier_id}}/availability",
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('orderable false', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().orderable).to.equal(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "REACTIVATE",
+          "request": {
+            "method": "PATCH",
+            "url": "{{supplier_url}}/suppliers/{{supplier_id}}",
+            "header": [
+              { "key": "Cookie", "value": "relay_session={{admin_session}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\"status\":\"Active\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 active again', () => pm.response.to.have.status(200));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "5 – Logout",
+      "item": [
+        {
+          "name": "Logout member",
+          "request": {
+            "method": "POST",
+            "url": "{{user_url}}/auth/logout",
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('204 logged out', () => pm.response.to.have.status(204));"] } }]
+        },
+        {
+          "name": "Logged-out session is refused by supplier-service → 403",
+          "request": {
+            "method": "GET",
+            "url": "{{supplier_url}}/suppliers",
+            "header": [{ "key": "Cookie", "value": "relay_session={{member_session}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('403 stale session', () => pm.response.to.have.status(403));"] } }]
+        }
+      ]
+    }
+  ]
+}

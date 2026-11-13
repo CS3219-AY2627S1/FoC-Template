@@ -1,0 +1,10 @@
+$kind: http-request
+url: "{{userServiceUrl}}/users/{{targetUserId}}"
+method: GET
+body:
+  type: json
+  content: |-
+    {
+        "username": "felixhg"
+    }
+order: 4491231834612704

@@ -2,6 +2,7 @@
 dist/
 build/
 out/
+coverage/
 
 # Environment / secrets
 .env
@@ -10,6 +11,18 @@ out/
 *.pem
 *.key
 
+# Dependencies
+node_modules/
+
 # OS
 .DS_Store
 Thumbs.db
+
+# Postman workspace link (per person)
+.postman/
+
+# Playwright MCP test artifacts
+.playwright-mcp/
+
+# Python
+__pycache__/

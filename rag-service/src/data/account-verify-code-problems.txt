@@ -1,0 +1,9 @@
+Title: Problems with the verification code
+Questions: Why is my code wrong? My code expired. My OTP expired. My one-time code does not work. What does "Too many wrong entries" mean? How long is the code valid? Why did Send a new code not send anything?
+
+A code is valid for 10 minutes and can be tried 5 times.
+"The code is wrong": check the digits. The page shows how many attempts this code has left.
+"The code has expired, request a new one": press Send a new code.
+"Too many wrong entries, request a new code": press Send a new code.
+
+A new code replaces the old one, so only use the latest email. You can request a new code once per minute. If you press the button again sooner, no extra email is sent, even though the page shows the usual message. Wait a minute and press it again. The message is also the same when the email has no unverified account, so check the spelling of your email.

@@ -1,0 +1,11 @@
+Title: How to create an account
+Questions: How do I sign up? How do I register? How do I create an account? How do I get started?
+
+1. Open the Log in page and choose Create an account, or go to /signup.
+2. Fill in Full name, NUS email, Username and Password.
+3. Press Create account.
+4. You are taken to the Verify your email page, and a 6-digit code is sent to your NUS email.
+5. Enter the code and press Verify.
+6. Log in with your password.
+
+You cannot log in until your email is verified.

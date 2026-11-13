@@ -1,0 +1,5 @@
+location ~ ^/api/order/orders(/|$) {
+  set $upstream ${ORDER_SERVICE_URL};
+  rewrite ^/api/order(/.*)$ $1 break;
+  proxy_pass $upstream;
+}

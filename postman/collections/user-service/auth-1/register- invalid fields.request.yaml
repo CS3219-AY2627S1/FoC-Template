@@ -1,0 +1,14 @@
+$kind: http-request
+name: "register: invalid fields"
+url: "{{userServiceUrl}}/auth/register"
+method: POST
+body:
+  type: json
+  content: |-
+    {
+        "fullName": "Felix Haag",
+        "email": "felix@gmail.com",
+        "username": "a",
+        "password": "short"
+    }
+order: 602181158699300

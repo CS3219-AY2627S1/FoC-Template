@@ -1,0 +1,16 @@
+$kind: http-request
+name: send
+url: "{{messageServiceUrl}}/messages/send"
+method: POST
+body:
+  type: json
+  content: |-
+    {
+        "receiverId": "{{otherUserId}}",
+        "content": "Hello from Postman"
+    }
+scripts:
+  - type: afterResponse
+    code: pm.test("status 201", () => pm.response.to.have.status(201));
+    language: text/javascript
+order: 300

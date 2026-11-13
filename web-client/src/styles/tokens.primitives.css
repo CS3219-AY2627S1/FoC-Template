@@ -1,0 +1,165 @@
+/* Raw values, based on the UI prototype (DESIGN.md lists where we differ). Only this file holds literals. */
+
+:root {
+  /* Coral */
+  --ds-coral-300: #ff8a63;
+  --ds-coral-400: #ff7a4d;
+  --ds-coral-500: #ff6a4d;
+  --ds-coral-600: #ff5a3c;
+  --ds-coral-700: #e0431f;
+  --ds-coral-800: #c0341a;
+
+  /* Violet */
+  --ds-violet-300: #b39cff;
+  --ds-violet-500: #7c5cf0;
+  --ds-violet-600: #5230d6;
+  --ds-violet-700: #4a2ac4;
+
+  /* Teal */
+  --ds-teal-300: #8ae3d6;
+  --ds-teal-500: #0fa889;
+  --ds-teal-700: #0a7a64;
+
+  /* Peach, backdrop only */
+  --ds-peach-300: #ffc0a6;
+
+  /* Ink. The secondary neutrals are ink at an alpha, not separate greys,
+     so they work on both the glass and the backdrop. */
+  --ds-ink: #14121f;
+  --ds-ink-a60: rgb(20 18 31 / 0.6);
+  --ds-ink-a40: rgb(20 18 31 / 0.4);
+  --ds-ink-a16: rgb(20 18 31 / 0.16);
+  --ds-ink-a10: rgb(20 18 31 / 0.1);
+  --ds-ink-a07: rgb(20 18 31 / 0.07);
+  --ds-ink-a06: rgb(20 18 31 / 0.06);
+  --ds-ink-a04: rgb(20 18 31 / 0.04);
+
+  /* Backdrop base */
+  --ds-wall-base: #f6f4f9;
+  --ds-wall-top: #faf9fc;
+  --ds-wall-bottom: #f2f0f6;
+  /* Faint washes of the brand colours for the backdrop */
+  --ds-peach-wash: rgb(255 192 166 / 0.42);
+  --ds-violet-wash: rgb(179 156 255 / 0.3);
+  --ds-teal-wash: rgb(138 227 214 / 0.32);
+
+  /* Glass */
+  --ds-glass: rgb(255 255 255 / 0.74);
+  --ds-glass-hi: rgb(255 255 255 / 0.86);
+  --ds-glass-lo: rgb(255 255 255 / 0.4);
+  --ds-glass-chrome: rgb(255 255 255 / 0.72);
+  --ds-glass-strong: rgb(255 255 255 / 0.97);
+  --ds-hair: rgb(255 255 255 / 0.72);
+  --ds-hair-soft: rgb(255 255 255 / 0.5);
+
+  /* Status tints */
+  --ds-tint-accent: rgb(255 90 60 / 0.14);
+  --ds-tint-violet: rgb(124 92 255 / 0.16);
+  --ds-tint-teal: rgb(15 168 137 / 0.15);
+  --ds-tint-ink: rgb(20 18 31 / 0.07);
+
+  /* Spacing, 4px grid */
+  --ds-space-0-5: 0.125rem;
+  --ds-space-1: 0.25rem;
+  --ds-space-2: 0.5rem;
+  --ds-space-3: 0.75rem;
+  --ds-space-4: 1rem;
+  --ds-space-5: 1.25rem;
+  --ds-space-6: 1.5rem;
+  --ds-space-8: 2rem;
+  --ds-space-10: 2.5rem;
+  --ds-space-12: 3rem;
+  --ds-space-14: 3.5rem;
+  --ds-space-16: 4rem;
+  --ds-space-24: 6rem;
+
+  /* Radii. Buttons and fields are rounded rectangles, not pills. */
+  --ds-radius-xs: 0.75rem;
+  --ds-radius-sm: 1rem;
+  --ds-radius-md: 1.125rem;
+  --ds-radius-lg: 1.25rem;
+  --ds-radius-xl: 1.625rem;
+  --ds-radius-2xl: 1.875rem;
+  --ds-radius-full: 62.4375rem;
+
+  /* Typography. The prototype uses the platform UI font, no webfont. */
+  --ds-font-sans:
+    -apple-system, 'SF Pro Text', BlinkMacSystemFont, 'Segoe UI', system-ui,
+    'Helvetica Neue', Arial, sans-serif;
+  --ds-font-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  --ds-text-2xs: 0.6875rem;
+  --ds-text-xs: 0.75rem;
+  --ds-text-sm: 0.875rem;
+  --ds-text-md: 0.9375rem;
+  --ds-text-base: 1rem;
+  --ds-text-lg: 1.1875rem;
+  --ds-text-xl: 1.375rem;
+  --ds-text-2xl: 1.625rem;
+  --ds-text-3xl: 1.9375rem;
+  --ds-text-4xl: 2.375rem;
+  --ds-text-5xl: 3.125rem;
+
+  --ds-leading-none: 1.08;
+  --ds-leading-tight: 1.2;
+  --ds-leading-snug: 1.35;
+  --ds-leading-normal: 1.45;
+  --ds-leading-relaxed: 1.55;
+
+  --ds-tracking-label: 0.05em;
+  --ds-tracking-normal: 0em;
+  --ds-tracking-body: -0.01em;
+  --ds-tracking-tight: -0.02em;
+  --ds-tracking-tighter: -0.03em;
+  --ds-tracking-num: -0.04em;
+
+  --ds-weight-regular: 400;
+  --ds-weight-medium: 500;
+  --ds-weight-semibold: 600;
+  --ds-weight-button: 550;
+  --ds-weight-bold: 700;
+
+  /* Elevation. Kept low and soft: the hairline border separates a card, the shadow only lifts it. */
+  --ds-shadow-card: 0 1px 2px rgb(20 18 31 / 0.04), 0 6px 20px rgb(20 18 31 / 0.05);
+  --ds-shadow-inset: inset 0 1px 0 rgb(255 255 255 / 0.6);
+  --ds-shadow-button: 0 1px 2px rgb(20 18 31 / 0.06);
+  --ds-shadow-segment: 0 1px 3px rgb(20 18 31 / 0.1);
+  --ds-shadow-panel: 0 10px 30px rgb(20 18 31 / 0.12);
+  --ds-shadow-accent: 0 1px 2px rgb(224 67 31 / 0.35);
+  --ds-shadow-field: none;
+  --ds-shadow-field-focus: 0 0 0 1px var(--ds-coral-600), 0 0 0 4px rgb(255 90 60 / 0.18);
+
+  /* Blur. Without the saturate the backdrop goes grey behind glass. */
+  --ds-blur-glass: 28px;
+  --ds-blur-chrome: 30px;
+  --ds-blur-soft: 20px;
+  --ds-saturate-glass: 190%;
+  --ds-saturate-soft: 170%;
+
+  /* Motion */
+  --ds-duration-fast: 120ms;
+  --ds-duration-base: 200ms;
+  --ds-ease-standard: ease;
+  --ds-ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
+  --ds-press-scale: 0.985;
+
+  /* Stacking */
+  --ds-z-sticky: 100;
+  --ds-z-header: 200;
+  --ds-z-overlay: 800;
+  --ds-z-modal: 900;
+  --ds-z-toast: 1000;
+
+  /* Controls. 44px is the minimum touch target below the md breakpoint. */
+  --ds-control-h-sm: 2.25rem;
+  --ds-control-h-md: 2.75rem;
+  --ds-control-h-lg: 3.25rem;
+  --ds-control-h-compact: 2.5rem;
+  --ds-tap-target-min: 2.75rem;
+
+  /* Layout */
+  --ds-layout-min: 20rem;
+  --ds-layout-gutter: var(--ds-space-4);
+  --ds-layout-max: 90rem;
+}

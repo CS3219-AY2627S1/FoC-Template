@@ -1,0 +1,4 @@
+Title: Requesters and couriers
+Questions: What is a requester? What is a courier? Do I need a separate account to deliver? How do I become a courier? Can I do both?
+
+A requester is the student who posts an errand. A courier is the student who accepts and delivers it. These are not account types. Every verified student can do both with the same account, so you do not need to apply or switch modes. Whether you are the requester or the courier depends only on the errand: you are the requester on errands you posted and the courier on errands you accepted. The only special account type is administrator, for people who run the platform.

@@ -1,0 +1,303 @@
+# Settings shared by every place Relay runs. values-local.yaml and values-cloud.yaml only change
+# where the images come from and what really differs per place, so each service runs from the
+# same image everywhere and gets its environment at start (N6.2).
+
+images:
+  # Put in front of each service name. The cloud pulls ghcr.io/ay2627s1-cs3219-p26/user-service:dev,
+  # values-local.yaml switches to the images that docker compose builds on the laptop.
+  prefix: ghcr.io/ay2627s1-cs3219-p26/
+  tag: dev
+  pullPolicy: IfNotPresent
+  # Names of image pull secrets, needed because the GHCR packages are private.
+  pullSecrets: []
+
+# Passwords and keys the services read. The defaults below are the same placeholders as in
+# compose.yaml and only fit a laptop. In the cloud the Secret is created from a file that never
+# goes into Git, and secrets.create is false.
+secrets:
+  create: true
+  name: relay-secrets
+  # Passwords that end up inside a URL (database, broker) may only use letters and digits.
+  values:
+    BROKER_PASSWORD: change-me
+    OTP_SECRET: dev-only-otp-secret-do-not-use-in-production
+    ADMIN_PASSWORD: change-me
+    SUPPLIER_DB_PASSWORD: change-me
+    ORDER_DB_PASSWORD: change-me
+    MAILPIT_PASSWORD: change-me
+    # Empty on the laptop: the rag-service starts, but every question fails until a real key is set.
+    CLAUDE_API_KEY: ""
+    SEED_DEMO_PASSWORD: change-me
+
+ingress:
+  # Empty answers every host name, so http://localhost:<port> works on the laptop.
+  host: ""
+  # HTTPS with a Let's Encrypt certificate (cert-manager), plain HTTP redirects to it.
+  # Needs a public host name and cert-manager in the cluster, so only in the cloud.
+  tls: false
+
+# Every service of our own. Each one becomes a Deployment and a Service with the same name, so the
+# URLs from compose.yaml (http://user-service:3000, mongodb://user-db:27017) work unchanged.
+#   port       the port the container listens on
+#   health     path that answers 200 while the service works
+#   waitFor    host:port that has to answer before the service starts (like depends_on in compose)
+#   secretEnv  keys of the Secret above, handed over as variables of the same name; other
+#              variables can use them as $(NAME)
+#   env        plain variables; values may use Helm templates such as {{ .Release.Namespace }}
+#   enabled    false leaves the service out, e.g. while its image does not start yet
+#   public     true when requests from outside reach it through the ingress (only the gateway)
+#   autoscaling  more instances under load, e.g. {max: 4}; the rest comes from autoscalingDefaults.
+#              Only for services that keep no state in memory.
+services:
+  user-service:
+    port: 3000
+    health: /health
+    autoscaling: {max: 4}
+    waitFor: [user-db:27017]
+    secretEnv: [BROKER_PASSWORD, OTP_SECRET, ADMIN_PASSWORD, SEED_DEMO_PASSWORD]
+    env:
+      PORT: "3000"
+      LOG_LEVEL: info
+      MONGO_URL: mongodb://user-db:27017/user-service
+      BROKER_URL: amqp://relay:$(BROKER_PASSWORD)@broker:5672
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_SECURE: "false"
+      MAIL_FROM: Relay <no-reply@relay.local>
+      COOKIE_SECURE: "false"
+      ADMIN_EMAIL: admin@nus.edu.sg
+      ADMIN_USERNAME: admin
+      SEED_DEMO_STUDENTS: "true"
+      # Checks that a reported pair really were requester and courier of the errand.
+      ORDER_SERVICE_URL: http://order-service:3000
+
+  supplier-service:
+    port: 3002
+    health: /health
+    autoscaling: {max: 4}
+    # Not tied to the user-service: while that is down every request is refused, and the
+    # supplier-service keeps running (N6.1.2).
+    waitFor: [supplier-db:5432]
+    secretEnv: [SUPPLIER_DB_PASSWORD]
+    env:
+      LOG_LEVEL: info
+      SUPPLIER_SERVICE_PORT: "3002"
+      SUPPLIER_DATABASE_URL: postgres://supplier:$(SUPPLIER_DB_PASSWORD)@supplier-db:5432/supplier
+      USER_SERVICE_URL: http://user-service:3000
+      SUPPLIER_TIMEZONE: Asia/Singapore
+      SUPPLIER_SEED_ON_STARTUP: "true"
+      SUPPLIER_AUTH_CACHE_SECONDS: "5"
+      SUPPLIER_READ_CACHE_SECONDS: "2"
+
+  credit-service:
+    port: 3002
+    # The credit-service has no /health yet. / answers 200 without a session.
+    health: /
+    autoscaling: {max: 4}
+    waitFor: [credit-db:27017]
+    secretEnv: [BROKER_PASSWORD]
+    env:
+      # directConnection: the replica set's only member is called localhost, see credit-db.
+      MONGO_URL: mongodb://credit-db:27017/credit-service?directConnection=true
+      USER_SERVICE_URL: http://user-service:3000
+      BROKER_URL: amqp://relay:$(BROKER_PASSWORD)@broker:5672
+
+  order-service:
+    port: 3000
+    health: /health
+    autoscaling: {max: 4}
+    waitFor: [order-db:5432]
+    secretEnv: [ORDER_DB_PASSWORD, BROKER_PASSWORD]
+    env:
+      PORT: "3000"
+      NODE_ENV: production
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://order_service:$(ORDER_DB_PASSWORD)@order-db:5432/orders
+      USER_SERVICE_URL: http://user-service:3000
+      SUPPLIER_SERVICE_URL: http://supplier-service:3002
+      CREDIT_SERVICE_URL: http://credit-service:3002
+      BROKER_URL: amqp://relay:$(BROKER_PASSWORD)@broker:5672
+
+  # No autoscaling: it keeps the feature store in memory, so a second instance would learn apart.
+  recommendation-service:
+    port: 3006
+    health: /health
+    secretEnv: [BROKER_PASSWORD]
+    env:
+      PORT: "3006"
+      LOG_LEVEL: info
+      USER_SERVICE_URL: http://user-service:3000
+      BROKER_URL: amqp://relay:$(BROKER_PASSWORD)@broker:5672
+      FEATURE_STORE: memory
+
+  # No autoscaling: Socket.IO keeps each connection in the instance that accepted it.
+  message-service:
+    port: 3008
+    health: /health
+    waitFor: [message-db:27017]
+    secretEnv: [BROKER_PASSWORD]
+    env:
+      PORT: "3008"
+      LOG_LEVEL: info
+      MONGO_URL: mongodb://message-db:27017/message-service
+      USER_SERVICE_URL: http://user-service:3000
+      ORDER_SERVICE_URL: http://order-service:3000
+      BROKER_URL: amqp://relay:$(BROKER_PASSWORD)@broker:5672
+
+  # No autoscaling: every instance loads the embedding model, about 600 MB.
+  rag-service:
+    port: 3080
+    health: /health/
+    secretEnv: [CLAUDE_API_KEY]
+    env:
+      PORT: "3080"
+      USER_SERVICE_URL: http://user-service:3000
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1536Mi
+
+  web-client:
+    port: 8080
+    health: /healthz
+    public: true
+    autoscaling: {max: 4}
+    # No waitFor on purpose: nginx looks the services up per request and stays up while one is down.
+    env:
+      # nginx resolves these itself and ignores the cluster's search domains, so they need the
+      # full name. A short name like http://user-service:3000 would end in 503 on every request.
+      USER_SERVICE_URL: http://user-service.{{ .Release.Namespace }}.svc.cluster.local:3000
+      SUPPLIER_SERVICE_URL: http://supplier-service.{{ .Release.Namespace }}.svc.cluster.local:3002
+      CREDIT_SERVICE_URL: http://credit-service.{{ .Release.Namespace }}.svc.cluster.local:3002
+      ORDER_SERVICE_URL: http://order-service.{{ .Release.Namespace }}.svc.cluster.local:3000
+      RECOMMENDATION_SERVICE_URL: http://recommendation-service.{{ .Release.Namespace }}.svc.cluster.local:3006
+      MESSAGE_SERVICE_URL: http://message-service.{{ .Release.Namespace }}.svc.cluster.local:3008
+      RAG_SERVICE_URL: http://rag-service.{{ .Release.Namespace }}.svc.cluster.local:3080
+      # Mailpit is served under /mail/ on the same host, see the ingress.
+      DEV_MAILBOX_URL: /mail/
+
+# Scaling rules for every service with autoscaling, written down in N6.3: start another instance
+# when the load stays above 70 % of what one instance asks for (its CPU request) for 2 minutes.
+#   cpuPercent             target load per instance, in percent of the CPU request
+#   scaleUpAfterSeconds    the load has to stay above the target this long before scaling out
+#   scaleDownAfterSeconds  the load has to stay low this long before an instance is removed
+autoscalingDefaults:
+  min: 1
+  max: 4
+  cpuPercent: 70
+  scaleUpAfterSeconds: 120
+  scaleDownAfterSeconds: 300
+
+# Applied to every service unless the service sets its own.
+serviceDefaults:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+# One database per service, each a StatefulSet with its own volume.
+#   kind         mongo or postgres, see databaseKinds
+#   size         size of the volume
+#   args, ready  replace the arguments and the readiness check of the kind
+#   passwordKey  key of the Secret that becomes POSTGRES_PASSWORD
+#   env          extra variables, e.g. POSTGRES_USER
+# A database only counts as reachable once its ready check has passed, so waitFor in a service
+# also waits for that, not just for the port. It also only accepts connections from the services
+# that list it in waitFor (network-policies.yaml).
+databases:
+  user-db:
+    kind: mongo
+    size: 1Gi
+
+  supplier-db:
+    kind: postgres
+    size: 1Gi
+    passwordKey: SUPPLIER_DB_PASSWORD
+    env:
+      POSTGRES_USER: supplier
+      POSTGRES_DB: supplier
+
+  # A single-node replica set, so the credit-service can use multi-document transactions (N4.1.2).
+  credit-db:
+    kind: mongo
+    size: 1Gi
+    args: ["--replSet", "rs0", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
+    # Starts the replica set on the first check and reports ready once this node accepts writes.
+    # The member is called localhost: when the set is started, the pod is not ready yet, so the
+    # name credit-db does not lead back to it. Clients connect with directConnection and never
+    # use the member name.
+    ready:
+      - sh
+      - -c
+      - >-
+        mongosh --quiet --eval "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'localhost:27017'}]}) }; db.hello().isWritablePrimary"
+        | grep -q true
+
+  order-db:
+    kind: postgres
+    size: 1Gi
+    passwordKey: ORDER_DB_PASSWORD
+    env:
+      POSTGRES_USER: order_service
+      POSTGRES_DB: orders
+
+  message-db:
+    kind: mongo
+    size: 1Gi
+
+databaseKinds:
+  mongo:
+    image: mongo:8
+    port: 27017
+    dataPath: /data/db
+    # Without a cap every Mongo takes half of the machine's memory for its cache.
+    args: ["--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
+    ready: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+  postgres:
+    image: postgres:17-alpine
+    port: 5432
+    dataPath: /var/lib/postgresql/data
+    ready: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+
+broker:
+  image: rabbitmq:4.3-management-alpine
+  user: relay
+  size: 1Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+    limits:
+      memory: 512Mi
+
+# Catches every email and shows it under /mail/. Relay sends no real emails anywhere.
+mailpit:
+  image: axllent/mailpit:v1.31.6
+  # Ask for user and MAILPIT_PASSWORD before showing the mails. Off in the cloud as well: the verify
+  # page links to /mail/ so that anyone trying Relay, the graders too, can read their own code.
+  auth: false
+  user: relay
+  # Services that send email. Only these reach Mailpit's SMTP port.
+  senders: [user-service]
+
+# Small image for the init container that waits for a database.
+waitImage: busybox:1.37
+
+# Who may connect to whom inside the cluster, like the two networks in compose.yaml.
+networkPolicies: true

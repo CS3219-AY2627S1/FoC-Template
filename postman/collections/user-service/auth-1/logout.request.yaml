@@ -1,0 +1,7 @@
+$kind: http-request
+url: "{{userServiceUrl}}/auth/logout"
+method: POST
+body:
+  type: json
+  content: ""
+order: 4417935634276440

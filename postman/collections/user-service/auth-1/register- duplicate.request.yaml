@@ -1,0 +1,14 @@
+$kind: http-request
+name: "register: duplicate"
+url: "{{userServiceUrl}}/auth/register"
+method: POST
+body:
+  type: json
+  content: |-
+    {
+        "fullName": "Felix Haag",
+        "email": "felix@u.nus.edu",
+        "username": "felix",
+        "password": "test1234"
+    }
+order: 2262479615019544

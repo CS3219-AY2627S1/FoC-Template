@@ -1,0 +1,10 @@
+$kind: http-request
+url: "{{userServiceUrl}}/users/{{targetUserId}}"
+method: DELETE
+body:
+  type: json
+  content: |-
+    {
+        "fullName": "Felix Haag 2"
+    }
+order: 4500980943284850

@@ -1,0 +1,8 @@
+Title: Problems logging in
+Questions: Why can't I log in? What does "Wrong username, email, or password" mean? What does "Please verify your email address first" mean? What does "This account is suspended" mean?
+
+"Wrong username, email, or password": one of them is incorrect. The message does not say which, for security reasons. Check for typing mistakes and that you are using your NUS email.
+"Please verify your email address first": your account exists but the code was never entered. Follow the Verify your email link under the message and enter your code, or press Send a new code there.
+"This account is suspended": an administrator has suspended the account and you cannot log in. You cannot lift this yourself.
+
+If you forgot your password, see the document on forgotten passwords.
