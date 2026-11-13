@@ -1,0 +1,430 @@
+# AI Assistance Disclosure:
+# Tool: OpenAI Codex (GPT-5), date: 2026-10-13
+# Mode: Implementation and configuration.
+# Scope: Updated local orchestration for the Reporting Service, Firestore database, and Storage emulator.
+# Author review: I reviewed for correctness.
+#
+# AI Assistance Disclosure:
+# Tool: OpenAI Codex (GPT-5), date: 2026-09-25
+# Scope: Updated deployment boilerplate to integrate the Credit Service.
+# Author review: I reviewed for correctness.
+#
+# AI Assistance Disclosure:
+# Tool: OpenAI Codex (GPT-6), date: 2026-10-07
+# Scope: Historical cloud-local selection superseded by ADR-036 (2026-10-11).
+# Local Docker now uses only the Pub/Sub emulator; cloud deployments keep Google Pub/Sub.
+
+# FoC local deployment (M7). Start everything with:   docker compose up --build
+#
+#   http://localhost:8080   gateway: UI + all APIs (use this one)
+#   http://localhost:3000   frontend directly
+#   http://localhost:4000   Firebase emulator UI (create/inspect test users and data)
+#
+# Like the cloud, the gateway is the entry point. Every other published port (services, databases,
+# emulators) is for debugging and bound to 127.0.0.1, so it isn't reachable from other machines.
+#
+# Each backend service adds its own block below (copy the template at the bottom).
+# Variables in ${...} can be overridden in a root `.env` file (see .env.example).
+
+name: foc
+
+# Standard environment every Spring Boot service reads (see AGENTS.md "Runtime contract").
+x-backend-env: &backend-env
+  PORT: "8080"
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  FIREBASE_AUTH_PROJECT_ID: demo-foc
+  FIREBASE_AUTH_EMULATOR_HOST: firebase-emulator:9099
+  USER_SERVICE_MODE: ${USER_SERVICE_MODE:-mock}
+  USER_SERVICE_URL: http://user-service:8080
+  MOCK_ADMIN_EMAILS: ${MOCK_ADMIN_EMAILS:-admin@u.nus.edu,e1398851@u.nus.edu}
+  CORS_ORIGINS: http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:8080
+
+x-firestore-env: &firestore-env
+  FIRESTORE_PROJECT_ID: demo-foc
+  FIRESTORE_EMULATOR_HOST: firebase-emulator:8090
+
+x-backend-depends: &backend-depends
+  firebase-emulator:
+    condition: service_healthy
+
+x-order-pubsub-topics: &order-pubsub-topics
+  # Local Docker never reads cloud project/topic/ADC values from a developer .env.
+  PUBSUB_PROJECT_ID: demo-foc-local
+  ORDER_MESSAGING_MODE: emulator
+  PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+  ORDER_COMPLETION_TOPIC: order-completion-local-v1
+  ORDER_OPEN_REFUND_TOPIC: open-order-refund-local-v1
+  ORDER_COURIER_PENALTY_EVENT_TOPIC: courier-penalty-event-local-v1
+  ORDER_COURIER_PENALTY_ADDITION_TOPIC: courier-penalty-addition-local-v1
+  ORDER_COURIER_PENALTY_DEDUCTION_TOPIC: courier-penalty-deduction-local-v1
+  ORDER_CREDIT_COMPENSATION_TOPIC: credit-command-compensation-local-v1
+  USER_CREATED_TOPIC: user-created-local-v1
+
+services:
+  pubsub-emulator:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators@sha256:be2f0e582a94c9e06e7a384fe2b3b39d590eeb8da65a110eda991598c100fe80
+    command: ["gcloud", "beta", "emulators", "pubsub", "start", "--project=demo-foc-local", "--host-port=0.0.0.0:8085"]
+    ports:
+      - "127.0.0.1:8085:8085"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1',8085),2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  pubsub-init:
+    image: python:3.12-alpine
+    command: ["python", "/setup/init.py"]
+    environment:
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+    volumes:
+      - ./infra/pubsub-emulator-init.py:/setup/init.py:ro
+    depends_on:
+      pubsub-emulator:
+        condition: service_healthy
+      credit-service:
+        condition: service_healthy
+
+  gateway:
+    build: ./gateway
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      frontend:
+        condition: service_started
+      supplier-service:
+        condition: service_healthy
+      credit-service:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      reporting-service:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:8080"
+    environment:
+      FOC_ENVIRONMENT: local
+      # Ready Admin sections use real peer APIs. Reports alone keep local sample data.
+      FOC_REPORT_API_MODE: mock
+      # The browser reaches the frontend on :3000, while APIs are exposed by
+      # the host gateway on :8080. Keep this explicit for direct frontend use.
+      # Explicit IPv4 avoids broken localhost IPv6 forwarding on Docker Desktop.
+      FOC_API_BASE_URL: http://127.0.0.1:8080
+      FOC_FIREBASE_PROJECT_ID: demo-foc
+      FOC_FIREBASE_API_KEY: demo-api-key
+      # Reached by the browser, so this is the host-mapped port.
+      FOC_FIREBASE_AUTH_EMULATOR_URL: http://127.0.0.1:9099
+
+  firebase-emulator:
+    build: ./infra/firebase-emulator
+    ports:
+      - "127.0.0.1:4000:4000" # emulator UI
+      - "127.0.0.1:9099:9099" # Auth
+      - "127.0.0.1:8090:8090" # Firestore
+      - "127.0.0.1:9199:9199" # Storage
+    volumes:
+      - firebase-data:/data
+    stop_signal: SIGINT # the Firebase CLI exports data on SIGINT
+    stop_grace_period: 30s # time to export data on shutdown
+
+  mongodb-init:
+    image: mongo:8
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mongosh "mongodb://mongodb:27017/admin" --quiet --eval '
+          try {
+            rs.status();
+            print("Replica set already initialized");
+          } catch (e) {
+            if (e.code === 94) {
+              rs.initiate({
+                _id: "rs0",
+                members: [{ _id: 0, host: "mongodb:27017" }]
+              });
+              print("Replica set initialization requested");
+            } else {
+              throw e;
+            }
+          }
+        '
+        
+  mongodb:
+    image: mongo:8
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      start_period: 10s
+      retries: 12
+
+  supplier-service:
+    build: ./supplier-service
+    ports:
+      - "127.0.0.1:8082:8080"
+    environment:
+      <<: [*backend-env, *firestore-env]
+      FIRESTORE_DATABASE_ID: supplier-local
+      FOC_INTERNAL_ORDER_API_ENABLED: "true"
+      # Roles come from the User Service. Reads don't need it, so there is deliberately no
+      # startup dependency on it; set SUPPLIER_USER_SERVICE_MODE=mock to use MOCK_ADMIN_EMAILS.
+      USER_SERVICE_MODE: ${SUPPLIER_USER_SERVICE_MODE:-http}
+      # Mounted, not baked into the image (Supplier F2.1.1).
+      SUPPLIER_SEED_FILE: /data/supplier-seed-data.csv
+    volumes:
+      - ./data/csv:/data:ro
+    depends_on: *backend-depends
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:8080/actuator/health/readiness"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 10
+
+  credit-service:
+    build: ./credit-service
+    ports:
+      - "127.0.0.1:8084:8080"
+    environment:
+      <<: *backend-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://credit-postgres:5432/${CREDIT_DB_NAME:-credit_service}
+      SPRING_DATASOURCE_USERNAME: ${CREDIT_DB_USERNAME:-credit_dev}
+      SPRING_DATASOURCE_PASSWORD: ${CREDIT_DB_PASSWORD:-credit_dev_password}
+      SPRING_FLYWAY_ENABLED: "true"
+      FOC_ENVIRONMENT: local
+      USER_SERVICE_MODE: http
+      CREDIT_PUBSUB_PUSH_MODE: emulator
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: demo-foc-local
+      CREDIT_PUBSUB_PUSH_AUDIENCE: http://credit-service:8080
+      CREDIT_PUBSUB_PUSH_SERVICE_ACCOUNT: foc-credit-push-local@demo-foc.iam.gserviceaccount.com
+      CREDIT_ORDER_COMPLETION_SUBSCRIPTION: credit-order-completion-local-v1
+      CREDIT_ORDER_OPEN_REFUND_SUBSCRIPTION: credit-open-order-refund-local-v1
+      CREDIT_COMPENSATION_SUBSCRIPTION: credit-command-compensation-local-v1
+      CREDIT_COMPENSATION_RESULT_TOPIC: credit-command-compensation-result-local-v1
+      CREDIT_MESSAGING_MODE: emulator
+      FOC_INTERNAL_ORDER_API_ENABLED: "true"
+      CREDIT_PUBLISH_TIMEOUT: 10s
+      CREDIT_RESULT_OUTBOX_BATCH_SIZE: 50
+      CREDIT_RESULT_OUTBOX_RECOVERY_CRON: "0 * * * * *"
+      CREDIT_USER_CREATED_SUBSCRIPTION: credit-user-created-local-v1
+    depends_on:
+      <<: *backend-depends
+      credit-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:8080/actuator/health/readiness"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 10
+
+  credit-postgres:
+    image: postgres:15-alpine
+    ports:
+      - "127.0.0.1:${CREDIT_POSTGRES_PORT:-5434}:5432"
+    environment:
+      POSTGRES_DB: ${CREDIT_DB_NAME:-credit_service}
+      POSTGRES_USER: ${CREDIT_DB_USERNAME:-credit_dev}
+      POSTGRES_PASSWORD: ${CREDIT_DB_PASSWORD:-credit_dev_password}
+    volumes:
+      - credit-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CREDIT_DB_USERNAME:-credit_dev} -d ${CREDIT_DB_NAME:-credit_service}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  user-service:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    ports:
+      - "127.0.0.1:${USER_SERVICE_PORT:-8081}:8080"
+    environment:
+      <<: [*backend-env, *order-pubsub-topics]
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongodb:27017/UserServiceDB}
+      ADMIN_BOOTSTRAP_ENABLED: ${ADMIN_BOOTSTRAP_ENABLED:-false}
+      ORDER_SERVICE_URL: http://order-service:8080
+      FOC_INTERNAL_ORDER_API_ENABLED: "true"
+      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
+      SPRING_PROFILES_ACTIVE: prod
+      USER_MESSAGING_MODE: emulator
+      USER_PUBSUB_PENALTY_EVENT_SUBSCRIPTION: user-courier-penalty-event-local-v1
+      USER_PUBSUB_PUSH_MODE: emulator
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: demo-foc-local
+    depends_on:
+      <<: *backend-depends
+      mongodb:
+        condition: service_healthy
+      mongodb-init:
+        condition: service_completed_successfully
+      pubsub-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:8080/actuator/health/readiness"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 10
+
+  order-postgres:
+    image: postgres:15-alpine
+    ports:
+      - "127.0.0.1:${ORDER_POSTGRES_PORT:-5433}:5432"
+    environment:
+      POSTGRES_DB: ${ORDER_DB_NAME:-order_service}
+      POSTGRES_USER: ${ORDER_DB_USERNAME:-order_dev}
+      POSTGRES_PASSWORD: ${ORDER_DB_PASSWORD:-order_dev_password}
+    volumes:
+      - order-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ORDER_DB_USERNAME:-order_dev} -d ${ORDER_DB_NAME:-order_service}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  order-service:
+    build:
+      context: .
+      dockerfile: order-service/Dockerfile
+    ports:
+      - "127.0.0.1:${ORDER_SERVICE_PORT:-8083}:8080"
+    environment:
+      <<: [*backend-env, *order-pubsub-topics]
+      SPRING_DATASOURCE_URL: jdbc:postgresql://order-postgres:5432/${ORDER_DB_NAME:-order_service}
+      SPRING_DATASOURCE_USERNAME: ${ORDER_DB_USERNAME:-order_dev}
+      SPRING_DATASOURCE_PASSWORD: ${ORDER_DB_PASSWORD:-order_dev_password}
+      SPRING_FLYWAY_ENABLED: "true"
+      ORDER_PEERS_MODE: http
+      SPRING_PROFILES_ACTIVE: prod
+      # Sample Reports endpoints require local environment and Firebase emulator.
+      ORDER_REPORT_DEMO_ENABLED: ${ORDER_REPORT_DEMO_ENABLED:-true}
+      ORDER_USER_SERVICE_MODE: http
+      USER_SERVICE_MODE: http
+      USER_SERVICE_URL: http://user-service:8080
+      SUPPLIER_SERVICE_URL: http://supplier-service:8080
+      CREDIT_SERVICE_URL: http://credit-service:8080
+      ORDER_COMMANDS_ENABLED: ${ORDER_COMMANDS_ENABLED:-true}
+      ORDER_COMMAND_RECOVERY_POLICY: ${ORDER_COMMAND_RECOVERY_POLICY:-retry}
+      FOC_INTERNAL_ORDER_API_ENABLED: "true"
+      ORDER_AUTO_REPOST_ENABLED: ${ORDER_AUTO_REPOST_ENABLED:-false}
+      ORDER_COMPENSATION_ENABLED: ${ORDER_COMPENSATION_ENABLED:-false}
+      ORDER_COMPENSATION_REQUEST_TOPIC: credit-command-compensation-local-v1
+      ORDER_COMPENSATION_RESULT_SUBSCRIPTION: order-credit-compensation-result-local-v1
+      ORDER_COMPENSATION_PUSH_MODE: emulator
+      # Both Report and Order use the real local resolution saga and private emulator.
+      ORDER_REPORT_RESOLUTION_ENABLED: "true"
+      ORDER_REPORT_CREATION_ENABLED: "true"
+      REPORT_CREATION_COMPENSATION_RESULT_TOPIC: report-creation-compensation-result-local-v1
+      ORDER_REPORT_CREATION_COMPENSATION_SUBSCRIPTION: projects/demo-foc-local/subscriptions/order-report-creation-compensation-local
+      ORDER_REPORT_CREATION_PUSH_MODE: emulator
+      ORDER_REPORT_HOLD_AUTH_MODE: local
+      REPORT_HOLD_LOCAL_CREDENTIAL: ${REPORT_HOLD_LOCAL_CREDENTIAL:-local-emulator-report-hold-development-credential}
+      REPORT_SERVICE_URL: http://reporting-service:8080
+      ORDER_REPORT_RESOLUTION_TIMEOUT: 5s
+      ORDER_REPORT_COMPENSATION_TOPIC: report-resolution-compensation-local-v1
+      REPORT_COMPENSATION_RESULT_TOPIC: report-resolution-compensation-result-local-v1
+      ORDER_REPORT_COMPENSATION_RESULT_SUBSCRIPTION: order-resolution-result-local
+      ORDER_REPORT_COMPENSATION_PUSH_MODE: emulator
+      ORDER_COMMAND_LEASE_SECONDS: ${ORDER_COMMAND_LEASE_SECONDS:-120}
+      ORDER_COMMAND_RETRY_SECONDS: ${ORDER_COMMAND_RETRY_SECONDS:-15}
+      ORDER_COMMAND_BATCH_SIZE: ${ORDER_COMMAND_BATCH_SIZE:-20}
+      ORDER_PEER_CONNECT_TIMEOUT: ${ORDER_PEER_CONNECT_TIMEOUT:-3s}
+      ORDER_PEER_READ_TIMEOUT: ${ORDER_PEER_READ_TIMEOUT:-5s}
+      FOC_ENVIRONMENT: local
+      ORDER_LIFECYCLE_TOKEN: ${ORDER_LIFECYCLE_TOKEN:-local-lifecycle}
+      ORDER_LIFECYCLE_EXTERNAL_ENABLED: "false"
+      ORDER_LIFECYCLE_CRON: ${ORDER_LIFECYCLE_CRON:-0 * * * * *}
+      ORDER_OUTBOX_RECOVERY_CRON: ${ORDER_OUTBOX_RECOVERY_CRON:-0 */15 * * * *}
+    depends_on:
+      <<: *backend-depends
+      order-postgres:
+        condition: service_healthy
+      pubsub-init:
+        condition: service_completed_successfully
+      user-service:
+        condition: service_healthy
+      supplier-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/actuator/health/readiness"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 10
+
+  reporting-service:
+    build: ./reporting-service
+    ports:
+      - "127.0.0.1:${REPORTING_SERVICE_PORT:-8086}:8080"
+    environment:
+      <<: [*backend-env, *firestore-env]
+      FIRESTORE_DATABASE_ID: reporting-local
+      STORAGE_PROJECT_ID: demo-foc
+      STORAGE_EMULATOR_HOST: http://firebase-emulator:9199
+      REPORTING_STORAGE_BUCKET: demo-foc-reporting-local
+      ORDER_SERVICE_URL: http://order-service:8080
+      USER_SERVICE_MODE: http
+      # Outer request must outlast Order's inner Report call and final local commit.
+      ORDER_SERVICE_TIMEOUT: 20s
+      REPORT_RESOLUTION_ENABLED: "true"
+      REPORT_CREATION_ENABLED: "true"
+      REPORT_CREATION_HOLD_LEASE: 2m
+      REPORT_CREATION_COMPENSATION_TOPIC: report-creation-compensation-local-v1
+      REPORT_CREATION_COMPENSATION_RESULT_SUBSCRIPTION: projects/demo-foc-local/subscriptions/report-creation-compensation-result-local
+      REPORT_CREATION_RESULT_PUSH_MODE: emulator
+      REPORT_ORDER_HOLD_AUTH_MODE: local
+      REPORT_HOLD_LOCAL_CREDENTIAL: ${REPORT_HOLD_LOCAL_CREDENTIAL:-local-emulator-report-hold-development-credential}
+      REPORT_PUBSUB_PROJECT_ID: demo-foc-local
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      REPORT_RESOLUTION_RESULT_TOPIC: report-resolution-compensation-result-local-v1
+      REPORT_RESOLUTION_COMPENSATION_SUBSCRIPTION: projects/demo-foc-local/subscriptions/report-resolution-request-local
+      REPORT_RESOLUTION_PUSH_MODE: emulator
+    depends_on:
+      <<: *backend-depends
+      order-service:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:8080/actuator/health/readiness"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 10
+
+  # ---- Backend service template ------------------------------------------
+  # Copy, uncomment and rename once <name>-service has a working Dockerfile.
+  # admin-service is currently an empty placeholder, so it is intentionally not built here.
+  # Host ports: user 8081, supplier 8082, order 8083, credit 8084, admin 8085, reporting 8086.
+  #
+  # <name>-service:
+  #   build: ./<name>-service
+  #   ports:
+  #     - "808X:8080"
+  #   environment:
+  #     <<: *backend-env
+  #     FIRESTORE_DATABASE_ID: <name>-local
+  #   depends_on: *backend-depends
+
+volumes:
+  firebase-data:
+  mongodb-data:
+  order-postgres-data:
+  credit-postgres-data:

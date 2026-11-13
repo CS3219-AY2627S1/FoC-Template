@@ -1,0 +1,8 @@
+target
+.idea
+*.iml
+Dockerfile
+.dockerignore
+README.md
+AGENTS.md
+deploy

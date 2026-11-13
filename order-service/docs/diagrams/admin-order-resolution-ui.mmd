@@ -1,0 +1,24 @@
+sequenceDiagram
+    actor Admin
+    participant UI as Admin Orders UI
+    participant API as AdminOrderController
+    participant DB as Order database
+    participant Outbox as Existing after-commit dispatcher
+    participant PubSub as Google Pub/Sub
+    Admin->>UI: Select row, Cancel or Complete
+    UI->>API: GET admin/penalty-policies
+    API-->>UI: Shared enum cases and amounts
+    Admin->>UI: Penalty choice + preset/custom reason + confirm
+    alt Live provider
+        UI->>API: POST admin/{id}/cancel or complete
+        Note over API,DB: Existing verified admin role; locked participant/state checks
+        API->>DB: Atomic status + decision/reason + checkpoint + bound receipt + outbox
+        DB-->>API: Commit
+        API-->>UI: Updated Order (funding/scoring intent)
+        Outbox->>PubSub: Existing credit event + optional highest penalty
+    else Local mock provider
+        UI->>API: POST admin-mock/orders/{id}/cancel or complete
+        Note over API: Update sample memory only; no DB, funds, outbox or score
+        API-->>UI: Updated sample Order
+    end
+    UI-->>Admin: Refresh list / show saved full details

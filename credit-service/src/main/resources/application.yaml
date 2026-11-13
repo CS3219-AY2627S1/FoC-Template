@@ -1,0 +1,82 @@
+# AI Assistance Disclosure:
+# Tool: OpenAI Codex (GPT-5), date: 2026-09-25
+# Mode: Boilerplate generation.
+# Scope: Generated Spring Boot runtime configuration for the team-finalized Credit Service settings.
+# Author review: I reviewed for correctness.
+
+spring:
+  application:
+    name: credit-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5434/credit_service}
+    username: ${SPRING_DATASOURCE_USERNAME:credit_dev}
+    password: ${SPRING_DATASOURCE_PASSWORD:credit_dev_password}
+    hikari:
+      connection-timeout: 5000
+      validation-timeout: 3000
+  flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
+    clean-disabled: true
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  threads:
+    virtual:
+      enabled: true
+  main:
+    banner-mode: off
+
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+  error:
+    whitelabel:
+      enabled: false
+
+foc:
+  credit:
+    auth:
+      project-id: ${FIREBASE_AUTH_PROJECT_ID:demo-foc}
+      emulator-host: ${FIREBASE_AUTH_EMULATOR_HOST:}
+    user-service:
+      mode: ${USER_SERVICE_MODE:mock}
+      base-url: ${USER_SERVICE_URL:}
+      mock-admin-emails: ${MOCK_ADMIN_EMAILS:}
+      timeout: 3s
+    cors-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:8080}
+    push:
+      project-id: ${PUBSUB_PROJECT_ID:protean-vigil-509704-q4}
+      audience: ${CREDIT_PUBSUB_PUSH_AUDIENCE:http://localhost:8080}
+      service-account: ${CREDIT_PUBSUB_PUSH_SERVICE_ACCOUNT:foc-credit-push-local@demo-foc.iam.gserviceaccount.com}
+      completion-subscription: ${CREDIT_ORDER_COMPLETION_SUBSCRIPTION:credit-order-completion-dev-v1}
+      open-refund-subscription: ${CREDIT_ORDER_OPEN_REFUND_SUBSCRIPTION:credit-open-order-refund-dev-v1}
+      user-created-subscription: ${CREDIT_USER_CREATED_SUBSCRIPTION:credit-user-created-dev-v1}
+      compensation-subscription: ${CREDIT_COMPENSATION_SUBSCRIPTION:credit-command-compensation-dev-v1}
+    compensation:
+      project-id: ${PUBSUB_PROJECT_ID:demo-foc-local}
+      result-topic: ${CREDIT_COMPENSATION_RESULT_TOPIC:credit-command-compensation-result-local-v1}
+      messaging-mode: ${CREDIT_MESSAGING_MODE:disabled}
+      publish-timeout: ${CREDIT_PUBLISH_TIMEOUT:10s}
+      outbox-batch-size: ${CREDIT_RESULT_OUTBOX_BATCH_SIZE:50}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+springdoc:
+  api-docs:
+    path: /api/credits/v3/api-docs
+  swagger-ui:
+    path: /api/credits/docs
+
+logging:
+  level:
+    root: ${LOG_LEVEL:INFO}

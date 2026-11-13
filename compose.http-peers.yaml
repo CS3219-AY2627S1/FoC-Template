@@ -1,0 +1,21 @@
+# Order Service HTTP-peer smoke profile.
+#
+# Both Compose modes use real Admin APIs against local peer containers.
+# Reports alone retain the local-only sample endpoints; cloud Reports show Coming soon.
+# An actual admin role in the local User Service is required for Admin Mode.
+# compose.local-live.yaml pins local auth/messaging flags; neither mounts ADC
+# nor provisions any Google Cloud topic or subscription (ADR-036).
+services:
+  order-service:
+    environment:
+      ORDER_PEERS_MODE: http
+      USER_SERVICE_URL: http://user-service:8080
+      SUPPLIER_SERVICE_URL: http://supplier-service:8080
+      CREDIT_SERVICE_URL: http://credit-service:8080
+    depends_on:
+      user-service:
+        condition: service_healthy
+      supplier-service:
+        condition: service_healthy
+      credit-service:
+        condition: service_healthy

@@ -1,0 +1,38 @@
+firebase:
+  auth:
+    project-id: cs3219-p28-auth
+    emulator-host: localhost:9099
+
+# A context-only test must never discover a developer's running Mongo database.
+# Database integration tests override this URI with their isolated replica set.
+spring:
+  mongodb:
+    uri: mongodb://127.0.0.1:9/isolated_test?serverSelectionTimeoutMS=100
+USER_PENALTY_SEQUENCE_RECOVERY_DELAY_MS: 3600000
+
+    
+springdoc:
+  api-docs:
+    path: /api/users/v3/api-docs
+  swagger-ui:
+    path: /api/users/docs
+
+credit-service:
+  url: http://localhost:8084
+
+order-service:
+  url: http://localhost:8082
+
+# Test-only fail-closed default. Never discover ADC or contact cloud topics.
+# Real broker tests override this with their isolated emulator's mapped address.
+user:
+  messaging:
+    mode: emulator
+    emulator-host: 127.0.0.1:9
+    project-id: demo-foc-test
+    publish-timeout: 100ms
+    outbox:
+      recovery-cron: ${USER_OUTBOX_RECOVERY_CRON:0 */1 * * * *}
+      batch-size: ${USER_OUTBOX_BATCH_SIZE:50}
+    topics:
+      user-created: user-created-local-v1

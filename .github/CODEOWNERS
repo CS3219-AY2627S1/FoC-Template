@@ -1,0 +1,6 @@
+# Reviewers requested automatically for changes to these paths.
+/.github/          @zheng-jj
+/scripts/ci/       @zheng-jj
+/infra/            @zheng-jj
+/gateway/          @zheng-jj
+/supplier-service/ @zheng-jj

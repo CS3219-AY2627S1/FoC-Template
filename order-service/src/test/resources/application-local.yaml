@@ -1,0 +1,11 @@
+# Test-only fail-closed default. Never discover ADC or contact cloud topics.
+# Real broker tests override this with their isolated emulator's mapped address.
+order:
+  messaging:
+    mode: emulator
+    emulator-host: 127.0.0.1:9
+    project-id: demo-foc-test
+    publish-timeout: 100ms
+    topics:
+      order-completion: order-completion-test-v1
+      open-order-refund: open-order-refund-test-v1

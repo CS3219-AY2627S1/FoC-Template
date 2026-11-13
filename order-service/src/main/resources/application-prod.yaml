@@ -1,0 +1,5 @@
+# Order production roles are resolved from User Service, independently of sibling mock settings.
+order:
+  security:
+    user-service:
+      mode: ${ORDER_USER_SERVICE_MODE:http}

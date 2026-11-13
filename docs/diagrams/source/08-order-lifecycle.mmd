@@ -1,0 +1,23 @@
+stateDiagram-v2
+  direction LR
+  [*] --> OPEN: posted<br/>(credits reserved)
+  OPEN --> ACCEPTED: accepted
+  ACCEPTED --> OPEN: courier<br/>cancels
+  ACCEPTED --> IN_PROGRESS: started
+  IN_PROGRESS --> PICKED_UP: picked up
+  PICKED_UP --> DELIVERED: delivered
+  DELIVERED --> COMPLETED: confirmed or 48 h<br/>(courier paid)
+  OPEN --> EXPIRED: expiry<br/>(refund)
+  OPEN --> CANCELLED: cancelled<br/>(refund)
+  EXPIRED --> [*]: repost as a new<br/>OPEN order (NTH4)
+  COMPLETED --> [*]
+  CANCELLED --> [*]
+
+  classDef open fill:#E8F0FE,stroke:#1A73E8,stroke-width:2px,color:#202124
+  classDef active fill:#FEF7E0,stroke:#F9AB00,stroke-width:2px,color:#202124
+  classDef done fill:#E6F4EA,stroke:#188038,stroke-width:2px,color:#202124
+  classDef ended fill:#F1F3F4,stroke:#5F6368,stroke-width:2px,color:#202124
+  class OPEN open
+  class ACCEPTED,IN_PROGRESS,PICKED_UP,DELIVERED active
+  class COMPLETED done
+  class EXPIRED,CANCELLED ended

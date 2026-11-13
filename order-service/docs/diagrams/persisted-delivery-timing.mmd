@@ -1,0 +1,16 @@
+flowchart TD
+    A[Assigned courier starts task] --> B[Lock Order and validate actor / version / ACCEPTED]
+    B --> C[Save deadline = server START time + duration]
+    C --> D[Commit IN_PROGRESS and matching checkpoint / receipt atomically]
+    D --> E[Courier delivers: save deliveredAt and factual deliveryOverdue with DELIVERED checkpoint]
+    E --> F{Completion hold?}
+    F -->|Yes| G[Requester receives hold error; scheduler skips]
+    F -->|No| H[Read saved deliveryOverdue and waiver]
+    H --> I[Commit COMPLETED / receipt / Credit completion intent / optional penalty or reward intent]
+    I --> J[AFTER_COMMIT dispatch; stable-ID retry through existing outbox]
+    K[Admin cancellation resolution including held active Orders] --> L[Lock and validate stored participants / replay binding]
+    L --> M[Save CANCELLED and resolution time / WAIVED or ADDITION_REQUESTED / highest reason and amount]
+    M --> N[Same transaction: refund intent and optional penalty addition intent]
+    N --> J
+    O[Read Order response] --> P[Read saved deliveryOverdue: no runtime classification]
+    P --> Q[Unknown / not delivered = null; known delivered result is immutable]

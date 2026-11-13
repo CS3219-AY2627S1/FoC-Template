@@ -1,0 +1,94 @@
+name: Deploy staging
+
+# Every push to main: validate, build one image per service (tagged with the commit SHA),
+# push to Artifact Registry and roll out to the staging environment on Cloud Run.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # Workload Identity Federation (no JSON keys stored in GitHub)
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  build:
+    name: Build ${{ matrix.service }}
+    needs: ci
+    if: needs.ci.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        service: ${{ fromJSON(needs.ci.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Load project settings
+        run: grep -E '^[A-Z_]+=' infra/gcp/project.env >> "$GITHUB_ENV"
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+      - uses: docker/setup-buildx-action@v4
+      - name: Docker build context
+        id: context
+        env:
+          SERVICE: ${{ matrix.service }}
+        run: echo "dir=$(scripts/ci/build-context.sh "$SERVICE")" >> "$GITHUB_OUTPUT"
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ steps.context.outputs.dir }}
+          file: ${{ format('{0}/Dockerfile', matrix.service) }}
+          push: true
+          tags: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/${{ matrix.service }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy:
+    name: Deploy to staging
+    needs: [ci, build]
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Load project settings
+        run: grep -E '^[A-Z_]+=' infra/gcp/project.env >> "$GITHUB_ENV"
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - id: deploy
+        name: Roll out (health-checked, traffic switched only when healthy)
+        env:
+          SERVICES: ${{ join(fromJSON(needs.ci.outputs.services), ' ') }}
+        run: |
+          # shellcheck disable=SC2086
+          scripts/ci/deploy.sh staging "$GITHUB_SHA" $SERVICES
+      - name: Summary
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          {
+            echo "### Staging deployed"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- URL: $URL"
+            echo "- Promote to production: run **Deploy production** (defaults to this build)."
+          } >> "$GITHUB_STEP_SUMMARY"

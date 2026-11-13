@@ -1,0 +1,14 @@
+classDiagram
+    OrderCommandService --> OrderCommandStore : register immutable policy and claim
+    OrderCommandService --> OrderCompensationWorkflow : saved compensation policy
+    OrderCompensationWorkflow --> CreditCommandGateway : initial execution once
+    OrderCompensationWorkflow --> OrderCompensationJournal : observation or abandon
+    OrderCompensationWorkflow --> OrderTransitionServices : atomic local finalization
+    OrderCompensationJournal --> OrderCommandStore : owner and generation fence
+    OrderCompensationJournal --> CommandOutbox : atomic compensation intent
+    OrderCompensationJournal --> ResultInbox : deduplicate committed Credit result
+    CommandOutbox --> OrderOutboxDispatcher : durable publication retry
+    OrderOutboxDispatcher --> CreditCompensationPublisher : opt-in PubSub adapter
+    GoogleOIDCResultReceiver --> OrderCompensationJournal : confirm reverse or fence
+    OrderLifecycleScheduler --> OrderCompensationJournal : due expired-lease commands
+    note for CreditCompensationPublisher "ADR-055 explicit gate; default off; cloud rollout separate"

@@ -1,0 +1,50 @@
+sequenceDiagram
+    participant R as Requester
+    participant RS as Report Service (pending)
+    participant O as Order Service
+    participant C as Courier
+    participant A as Admin
+    participant UI as Admin UI (integration pending)
+    participant B as Pub/Sub
+    Note over RS,UI: CHANGE-163 approved requirements; Report/UI implementation pending
+    R->>RS: Submit report + explanation/evidence (Report validates scope)
+    RS->>RS: Persist report identity and creation intent
+    RS->>O: Place report-specific hold (requester token)
+    O-->>RS: Hold committed
+    RS-->>C: Await response; show responseDeadlineAt
+    A->>UI: Review report, participants and Order
+    alt Admin chooses resolution while still awaiting
+      UI-->>A: Warning: courier still has time; resolve anyway?
+      A->>UI: Confirm early resolution
+      Note over A,UI: Cancel ends the action without mutation
+    else Wait for readiness
+      alt Courier responds before deadline
+        C->>RS: Explanation + evidence
+        RS->>RS: Save response + READY_FOR_REVIEW atomically
+      else Deadline passes
+        RS->>RS: Persist READY_FOR_REVIEW without response
+      end
+    end
+    opt Separate Order decision
+      A->>O: Apply penalty or admin cancel with reason
+    end
+    A->>UI: Supply required admin reply
+    UI->>O: Resolve report (stable commandId + reply + admin token)
+    O->>O: Commit journal/possible effect; keep hold
+    O->>RS: Synchronous resolve without callback, generation1
+    RS->>RS: Atomic RESOLVED + private reply/admin/time + operation journal
+    RS-->>O: Bound committed APPLIED result
+    alt Final Order transaction succeeds
+      O->>O: Release only this hold + SUCCEEDED + saved response
+      O-->>UI: Success; other holds remain
+    else Failed or uncertain before local success
+      O->>O: Commit generation2 compensation + outbox; keep hold
+      O->>B: Stable compensation event after commit
+      B->>RS: Restore/fence exact operation
+      RS->>RS: Conditional prior-state restore + original deadline reconciliation
+      RS->>B: Durable compensation result
+      B->>O: Authenticated result
+      O->>O: Inbox dedup + COMPENSATED or reconciliation; hold remains
+    end
+    Note over RS: No category change approved; no fixed duration selected here
+    Note over O: Existing saga is default disabled; real Report/cloud verification pending

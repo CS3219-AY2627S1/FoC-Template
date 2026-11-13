@@ -1,0 +1,30 @@
+# Root context is currently used only by the Order/shared-policy reactor build.
+# Allowlist: never send .git, .env, credentials, local data or generated targets.
+**
+!.mvn/
+!.mvn/wrapper/
+!.mvn/wrapper/maven-wrapper.properties
+!mvnw
+!pom.xml
+!foc-common/
+!foc-common/pom.xml
+!foc-common/src/
+!foc-common/src/**
+!order-service/
+!order-service/pom.xml
+!order-service/Dockerfile
+!order-service/src/
+!order-service/src/**
+!user-service/*
+!user-service/pom.xml
+!user-service/Dockerfile
+!user-service/src/*
+!user-service/src/**
+**/target/
+**/.env
+**/.env.*
+**/*credentials*.json
+**/*service-account*.json
+**/*serviceaccount*.json
+**/*.pem
+**/*.key

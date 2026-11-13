@@ -1,0 +1,18 @@
+> Superseded for penalty replacement by CHANGE-146 / ADR-050 (2026-10-19). No adjustment integration remains; Report UI refinements remain in effect.
+
+# ADR-049 — Synchronous courier-attempt penalty replacement
+
+Approved by Yao Xiang, 2026-10-18, CHANGE-144. Latest approval supersedes the earlier adjustment-event proposal. One current outcome per courier attempt; replacing an outcome also replaces any successful-delivery reward. No penalty means zero contribution. Existing initial addition/deduction and Credit events remain unchanged. No adjustment topic or shared environment change.
+
+Initial outcomes and a UUID assignment identity are saved atomically with the original transition/receipt/outbox. Archived cancellation attempts retain their identity; accepting another courier creates another identity. Initial publication is not proof of User score application. Historical terminal outcomes are not fabricated or backfilled.
+
+Admin adjustment: Order commits a PENDING request with stable request ID and expected revision in its own transaction, synchronously calls an admin-authorized User replacement endpoint outside the DB transaction, then atomically confirms the request and changes the current outcome after a matching User response. Another adjustment to that attempt is blocked while pending. Same-command retries must match the original administrator/policy/reason/revision and use the same request ID. A timeout, ambiguous reply or local confirmation rollback leaves the request pending; a fresh authorized same-ID retry recovers it. No bearer token is persisted. No scheduler silently retries an admin action without authorization.
+
+Proposed provider contract (MISSING in User Service): PUT /api/users/internal/couriers/{courierId}/order-penalty-outcomes/{penaltyId}, forwarded verified admin Firebase Authorization. Body contains requestId, orderId, expectedRevision, revision, initialEventId/initialPolicy/initialSignedAmount, previousPolicy/previousSignedAmount, policy(nullable), signedAmount, reason. Response confirms requestId, penaltyId, revision, policy and signedAmount. User verifies admin, applies replacement and idempotency atomically, rejects stale/conflicting requests, suppresses delayed initial events, and handles actual contributions under score caps/floors. Matching replay returns the same confirmation. Do not subtract nominal old amounts from a clamped balance.
+
+Live adjustment defaults disabled until this contract and User implementation are verified. The local Admin mock provides isolated sample adjustment without touching real scores. Admin UI shows current outcomes and allows a required-reason replacement or No penalty in mock mode; live unavailable is explicit. Remove the old overdue-waiver route/UI but retain historical V12 audit fields/semantics. Delivery alone freezes factual overdue; completion reads it.
+
+Reports are a separate approved refinement: Open and Closed card sections, five-second visible polling, no response deadline, one courier response while unresolved, required admin reply when resolving, separate Order admin financial actions. Report Service is missing, so HTTP-peer/staging/production remain Coming soon. V13 adds assignment identity, outcomes and durable requests; no changes to immutable V1-V12 or sibling backends. See FEEDBACK-016 and CHANGE-144.
+
+
+SUPERSEDED 2026-10-19 by approved CHANGE-146/ADR-050: remove synchronous replacement API/UI/gateway and admin completion. Initial per-attempt final-outcome recording and immutable V13 data remain; new report penalties are monotonic fields on active Order and finalized through the existing events.

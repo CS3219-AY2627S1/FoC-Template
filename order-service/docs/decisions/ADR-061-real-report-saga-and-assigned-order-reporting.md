@@ -1,0 +1,20 @@
+# ADR-061 — Real Report saga and assigned-order reporting
+
+Status: Approved by Yao Xiang through the explicit implementation requests and follow-up eligibility decision, 2026-10-29.
+
+Implement Report's side of ADR-059/060 using Firestore operation/preimage/revision journals, generation fences and durable Pub/Sub result publication. Keep Order as coordinator and final hold-release owner. Compensate a failed/uncertain Order commit; do not compensate committed Order success merely because a client lost the reply. Report mutation and operation decision are atomic; restoration never overwrites a newer revision. No penalty or financial operation occurs inside Report resolution.
+
+Requester ORDER/COURIER reports require assigned active states ACCEPTED, IN_PROGRESS, PICKED_UP or DELIVERED. Exclude OPEN in SQL list and locked hold lookup, and in Report/frontend validation. This supersedes ADR-056's OPEN reporting eligibility only; OPEN remains active for deletion/involvement checks. Existing general-purpose hold behavior and held delivery progress remain unchanged.
+
+Admin Reports uses the real API in every mode, replacing the prototype-only frontend behavior of ADR-057. Preserve its existing layout and early-response warning from ADR-060, required/private reply, and separate Order financial actions. Failed/uncertain browser submissions retain a stable command ID and reply; 202 is pending. Unlinked GENERAL/CREDITS reports resolve through a local Report journal without an Order call.
+
+Cloud activation remains explicit/default-off. Local integration uses actual Order and Report HTTP applications with separate real persistence emulators and actual Pub/Sub delivery; other peers are named mocks. Provisioning/Google IAM verification are separate from emulator evidence. Details and verification: CHANGE-166 and reporting-service/HANDOFF.md.
+
+
+## Report saga cloud configuration - CHANGE-167 (2026-10-30)
+
+Yao Xiang approved Report-only shared provisioning and Report/Order deployment settings on feat/reporting-service. Existing Order Publisher grants must remain unchanged; no cloud provisioning or deployment is authorized by this code change. Added infra/gcp/configure-report-pubsub.sh with prepare/wire phases: Report runtime and per-environment push identities, result-topic Publisher, Google token minting/invoker permissions, checked existing subscription bindings, authenticated push, retry and retained dead-letter recovery. Wire preflights both backend services. Existing bootstrap owns Firestore/attachment buckets and permissions. Staging reuses the owner-created dev topics/subscriptions; production uses prod. Both deployment templates now pass the exact saga settings, direct backend audiences/URLs and the 20s Report-to-Order / 5s Order-to-Report timeout budget. Both flags remain false. No application Java/frontend/domain/API/schema/event changes.
+
+Verification: existing CI infrastructure test entry point now discovers five Report provisioning cases; all 10 combined tests pass with fake gcloud and no credentials/network. Covers prepare idempotency, preserving existing pull subscriptions while wiring push, fresh creation, bad bindings/missing services rejected before mutation, separate environment names/identities and disabled deployment flags. ShellCheck passes the new script. Live local HTTP/PubSub integration evidence from CHANGE-166 remains valid; cloud delivery has not been exercised. Actual read-only GCP inspection confirmed all four topics and pull-only subscriptions, missing Report runtime account and absent Cloud Run Report service.
+
+Operations and exact commands: reporting-service/HANDOFF.md, Cloud rollout. Run approved prerequisites and prepare, deploy with flags off, install indexes, wire, then explicitly enable/redeploy and validate staging. The script creates an extra report-resolution-dead-letter-{dev|prod}-v1 topic and recovery subscription; no manual creation required. Main application/Compose and sibling backend behavior are unchanged by CHANGE-167.

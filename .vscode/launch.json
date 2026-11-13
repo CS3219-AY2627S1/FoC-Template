@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "UserServiceApplication",
+            "request": "launch",
+            "mainClass": "sg.edu.nus.foc.user.UserServiceApplication",
+            "projectName": "backend-spring-boot",
+            "args": ["--debug"],
+            "env": {
+                "PORT": "8081",
+                "MONGODB_URI": "mongodb+srv://ohyixian_db_user:FV83ZGMkl0RwXjwM@userservicedb.ix8vfjz.mongodb.net/UserServiceDB?retryWrites=true&w=majority&appName=UserServiceDB"
+            }
+        }
+    ]
+}

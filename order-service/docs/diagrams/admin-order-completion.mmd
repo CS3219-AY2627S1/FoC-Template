@@ -1,0 +1,34 @@
+sequenceDiagram
+    actor Admin
+    participant API as AdminOrderController
+    participant Tx as AdminOrderCompletionService
+    participant DB as Order PostgreSQL
+    participant Relay as AFTER_COMMIT / Outbox dispatcher
+    participant PubSub as Existing Pub/Sub topics
+    participant Credit as Credit completion subscriber
+    participant User as User penalty subscriber (pending)
+    Admin->>API: POST /api/orders/admin/{orderId}/complete
+    API->>API: RequireAdminRole / validate body
+    API->>Tx: Stored participant assertions and selected policies
+    Tx->>DB: NOWAIT lock and unresolved-command guard
+    alt Exact bound ADMIN_COMPLETE replay
+        DB-->>Tx: Existing receipt and Order
+        Tx-->>API: Existing result, no new intents
+    else New approved resolution
+        Tx->>Tx: Validate assigned active state, including hold override
+        Tx->>Tx: Highest selected addition or waiver (no auto scoring)
+        Tx->>DB: Atomic COMPLETED, admin decision, checkpoint, receipt, completion intent
+        opt Admin selected penalty
+            Tx->>DB: Same transaction penalty addition intent
+        end
+        DB-->>Tx: Commit (or rollback every write on failure)
+        Tx-->>API: Resulting Order
+        DB-->>Relay: After-commit dispatch signal
+        Relay->>PubSub: Publish stable event ID; recover failed publication
+        PubSub->>Credit: Existing OrderCompletionTaskEvent
+        Credit->>Credit: Deduplicate, validate reservation/courier/amount, transfer atomically
+        opt Selected penalty only
+            PubSub-->>User: Existing PenaltyScoreAdditionEvent
+        end
+    end
+    API-->>Admin: 200 OrderResponse; subscriber processing is asynchronous

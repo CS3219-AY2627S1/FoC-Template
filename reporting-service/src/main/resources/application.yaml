@@ -1,0 +1,54 @@
+# AI Assistance Disclosure:
+# Tool: OpenAI Codex (GPT-5), date: 2026-10-13
+# Mode: Implementation and configuration.
+# Scope: Generated Reporting Service runtime, Firestore, storage, multipart, security, and OpenAPI configuration.
+# Author review: I reviewed for correctness.
+#
+spring:
+  application:
+    name: reporting-service
+  threads.virtual.enabled: true
+  main.banner-mode: off
+  servlet.multipart:
+    max-file-size: 5MB
+    max-request-size: 30MB
+
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+  error.whitelabel.enabled: false
+
+foc.reporting:
+  firestore:
+    project-id: ${FIRESTORE_PROJECT_ID:demo-foc}
+    database-id: ${FIRESTORE_DATABASE_ID:reporting-local}
+    emulator-host: ${FIRESTORE_EMULATOR_HOST:}
+  storage:
+    project-id: ${STORAGE_PROJECT_ID:${FIRESTORE_PROJECT_ID:demo-foc}}
+    bucket: ${REPORTING_STORAGE_BUCKET:demo-foc-reporting-local}
+    emulator-host: ${STORAGE_EMULATOR_HOST:}
+  auth:
+    project-id: ${FIREBASE_AUTH_PROJECT_ID:demo-foc}
+    emulator-host: ${FIREBASE_AUTH_EMULATOR_HOST:}
+  user-service:
+    mode: ${USER_SERVICE_MODE:mock}
+    base-url: ${USER_SERVICE_URL:}
+    mock-admin-emails: ${MOCK_ADMIN_EMAILS:}
+    timeout: ${USER_SERVICE_TIMEOUT:3s}
+    role-cache-ttl: ${USER_SERVICE_ROLE_CACHE_TTL:30s}
+  order-service:
+    base-url: ${ORDER_SERVICE_URL:http://localhost:8083}
+    timeout: ${ORDER_SERVICE_TIMEOUT:5s}
+  cors-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:8080}
+
+management:
+  endpoints.web.exposure.include: health,info
+  endpoint.health:
+    probes.enabled: true
+    show-details: never
+
+springdoc:
+  api-docs.path: /api/reports/v3/api-docs
+  swagger-ui.path: /api/reports/docs
+
+logging.level.root: ${LOG_LEVEL:INFO}

@@ -2,14 +2,87 @@
 dist/
 build/
 out/
+.next/
+node_modules/
 
 # Environment / secrets
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 *.pem
 *.key
+*.p12
+*.jks
+*.keystore
+# Google Cloud service-account keys and ADC files
+*-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].json
+*service-account*.json
+*serviceaccount*.json
+*-sa-key*.json
+*credentials*.json
+application_default_credentials.json
+.firebaserc.local
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+*-debug.log
 
-# OS
+# ─── Java / Maven ───────────────────────────────────────────
+target/
+!**/src/main/**/target/
+!**/src/test/**/target/
+.mvn/wrapper/maven-wrapper.jar
+*.class
+hs_err_pid*
+replay_pid*
+
+# ─── Node / Next.js ─────────────────────────────────────────
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+.pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.vercel
+
+# ─── Emulator / local data ──────────────────────────────────
+.firebase/
+emulator-data/
+
+# Order Service personal learning notes
+order-service/learning/
+
+# ─── IDEs ───────────────────────────────────────────────────
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/*
+!.vscode/extensions.json
+.settings/
+.project
+.classpath
+.factorypath
+.apt_generated
+.sts4-cache/
+.springBeans
+nbproject/private/
+
+# ─── OS ─────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# Local Order Service learning notes and generated diagrams
+/order-service-db-schema.png
+/order-service-state-transition.png
+/order-transition-api-validation.png
+/order-transition-rules.png
+/pubsub-technology-justification.png
+/order-service/learning/
+/order-service/output/

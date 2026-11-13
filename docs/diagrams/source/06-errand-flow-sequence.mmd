@@ -1,0 +1,36 @@
+sequenceDiagram
+  autonumber
+  actor R as Requester
+  actor C as Courier
+  participant O as Order Service
+  participant S as Supplier Service
+  participant Cr as Credit Service
+  participant U as User Service
+  participant P as Pub/Sub
+
+  rect rgb(232, 240, 254)
+  Note over R,U: Synchronous: the caller needs the answer now
+  R->>O: Create errand (pickup, delivery, credits)
+  O->>S: Validate pickup + delivery
+  S-->>O: Both exist and are active
+  O->>Cr: Reserve the requester's credits
+  Cr-->>O: Reserved
+  O-->>R: Errand OPEN
+  C->>O: Accept errand
+  O->>U: Courier allowed? (role, not suspended)
+  U-->>O: Yes
+  O->>Cr: Assign courier to the reservation
+  Cr-->>O: Assigned (first courier wins)
+  O-->>C: Errand ACCEPTED
+  end
+
+  C->>O: Start, picked up, delivered
+  R->>O: Confirm completion
+  Note over O: #nbsp;#nbsp;COMPLETED + event in the outbox, one transaction#nbsp;#nbsp;
+
+  rect rgb(254, 239, 227)
+  Note over O,P: Asynchronous: the result can follow
+  O-)P: order-completion, courier reward
+  P-)Cr: Push: pay the courier from the reservation
+  P-)U: Push: courier penalty -1
+  end

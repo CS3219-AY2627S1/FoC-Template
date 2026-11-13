@@ -1,0 +1,6 @@
+# CHANGE-150 — Unified Report list
+
+CHANGE-150 (2026-10-19), Yao Xiang: remove separate Open/Closed report sections. One server-paginated card list under the existing Order ID/report-status filters; one five-second polling query with blank grouping selector (all statuses). Preserve grey styling and View report for RESOLVED cards. Filters and participant-tab changes reset the single page. Existing backend supports this query; no backend, endpoint, data or scoring change. TDD regressions cover mixed active/resolved results, one query, filtering/page reset and retained navigation. Verification pending.
+
+
+CHANGE-150 verification:245 frontend tests pass; new expectations first reproduced the two-query/grouped-list mismatch, then passed after implementation. TypeScript/production build and frontend Docker image foc-frontend:change150-check pass; lint0 errors/3 existing login warnings; git diff --check passes. Isolated sample browser1440x1000 and390x844 verified a single mixed active/resolved grid, no group headings, grey resolved card with working View link and Resolved filtering; screenshots inspected. Single page reset/search remains covered. Backend source/API/schema unchanged, backend suite not repeated. No sibling service, shared infrastructure, existing containers/data, commit or staging change. Reports remain local sample/live Coming soon.

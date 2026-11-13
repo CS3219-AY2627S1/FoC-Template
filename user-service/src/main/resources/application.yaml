@@ -1,0 +1,69 @@
+spring:
+  mongodb:
+    auto-index-creation: true
+    uri: ${MONGODB_URI:mongodb://mongodb:27017/UserServiceDB?replicaSet=rs0}
+  application:
+    name: userservice
+
+admin:
+  bootstrap-enabled: ${ADMIN_BOOTSTRAP_ENABLED:false}
+  bootstrap-email: ${ADMIN_EMAIL:}
+
+p28:
+  userservice:
+    cors-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:8080}
+
+credit-service:
+  url: ${CREDIT_SERVICE_URL:http://localhost:8084}
+
+order-service:
+  url: ${ORDER_SERVICE_URL:http://localhost:8083}
+    
+firebase:
+  auth:
+    project-id: ${FIREBASE_AUTH_PROJECT_ID:demo-foc}
+    emulator-host: ${FIREBASE_AUTH_EMULATOR_HOST:}
+
+springdoc:
+  api-docs:
+    path: /api/users/v3/api-docs
+  swagger-ui:
+    path: /api/users/docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+user:
+  account-deletion:
+    recovery-delay-ms: 60000
+  messaging:
+    mode: ${USER_MESSAGING_MODE:cloud}
+    emulator-host: ${PUBSUB_EMULATOR_HOST:}
+    project-id: ${PUBSUB_PROJECT_ID:protean-vigil-509704-q4}
+    publish-timeout: 10s
+    outbox:
+      recovery-cron: ${USER_OUTBOX_RECOVERY_CRON:0 */1 * * * *}
+      batch-size: ${USER_OUTBOX_BATCH_SIZE:50}
+    topics:
+      user-created: ${USER_CREATED_TOPIC:user-created-dev-v1}
+
+foc:
+  user:
+    push:
+      project-id: ${PUBSUB_PROJECT_ID:demo-foc-local}
+      audience: ${USER_PUBSUB_PUSH_AUDIENCE:http://localhost:8080}
+      service-account: ${USER_PUBSUB_PUSH_SERVICE_ACCOUNT:foc-user-push-local@demo-foc-local.iam.gserviceaccount.com}
+      penalty-event-subscription: ${USER_PUBSUB_PENALTY_EVENT_SUBSCRIPTION:user-courier-penalty-event-local-v1}
+      penalty-addition-subscription: ${USER_PUBSUB_PENALTY_ADDITION_SUBSCRIPTION:user-courier-penalty-addition-local-v1}
+      penalty-deduction-subscription: ${USER_PUBSUB_PENALTY_DEDUCTION_SUBSCRIPTION:user-courier-penalty-deduction-local-v1}
+      
+server:
+  port: ${PORT:8080}

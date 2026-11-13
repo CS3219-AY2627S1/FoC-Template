@@ -1,0 +1,73 @@
+# AI Assistance Disclosure:
+# Tool: OpenAI Codex (GPT-5), date: 2026-11-07
+# Mode: CI deployment update to let frontend deployment bypass other services.
+# Author review: I reviewed for correctness.
+
+# Only use in the case of other service deployments blocking frontend deployment
+# Ensure that frontend passes CI before deploying
+name: Deploy Frontend to Staging
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-frontend-staging
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    name: Build and deploy frontend
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Load project settings
+        run: grep -E '^[A-Z_]+=' infra/gcp/project.env >> "$GITHUB_ENV"
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+
+      - uses: docker/setup-buildx-action@v4
+      - name: Docker build context
+        id: context
+        env:
+          SERVICE: frontend
+        run: echo "dir=$(scripts/ci/build-context.sh "$SERVICE")" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ steps.context.outputs.dir }}
+          file: frontend/Dockerfile
+          push: true
+          tags: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/frontend:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Deploy frontend only
+        id: deploy
+        run: scripts/ci/deploy.sh staging "$GITHUB_SHA" frontend
+
+      - name: Summary
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          {
+            echo "### Frontend staging deployed"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- URL: $URL"
+          } >> "$GITHUB_STEP_SUMMARY"

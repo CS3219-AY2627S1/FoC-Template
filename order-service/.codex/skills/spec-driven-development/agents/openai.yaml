@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spec-Driven Development"
+  short_description: "Enforce architecture-gated specification-first TDD"
+  default_prompt: "Use $spec-driven-development to rehydrate context, inspect actual peer APIs, propose the detailed feature architecture, wait for explicit approval, and only then implement with traceability and test-first development."

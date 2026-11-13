@@ -1,0 +1,5 @@
+# CHANGE-154 - Penalty consumer and admin authorization peer requests
+
+CHANGE-154 (2026-10-19), Yao Xiang: documentation-only peer coordination. Clarify new penalty addition/deduction events supersede new accepted-cancellation scoring; preserve old outbox/backlog support pending owner reconciliation. Request provider-enforced Firebase/admin-role checks for admin directory/profile/promotion/deactivation and separately document Credit balance readiness. Existing self-service contracts preserved; exact new admin routes not finalized. No sibling service, runtime, frontend, schema, topic/config or cloud edits. Verification: documentation consistency review and git diff --check; no tests required for prose-only change. User consumer/live admin readiness remain pending. No commit or staging.
+
+Updates peer-service-api-feedback.md and admin-peer-api-request.md. Existing FEEDBACK-014, ADMIN-API-001/003/004/005 and ADR-050 remain the implementation references; no new endpoint contract or architecture decision is introduced.

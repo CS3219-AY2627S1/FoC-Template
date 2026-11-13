@@ -1,0 +1,58 @@
+spring:
+  application:
+    name: supplier-service
+  threads:
+    virtual:
+      enabled: true
+  main:
+    banner-mode: off
+
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+  error:
+    whitelabel:
+      enabled: false
+
+foc:
+  supplier:
+    firestore:
+      project-id: ${FIRESTORE_PROJECT_ID:demo-foc}
+      database-id: ${FIRESTORE_DATABASE_ID:(default)}
+      emulator-host: ${FIRESTORE_EMULATOR_HOST:}
+    auth:
+      project-id: ${FIREBASE_AUTH_PROJECT_ID:demo-foc}
+      emulator-host: ${FIREBASE_AUTH_EMULATOR_HOST:}
+    user-service:
+      mode: ${USER_SERVICE_MODE:mock}
+      base-url: ${USER_SERVICE_URL:}
+      mock-admin-emails: ${MOCK_ADMIN_EMAILS:}
+      timeout: ${USER_SERVICE_TIMEOUT:3s}
+      role-cache-ttl: ${USER_SERVICE_ROLE_CACHE_TTL:30s}
+    seed-file: ${SUPPLIER_SEED_FILE:}
+    cache-ttl: ${SUPPLIER_CACHE_TTL:60s}
+    cors-origins: ${CORS_ORIGINS:http://localhost:3000,http://localhost:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+springdoc:
+  api-docs:
+    path: /api/suppliers/v3/api-docs
+  swagger-ui:
+    path: /api/suppliers/docs
+
+logging:
+  level:
+    root: ${LOG_LEVEL:INFO}
+  pattern:
+    # Request ID from the gateway (RequestIdFilter); cloud JSON logs carry it as the requestId field.
+    correlation: "[%X{requestId:-}] "

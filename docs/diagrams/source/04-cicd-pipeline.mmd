@@ -1,0 +1,36 @@
+---
+config:
+  layout: elk
+---
+flowchart LR
+  pr["Pull request"]:::step
+  subgraph ci["CI: every pull request (GitHub Actions)"]
+    direction TB
+    svc["<b>Per changed service, in parallel</b><br/>Maven: unit + Testcontainers tests<br/>JaCoCo coverage gate ≥ 80%<br/>npm: lint, typecheck, test<br/>docker build"]:::check
+    repo["<b>Repository checks</b><br/>shellcheck, actionlint<br/>compose config, secret guard<br/>Cloud infrastructure check (read-only)"]:::check
+  end
+  gate{{"CI passed<br/>required to merge"}}:::gate
+  subgraph cd["CD: every merge to main"]
+    direction TB
+    build["Build each image once<br/>tag = commit SHA"]:::step
+    ar[("Artifact Registry")]:::store
+    stg["<b>Deploy staging</b><br/>new revision, no traffic<br/>startup health probe<br/>switch 100% traffic<br/>smoke test via gateway"]:::deploy
+  end
+  prod["<b>Deploy production</b><br/>manual promotion<br/>same images, never rebuilt"]:::prod
+
+  pr --> svc
+  pr --> repo
+  svc --> gate
+  repo --> gate
+  gate -- merge --> build
+  build --> ar
+  ar --> stg
+  stg -. "manual" .-> prod
+
+  classDef step fill:#FFFFFF,stroke:#5F6368,stroke-width:2px,color:#202124
+  classDef check fill:#E8F0FE,stroke:#1A73E8,stroke-width:2px,color:#202124,text-align:left
+  classDef gate fill:#E6F4EA,stroke:#188038,stroke-width:2px,color:#202124
+  classDef store fill:#F3E8FD,stroke:#8430CE,stroke-width:2px,color:#202124
+  classDef deploy fill:#E6F4EA,stroke:#188038,stroke-width:2px,color:#202124
+  classDef prod fill:#FEF7E0,stroke:#F9AB00,stroke-width:2px,color:#202124
+  linkStyle default stroke:#3C4043,stroke-width:2px

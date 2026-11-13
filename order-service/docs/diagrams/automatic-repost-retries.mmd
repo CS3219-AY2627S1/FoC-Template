@@ -1,0 +1,46 @@
+sequenceDiagram
+    participant Timer as Existing minute scheduler
+    participant App as OrderCommandService
+    participant DB as Order PostgreSQL and command store
+    participant Peers as Requester and Supplier read checks
+    participant Credit as Credit Service
+    participant Broker as Existing compensation Pub/Sub
+    Note over Timer,DB: CHANGE-164; existing feature gates and plan expiry remain
+    loop Subsequent passes while the saved plan is eligible
+        Timer->>DB: SQL due IDs; exclude holds, used, linked, expired, blocked and unsafe commands
+        Note over DB: Older due work before recently failed plans; limit100
+        Timer->>App: submitAutomatic(originalId)
+        App->>DB: Latest actor/order-scoped automatic attempt, limit1
+        alt Pending, unsafe or successful saved attempt
+            App-->>Timer: Return existing outcome; no new forward effect
+        else No attempt or safely rejected terminal attempt
+            App->>Credit: Read original refund readiness
+            alt Refund not confirmed or read unavailable
+                App-->>Timer: Skip this pass; no reservation command sent
+            else Refund confirmed
+                App->>DB: Lock original; recheck plan and latest command; register immutable K and candidate
+                Note over DB: First key retained; later safe attempt gets new retry UUID key and candidate
+                App->>Peers: Fresh requester and location eligibility reads
+                alt Validation fails before Credit mutation
+                    App->>DB: Save failed no-effect outcome; preserve plan for later eligible pass
+                else Validation passes
+                    App->>DB: Commit possible-effect barrier
+                    App->>Credit: One keyed reservation for this candidate
+                    alt Authoritative no-effect rejection
+                        App->>DB: Save terminal rejected, fully compensated outcome
+                    else Applied and final local commit succeeds
+                        App->>DB: Atomically save successor, original link, plan used, receipt and SUCCESS
+                        Note over DB: Later passes no longer select this original
+                    else Applied or uncertain and local success not committed
+                        App->>DB: Commit compensation intent and outbox; keep pending guard
+                        App->>Broker: Existing after-commit compensation
+                        Broker->>Credit: Reverse or fence exact old command
+                        Credit->>Broker: Durable committed result
+                        Broker->>App: Bound compensation result
+                        App->>DB: Inbox plus terminal compensated outcome, or retain reconciliation
+                        Note over DB: New attempt only after confirmed safe terminal outcome
+                    end
+                end
+            end
+        end
+    end

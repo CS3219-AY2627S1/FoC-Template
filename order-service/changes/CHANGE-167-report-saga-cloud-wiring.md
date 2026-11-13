@@ -1,0 +1,16 @@
+# CHANGE-167 - Report saga cloud provisioning and deployment settings
+
+Owner: Yao Xiang. Branch: feat/reporting-service. Date: 2026-10-30.
+
+
+## Report saga cloud configuration - CHANGE-167 (2026-10-30)
+
+Yao Xiang approved Report-only shared provisioning and Report/Order deployment settings on feat/reporting-service. Existing Order Publisher grants must remain unchanged; no cloud provisioning or deployment is authorized by this code change. Added infra/gcp/configure-report-pubsub.sh with prepare/wire phases: Report runtime and per-environment push identities, result-topic Publisher, Google token minting/invoker permissions, checked existing subscription bindings, authenticated push, retry and retained dead-letter recovery. Wire preflights both backend services. Existing bootstrap owns Firestore/attachment buckets and permissions. Staging reuses the owner-created dev topics/subscriptions; production uses prod. Both deployment templates now pass the exact saga settings, direct backend audiences/URLs and the 20s Report-to-Order / 5s Order-to-Report timeout budget. Both flags remain false. No application Java/frontend/domain/API/schema/event changes.
+
+Verification: existing CI infrastructure test entry point now discovers five Report provisioning cases; all 10 combined tests pass with fake gcloud and no credentials/network. Covers prepare idempotency, preserving existing pull subscriptions while wiring push, fresh creation, bad bindings/missing services rejected before mutation, separate environment names/identities and disabled deployment flags. ShellCheck passes the new script. Live local HTTP/PubSub integration evidence from CHANGE-166 remains valid; cloud delivery has not been exercised. Actual read-only GCP inspection confirmed all four topics and pull-only subscriptions, missing Report runtime account and absent Cloud Run Report service.
+
+Operations and exact commands: reporting-service/HANDOFF.md, Cloud rollout. Run approved prerequisites and prepare, deploy with flags off, install indexes, wire, then explicitly enable/redeploy and validate staging. The script creates an extra report-resolution-dead-letter-{dev|prod}-v1 topic and recovery subscription; no manual creation required. Main application/Compose and sibling backend behavior are unchanged by CHANGE-167.
+
+Traceability: Project D1 reporting NTH / approved resolution amendment -> ADR-061 -> Report-specific provisioning and deployment settings -> five credential-free regression cases. This configures the existing event contracts; it does not change report categories, deadlines, hold/release invariants, penalties, funding or migrations. Cloud activation and production IAM/OIDC evidence remain pending operator execution.
+
+Final CHANGE-167 checks: all 10 credential-free cloud wiring regression tests pass; full CI ShellCheck scope (scripts/ci/*.sh and infra/gcp/*.sh) passes after explicitly expanding Windows wildcards; both Compose config checks pass; context TOML parses; working diff whitespace check passes and no unmerged paths remain. No Maven/frontend application tests were repeated because CHANGE-167 changes provisioning/configuration/docs only. No real provisioning script, IAM mutation, subscription update, application deployment or feature activation was executed.

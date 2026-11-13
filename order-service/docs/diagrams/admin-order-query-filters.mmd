@@ -1,0 +1,17 @@
+sequenceDiagram
+    actor Admin
+    participant UI as Admin calendar toolbar
+    participant API as Existing AdminOrderController
+    participant Query as OrderQueryService
+    participant DB as PostgreSQL
+    Admin->>UI: Select start/end calendar days
+    UI->>UI: Validate; convert local midnight to explicit Instants
+    UI->>API: GET /api/orders?createdFrom&createdBefore&status&orderId&page
+    Note over API: Existing Firebase ADMIN authorization
+    API->>Query: Bound optional filters
+    Query->>Query: Validate range and ID length
+    Query->>DB: Combined conditional WHERE, ORDER, LIMIT/OFFSET and count
+    DB-->>UI: Filtered page and totals
+    Admin->>UI: Refresh icon
+    UI->>UI: Clear stale row selection, retain criteria
+    UI->>API: Repeat same filtered query

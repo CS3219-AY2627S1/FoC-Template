@@ -1,0 +1,16 @@
+# CHANGE-143 — Report description, names and control alignment
+
+Yao Xiang/current penalty-integration branch,2026-10-18. User requests a Description field in report Order summary, participant names, real Supplier/User name resolution in HTTP-peer/live Admin Orders, and aligned report status/refresh controls. Preserve single-panel layout and financial actions on Order page only.
+
+Existing matching read APIs inspected: GET /api/users/summary/{userId} returns userId/username; GET /api/suppliers/{id} returns id/name, including inactive suppliers. Already used by admin recordName adapter and contract tests. No new endpoint/peer/backend/config write. Report provider still missing: live Reports remains Coming soon. Frontend uses existing useApi/token transport.
+
+One read-only page hook deduplicates needed user/supplier IDs, resolves independently without blocking Order rendering, aborts on query/unmount, uses sample names in mock mode and no cross-session global cache. Blank/404 becomes Deleted user/supplier; network/5xx becomes User/Supplier unavailable; never display sample names or opaque IDs as the live name fallback. Original IDs remain in copy/detail/navigation fields. Validate identity of returned named record before displaying it.
+
+Report rows add explicit Description and requester/courier names; profile rows retain copy IDs and admin navigation. Status/refresh share an items-center control row and explicit equal height, with label above the row. Desktop/mobile regression and preview checks. Only frontend code/tests and owning docs/AI log change.
+
+## Verification completed
+
+- RED reproduced missing name hook and absent Description row. Focused55 tests passed after implementation. Full frontend44 files/238 tests passed; final report/live transport/hook21 and admin/report40 focused checks passed after follow-up corrections. TypeScript and production build pass. Lint caught a props-reassignment error, corrected to a separate display-only object; final lint zero errors, three existing login-form unused warnings. Coverage/backend code not changed; no backend suite rerun.
+- Dedicated sample preview1440/390 screenshot inspection confirmed Description, requester/courier names, supplier names, single panel and32px equal-top/equal-height status/refresh controls, no mobile page overflow. Readable status labels supplied explicitly to Base UI Select. Browser startup race in final check resolved by rerunning after readiness.
+- Existing live API source and transport tests verified User userId/username and Supplier id/name shapes, URI encoding/cancellation, null/blank and identity mismatch rejection. Attempted read-only actual gateway smoke with isolated preview account: Supplier list503; no suitable populated User fixture could be used (initial summary200 did not provide a verifiable display name). These are not successful live-provider verification. No real User/Supplier data, roles or funds mutated. User Service source currently throws generic RuntimeException on missing summary;500 is treated as unavailable rather than falsely asserting deletion.
+- Existing HTTP-peer already selects live mode; no Compose/config/backend/provider edit. Report provider still MISSING and live Reports Coming soon. Temporary preview/emulator account removed; existing Compose stack untouched.

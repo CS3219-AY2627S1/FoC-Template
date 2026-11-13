@@ -1,0 +1,156 @@
+# AI Assistance Disclosure:
+# Tool: OpenAI Codex (GPT-5), date: 2026-10-13
+# Mode: Implementation and configuration.
+# Scope: Added Reporting Service routing and its route-specific 30 MiB request limit.
+# Author review: I reviewed for correctness.
+
+# FoC API gateway. Rendered by the nginx image's envsubst step at container start;
+# ${VARS} come from the environment (defaults in the Dockerfile, overrides in
+# compose.yaml / Cloud Run). nginx's own $variables are left untouched.
+#
+# Upstreams are resolved per request (resolver + variables), so the gateway starts
+# even when some services are not running yet; those routes return a JSON 502.
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+# Local browser development uses the frontend on port 3000 and the API gateway
+# on port 8080. Keep the allowlist explicit; production origins must be added
+# through a reviewed gateway configuration change rather than accepting all origins.
+map $http_origin $cors_origin {
+    default "";
+    "http://localhost:3000" $http_origin;
+    "http://localhost:8080" $http_origin;
+    "http://127.0.0.1:3000" $http_origin;
+    "http://127.0.0.1:8080" $http_origin;
+}
+
+server {
+    listen ${PORT} default_server;
+    server_name _;
+
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=30s ipv6=off;
+    resolver_timeout 5s;
+
+    client_max_body_size 10m;
+    server_tokens off;
+    add_header X-Request-Id $request_id always;
+    add_header Access-Control-Allow-Origin $cors_origin always;
+    add_header Access-Control-Allow-Credentials "true" always;
+    add_header Access-Control-Allow-Headers "Authorization,Content-Type,Accept" always;
+    add_header Access-Control-Allow-Methods "GET,POST,PUT,PATCH,DELETE,OPTIONS" always;
+
+    if ($request_method = OPTIONS) {
+        return 204;
+    }
+
+    location = /gateway/health {
+        default_type application/json;
+        return 200 '{"status":"UP"}';
+    }
+
+    # ---- Backend services (one block per service) -------------------------
+    # Financial Order commands are peer protocols, not browser APIs. Order calls
+    # Credit directly with the forwarded user JWT (or its narrow automatic route).
+    location ^~ /api/credits/orders/ {
+        default_type application/json;
+        return 404 '{"status":404,"error":"NOT_FOUND","message":"No service handles this path."}';
+    }
+    location ^~ /api/credits/commands/ {
+        default_type application/json;
+        return 404 '{"status":404,"error":"NOT_FOUND","message":"No service handles this path."}';
+    }
+    # Network-trusted service APIs are NEVER routed from a browser, with or without JWT.
+    location ^~ /api/users/internal/ {
+        default_type application/json;
+        return 404 '{"status":404,"error":"NOT_FOUND","message":"No service handles this path."}';
+    }
+    location ^~ /api/suppliers/internal/ {
+        default_type application/json;
+        return 404 '{"status":404,"error":"NOT_FOUND","message":"No service handles this path."}';
+    }
+    location ^~ /api/orders/internal/users/ {
+        default_type application/json;
+        return 404 '{"status":404,"error":"NOT_FOUND","message":"No service handles this path."}';
+    }
+    location ~ "^/api/orders/internal([;/].*)?$" {
+        default_type application/json;
+        return 404 '{"status":404,"error":"NOT_FOUND","message":"No service handles this path."}';
+    }
+    # The User Service's penalty adjustment is for other services and only checks that the caller is
+    # signed in, so from a browser anyone could suspend any courier or clear their own penalty.
+    # A regex location, so it wins over the /api/users prefix; ";" and "/" cover matrix and extra segments.
+    location ~ "^/api/users/[^/]+/penalty([;/].*)?$" {
+        default_type application/json;
+        return 404 '{"status":404,"error":"NOT_FOUND","message":"No service handles this path."}';
+    }
+    location /api/users {
+        set $upstream ${USER_SERVICE_URL};
+        include /etc/nginx/snippets/proxy.conf;
+    }
+
+    location /api/suppliers {
+        set $upstream ${SUPPLIER_SERVICE_URL};
+        include /etc/nginx/snippets/proxy.conf;
+    }
+
+    location /api/orders {
+        set $upstream ${ORDER_SERVICE_URL};
+        include /etc/nginx/snippets/proxy.conf;
+    }
+
+    location /api/credits {
+        set $upstream ${CREDIT_SERVICE_URL};
+        include /etc/nginx/snippets/proxy.conf;
+    }
+
+    # Pub/Sub pushes order events straight to the Credit Service (its own URL in the cloud,
+    # credit-service:8080 locally), never through this public entry point. Not routing them here
+    # keeps internal endpoints off the public surface; locally Credit even accepts unsigned emulator pushes.
+    # Only the trusted broker reaches Order's result receiver directly.
+    location = /api/orders/internal/credit-compensations {
+        default_type application/json;
+        return 404 '{"status":404,"error":"NOT_FOUND","message":"No service handles this path."}';
+    }
+
+    location /api/credits/internal/ {
+        default_type application/json;
+        return 404 '{"status":404,"error":"NOT_FOUND","message":"No service handles this path."}';
+    }
+
+    # Report coordination and broker delivery use the Report backend directly.
+    location ~ "^/api/reports/internal([;/].*)?$" {
+        default_type application/json;
+        return 404 '{"status":404,"error":"NOT_FOUND","message":"No service handles this path."}';
+    }
+
+    location /api/reports {
+        client_max_body_size 30m;
+        set $upstream ${REPORTING_SERVICE_URL};
+        include /etc/nginx/snippets/proxy.conf;
+    }
+
+    location /api/admin {
+        set $upstream ${ADMIN_SERVICE_URL};
+        include /etc/nginx/snippets/proxy.conf;
+    }
+
+    location /api/ {
+        default_type application/json;
+        return 404 '{"status":404,"error":"NOT_FOUND","message":"No service handles this path."}';
+    }
+
+    # ---- Frontend (everything else) ---------------------------------------
+    location / {
+        set $upstream ${FRONTEND_URL};
+        include /etc/nginx/snippets/proxy.conf;
+    }
+
+    error_page 502 503 504 = @upstream_unavailable;
+    location @upstream_unavailable {
+        default_type application/json;
+        return 502 '{"status":502,"error":"BAD_GATEWAY","message":"The service handling this request is unavailable. Please try again shortly."}';
+    }
+}

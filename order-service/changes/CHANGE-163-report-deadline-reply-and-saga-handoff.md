@@ -1,0 +1,9 @@
+# CHANGE-163 — approved Report response-window and handoff clarification
+
+Date2026-10-29; owner Yao Xiang, order-service/admin-ui-linking. User confirms deadline is necessary, readiness follows response/deadline expiry, and early admin resolution is allowed with warning. User asks to document required admin reply and saga support; violation category is undecided. Documentation-only scope after completed CHANGE-162; Report Service source is absent.
+
+Updated the Report handoff, pending Admin requests and FEEDBACK-018 with the server-owned response window, early-resolution confirmation, required private resolutionNote/resolvedBy/resolvedAt, and Report journal/conditional restore/fence/result responsibilities. Added ADR-060 and synchronized effective context/traceability/diagram/index/AI records. Preserve prior history; latest amendment supersedes no-deadline and ready-only recommendations. No new category, fixed deadline duration, request field, application behavior or endpoint is implemented.
+
+D1 traceability: report investigation/courier justification and funding hold; atomic local writes, authorized admin resolution, idempotent recovery. Diagram distinguishes future Report/UI work from the existing disabled Order saga. Early-resolution rollback restores the actual previous state while respecting the original deadline and newer report revisions. Reply is private to submitter/admin. Report category and peer implementation/activation remain pending.
+
+Verification: documentation consistency, local links, Mermaid sequence source, TOML and git diff checks. No application tests/builds are rerun for this documentation-only update; CHANGE-162 test results are historical evidence, not newly executed tests. No source/test/SQL/env/cloud or sibling backend changes, commit or staging.

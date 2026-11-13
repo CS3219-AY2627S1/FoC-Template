@@ -1,0 +1,784 @@
+admin_directory_161 = "ADR-058; GET /api/users/admin/search implemented in explicitly approved narrow User scope, active-admin only; Mongo initial page/filter/count/paging and safe DTO; frontend ID+Name real20/page; Admin resolution full-width below repost, retired/empty fields hidden; no Order lifecycle/schema/saga change; Report-only missing Admin HTTP contracts; User subscriber/Supplier guard separate"
+admin_ready_160 = "ADR-057; non-Report Admin always real, including both local Compose modes; ID-only profile lookup; generic mock routes/transport removed; Report-only local+emulator gate via independent settings; cloud Reports Coming soon; peer lists pending-only with history archive; no migration/peer backend/cloud edit"
+delivered_review_141 = "ADR-048; V12; stored delivery overdue; audited precompletion waiver suppresses normal penalty and reward; report-specific admin hold release; local-only Reports prototype, live Coming soon; FEEDBACK-015 pending"
+admin_table_page_size_140 = "Orders live/mock20; sample Users20; supplier cards10; Credit history20; live User directory pending; no backend changes"
+admin_calendar_toolbar_139 = "41px desktop row; native calendar DD/MM/YYYY; RefreshCwIcon only; local dates->inclusive/exclusive Instants; SQL status/orderId/date before pagination; mock fixtures only; no schema or peer changes"
+admin_resolution_ui_change138 = "single-row toolbar/dialog; explicit penalty and required UI reason; optional API resolutionReason; V11; shared policy lookup; isolated mock/live; legacy hashes unchanged"
+schema_version = 1
+compensation_recovery_156 = "ADR-054 fixture extended by CHANGE-158/ADR-055 opt-in actual HTTP/PubSub; default off; V15 retained; local Order/common596+Credit126 all pass; deployment/IAM gated"
+compensation_recovery_handoff = "concurrency/compensation-workflow-handoff.md"
+compensation_clear_reversal = "Credit V9/V10 implement exact preimage/revision restoration; actual local verification CHANGE-158"
+compensation_transport_158 = "Vincent 2026-10-27; Order/Credit edits; separate Google OIDC receiver; strict local demo gate; default retry/deployment unchanged"
+compensation_verification_158 = "a6cceee; real compensation11/legacy16 pass; Order95.01% LINE/82.16% BRANCH; local wiring/gateway/AsyncAPI pass; no cloud/browser claim"
+admin_completion_137 = "ADR-046; assigned active and held ->COMPLETED; existing Credit event and highest selected addition only; null/empty no score; locked atomic outbox/replay; V10 reused; no UI/peer/topic/migration change"
+admin_controller_refactor_136 = "AdminOrderController owns existing list and cancel; redundant controller removed; imported Schema and stable JSON names; no URI/business/schema/peer/UI change"
+persisted_delivery_verification_135 = "Fresh common12+Order458=470 tests pass, both coverage gates/JAR; frontend typecheck/AsyncAPI checks; local backed-up V9->V10 preserves7 Orders and backfills3 timings; app rebuild and peer/cloud review pending"
+persisted_delivery_timing_135 = "ADR-045; V10; START+duration deadline, actual delivery timestamp; nullable isOverdue without history queries; stored admin WAIVED/ADDITION_REQUESTED decision; UI feedback deferred"
+admin_cancel_overdue_134 = "ADR-044; active/held admin cancel; maximum all-addition policy; unresponsive3; timing superseded by ADR-045; atomic replay-safe outbox; no peer/topic change"
+admin_credit_history_133 = "merge preserves both; live selected-user Credit history admin-only; mock base retained; balance pending; no global tab; deployed confirmation pending"
+penalty_policy_queries_132 = "PenaltySystemPolicy replaces CourierPenaltyCase; getSuccessfulDeliveryReward enum; getCourierPenaltyCases immutable excludes original3; getFullPenaltyPolicy immutable all6; Order first; wire unchanged"
+full_d1_penalty_cases_131 = "NTH2 PDF37-39; common enum six cases; add wrong location4/damage4/deliberate retention-theft10; existing automatic reasons/wire unchanged; highest penalty and suspension not implemented"
+shared_penalty_policy_130 = "ADR-043; foc-common ordinary Maven JAR; common.penalty.CourierPenaltyCase; Order first consumer; +2/+1/-1 and JSON unchanged; root reactor/Docker/CI/staging; no auth or peer implementation extraction"
+active_involvement_129 = "ADR-042; shared-role users/suppliers active-involvement GET; SQL EXISTS current relationships/5 states including holds; no name storage/deletion lock; Deleted supplier lookup fallback;420 backend/129 frontend pass; FEEDBACK-015 integration/race pending"
+courier_penalty_events_128 = "ADR-041: +2 abort/+1 overdue/-1 successful; seven fields; add/deduct outbox; stable recipient/reason IDs; Credit unchanged; legacy abort replay retained; local/dev/prod configured; User subscriber pending"
+completion_holds_127 = "ADR-040; requester-owned active Order PUT with Firebase; immutable per-report placement/flag V9; SQL filters/locked funding guards/UI;394 backend/126 frontend pass; Report caller/release/rollout pending"
+admin_compose_selection_122 = "base FOC_ADMIN_API_MODE=mock; HTTP override live/demo controller disabled; cloud/invalid flags live; local real admin role required; backend HTTP/emulators preserved"
+admin_environment_119 = "local+Auth emulator mocks; other environments real role/Order/Supplier/limited User summary; missing User management/Credit cards and values Coming soon; no mock fallback"
+admin_layout_116 = "supersedes only Order widening in115: original card widths/two columns, Version swapped with Item Description; requester above courier; supplier changes retained"
+admin_layout_115 = "metadata first; credits/description final row; requester before courier; no list overview map; status beside Location details; existing detail/create maps retained"
+admin_map_layout = "CHANGE-114: Leaflet1.9.4/OSM/Photon, optional Admin form picker; grouped Order details; separate User fields; detail-only supplier deactivation"
+admin_map_boundary = "public anonymous mapping reads only; service operations use environment-selected gateway adapter under119; backend schema and contracts unchanged"
+admin_dedicated_details = "CHANGE-113: full Order/Supplier pages; top User/Supplier actions; existing sample APIs; backend unchanged"
+admin_ui_refinement = "CHANGE-112: full profile/shared credit history; selected-user/location routes; aligned controls; existing mock scope only"
+admin_history_contract = "CHANGE-133; ADMIN-API-006 completed; Credit GET /api/credits/users/{uid}/transactions?page=1&size=20; real admin token; balance005 still pending"
+admin_ui_prototype = "CHANGE-111 / ADR-039; Yao Xiang; order-service/admin-dashboard; local mock milestone"
+admin_ui_mock_gate = "enabled flag AND FOC_ENVIRONMENT=local AND Firebase emulator; existing JWT/role chain unchanged"
+admin_ui_api_requests = "docs/admin-peer-api-request.md"
+command_polling_change110 = "source386f58f; pause during submit/local resume; active-ref guard; same-key timeout recovery unchanged;124 frontend tests/typecheck/build pass; lint0errors; browser/rollout pending"
+pending_card_recovery = "CHANGE-108 / ADR-038: source9f2e054/942b790; owner displayDetails/shared cards;373 backend/103 frontend pass; browser/rollout/strict gates open"
+expiry_http_trigger = "CHANGE-107 / ARCH-EVO-043: retired; scheduler-only expiry; all repost routes retained"
+manual_repost_recovery = "ADR-037 / CHANGE-106: implemented, source2c021b6; 367 backend/90 frontend; consuming rollout blocked by Docker engine500; strict gate pending"
+manual_repost_migration = "V8__durable_manual_repost.sql"
+local_transport_decision = "docs/decisions/ADR-036-local-emulator-and-review-hardening.md"
+local_pubsub = "emulator-only; demo-foc-local; real HTTP peers; no ADC/tunnel"
+legacy_mutation_protocol = "CREATE/ACCEPT/ABORT/manual REPOST durable coordinator; 202 pending"
+outbox_recovery = "bounded async after-commit; 15-minute scan; retained FAILED after 10; ADMIN redrive"
+latest_order_migrations = ["V6__retained_failed_outbox.sql", "V7__bind_command_receipts.sql", "V8__durable_manual_repost.sql", "V9__order_completion_holds.sql", "V10__persist_delivery_timing_and_admin_decisions.sql", "V11__admin_resolution_reason.sql"]
+cloud_timer_runtime = "config only: min1/no-cpu-throttling; not deployed"
+live_credit_recovery_decision = "docs/decisions/ADR-035-live-credit-command-recovery.md"
+live_credit_recovery_protocol = "credit-command-v1; HTTP gateway; no stored tokens or delegated credentials"
+pubsub_asyncapi = "docs/asyncapi/asyncapi.yaml"
+pubsub_asyncapi_guide = "docs/asyncapi/README.md"
+pubsub_asyncapi_scope = "CHANGE-103: current outgoing contracts only; no live-integration completion"
+merged_minute_scheduler_decision = "docs/decisions/ADR-034-merged-minute-command-and-lifecycle-job.md"
+merged_minute_scheduler_order = ["eligible command recovery (HTTP requires fresh user authorization)", "OPEN expiry", "DELIVERED >=48h completion"]
+merged_minute_scheduler_cron = "order.lifecycle.cron; default 0 * * * * *; order.commands.cron obsolete"
+foreground_command_recovery_decision = "docs/decisions/ADR-033-durable-credit-command-stub.md"
+foreground_command_recovery_scope = "CREATE/ACCEPT/ABORT/manual REPOST HTTP and explicit mock selection; automatic repost deferred"
+recovery_context_loading = "latest effective and relevant sections approved by Vincent 2026-10-10"
+service = "order-service"
+canonical_context = "docs/ai-project-context.md"
+active_sprint_pointer = "docs/current-sprint.md"
+change_log = "docs/change-log.md"
+work_allocation = "docs/work-allocation.md"
+local_developer_profile = "docs/local/developer-profile.md"
+active_work_directory = "docs/active-work"
+instruction_map = "docs/instruction-map.md"
+decision_directory = "docs/decisions"
+change_directory = "changes"
+skill = ".codex/skills/spec-driven-development/SKILL.md"
+ai_usage_log = "../ai/usage-log.md"
+ai_usage_format = "docs/ai-usage-format.md"
+architecture_review_playbook = "docs/architecture-review-playbook.md"
+architecture_evolution = "docs/architecture-evolution.md"
+completion_reporting = "docs/completion-reporting.md"
+peer_service_api_feedback = "docs/peer-service-api-feedback.md"
+event_candidate_catalog = "docs/event-candidates.md"
+frontend_integration_workflow = "docs/frontend-integration-workflow.md"
+frontend_directory = "../frontend"
+
+[workflow]
+specification_driven = true
+test_driven = true
+pre_coding_gate_required = true
+project_d1_traceability_required = true
+ui_specification_available = false
+frontend_context_approved = true
+shared_frontend_required = true
+responsive_web_required = true
+native_mobile_application_in_scope = false
+frontend_live_inspection_before_coding_required = true
+frontend_shared_file_coordination_required = true
+production_code_started = true
+developer_scope_validation_required = true
+feature_completion_gate_required = true
+architecture_approval_required = true
+peer_service_implementation_inspection_required = true
+peer_api_mismatch_approval_required = true
+foreign_api_compatibility_classification_required = true
+peer_api_actual_implementation_verification_required = true
+peer_api_feedback_before_blocked_handoff_required = true
+contract_stub_is_verified_integration = false
+event_design_comparison_required = true
+architecture_evolution_tracking_required = true
+implementation_discovery_classification_required = true
+artifact_synchronization_after_approved_change_required = true
+per_turn_context_rehydration_required = true
+per_turn_completion_report_required = true
+scenario_specific_report_sections_allowed = true
+conversation_history_is_authoritative = false
+implementation_before_architecture_approval_allowed = false
+implementation_tests_before_architecture_approval_allowed = false
+technology_conflict_open = false
+on_demand_pre_push_ci_rehearsal = true
+pre_push_ci_rehearsal_default = "explicit-trigger-only"
+pre_push_ci_rehearsal_scope = ["order-service", "approved-shared-frontend"]
+
+[current_workstream]
+concurrency_verification_extension = "CHANGE-093: accept versus requester cancel, both winner orderings; new pair 2/2 and full class 10/10 passed; Order test-only, peers mocked"
+validation_amendment = "CHANGE-091 / ADR-030: field-only errors; new auto expiry >= due+30min; manual expiry >= submit+30min"
+saved_explicit_expiry_plans = "grandfather unchanged; no migration; late execution allowed while expiry future"
+decision_record = "changes/CHANGE-082-sprint-2-3-lifecycle-implementation.md"
+developer = "Vincent"
+branch = "sprint-2-3-credit-service-concurrency-update-event-payload"
+sprints = [2, 3]
+scope = "Order-owned parts only; sibling backend services read-only"
+stage = "approved Order lifecycle/history slice implemented and locally verified; live peer/browser/cloud gates pending"
+selected_overall_source = "../../../Order Service Overall Doc.pdf"
+selected_overall_sha256 = "F0E925278FCCC0FCBB48F6C7BE1C23D908E15BEF75BB7C013EEC28C3F05DA602"
+updated_overall_source_available_locally = false
+courier_assignment_local_mock_approved = true
+http_peer_mock_fallback_approved = false
+courier_attempt_history_approved = true
+internal_uuid_primary_key_approved = true
+abort_allowed_status = "ACCEPTED only, before IN_PROGRESS"
+abort_penalty_topic = "existing accepted-order-cancellation topic"
+expired_refund_topic = "existing open-order-refund topic"
+credit_reset_or_reassignment_decided = true
+abort_synchronous_credit_update_approved = true
+abort_after_expiry_current_status = "EXPIRED; same business orderId; separate ABORTED courier history"
+repost_row_replacement_mechanics_decided = true
+repost_storage_policy = "retain old EXPIRED row and new repost row with different business orderIds and immutable refund/history references"
+requester_hide_reposted_expired_approved = true
+repost_visibility_query_implemented = true
+new_lifecycle_implementation_started = true
+production_completion_verified = false
+effective_design = "docs/decisions/ADR-025-sprint-2-3-abort-history-and-repost-visibility.md"
+effective_diagrams = "sprints/sprint-2-3/README.md"
+
+[sources]
+project_d1 = "../../../Project-D1.pdf"
+order_service_overall = "../../../Order Service Overall Doc.pdf"
+historical_updated_overall = "../../../Order Service Overall Doc - Updated.pdf"
+architecture_overall = "../../../High Level Architecture Diagram - FOC.png"
+architecture_order_service = "../../../High Level Architecture Diagram - Order Service.png"
+class_diagram_overall = "../../../Class Diagram - Order Service.png"
+sprint_1_pack = "../../../Sprint 1/Order Service Sprint 1 Doc.pdf"
+sprint_1_class_core = "../../../Sprint 1/S1 Class Diagram - Order Service.png"
+sprint_1_class_nth4 = "../../../Sprint 1/S1 Class Diagram - Order Service + NTH 4.png"
+
+[frontend]
+framework = "Next.js"
+inspected_version = "16.3.6"
+routing_model = "App Router"
+client_type = "responsive-web"
+supported_access = ["desktop-browser", "mobile-browser"]
+application_roles = ["ADMIN", "USER"]
+user_modes = ["Requester", "Courier"]
+mode_switcher = false
+backend_authorization_is_final = true
+detailed_ui_design_approved = false
+
+[approved_amendments]
+overdue_is_flag = true
+overdue_evaluated_at_completion = true
+continuous_overdue_scheduler_allowed = false
+sprint_1_aborted_reopening_allowed = false
+penalty_owner = "user-service"
+supplier_catalogue_owner = "supplier-service"
+reposting_owner = "order-service"
+one_repost_per_original = true
+courier_outcome_operations_are_explicit = true
+courier_outcome_discriminator_allowed = false
+courier_outcome_facts_bag_allowed = false
+credit_consequence_processing = "transactional-outbox-with-after-commit-dispatch-and-cron-recovery"
+credit_courier_assignment_before_acceptance = true
+credit_courier_assignment_order_stub_implemented = true
+credit_courier_assignment_peer_api_verified = false
+credit_command_http_adapter_implemented = true
+credit_command_financial_provider_tests = "CHANGE-104: real Credit/PostgreSQL replay, timeout, restart, rollback, compensation, same-key claim; User/Supplier fixtures; final dispatch isolated"
+credit_command_full_stack_verified = false
+synchronous_credit_requests_include_order_version = false
+published_order_events_include_order_version = true
+credit_assignment_request_fields = ["orderId (path)", "courierId (body)"]
+credit_reopen_hold_request_body = "none; orderId is in the path"
+credit_reopen_hold_contract_status = "route/core reset exists at 09e04a0; replay authorization incomplete; live verification pending; CHANGE-087"
+ordinary_progress_transitions_require_credit = false
+penalty_policy_owner = "user-service"
+penalty_fact_signaling_blocks_order_commit = false
+overall_design_declares_typed_event_broker = true
+durable_event_broker_implementation_approved = true
+transactional_outbox_implementation_approved = true
+publish_before_status_change_approved = false
+full_order_snapshot_in_events = true
+event_snapshots_include_checkpoint_history = false
+event_version_after_checkpoint_history_removal = 1
+peer_consumer_implementation_assumed_for_order_scope = true
+same_order_aborted_reopening_implementation_approved = true
+
+[approved_order_service_infrastructure]
+persistence = "PostgreSQL on Google Cloud SQL"
+deployment = "Google Cloud Run"
+cloud_sql_instance = "order-postgres"
+cloud_sql_databases = ["order_staging", "order_production"]
+cloud_sql_region = "asia-southeast1"
+cloud_sql_connection = "Public IP with Cloud SQL Java Connector"
+cloud_sql_backup = "Automated backups and point-in-time recovery"
+cloud_sql_deletion_protection = true
+cloud_sql_billing_acknowledged = true
+
+[approved_order_service_event_messaging]
+transport = "Google Cloud Pub/Sub"
+gcp_project_id = "protean-vigil-509704-q4"
+environment_isolation = "separate dev/prod topics with topic-scoped publisher IAM"
+local_authentication = "per-developer Application Default Credentials, mounted read-only into Order Service container"
+local_completion_topic = "order-completion-dev-v1"
+local_open_refund_topic = "open-order-refund-dev-v1"
+local_accepted_cancellation_topic = "accepted-order-cancellation-dev-v1"
+production_authentication = "Cloud Run attached service identity"
+production_topic_ids = "set via environment variables when provisioned"
+pubsub_emulator_default = false
+service_account_key_sharing = false
+
+[open_conflicts]
+frontend_role_authority_mapping = "RESOLVED for Order Service: Firebase-authenticated role authorities come from User Service role-context; Admin endpoints use ROLE_ADMIN and Supplier-style @PreAuthorize. Frontend role/mode behavior remains backend-authoritative. See CHANGE-057/ADR-012."
+updated_overall_design_vs_sprint_scope = "CHANGE-082/ADR-025 supersedes ADR-001/014 for this workstream: every ACCEPTED-only abort synchronously resets Credit, retains immutable courier history and resolves current state to OPEN/EXPIRED. Every abort queues User penalty; EXPIRED additionally queues Credit refund. Reposts retain old/new IDs but hide linked expired originals from requester pagination. Existing outbox/typed PubSub/48h completion approvals remain. Peer providers/subscribers and trusted automatic-repost authentication are missing or unverified. Cloud Run scale-to-zero/request CPU still limits idle scheduling; NTH3 report/hold/resolution is not completed by this slice."
+
+
+[approved_time_selection_and_scheduler_cadence]
+decision = "ADR-022 / CHANGE-077"
+requester_clock_minutes = [0, 15, 30, 45]
+restriction_scope = "frontend creation and repost time selection; existing API timestamp shape unchanged"
+lifecycle_decision = "ADR-026 / CHANGE-083"
+shared_lifecycle_cron = "0 * * * * *"
+shared_lifecycle_checks = ["OPEN/unassigned/deadline reached -> EXPIRED/refund", "DELIVERED/latest delivery at least 48h ago -> COMPLETED/completion"]
+outbox_recovery_cron = "0 */15 * * * *"
+immediate_after_commit_dispatch = true
+existing_deadlines_rounded = false
+
+[requested_repost_timing_and_retry]
+decision = "ADR-028 / CHANGE-086 expiry/outcomes; ADR-027 / CHANGE-084 paused retry design; Vincent 2026-10-09"
+requirement_approved = true
+timing = "repostExpiresAt > repostDueAt >= original.expiresAt"
+late_execution = "allowed only while repostExpiresAt > current time"
+explicit_repost_expiry_implemented = true
+explicit_repost_expiry_change = "CHANGE-086; V4; legacy no-expiry plans disabled by Vincent"
+latest_manual_and_automatic_failure_persisted = true
+durable_retry_implemented = false
+insufficient_credit_card_message_implemented = true
+failure_message_scope = "latest safe eligible manual/automatic attempt failure on original EXPIRED row; overwrite newer result; clear on success; survives reload"
+background_retry_implementation_paused = true
+background_retry_resume_condition = "user resumes after peer agreement; no mock-mode retry worker either"
+retry_design_approval = "approved: fixed new candidate ID, temporary failures only, stop at new expiry or permanent rejection; concrete task/schema/API design still needed"
+terminal_failure_messages_approved = true
+insufficient_credit_reason = "confirmed semantic INSUFFICIENT_CREDITS only; cannot infer delayed refund versus inadequate balance"
+failed_original_status = "EXPIRED; visible/unlinked until successful repost"
+background_authentication_approval = "approved for peer proposal/documentation ONLY; implementation explicitly deferred"
+background_authentication_implemented = false
+background_authentication_peer_agreed = false
+peer_dependencies = ["FEEDBACK-002", "FEEDBACK-003", "FEEDBACK-004", "FEEDBACK-005", "FEEDBACK-006"]
+
+[approved_order_ui_refresh]
+decision = "ADR-027 / CHANGE-084; Vincent 2026-10-09"
+mechanism = "authenticated HTTP polling; no WebSocket/SSE/frontend broker"
+polling_implemented = true
+interval = "Order lists5 seconds (ADR-032); Credit15 seconds; visible/auth-ready, focus/visibility/mutation refresh; AbortController cleanup/no overlap"
+auth_ready_required = true
+immediate_mutation_refetch = true
+
+[approved_role_annotations]
+decision = "ADR-024 / CHANGE-079"
+annotations = ["RequireRequesterRole", "RequireCourierRole", "RequireAdminRole", "RequireOrderRole"]
+production_role_mode = "ORDER_USER_SERVICE_MODE defaults to http independently of shared USER_SERVICE_MODE"
+role_source = "GET /api/users/role-context using verified Firebase caller token; response userId must match JWT subject"
+role_reuse = "current request only; no cross-request cache"
+local_authentication_required = false
+courier_eligibility = "fresh HTTP check retained when HTTP peers selected"
+order_ownership = "existing locked domain guards retained"
+
+[credit_integration_source_review]
+change = "CHANGE-087"
+date = "2026-10-09"
+branch = "sprint-2-3-credit"
+integrated_revision = "09e04a0"
+scope = "Order documentation only; peer source and infrastructure read-only"
+assignment_route_present = true
+hold_route_present = true
+refund_consumer_present = true
+completion_consumer_present = true
+compatible_source_status = "Credit-local focused tests passed (27); READY_FOR_VERIFICATION for live integration; no cloud/end-to-end claim"
+focused_credit_tests_passed = 27
+focused_credit_tests_failures_errors_skips = 0
+focused_credit_test_runtime = "Java 21 Docker, read-only source copy, isolated Testcontainers PostgreSQL V1/V2"
+live_integration_verified = false
+subscription_provisioning_script_present = true
+subscription_provisioning_verified = false
+remaining_credit_feedback = ["FEEDBACK-003 replay authorization", "FEEDBACK-006 reservation/recovery", "FEEDBACK-007 accepted-cancellation semantics", "FEEDBACK-005 delegated authorization"]
+background_retries_remain_paused = true
+
+[local_live_connector]
+change = "CHANGE-088"
+decision = "ADR-029"
+date = "2026-10-09"
+approver = "Vincent"
+branch = "sprint-2-3-credit"
+compose_files = ["compose.yaml", "compose.http-peers.yaml", "compose.local-live.yaml"]
+runbook = "docs/local-live-testing.md"
+setup_script = "scripts/local-live.ps1"
+broker = "Real Google Pub/Sub; developer-isolated topics/subscriptions"
+ingress = "Temporary cloudflared HTTPS -> exact-path POST-only nginx -> local Credit"
+authentication = "Existing Google OIDC push; Order existing prod JWT/method profile with local emulator and HTTP User roles"
+configuration_safety_assertions = 60
+actual_nginx_fixture_assertions = 16
+live_cloud_financial_verified = false
+live_blocker = "User Setup progressed to Compose but PS5.1 stderr handling failed; CHANGE-089 fixes wrapper. Rerun real Setup/Check; Google IAM/push/financial verification still pending."
+script_compatibility_change = "CHANGE-089"
+native_stderr_regression_assertions = 11
+cli_installation_verified = true
+cli_version_exit = 0
+cli_sdk_version = "588.0.0"
+peer_source_changed = false
+staging_resources_changed = false
+schema_changed = false
+background_retries_paused = true
+user_consumers_provided = false
+
+[credit_push_security_exception]
+change = "CHANGE-090"
+date = "2026-10-09"
+approver = "Vincent"
+branch = "sprint-2-3-credit"
+scope = "One-time Credit push converter and regression test only; no financial/contract/schema/cloud edits"
+interference_record = "changes/CHANGE-090-credit-push-security-interference.md"
+feedback = "FEEDBACK-008"
+feedback_status = "READY_FOR_VERIFICATION"
+new_security_tests_passed = 15
+credit_tests_passed = 80
+clean_coverage_verified = true
+source_test_commit = "198cd7c"
+credit_line_coverage = 95.48
+credit_branch_coverage = 85.56
+live_financial_verified = false
+credit_owner_review_pending = true
+running_credit_rebuilt = false
+background_retries_paused = true
+
+[compact_events_change_092]
+approved_by = "Yao Xiang"
+date = "2026-10-09"
+branch = "order-service/sprint-1/yx-sprint-2-and-3"
+wire_fields = ["eventId", "eventType", "orderId", "orderStatus", "creditAmount", "occurredAt", "courierId"]
+compact_schema_version = 2
+accepted_schema_unchanged = true
+peer_integration = "BLOCKED: FEEDBACK-009"
+
+[lifecycle_failure_isolation_change_093]
+approved_by = "Yao Xiang"
+date = "2026-10-09"
+coordinator_transaction = "none"
+per_order_transaction = "REQUIRES_NEW"
+due_selection = "database IDs and latest delivered checkpoint"
+error_boundary = "outside each per-order invocation"
+verification = "44 focused passed; fresh verify 232 total, 211 passed, 21 Docker skips, zero failures/errors; existing coverage gates pass"
+line_coverage_percent = 91.44
+branch_coverage_percent = 82.10
+postgres_isolation_verified = true
+postgres_blocker = ""
+postgres_last_verified_date = "2026-10-10"
+postgres_followup_evidence = "CHANGE-096: all four lifecycle PostgreSQL tests passed; full 252 tests passed without skips"
+
+[order_ui_change_094]
+approved_by = "Yao Xiang"
+date = "2026-10-09"
+order_poll_seconds = 5
+credit_poll_seconds_unchanged = 15
+status_query = "optional uppercase enum on /api/orders/mine; DB filter before count/pagination"
+courier_action_label = "Abort errand"
+frontend_tests_passed = 58
+backend_tests_passed = 219
+backend_docker_skips = 24
+real_postgres_filter_verified = true
+postgres_filter_last_verified_date = "2026-10-10"
+normal_frontend_build = "blocked by existing Google Fonts connectivity"
+browser_fixture_scenarios_passed = 8
+
+[personal_filter_options_change_095]
+approved_by = "Yao Xiang"
+requester_excludes = ["ABORTED"]
+courier_excludes = ["OPEN", "EXPIRED", "CANCELLED"]
+api_contract_unchanged = true
+frontend_tests_passed = 60
+browser_fixture_scenarios_passed = 8
+
+[scheduler_isolation_change_096]
+approved_by = "Yao Xiang"
+date = "2026-10-10"
+selection = "DB-filtered IDs; bounded SQL outbox limit"
+coordinator_transaction = "none"
+lifecycle_per_order_transaction = "REQUIRES_NEW"
+outbox_per_item_writes = "REQUIRES_NEW claim/mark/retry; REQUIRED enqueue"
+error_boundary = "outside persistence/worker proxy, per item"
+focused_tests_passed = 43
+backend_tests_passed = 252
+backend_tests_skipped = 0
+postgres_tests_passed = 28
+line_coverage_percent = 95.99
+branch_coverage_percent = 83.72
+real_pubsub_verified = false
+peer_integration_blocker = "FEEDBACK-009"
+
+[order_ui_missing_supplier_references_change097]
+classification = "implementation detail; existing fallback label"
+response_contract = "Supplier lookup items and missingIds, unchanged"
+missing_label = "Location unavailable"
+frontend_tests_passed = 63
+production_frontend_build_passed = true
+local_frontend_recreated = true
+authenticated_browser_verified = false
+supplier_data_restored = false
+
+[swagger_current_origin_change098]
+classification = "implementation detail; approved gateway/OpenAPI runtime"
+server_url = "/"
+configuration_class = "OpenApiConfiguration"
+backend_tests_passed = 253
+backend_tests_skipped = 0
+line_coverage_percent = 96.00
+branch_coverage_percent = 83.72
+staging_fix_deployed = false
+staging_authenticated_browser_verified = false
+
+[backend_expiry_validation_verification]
+change_record = "changes/CHANGE-099-backend-expiry-api-regression.md"
+date = "2026-10-10"
+developer = "Yao Xiang"
+rule = "existing expiresAt >= server validation instant + 30 minutes; inclusive"
+implementation_changed = false
+regression = "OrderCreationExpiryApiTest; short/past deadlines return expiry-specific 400 before credit reservation or writes"
+verification = "19 focused tests passed; full result in change record"
+live_deployment_retested = false
+
+[main_typed_credit_merge_verification]
+date = "2026-10-10"
+incoming_commit = "a641836ce8c9d7b1458560099bc079a1fb62b1b0"
+feedback_conflict_resolved = true
+other_staged_changes_preserved = true
+compact_contract_preserved = true
+credit_consumer_migration_pending = true
+order_tests_passed = 258
+order_tests_skipped = 0
+ci_force_update_reintroduced = false
+infrastructure_scripts_preserved_from_main = true
+hosted_ci_rerun_pending = true
+live_staging_production_infrastructure_passed = true
+initial_cloud_run_transient_dns_failure = true
+merge_commit_created = false
+
+shared_penalty_policy_verification_130 = '424 tests/common+Order; coverage gates; root image bundles shared JAR; Compose/selection/ShellCheck/actionlint/AsyncAPI pass; no deployment or peer migration'
+
+full_d1_penalty_verification_131 = '427 tests/common7+Order420 pass; coverage gates/AsyncAPI/patch checks pass; no image rebuild/deploy or Report/User integration'
+
+penalty_policy_queries_verification_132 = '431 tests/common11+Order420; gates pass; JAR API/new class checked; AsyncAPI/patch pass; initial Docker/PATH test failure recovered process-only; no deployment'
+
+report_summary_layout_142 = "single continuous panel; aligned label/value rows; Order first and direct admin detail navigation; only report resolution on Reports; financial actions stay on Orders; contracts/backend unchanged"
+
+order_names_143 = "read-only deduplicated frontend labels from User summary/Supplier detail; names absent loading/deleted/unavailable; IDs unchanged; Report description/participants and matched-height filter; no backend/config change"
+
+# CHANGE-144 / ADR-049: synchronous User penalty replacement; durable PENDING/CONFIRMED per-attempt revisions; live disabled pending FEEDBACK-016. Reports open/closed, no deadline, required reply. No new topic/config outside Order.
+
+# CHANGE-146 / ADR-050 supersedes replacement: no User adjustment gateway/admin completion. Monotonic Order appliedPenalty; final existing event max vs overdue, admin cancel no overdue; V14 retains historical V13.
+
+
+admin_report_refinement_147 = "submitter/admin-only reply snapshots; retired unresponsive readable historically but not selectable; single radio cancellation; muted navigable closed cards; separate name/profile and ID/copy; bounded table text; CHANGE-147"
+
+admin_report_copy_148 = "Yes/No hold; Refresh beside Open reports; muted single-choice cancellation guidance; hide event implementation details in Apply Penalty; no backend/contract change"
+
+report_filters_149 = "shared Order-style Status/Order ID/Search/Clear; report-status values; exact Order ID; sample filtering before pagination/totals; no manual refresh, five-second polling retained; live Coming soon"
+
+report_list_150 = "single all-status Report card grid/page/query under existing filters; Open/Closed sections removed; resolved grey and navigable; existing API unchanged"
+
+order_native_status_filters_151 = "native StatusSelect across My Requests/My Errands/Admin Orders/normal+admin Reports; role options/page reset/filter contracts unchanged; no floating status popup or global Select change"
+
+admin_only_report_ui_152 = "normal Report routes/navigation/forms/response/upload and unused client helpers removed; AdminReportsPage retained behind existing AdminGate; backend sample and report/hold domain unchanged; live Coming soon"
+
+noncompleted_holds_153 = "requester-owned new hold allowed on every status except COMPLETED; status unchanged; delivery progression continues; normal completion/cancel/expiry/abort funding guards preserved; prior admin cancel override remains; no schema/peer change"
+
+retired_accepted_cancellation_155 = "legacy producer/replay/snapshot types and topic config/CI/provisioning removed; four current channels unchanged; preserve published history; deployment database backlog check required; no DB/GCP edits"
+
+report_contract_159 = "token-only active list/locked report hold; current-snapshot retries without V18; admin no-penalty cancellation overrides stored scoring; ready User profile/promotion/deactivation and Credit balance linked; directory and Report resolution coordinator pending"
+
+
+[report_resolution_saga_162]
+date = "2026-10-29"
+owner = "Yao Xiang on order-service/admin-ui-linking"
+status = "approved Order contract-stub; default disabled; real Report absent"
+protocol = "synchronous admin resolve; durable possible effect; atomic local release/success; outbox compensation generation2; authenticated committed result inbox"
+recovery = "existing minute SQL-selected limit20; independent transactions; no token persisted; success terminal; pending holds guarded even if disabled"
+schema = "additive V18 report resolution journal/inbox; V1-V17 unchanged; no hold placement snapshots"
+activation = "Report conditional restore/fence/dedup/result outbox and real authenticated integration required; no GCP/provisioning/UI activation"
+handoff = "docs/report-servicehandoff.md"
+
+
+[report_review_clarification_163]
+date = "2026-10-29"
+owner = "Yao Xiang on order-service/admin-ui-linking"
+status = "approved documentation requirements; Report/UI implementation pending"
+deadline = "required server-owned responseDeadlineAt; ready on timely response or expiry; duration not changed"
+early_resolution = "admin allowed from awaiting with UI warning and confirmation; no new Order request field"
+reply = "required resolutionNote plus resolvedBy/resolvedAt; submitter/admin only"
+saga = "ADR-059 journal/preimage/revision/dedup/fence/conditional restore/result outbox; restore prior state with original deadline reconciliation"
+category = "undecided; no enum/mapping change approved"
+source = "unchanged; no Report backend present; default-disabled Order contract stub retained"
+
+
+[automatic_repost_retry_164]
+date = "2026-10-29"
+owner = "Yao Xiang on order-service/admin-ui-linking"
+scope = "approved implementation repair; Order only; no migration or peer/API/config change"
+retry = "fresh immutable command/candidate on later minute pass after terminal rejected FULLY_COMPENSATED FAILED/COMPENSATED Credit step; no attempt-count cutoff"
+safety = "pending/uncertain compensation blocks new attempt; original lock + unique pending target; refund/requester/supplier/current plan revalidated; one atomic successor/link/used/success"
+identity = "legacy first AUTO_REPOST key retained; subsequent reserved-namespace retry UUID keys; preserve all old commands/fences/results"
+selection = "SQL status/hold/plan/expiry/deletion/command predicates; oldest due or last failure first limit100; latest attempt actor/order SQL limit1"
+limits = "configured plan expiry, holds and enablement retained; no bypass of FAILED publication or reconciliation; deployment gates unchanged"
+
+
+[user_directory_ci_image_165]
+date = "2026-10-29"
+owner = "Yao Xiang on order-service/admin-ui-linking"
+scope = "explicit User CI test-only fix; pinned mongo:7.0.43; production/pom/env/workflow unchanged"
+verification = "standalone User verify native exit0;36 tests including4 real Mongo directory tests;0 failures/errors/skips; disposable databases removed"
+remaining = "push correction and rerun GitHub CI; exact original container crash output absent"
+
+
+[reporting_integration_166]
+owner = "Yao Xiang"
+branch = "feat/reporting-service"
+date = "2026-10-29"
+status = "verified locally; cloud activation disabled; optional local bootstrap pending approval"
+reportable_states = ["ACCEPTED", "IN_PROGRESS", "PICKED_UP", "DELIVERED"]
+contract = "reporting-service/HANDOFF.md"
+change = "changes/CHANGE-166-reporting-integration-and-reportable-orders.md"
+
+
+[report_saga_cloud_167]
+date = "2026-10-30"
+owner = "Yao Xiang"
+branch = "feat/reporting-service"
+status = "configuration verified; cloud provisioning and activation not executed"
+script = "infra/gcp/configure-report-pubsub.sh"
+phases = ["prepare", "wire"]
+order_publisher = "existing grants unchanged"
+flags = "both default false"
+verification = "10 credential-free infrastructure tests pass; new script ShellCheck passes"
+
+
+[credit_report_context_168]
+date = "2026-10-30"
+owner = "Yao Xiang"
+branch = "feat/reporting-service"
+credit_link = "optional COMPLETED Order, requester or assigned courier; no hold or courier response; local admin resolution"
+active_creation = "same report retry; reject another active report; SQL lock and Firestore slot/legacy guard"
+reminder = "JWT-scoped Firestore count, answerable reports only; five-second visible polling"
+order_started_at = "nullable derived timestamp; no SQL migration"
+indexes = "courierId/status/responseDeadlineAt; orderId/status"
+status = "local verification passed; cloud deployment not performed"
+verification = "669 Order +12 common,61 Report,274 frontend; coverage/lint/types/build and seven live scenario groups pass; four focused OpenAPI checks pass"
+
+picker_ui = "user refinement: compact selectable rows; status/Created retained, Started/Active report labels removed; duplicate message on submit"
+
+
+[reporting_simplification_169]
+date = "2026-10-30"
+owner = "Yao Xiang"
+branch = "feat/reporting-service"
+status = "verified locally; no deployment or cloud changes"
+credit_reports = "unlinked; reject supplied orderId; no Order lookup or hold"
+form = "original active-order dropdown; no credit picker, cards, rows or dates"
+retained = "reply reminder; completed history URLs"
+added = "caller-scoped cancelled history list/detail; SQL filtering"
+compatibility = "read and locally resolve historical linked credit reports; no data cleanup or migration"
+verification = "670 Order +12 common,60 Report,274 frontend; coverage/lint/build/OpenAPI and seven live groups pass"
+
+
+[report_feedback_hotfix_170]
+date = "2026-11-01"
+owner = "Yao Xiang"
+branch = "hfix/report-service"
+status = "verified locally; no deployment"
+response_boundary = "fresh status and JSON body; no downstream framing headers"
+recovery = "same saved command; status polling after uncertainty"
+held_actions = "RETRY and COMPENSATE preserve trusted validation messages; existing financial recovery remains; frontend explains legacy saved hold rejections by reason code"
+new_report_categories = "ORDER, GENERAL; historical COURIER and CREDITS remain readable"
+admin_navigation = "Report Order link opens exact-search Orders table"
+penalty = "COURIER_BAD_ATTITUDE adds 2; deferred maximum rules unchanged"
+migration = "V19 expands current and archived deferred-policy checks"
+verification = "final unfiltered677 Order+13 common verify/coverage; affected38 frontend tests+lint+Docker build/types; eight real gateway/saga scenarios; earlier Report62 full verify; see CHANGE-170"
+local_resolution = "user reproduced404 from disabled routes; local Compose enables both saga endpoints,20s outer/5s inner timeout and emulator-only topics/push; three containers healthy, routes registered; authenticated browser retry pending"
+
+[courier_errand_reports_171]
+date = "2026-11-01"
+owner = "Yao Xiang"
+branch = "hfix/report-service"
+status = "verified locally; authenticated browser confirmation and cloud rollout pending"
+categories = "ORDER=requester, ERRAND=assigned courier, GENERAL=unlinked"
+response = "ERRAND directly READY_FOR_REVIEW; no self-response/deadline/reminder"
+identity = "reporterId=submitter; requesterId=actual owner; legacy non-ERRAND fallback"
+order_contract = "active list mode=courier; hold reporterRole=COURIER; requester defaults retained"
+consistency = "existing hold/funding/saga rules and topics unchanged; no SQL migration"
+verification = "681 Order+13 common,66 Report full verify/coverage;9 legacy/Errand saga tests;284 frontend full+32 final affected;lint/Docker build/types;nine real gateway/saga groups;local three services healthy"
+
+[active_report_feedback_172]
+date = "2026-11-01"
+owner = "Yao Xiang"
+branch = "hfix/report-service"
+status = "verified locally; browser confirmation and cloud rollout pending"
+message = "This order has an active report. Please resolve it before proceeding."
+form = "specific reason as alert title; keep input on failure; client/server-known hold coverage"
+cancellation = "owner-only hold priority before stale version; unrelated rejection order retained"
+contracts = "same HTTP codes, funding, authorization scope, schema and topics"
+verification = "683 Order+13 common and66 Report full verify/coverage;42 affected frontend;lint/Docker build/types;nine actual gateway/saga groups;local three services healthy"
+
+[default_report_category_173]
+date = "2026-11-02"
+owner = "Yao Xiang"
+branch = "hfix/report-service"
+status = "verified locally; frontend healthy"
+default = "missing/empty -> ORDER; explicit ERRAND/GENERAL retained; invalid/retired -> GENERAL"
+validation = "nonblank report description remains required; no POST for screenshot empty field"
+verification = "16 existing reporting tests;8 direct checks;lint/Docker build/types;3 actual built-page category checks"
+
+[unified_order_reports_174]
+date = "2026-11-02"
+owner = "Yao Xiang"
+branch = "hfix/report-service"
+status = "verified locally; browser confirmation and cloud rollout pending"
+categories = "ORDER=either actual participant; GENERAL=unlinked; ERRAND historical only"
+response = "opposite participant gets24h; reply or timeout -> READY_FOR_REVIEW; admin decides cancellation"
+legacy = "unresolved ERRAND upgrades once with fresh24h; resolved history preserved; existing bounded scheduler"
+contracts = "mode=participant; reporterRole=PARTICIPANT; additive respondentId/responseExplanation; old wire status/response alias retained"
+consistency = "existing hold/saga and actual requester/courier bindings; normalized compensation preimage preserves deadline"
+resources = "no new SQL migration/topic/flag/index/cloud or User/Credit/Supplier implementation"
+verification = "685 Order+13common;69Report;287frontend;full lint/build/types;9real gateway/saga groups;three local services healthy"
+
+[separate_report_categories_175]
+date = "2026-11-02"
+owner = "Yao Xiang"
+branch = "hfix/report-service"
+status = "verified locally; browser confirmation and staging rollout pending"
+categories = "ORDER=requester; ERRAND=assigned courier; GENERAL=unlinked"
+response = "opposite participant gets24h; existing incoming view and notification; reply/timeout -> admin review"
+duplicates = "one active report per orderId across categories"
+legacy = "keep saved replies/deadlines; legacy Errand gets one missing response window without category conversion"
+consistency = "existing generic respondent/private reply/hold/resolution/compensation retained"
+resources = "no new API/schema/index/topic/env/shared config/cloud; Order application unchanged"
+verification = "70Report full verify/coverage;41affected frontend;full lint/Docker build/types;9real gateway/saga groups;local services healthy"
+
+[pending_response_navigation_176]
+date = "2026-11-02"
+owner = "Yao Xiang"
+branch = "hfix/report-service"
+status = "verified locally; browser confirmation and staging rollout pending"
+behavior = "positive count -> Against me on navigation; zero/unknown -> current report form"
+interaction = "URL-driven user tab navigation; background polling never changes current tab/draft"
+scope = "existing frontend shell/hub/tests/docs only; backend/API/cloud/config unchanged"
+verification = "22affected frontend tests;full lint;Docker build/TypeScript;frontend healthy;both built tab routes200"
+
+[action_eligible_order_toggle_177]
+date = "2026-11-02"
+owner = "Yao Xiang"
+branch = "hfix/report-service"
+status = "verified locally; browser confirmation and staging rollout pending"
+ui = "Supplier-style Action-eligible orders Switch; off default; status synchronization/page1/selection reset"
+contract = "optional admin GET /api/orders actionEligibleOnly=false; true applies5state SQL predicate before count/page"
+meaning = "OPEN/ACCEPTED/IN_PROGRESS/PICKED_UP/DELIVERED including held; existing action guards retained"
+resources = "no new endpoint/schema/index/topic/env/shared config/cloud or sibling backend changes"
+verification = "687Order+13common full verify/coverage;291frontend;full lint/build/TypeScript;Order/frontend healthy;live OpenAPI/401/page smoke checks"
+
+[inline_admin_toggles_178]
+date = "2026-11-02"
+owner = "Yao Xiang"
+branch = "hfix/report-service"
+status = "verified locally; browser confirmation and frontend staging rollout pending"
+layout = "opt-in matching desktop status/search/toggle/actions row; shorter flexible ID input; narrow-screen wrapping"
+reports = "Ready for review toggles existing status; dropdown synchronized; page1/Clear reset"
+scope = "frontend/tests/docs only; no backend/API/config/schema/cloud change"
+verification = "54affected frontend tests;full lint;Docker production build/TypeScript;frontend healthy;Orders/Reports routes200"
+
+[courier_suspension_179]
+date = "2026-11-04"
+owner = "Yao Xiang"
+branch = "hfix/suspended-courier-acceptance"
+status = "automated verification passed; images built; browser and staging rollout pending"
+contract = "User role-context roles retained; isCourierSuspended gates new ACCEPT only; missing flag fails acceptance closed"
+recovery = "owned-status reconciliation before clearing forbidden intent; possible Credit effects require confirmed reversal or compensation"
+scope = "Order/frontend/source/tests/docs only; no sibling backend/schema/topic/env/cloud change"
+verification = "701Order+13common verify;branch81.28/line94.63%;321frontend tests;lint;Order/frontend Docker build and TypeScript;OpenAPI/TOML/whitespace"
+
+
+[admin_courier_suspension_ui_180]
+date = "2026-11-04"
+owner = "Yao Xiang"
+branch = "feat/suspend-unsuspend"
+status = "frontend automated checks passed; image/runtime/browser verification blocked or pending"
+contract = "existing admin-only bodyless User PUT suspension and suspension-removal; matching User response"
+ui = "confirmed conditional Suspend/Unsuspend in Admin user profile; pending/error/inactive guards; existing styling"
+scope = "frontend and Order documentation only; no backend/API/schema/config/cloud changes"
+verification = "11 expected RED failures;52 focused and331 full frontend tests pass;lint/typecheck pass"
+blockers = "Docker engine unresponsive;host build Windows OutOfMemoryException;old local User image lacks Unsuspend;legacy missing-status writes remain separate"
+
+
+[supplier_catalogue_alignment_181]
+date = "2026-11-09"
+owner = "Yao Xiang"
+branch = "hfix/suppplier-not-showing-up"
+status = "implemented; final verification recorded in CHANGE-181"
+current_fix = "create blank image explicit null; actual catalogue type suggestions; interim all-page Order loader superseded by CHANGE-182"
+contracts = "existing authenticated Supplier list/types and admin POST/PATCH; no backend changes"
+proposal = "bounded searchable combobox; indexed backend/cursor design required for huge catalogue; awaiting approval"
+resources = "no schema/topic/env/cloud/data or sibling backend mutations"
+
+
+[supplier_selector_182]
+date = "2026-11-09"
+owner = "Yao Xiang"
+branch = "hfix/suppplier-not-showing-up"
+approval = "user approved optional browse20/search300ms/Show more design"
+implementation = "Order feature SupplierSelector with existing Base UI/Input/Button/useApi; no eager or automatic all-page fetch"
+consistency = "selected ID/label retained; query/page response guards; abort on change/close; retry same failed page"
+contract = "existing Supplier list Page with active status,size20,name asc and optional q; final Order pair validation unchanged"
+supersedes = "CHANGE-181 temporary all-pages Order loader only; null image and catalogue type fixes retained"
+limitations = "Supplier backend still caches findAll/in-memory search; index/cursor redesign not implemented; final build/browser status in CHANGE-182"
+verification = "18focused;354frontend/57files;lint/typecheck pass;production build native out-of-memory;Docker stopped;browser pending"
+[admin_report_resolver_display]
+change = "CHANGE-183"
+status = "implemented;21 focused tests,lint,Next typegen/TypeScript pass;human visual review pending"
+behavior = "Admin Reports Resolution shows saved resolver name/profile link,copyable ID,reply,time;User name enrichment also works without associated Order"
+scope = "Admin frontend presentation only;backend,contracts,saga,concurrency,schema/config unchanged"
+
+[penalty_sequence_185]
+owner = "Yao Xiang"
+branch = "hfix/penalty-event-ordering"
+status = "implemented; local verify/coverage/contracts/wiring pass; human review and coordinated cloud cutover pending"
+contract = "courier-penalty-event; eventVersion2; courierSequence; legacy drain retained"
+
+[penalty_policy_186]
+owner = "Yao Xiang"
+branch = "hfix/penalty-event-ordering"
+status = "implemented; focused Order/common/User verify, frontend tests/lint/types and AsyncAPI pass"
+active = "unresponsive3,wrong-location4,damage4,theft10; ascending admin choices"
+compatibility = "bad-attitude2 retained for saved data/events; no migration or cloud/data mutation"
+report_link_design = "proposed only: visible navigation link plus separate copy icon; no report UI edits"
+
+[admin_identifiers_report_review_187]
+owner = "Yao Xiang"
+branch = "hfix/penalty-event-ordering"
+status = "implemented;363 frontend tests,lint/types and23 isolated Reporting review checks pass"
+ui = "navigation underlined with arrow; copy icon separate; explicit Report Order ID link"
+report_findings = "resolved reservation reuse fixed; stale upload/hold race persists; trusted hold proof missing"
+scope = "Admin frontend plus read-only backend review; no backend behaviour/data/cloud changes"
+
+[admin_link_context_188]
+owner = "Yao Xiang"
+branch = "hfix/penalty-event-ordering"
+status = "implemented;74focused frontend tests,lint,route typegen/TypeScript pass"
+ui = "table hover/focus underline;detail permanent2px underline;no arrows;plain supplier titles;icon-only copy"
+scope = "Admin frontend styling only;backend/API/schema/auth/config unchanged"
+
+[internal_reporting_hold_189]
+owner = "Yao Xiang"
+branch = "hfix/penalty-event-ordering"
+status = "implemented;full Order734/common14/Report111 verify and coverage pass;21 wiring checks pass"
+contract = "PUT /api/orders/internal/report-holds/{orderId}/{reportId};Firebase user plus Reporting Google service proof"
+public_placement = "removed;eligible Order GET unchanged;gateway blocks internal path"
+local = "explicit guarded demo-emulator credential;no Google ADC lookup"
+remaining = "coordinated deploy/IAM smoke;separate stale-upload retry race"

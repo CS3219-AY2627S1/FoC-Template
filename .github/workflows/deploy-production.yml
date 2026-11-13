@@ -1,0 +1,96 @@
+name: Deploy production
+
+# Manual promotion. Deploys the exact images staging verified (no rebuild), using the
+# deploy configuration from the same commit. Protect the "production" GitHub environment
+# with required reviewers so each run needs approval.
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Commit SHA to promote (leave empty for the build currently on staging)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve release
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.resolve.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Load project settings
+        run: grep -E '^[A-Z_]+=' infra/gcp/project.env >> "$GITHUB_ENV"
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - id: resolve
+        name: Resolve commit
+        env:
+          REQUESTED: ${{ inputs.commit }}
+        run: |
+          if [[ -n $REQUESTED ]]; then
+            [[ $REQUESTED =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Use the full 40-character commit SHA."; exit 1; }
+            commit=$REQUESTED
+          else
+            commit=$(scripts/ci/resolve-image-tag.sh staging)
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "Promoting \`$commit\` to production" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy to production
+    needs: resolve
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
+      - name: Load project settings
+        run: grep -E '^[A-Z_]+=' infra/gcp/project.env >> "$GITHUB_ENV"
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Verify cloud infrastructure for production
+        run: scripts/ci/check-infra.sh production
+      - name: Verify images exist for every service
+        env:
+          COMMIT: ${{ needs.resolve.outputs.commit }}
+        run: |
+          missing=0
+          for svc in $(scripts/ci/list-services.sh); do
+            image="$REGION-docker.pkg.dev/$PROJECT_ID/$AR_REPO/$svc:$COMMIT"
+            gcloud artifacts docker images describe "$image" --quiet >/dev/null 2>&1 \
+              || { echo "::error::Missing image $image (was this commit deployed to staging?)"; missing=1; }
+          done
+          exit $missing
+      - id: deploy
+        name: Roll out (health-checked, traffic switched only when healthy)
+        env:
+          COMMIT: ${{ needs.resolve.outputs.commit }}
+        run: scripts/ci/deploy.sh production "$COMMIT"
+      - name: Summary
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+          COMMIT: ${{ needs.resolve.outputs.commit }}
+        run: |
+          {
+            echo "### Production deployed"
+            echo "- Commit: \`$COMMIT\`"
+            echo "- URL: $URL"
+          } >> "$GITHUB_STEP_SUMMARY"

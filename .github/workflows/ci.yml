@@ -1,0 +1,229 @@
+name: CI
+
+# Validates every changed service: tests (Maven or npm, detected per folder) and a Docker
+# build through the service's own Dockerfile. Also reused by the staging deploy.
+on:
+  pull_request:
+  push:
+    branches-ignore: [main] # main is validated by "Deploy staging", which calls this workflow
+  workflow_call:
+    outputs:
+      services:
+        description: JSON array of the services that were validated
+        value: ${{ jobs.changes.outputs.services }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_call' && github.ref != 'refs/heads/main' }}
+
+jobs:
+  changes:
+    name: Detect services
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.list.outputs.services }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: list
+        name: List services to validate
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          REF: ${{ github.ref }}
+        run: |
+          if [[ $EVENT == pull_request ]]; then
+            services=$(scripts/ci/list-services.sh --json --changed-since "origin/$BASE_REF")
+          elif [[ $EVENT == push && $REF != refs/heads/main ]]; then
+            services=$(scripts/ci/list-services.sh --json --changed-since origin/main)
+          else
+            services=$(scripts/ci/list-services.sh --json)
+          fi
+          echo "services=$services" >> "$GITHUB_OUTPUT"
+          echo "Services: $services" >> "$GITHUB_STEP_SUMMARY"
+
+  repo-checks:
+    name: Repository checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Shellcheck CI and infra scripts
+        run: shellcheck -x scripts/ci/*.sh infra/gcp/*.sh
+      - name: Verify shared-library change detection
+        run: bash scripts/ci/test-list-services.sh
+      - name: Test deploy failure handling without credentials
+        run: bash scripts/ci/test-deploy.sh
+      - name: Test Order/Credit compensation cloud wiring without credentials
+        run: python3 scripts/ci/test-order-workflows.py
+      - name: Lint workflows (actionlint)
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          # Published in actionlint_<version>_checksums.txt for the linux_amd64 archive.
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          # The same release's Docker Hub image, pinned by digest. Used when GitHub's release
+          # downloads are down: on 2026-11-08 they returned 504 for most of an hour, which blocked
+          # every PR and the staging deploy.
+          ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        run: |
+          # Download the pinned release with retries (a single network blip used to fail CI),
+          # verify it, and only then run it. If the download fails, run the pinned image instead.
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          if curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o "$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}"; then
+            echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum --check --strict
+            tar -xzf "$archive" actionlint
+            ./actionlint -color
+          else
+            echo "::warning title=actionlint::GitHub release download failed; running ${ACTIONLINT_IMAGE} instead."
+            docker run --rm -v "$PWD:/repo" -w /repo "$ACTIONLINT_IMAGE" -color
+          fi
+      - name: Staging and production define the same settings
+        run: |
+          # A key added to one environment only renders as empty in the other's deploy.
+          if ! diff <(grep -oE '^[A-Z_]+=' infra/environments/staging.env | sort) \
+                    <(grep -oE '^[A-Z_]+=' infra/environments/production.env | sort); then
+            echo "::error::infra/environments/staging.env (<) and production.env (>) must define the same keys."
+            exit 1
+          fi
+      - name: Validate compose.yaml (must work on a fresh clone, without a .env)
+        run: docker compose -f compose.yaml config --quiet
+      - name: Ensure no credentials are committed
+        run: |
+          if git ls-files | grep -Ei '(service-account|serviceaccount|credentials|-sa-key).*\.json$|\.pem$|\.p12$'; then
+            echo "::error::Credential-like files are tracked by git."; exit 1
+          fi
+          if git grep -nE '"type": *"service_account"|-----BEGIN (RSA |EC )?PRIVATE KEY-----' -- . ':!.github/workflows/ci.yml'; then
+            echo "::error::Private key material found in tracked files."; exit 1
+          fi
+
+  infrastructure:
+    name: Cloud infrastructure
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # read-only GCP checks via Workload Identity Federation
+    steps:
+      - uses: actions/checkout@v7
+      - name: Load project settings
+        run: grep -E '^[A-Z_]+=' infra/gcp/project.env >> "$GITHUB_ENV"
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Every service has its identity, databases and access (staging + production)
+        run: scripts/ci/check-infra.sh staging production
+
+  test:
+    name: ${{ matrix.service }}
+    needs: changes
+    if: needs.changes.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    env:
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+    defaults:
+      run:
+        working-directory: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Detect toolchain
+        id: kind
+        run: |
+          if [[ -f pom.xml ]]; then echo "kind=maven" >> "$GITHUB_OUTPUT"
+          elif [[ -f package.json ]]; then echo "kind=node" >> "$GITHUB_OUTPUT"
+          else echo "kind=docker" >> "$GITHUB_OUTPUT"; fi
+
+      # ---- Java / Spring Boot (unit + integration tests, JaCoCo >= 80% gate) ----
+      - if: steps.kind.outputs.kind == 'maven'
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - if: steps.kind.outputs.kind == 'maven'
+        name: Require OpenAPI documentation (AGENTS.md section 6)
+        run: |
+          missing=0
+          grep -q "springdoc-openapi-starter-webmvc-ui" pom.xml \
+            || { echo "::error file=${{ matrix.service }}/pom.xml::Add springdoc-openapi-starter-webmvc-ui: every API must be documented in OpenAPI."; missing=1; }
+          grep -rqs "class OpenApiDocumentationTest" src/test \
+            || { echo "::error::${{ matrix.service }} has no OpenApiDocumentationTest (copy docs/templates/OpenApiDocumentationTest.java)."; missing=1; }
+          exit $missing
+      - if: steps.kind.outputs.kind == 'maven'
+        name: Test (mvn verify)
+        run: |
+          if [[ -f ../pom.xml ]] && grep -q '<artifactId>foc-common</artifactId>' pom.xml; then
+            bash ../mvnw -f ../pom.xml -B -ntp -pl "${PWD##*/}" -am verify
+          else
+            ./mvnw -B -ntp verify
+          fi
+      - if: always() && steps.kind.outputs.kind == 'maven'
+        name: Publish OpenAPI spec
+        uses: actions/upload-artifact@v7
+        with:
+          name: openapi-${{ matrix.service }}
+          path: ${{ matrix.service }}/target/openapi.json
+          if-no-files-found: ignore
+      - if: always() && steps.kind.outputs.kind == 'maven'
+        name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-${{ matrix.service }}
+          path: ${{ matrix.service }}/target/site/jacoco/
+          if-no-files-found: ignore
+
+      # ---- Node / Next.js ------------------------------------------------------
+      - if: steps.kind.outputs.kind == 'node'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ${{ matrix.service }}/package-lock.json
+      - if: steps.kind.outputs.kind == 'node'
+        name: Lint, typecheck and test
+        run: |
+          npm ci --no-audit --no-fund
+          npm run lint --if-present
+          npm run typecheck --if-present
+          npm test --if-present
+
+      # ---- Every service: the Dockerfile must build -----------------------------
+      - uses: docker/setup-buildx-action@v4
+      - name: Docker build context
+        id: context
+        working-directory: .
+        env:
+          SERVICE: ${{ matrix.service }}
+        run: echo "dir=$(scripts/ci/build-context.sh "$SERVICE")" >> "$GITHUB_OUTPUT"
+      - name: Docker build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ steps.context.outputs.dir }}
+          file: ${{ format('{0}/Dockerfile', matrix.service) }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  ci-passed:
+    name: CI passed
+    needs: [changes, repo-checks, infrastructure, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all jobs to succeed (single required check for branch protection)
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for result in $RESULTS; do
+            [[ $result == success || $result == skipped ]] || exit 1
+          done

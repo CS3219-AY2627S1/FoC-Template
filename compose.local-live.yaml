@@ -1,0 +1,29 @@
+# ADR-036: actual local HTTP services and Pub/Sub emulator, never Google Pub/Sub.
+# Use with compose.yaml + compose.http-peers.yaml. No ADC, tunnel or gcloud setup.
+services:
+  order-service:
+    environment:
+      ORDER_PEERS_MODE: http
+      SPRING_PROFILES_ACTIVE: prod
+      FOC_ENVIRONMENT: local
+      ORDER_USER_SERVICE_MODE: http
+      USER_SERVICE_MODE: http
+      ORDER_MESSAGING_MODE: emulator
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: demo-foc-local
+      ORDER_COMPLETION_TOPIC: order-completion-local-v1
+      ORDER_OPEN_REFUND_TOPIC: open-order-refund-local-v1
+
+  credit-service:
+    environment:
+      FOC_ENVIRONMENT: local
+      USER_SERVICE_MODE: http
+      CREDIT_PUBSUB_PUSH_MODE: emulator
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: demo-foc-local
+      CREDIT_ORDER_COMPLETION_SUBSCRIPTION: credit-order-completion-local-v1
+      CREDIT_ORDER_OPEN_REFUND_SUBSCRIPTION: credit-open-order-refund-local-v1
+
+  supplier-service:
+    environment:
+      USER_SERVICE_MODE: http

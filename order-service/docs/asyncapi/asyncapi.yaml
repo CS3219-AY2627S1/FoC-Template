@@ -1,0 +1,747 @@
+asyncapi: 3.0.0
+id: urn:foc:order-service:pubsub
+info:
+  title: Friend on Campus - Order Service Pub/Sub
+  version: 1.8.0
+  description: |
+    Existing lifecycle/penalty contracts plus ADR-055 Credit and ADR-059 Report opt-in compensation request/result.
+    Compensation transport is disabled by default; no cloud deployment is implied.
+    Refund/completion use compact schema v2; penalty add/deduct use eight-field v2 on one sequenced courier topic.
+    Accepted-cancellation publishing/replay is retired (CHANGE-155). Published history is retained.
+    ADR-044 adds admin cancellation refunds and one highest optional addition;
+    addition reasons include report misconduct and COURIER_UNRESPONSIVE at 3 points;
+    COURIER_BAD_ATTITUDE at 2 points remains wire compatibility for saved historical outcomes only.
+    ADR-050 removes admin completion; requester and automatic completion remain.
+    Topic suffix v1 is a resource name, NOT the payload schema version.
+    Order state, checkpoint, receipt and outbox intent commit atomically. Publication is
+    attempted on a bounded background executor immediately after commit, with a separate
+    recovery scan every 15 minutes. After ten failed publish attempts, retain FAILED
+    evidence for explicit ADMIN redrive with the same eventId and payload (ADR-036).
+    Pub/Sub message-ID acknowledgment proves publication, not refund/transfer/penalty completion.
+    At-least-once delivery requires durable consumer deduplication by eventId.
+    No ordering key is set. Deployed subscriptions, retry/dead-letter configuration and
+    live financial/penalty processing are not verified by this documentation.
+defaultContentType: application/json
+servers:
+  googlePubSub:
+    host: pubsub.googleapis.com
+    protocol: googlepubsub
+    description: |
+      Google client transport using the attached Cloud Run service identity in staging
+      and production. Local Docker instead uses the separate emulator server, never ADC.
+      Topic-scoped pubsub.publisher
+      IAM is required. Do not place credentials or Firebase user tokens in message data.
+      Project defaults to protean-vigil-509704-q4 via PUBSUB_PROJECT_ID; topic overrides
+      must be explicitly configured per environment. This is not a browser endpoint.
+  localEmulator:
+    host: pubsub-emulator:8085
+    protocol: googlepubsub
+    description: |
+      ADR-036 local Docker only: demo-foc-local, plaintext gRPC, NoCredentialsProvider.
+      Topics are open-order-refund-local-v1, order-completion-local-v1 and
+      courier-penalty-addition-local-v1,
+      courier-penalty-deduction-local-v1. Only refund/completion have Credit typed
+      push subscriptions. Ordinary application APIs still verify Firebase user JWTs.
+      Emulator delivery does not verify cloud IAM/OIDC or User penalty processing.
+channels:
+  reportCreationCompensationRequest:
+    address: projects/{projectId}/topics/{topicId}
+    description: Reporting rollback request for a fenced or uncertain creation; contains no bearer token or private report text.
+    parameters:
+      projectId: {description: Explicit project for the environment.}
+      topicId: {description: REPORT_CREATION_COMPENSATION_TOPIC.}
+    messages:
+      request: {$ref: '#/components/messages/ReportCreationCompensationRequested'}
+  reportCreationCompensationResult:
+    address: projects/{projectId}/topics/{topicId}
+    description: Order's durable conditional hold-release/tombstone outcome.
+    parameters:
+      projectId: {description: Explicit project for the environment.}
+      topicId: {description: REPORT_CREATION_COMPENSATION_RESULT_TOPIC.}
+    messages:
+      result: {$ref: '#/components/messages/ReportCreationCompensationResult'}
+  reportCompensationRequest:
+    address: projects/{projectId}/topics/{topicId}
+    description: Proposed callback-free Report restore/fence contract; disabled until peer verification. No token or reply in data.
+    parameters:
+      projectId: {description: Explicit PUBSUB_PROJECT_ID.}
+      topicId: {description: Explicit ORDER_REPORT_COMPENSATION_TOPIC; no default.}
+    x-topic-environment-variable: ORDER_REPORT_COMPENSATION_TOPIC
+    messages:
+      request: {$ref: '#/components/messages/ReportResolutionCompensationRequested'}
+  reportCompensationResult:
+    address: projects/{projectId}/topics/{topicId}
+    description: Proposed committed Report reversal/fence result; authenticated dedicated Order push receiver. Broker ACK is not compensation success.
+    parameters:
+      projectId: {description: Explicit PUBSUB_PROJECT_ID.}
+      topicId: {description: Explicit REPORT_COMPENSATION_RESULT_TOPIC; no default.}
+    x-topic-environment-variable: REPORT_COMPENSATION_RESULT_TOPIC
+    messages:
+      result: {$ref: '#/components/messages/ReportResolutionCompensationResult'}
+  compensationRequest:
+    address: projects/{projectId}/topics/{topicId}
+    description: Opt-in durable reversal/fence request; Credit owns the financial decision.
+    parameters:
+      projectId: {description: Explicit PUBSUB_PROJECT_ID for the environment.}
+      topicId: {description: Explicit ORDER_COMPENSATION_REQUEST_TOPIC; no default.}
+    x-topic-environment-variable: ORDER_COMPENSATION_REQUEST_TOPIC
+    messages:
+      request: {$ref: '#/components/messages/CreditCompensationRequested'}
+  compensationResult:
+    address: projects/{projectId}/topics/{topicId}
+    description: |
+      Credit committed result, received at POST /api/orders/internal/credit-compensations.
+      ORDER_COMPENSATION_RESULT_SUBSCRIPTION identifies the exact authorized subscription.
+      Separate Google OIDC identity chain; unsigned push only in gated local demo emulators.
+      ACK only after Order inbox/finalization commit. Duplicates retain their IDs.
+    parameters:
+      projectId: {description: Explicit PUBSUB_PROJECT_ID for the environment.}
+      topicId: {description: Credit's configured CREDIT_COMPENSATION_RESULT_TOPIC.}
+    messages:
+      result: {$ref: '#/components/messages/CreditCompensationResult'}
+  openRefund:
+    address: projects/{projectId}/topics/{topicId}
+    title: OPEN cancellation or expiry refund
+    description: |
+      Intended consumer: Credit Service. Refund the old order's held reservation.
+      Trigger: requester cancels OPEN; eligible unassigned OPEN expires; or an
+      ACCEPTED-only abort becomes EXPIRED after synchronous Credit assignment reset.
+      An abort becoming OPEN does NOT publish this event. Repost reserves a NEW
+      order ID; its predecessor's refund retains the OLD order ID.
+    servers:
+      - $ref: '#/servers/googlePubSub'
+      - $ref: '#/servers/localEmulator'
+    parameters:
+      projectId:
+        description: PUBSUB_PROJECT_ID; actual deployment may override this default.
+        default: protean-vigil-509704-q4
+      topicId:
+        description: ORDER_OPEN_REFUND_TOPIC; use isolated local-live or production overrides.
+        default: open-order-refund-dev-v1
+    x-topic-environment-variable: ORDER_OPEN_REFUND_TOPIC
+    x-intended-consumer: Credit Service
+    messages:
+      refund:
+        $ref: '#/components/messages/OpenOrderRefundTaskEvent'
+  completion:
+    address: projects/{projectId}/topics/{topicId}
+    title: Order completion settlement
+    description: |
+      Intended financial consumer: Credit Service. Settle/transfer the stored reservation.
+      Trigger: requester confirms DELIVERED, or scheduler completes a still-DELIVERED
+      order at least 48 hours after delivery. Admin completion is retired.
+      This compact body has NO overdue/overdueAt; do not infer User penalty policy from it.
+      Penalty decisions are published separately as explicit add/deduct events (ADR-041).
+    servers:
+      - $ref: '#/servers/googlePubSub'
+      - $ref: '#/servers/localEmulator'
+    parameters:
+      projectId:
+        description: PUBSUB_PROJECT_ID.
+        default: protean-vigil-509704-q4
+      topicId:
+        description: ORDER_COMPLETION_TOPIC; explicitly override for the target environment.
+        default: order-completion-dev-v1
+    x-topic-environment-variable: ORDER_COMPLETION_TOPIC
+    x-intended-consumer: Credit Service
+    messages:
+      completed:
+        $ref: '#/components/messages/OrderCompletionTaskEvent'
+  penaltyEvents:
+    address: projects/{projectId}/topics/{topicId}
+    title: Sequenced courier penalty and reward events
+    description: >-
+      Order assigns a per-courier commit sequence atomically with each final scoring outcome/outbox. User
+      durably receives both directions and applies only the next sequence. Gaps are retained and logged; event
+      IDs deduplicate. Legacy separate topics remain drain-only. Requires a coordinated cutover.
+    servers:
+      - $ref: '#/servers/googlePubSub'
+      - $ref: '#/servers/localEmulator'
+    parameters:
+      projectId:
+        description: PUBSUB_PROJECT_ID.
+        default: protean-vigil-509704-q4
+      topicId:
+        description: Unified topic for both event types.
+        default: courier-penalty-event-dev-v1
+    x-topic-environment-variable: ORDER_COURIER_PENALTY_EVENT_TOPIC
+    x-intended-consumer: User Service
+    messages:
+      addition:
+        $ref: '#/components/messages/PenaltyScoreAdditionEvent'
+      deduction:
+        $ref: '#/components/messages/PenaltyScoreDeductionEvent'
+    x-ordering-key: courierId
+operations:
+  receiveReportCreationCompensation:
+    action: receive
+    channel: {$ref: '#/channels/reportCreationCompensationRequest'}
+    messages: [{$ref: '#/channels/reportCreationCompensationRequest/messages/request'}]
+  publishReportCreationCompensationResult:
+    action: send
+    channel: {$ref: '#/channels/reportCreationCompensationResult'}
+    messages: [{$ref: '#/channels/reportCreationCompensationResult/messages/result'}]
+  publishReportCompensation:
+    action: send
+    channel: {$ref: '#/channels/reportCompensationRequest'}
+    messages: [{$ref: '#/channels/reportCompensationRequest/messages/request'}]
+  receiveReportCompensationResult:
+    action: receive
+    channel: {$ref: '#/channels/reportCompensationResult'}
+    messages: [{$ref: '#/channels/reportCompensationResult/messages/result'}]
+  publishCompensation:
+    action: send
+    channel: {$ref: '#/channels/compensationRequest'}
+    messages: [{$ref: '#/channels/compensationRequest/messages/request'}]
+  receiveCompensationResult:
+    action: receive
+    channel: {$ref: '#/channels/compensationResult'}
+    messages: [{$ref: '#/channels/compensationResult/messages/result'}]
+  publishOpenRefund:
+    action: send
+    title: Publish refund task after cancellation or expiry commits
+    channel:
+      $ref: '#/channels/openRefund'
+    messages:
+      - $ref: '#/channels/openRefund/messages/refund'
+  publishCompletion:
+    action: send
+    title: Publish completion task after completion commits
+    channel:
+      $ref: '#/channels/completion'
+    messages:
+      - $ref: '#/channels/completion/messages/completed'
+  publishPenaltyAddition:
+    action: send
+    title: Publish stored courier penalty addition after Order commit
+    channel:
+      $ref: '#/channels/penaltyEvents'
+    messages:
+      - $ref: '#/channels/penaltyEvents/messages/addition'
+  publishPenaltyDeduction:
+    action: send
+    title: Publish stored courier penalty deduction after Order commit
+    channel:
+      $ref: '#/channels/penaltyEvents'
+    messages:
+      - $ref: '#/channels/penaltyEvents/messages/deduction'
+components:
+  correlationIds:
+    eventIdentity:
+      description: |
+        Stable business event identity for deduplication. Generated by Order as a name-based
+        UUID from a bound fingerprint of type, command, Order and actor; penalty IDs also
+        bind recipient and reason. Not the raw frontend command key,
+        and not Google's transport messageId. Same event retains this ID across retries.
+      location: $message.payload#/eventId
+  messages:
+    ReportCreationCompensationRequested:
+      name: ReportCreationCompensationRequested
+      headers:
+        type: object
+        additionalProperties: false
+        required: [eventId, eventType, eventVersion]
+        properties:
+          eventId: {type: string, format: uuid}
+          eventType: {const: ReportCreationCompensationRequested}
+          eventVersion: {const: '1'}
+      payload: {$ref: '#/components/schemas/ReportCreationCompensationRequested'}
+    ReportCreationCompensationResult:
+      name: ReportCreationCompensationResult
+      headers:
+        type: object
+        additionalProperties: false
+        required: [eventId, eventType, eventVersion]
+        properties:
+          eventId: {type: string, format: uuid}
+          eventType: {const: ReportCreationCompensationResult}
+          eventVersion: {const: '1'}
+      payload: {$ref: '#/components/schemas/ReportCreationCompensationResult'}
+    ReportResolutionCompensationRequested:
+      name: ReportResolutionCompensationRequested
+      description: Proposed Report consumer restores only this operation or fences its absent/late execution. No Report implementation is claimed.
+      headers:
+        type: object
+        additionalProperties: false
+        required: [eventId, eventType, eventVersion]
+        properties:
+          eventId: {type: string, format: uuid}
+          eventType: {const: ReportResolutionCompensationRequested}
+          eventVersion: {const: '1'}
+      payload: {$ref: '#/components/schemas/ReportResolutionCompensationRequested'}
+      examples:
+        - headers: {eventId: '33333333-3333-3333-8333-333333333333', eventType: ReportResolutionCompensationRequested, eventVersion: '1'}
+          payload: {eventId: '33333333-3333-3333-8333-333333333333', commandId: report-resolve-K, reportId: report-1, orderId: order-1, requesterId: requester-1, courierId: courier-1, adminId: admin-1, generation: 2}
+    ReportResolutionCompensationResult:
+      name: ReportResolutionCompensationResult
+      description: Report commits conditional restore/fence and result outbox atomically. ACK is sent only after Order inbox commit. Unknown/newer revisions require reconciliation.
+      headers:
+        type: object
+        additionalProperties: false
+        required: [eventId, eventType, eventVersion]
+        properties:
+          eventId: {type: string, format: uuid}
+          eventType: {const: ReportResolutionCompensationResult}
+          eventVersion: {const: '1'}
+      payload: {$ref: '#/components/schemas/ReportResolutionCompensationResult'}
+      examples:
+        - headers: {eventId: '44444444-4444-4444-8444-444444444444', eventType: ReportResolutionCompensationResult, eventVersion: '1'}
+          payload: {eventId: '44444444-4444-4444-8444-444444444444', compensationId: '33333333-3333-3333-8333-333333333333', commandId: report-resolve-K, reportId: report-1, orderId: order-1, requesterId: requester-1, courierId: courier-1, adminId: admin-1, generation: 2, outcome: COMPENSATED, code: REVERSED}
+        - headers: {eventId: '55555555-5555-4555-8555-555555555555', eventType: ReportResolutionCompensationResult, eventVersion: '1'}
+          payload: {eventId: '55555555-5555-4555-8555-555555555555', compensationId: '33333333-3333-3333-8333-333333333333', commandId: report-resolve-K, reportId: report-1, orderId: order-1, requesterId: requester-1, courierId: null, adminId: admin-1, generation: 2, outcome: COMPENSATED, code: FENCED_NO_EFFECT}
+    CreditCompensationRequested:
+      name: CreditCompensationRequested
+      headers:
+        type: object
+        required: [eventId, eventType, eventVersion]
+        properties:
+          eventId: {type: string, format: uuid}
+          eventType: {const: CreditCompensationRequested}
+          eventVersion: {const: '1'}
+      payload: {$ref: '#/components/schemas/CreditCompensationRequested'}
+      examples:
+        - headers: {eventId: '11111111-1111-4111-8111-111111111111', eventType: CreditCompensationRequested, eventVersion: '1'}
+          payload:
+            eventId: '11111111-1111-4111-8111-111111111111'
+            commandId: K
+            operation: RESERVE
+            orderId: '22087f91-26d8-4704-be72-0f7ba5df702b'
+            actorId: requester
+            generation: 2
+            amount: 5
+    CreditCompensationResult:
+      name: CreditCompensationResult
+      headers:
+        type: object
+        required: [eventId, eventType, eventVersion]
+        properties:
+          eventId: {type: string, format: uuid}
+          eventType: {const: CreditCompensationResult}
+          eventVersion: {const: '1'}
+      payload: {$ref: '#/components/schemas/CreditCompensationResult'}
+      examples:
+        - headers: {eventId: '22222222-2222-4222-8222-222222222222', eventType: CreditCompensationResult, eventVersion: '1'}
+          payload:
+            eventId: '22222222-2222-4222-8222-222222222222'
+            compensationId: '11111111-1111-4111-8111-111111111111'
+            commandId: K
+            operation: RESERVE
+            orderId: '22087f91-26d8-4704-be72-0f7ba5df702b'
+            generation: 2
+            outcome: COMPENSATED
+            code: REVERSED
+    PenaltyScoreAdditionEvent:
+      name: PenaltyScoreAdditionEvent
+      contentType: application/json
+      description: >-
+        Eight-field v2 courier score event; positive amount and per-courier source sequence. User enforces
+        sequence across directions.
+      correlationId:
+        $ref: '#/components/correlationIds/eventIdentity'
+      headers:
+        type: object
+        additionalProperties: false
+        required:
+          - eventId
+          - eventType
+          - eventVersion
+        properties:
+          eventId:
+            type: string
+            format: uuid
+          eventType:
+            type: string
+            const: PenaltyScoreAdditionEvent
+          eventVersion:
+            type: string
+            const: '2'
+      payload:
+        $ref: '#/components/schemas/PenaltyScoreAdditionEvent'
+      examples:
+        - headers:
+            eventId: 39b595d0-c954-3a96-b2b1-008688ba3a80
+            eventType: PenaltyScoreAdditionEvent
+            eventVersion: '2'
+          payload:
+            eventId: 39b595d0-c954-3a96-b2b1-008688ba3a80
+            eventType: PenaltyScoreAdditionEvent
+            orderId: order-example
+            courierId: courier-example
+            penaltyAmount: 2
+            occurredAt: '2026-10-14T08:00:00Z'
+            appliedReason: ACCEPTED_TASK_CANCELLATION
+            courierSequence: 1
+        - headers:
+            eventId: 2d9303b6-a1bb-3b16-8eaf-b065419155f7
+            eventType: PenaltyScoreAdditionEvent
+            eventVersion: '2'
+          payload:
+            eventId: 2d9303b6-a1bb-3b16-8eaf-b065419155f7
+            eventType: PenaltyScoreAdditionEvent
+            orderId: order-example
+            courierId: courier-example
+            penaltyAmount: 3
+            occurredAt: '2026-10-16T08:00:00Z'
+            appliedReason: COURIER_UNRESPONSIVE
+            courierSequence: 2
+    PenaltyScoreDeductionEvent:
+      name: PenaltyScoreDeductionEvent
+      contentType: application/json
+      description: >-
+        Eight-field v2 courier score event; positive amount and per-courier source sequence. User enforces
+        sequence across directions.
+      correlationId:
+        $ref: '#/components/correlationIds/eventIdentity'
+      headers:
+        type: object
+        additionalProperties: false
+        required:
+          - eventId
+          - eventType
+          - eventVersion
+        properties:
+          eventId:
+            type: string
+            format: uuid
+          eventType:
+            type: string
+            const: PenaltyScoreDeductionEvent
+          eventVersion:
+            type: string
+            const: '2'
+      payload:
+        $ref: '#/components/schemas/PenaltyScoreDeductionEvent'
+      examples:
+        - headers:
+            eventId: 39b595d0-c954-3a96-b2b1-008688ba3a80
+            eventType: PenaltyScoreDeductionEvent
+            eventVersion: '2'
+          payload:
+            eventId: 39b595d0-c954-3a96-b2b1-008688ba3a80
+            eventType: PenaltyScoreDeductionEvent
+            orderId: order-example
+            courierId: courier-example
+            penaltyAmount: 1
+            occurredAt: '2026-10-14T08:00:00Z'
+            appliedReason: SUCCESSFUL_DELIVERY
+            courierSequence: 3
+    OpenOrderRefundTaskEvent:
+      name: OpenOrderRefundTaskEvent
+      title: Refund task - compact schema v2
+      contentType: application/json
+      description: |
+        Payload is UTF-8 JSON in PubsubMessage.data, not Google's HTTP push wrapper.
+        headers here model the three string-valued Pub/Sub attributes.
+        eventVersion and orderVersion are NOT compact JSON body fields.
+      correlationId:
+        $ref: '#/components/correlationIds/eventIdentity'
+      headers:
+        type: object
+        additionalProperties: false
+        required: [eventId, eventType, eventVersion]
+        properties:
+          eventId: {type: string, format: uuid}
+          eventType: {type: string, const: OpenOrderRefundTaskEvent}
+          eventVersion: {type: string, const: '2'}
+      payload:
+        $ref: '#/components/schemas/OpenOrderRefundTaskEvent'
+      examples:
+        - name: requesterCancelled
+          summary: OPEN cancelled by requester; release its reservation
+          headers:
+            eventId: 439b595d-c954-3a96-b2b1-008688ba3a80
+            eventType: OpenOrderRefundTaskEvent
+            eventVersion: '2'
+          payload:
+            eventId: 439b595d-c954-3a96-b2b1-008688ba3a80
+            eventType: OpenOrderRefundTaskEvent
+            orderId: order-example-old
+            orderStatus: CANCELLED
+            creditAmount: 5
+            occurredAt: '2026-10-10T08:00:00Z'
+            courierId: null
+        - name: expired
+          summary: Deadline reached; same old ID even if a repost is later created
+          headers:
+            eventId: a983f10c-ebbd-3e85-a1c7-bdf20ee9a642
+            eventType: OpenOrderRefundTaskEvent
+            eventVersion: '2'
+          payload:
+            eventId: a983f10c-ebbd-3e85-a1c7-bdf20ee9a642
+            eventType: OpenOrderRefundTaskEvent
+            orderId: order-example-old
+            orderStatus: EXPIRED
+            creditAmount: 5
+            occurredAt: '2026-10-10T09:00:00Z'
+            courierId: null
+    OrderCompletionTaskEvent:
+      name: OrderCompletionTaskEvent
+      title: Completion task - compact schema v2
+      contentType: application/json
+      description: |
+        Seven-field body for both on-time and overdue completion; no overdue field.
+        Only requester/automatic completion produces this event; scoring travels separately.
+        Credit owns financial settlement and validates against its reservation records.
+        Nullable courierId matches the DTO; a valid assigned completion carries its courier.
+      correlationId:
+        $ref: '#/components/correlationIds/eventIdentity'
+      headers:
+        type: object
+        additionalProperties: false
+        required: [eventId, eventType, eventVersion]
+        properties:
+          eventId: {type: string, format: uuid}
+          eventType: {type: string, const: OrderCompletionTaskEvent}
+          eventVersion: {type: string, const: '2'}
+      payload:
+        $ref: '#/components/schemas/OrderCompletionTaskEvent'
+      examples:
+        - name: completed
+          summary: Requester or automatic completion of an assigned delivery
+          headers:
+            eventId: fc1fa18f-a82c-3490-a13e-c6daf0572e55
+            eventType: OrderCompletionTaskEvent
+            eventVersion: '2'
+          payload:
+            eventId: fc1fa18f-a82c-3490-a13e-c6daf0572e55
+            eventType: OrderCompletionTaskEvent
+            orderId: order-example-delivered
+            orderStatus: COMPLETED
+            creditAmount: 5
+            occurredAt: '2026-10-10T10:00:00Z'
+            courierId: courier-example
+  schemas:
+    ReportCreationCompensationRequested:
+      type: object
+      additionalProperties: false
+      required: [eventId, submissionId, reportId, orderId, reporterId, generation]
+      properties:
+        eventId: {type: string, format: uuid}
+        submissionId: {type: string, format: uuid}
+        reportId: {type: string, minLength: 1, maxLength: 128}
+        orderId: {type: string, minLength: 1, maxLength: 36}
+        reporterId: {type: string, minLength: 1, maxLength: 128}
+        generation: {type: integer, const: 2}
+    ReportCreationCompensationResult:
+      type: object
+      additionalProperties: false
+      required: [eventId, compensationId, submissionId, reportId, orderId, reporterId, generation, outcome]
+      properties:
+        eventId: {type: string, format: uuid}
+        compensationId: {type: string, format: uuid}
+        submissionId: {type: string, format: uuid}
+        reportId: {type: string, minLength: 1, maxLength: 128}
+        orderId: {type: string, minLength: 1, maxLength: 36}
+        reporterId: {type: string, minLength: 1, maxLength: 128}
+        generation: {type: integer, const: 2}
+        outcome: {enum: [RELEASED, ALREADY_RELEASED, NOT_FOUND, BINDING_MISMATCH, RECONCILIATION_REQUIRED]}
+    ReportResolutionCompensationRequested:
+      type: object
+      additionalProperties: false
+      required: [eventId, commandId, reportId, orderId, requesterId, courierId, adminId, generation]
+      properties:
+        eventId: {type: string, format: uuid}
+        commandId: {type: string, minLength: 1, maxLength: 128}
+        reportId: {type: string, minLength: 1, maxLength: 128}
+        orderId: {type: string, minLength: 1, maxLength: 36}
+        requesterId: {type: string, minLength: 1, maxLength: 128}
+        courierId: {type: [string, 'null'], minLength: 1, maxLength: 128}
+        adminId: {type: string, minLength: 1, maxLength: 128}
+        generation: {type: integer, const: 2}
+    ReportResolutionCompensationResult:
+      type: object
+      additionalProperties: false
+      required: [eventId, compensationId, commandId, reportId, orderId, requesterId, courierId, adminId, generation, outcome, code]
+      properties:
+        eventId: {type: string, format: uuid}
+        compensationId: {type: string, format: uuid}
+        commandId: {type: string, minLength: 1, maxLength: 128}
+        reportId: {type: string, minLength: 1, maxLength: 128}
+        orderId: {type: string, minLength: 1, maxLength: 36}
+        requesterId: {type: string, minLength: 1, maxLength: 128}
+        courierId: {type: [string, 'null'], minLength: 1, maxLength: 128}
+        adminId: {type: string, minLength: 1, maxLength: 128}
+        generation: {type: integer, const: 2}
+        outcome: {enum: [COMPENSATED, RECONCILIATION_REQUIRED]}
+        code: {type: string, minLength: 1, maxLength: 80}
+      allOf:
+        - if: {properties: {outcome: {const: COMPENSATED}}}
+          then: {properties: {code: {enum: [REVERSED, FENCED_NO_EFFECT]}}}
+    CreditCompensationRequested:
+      type: object
+      additionalProperties: false
+      required: [eventId, commandId, operation, orderId, actorId, generation]
+      properties:
+        eventId: {type: string, format: uuid}
+        commandId: {type: string, minLength: 1, maxLength: 128}
+        operation: {enum: [RESERVE, ASSIGN_COURIER, CLEAR_COURIER]}
+        orderId: {type: string, minLength: 1, maxLength: 36}
+        actorId: {type: string, minLength: 1, maxLength: 128}
+        generation: {type: integer, minimum: 1}
+        amount: {type: integer, minimum: 1}
+      allOf:
+        - if: {properties: {operation: {const: RESERVE}}}
+          then: {required: [amount]}
+          else: {not: {required: [amount]}}
+    CreditCompensationResult:
+      type: object
+      additionalProperties: false
+      required: [eventId, compensationId, commandId, operation, orderId, generation, outcome, code]
+      properties:
+        eventId: {type: string, format: uuid}
+        compensationId: {type: string, format: uuid}
+        commandId: {type: string, minLength: 1, maxLength: 128}
+        operation: {enum: [RESERVE, ASSIGN_COURIER, CLEAR_COURIER]}
+        orderId: {type: string, minLength: 1, maxLength: 36}
+        generation: {type: integer, minimum: 1}
+        outcome: {enum: [COMPENSATED, RECONCILIATION_REQUIRED]}
+        code: {type: string, minLength: 1, maxLength: 80}
+      allOf:
+        - if: {properties: {outcome: {const: COMPENSATED}}}
+          then: {properties: {code: {enum: [REVERSED, FENCED_NO_EFFECT]}}}
+    PenaltyScoreAdditionEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - eventId
+        - eventType
+        - orderId
+        - courierId
+        - penaltyAmount
+        - occurredAt
+        - appliedReason
+        - courierSequence
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+          const: PenaltyScoreAdditionEvent
+        orderId:
+          type: string
+          minLength: 1
+        courierId:
+          type: string
+          minLength: 1
+        penaltyAmount:
+          type: integer
+          enum:
+            - 1
+            - 2
+            - 3
+            - 4
+            - 10
+        occurredAt:
+          type: string
+          format: date-time
+        appliedReason:
+          type: string
+          enum:
+            - ACCEPTED_TASK_CANCELLATION
+            - OVERDUE_DELIVERY
+            - WRONG_LOCATION_DELIVERY
+            - ITEM_MISHANDLING_OR_DAMAGE
+            - DELIBERATE_ITEM_RETENTION_OR_THEFT
+            - COURIER_BAD_ATTITUDE
+            - COURIER_UNRESPONSIVE
+        courierSequence:
+          type: integer
+          minimum: 1
+      oneOf:
+        - properties:
+            appliedReason:
+              const: ACCEPTED_TASK_CANCELLATION
+            penaltyAmount:
+              const: 2
+        - properties:
+            appliedReason:
+              const: OVERDUE_DELIVERY
+            penaltyAmount:
+              const: 1
+        - properties:
+            appliedReason:
+              const: WRONG_LOCATION_DELIVERY
+            penaltyAmount:
+              const: 4
+        - properties:
+            appliedReason:
+              const: ITEM_MISHANDLING_OR_DAMAGE
+            penaltyAmount:
+              const: 4
+        - properties:
+            appliedReason:
+              const: DELIBERATE_ITEM_RETENTION_OR_THEFT
+            penaltyAmount:
+              const: 10
+        - properties:
+            appliedReason:
+              const: COURIER_BAD_ATTITUDE
+            penaltyAmount:
+              const: 2
+        - properties:
+            appliedReason:
+              const: COURIER_UNRESPONSIVE
+            penaltyAmount:
+              const: 3
+    PenaltyScoreDeductionEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - eventId
+        - eventType
+        - orderId
+        - courierId
+        - penaltyAmount
+        - occurredAt
+        - appliedReason
+        - courierSequence
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+          const: PenaltyScoreDeductionEvent
+        orderId:
+          type: string
+          minLength: 1
+        courierId:
+          type: string
+          minLength: 1
+        penaltyAmount:
+          type: integer
+          const: 1
+        occurredAt:
+          type: string
+          format: date-time
+        appliedReason:
+          type: string
+          const: SUCCESSFUL_DELIVERY
+        courierSequence:
+          type: integer
+          minimum: 1
+    OpenOrderRefundTaskEvent:
+      type: object
+      additionalProperties: false
+      required: [eventId, eventType, orderId, orderStatus, creditAmount, occurredAt, courierId]
+      properties:
+        eventId: {type: string, format: uuid}
+        eventType: {type: string, const: OpenOrderRefundTaskEvent}
+        orderId: {type: string, minLength: 1, description: Public business order ID of the reservation to refund.}
+        orderStatus: {type: string, enum: [CANCELLED, EXPIRED]}
+        creditAmount: {type: integer, minimum: 1, description: Order offeredCredits; Credit validates its stored reservation.}
+        occurredAt: {type: string, format: date-time}
+        courierId: {type: [string, 'null']}
+    OrderCompletionTaskEvent:
+      type: object
+      additionalProperties: false
+      required: [eventId, eventType, orderId, orderStatus, creditAmount, occurredAt, courierId]
+      properties:
+        eventId: {type: string, format: uuid}
+        eventType: {type: string, const: OrderCompletionTaskEvent}
+        orderId: {type: string, minLength: 1}
+        orderStatus: {type: string, const: COMPLETED}
+        creditAmount: {type: integer, minimum: 1}
+        occurredAt: {type: string, format: date-time}
+        courierId: {type: [string, 'null'], description: Assigned courier on valid completion.}

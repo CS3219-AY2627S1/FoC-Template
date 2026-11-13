@@ -1,0 +1,46 @@
+---
+config:
+  layout: elk
+---
+flowchart LR
+  subgraph pub["Publisher (via its outbox)"]
+    direction TB
+    o1["Order Service"]:::svc
+    u1["User Service"]:::svc
+    c1["Credit Service"]:::svc
+    r1["Reporting Service"]:::svc
+  end
+  subgraph topics["Pub/Sub topic"]
+    direction TB
+    t1(["order-completion"]):::topic
+    t2(["open-order-refund"]):::topic
+    t3(["credit-command-compensation"]):::topic
+    t4(["courier-penalty-addition / -deduction"]):::topic
+    t5(["report-resolution-compensation"]):::topic
+    t6(["user-created"]):::topic
+    t7(["credit-command-compensation-result"]):::topic
+    t8(["report-resolution-compensation-result"]):::topic
+  end
+  subgraph sub["Subscriber (authenticated push)"]
+    direction TB
+    c2["Credit Service"]:::svc
+    u2["User Service"]:::svc
+    r2["Reporting Service"]:::svc
+    o2["Order Service"]:::svc
+  end
+  o1 --> t1 & t2 & t3 & t4 & t5
+  u1 --> t6
+  c1 --> t7
+  r1 --> t8
+  t1 -- "pay the courier" --> c2
+  t2 -- "refund the requester" --> c2
+  t3 -- "undo an uncertain command" --> c2
+  t6 -- "grant starting credits" --> c2
+  t4 -- "penalty, suspension" --> u2
+  t5 -- "resolve the report" --> r2
+  t7 -- "finish the request" --> o2
+  t8 -- "release the hold" --> o2
+
+  classDef svc fill:#E8F0FE,stroke:#1A73E8,stroke-width:2px,color:#202124
+  classDef topic fill:#FEEFE3,stroke:#E8710A,stroke-width:2px,color:#202124
+  linkStyle default stroke:#E8710A,stroke-width:2px
