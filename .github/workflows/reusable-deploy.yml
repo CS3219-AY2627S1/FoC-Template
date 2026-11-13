@@ -1,0 +1,93 @@
+# Credit: Used template Node.js By GitHub Actions, elements from template aws.yml by By Amazon Web Services was used.
+
+# This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
+
+name: Reusable Service Deploy
+
+on:
+  workflow_call:
+    inputs:
+      service-path:
+        required: true
+        type: string
+
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      AWS_SESSION_TOKEN:
+        required: true
+
+permissions:
+  # id-token: write
+  contents: read
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ap-southeast-1
+      ECR_REPOSITORY: cs3219ay2627s1/p7
+      ECS_SERVICE: ${{ inputs.service-path }} # set this to your Amazon ECS service name
+      ECS_CLUSTER: cs3219-p7 # set this to your Amazon ECS cluster name
+      ECS_TASK_DEFINITION:
+        ${{ inputs.service-path }}/task-definition.json
+        # set this to the path to your Amazon ECS task definition
+        # file, e.g. .aws/task-definition.json
+      CONTAINER_NAME: ${{ inputs.service-path }} # set this to the name of the container in the
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # - name: configure aws credentials
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     role-to-assume: arn:aws:iam::551162198630:role/github-actions-connect
+      #     aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          SERVICE_PATH: ${{ inputs.service-path }}
+        run: |
+          IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY"
+          docker build \
+            -t "$IMAGE:$SERVICE_PATH" \
+            -t "$IMAGE:$SERVICE_PATH-$IMAGE_TAG" \
+            "./$SERVICE_PATH"
+
+          docker push "$IMAGE:$SERVICE_PATH"
+          docker push "$IMAGE:$SERVICE_PATH-$IMAGE_TAG"
+
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.ECS_TASK_DEFINITION }}
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ inputs.service-path }}-${{ github.sha }}
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true

@@ -1,0 +1,16 @@
+name: Notification Service Deploy
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "notification-service/**"
+      - ".github/workflows/notification-service-deploy.yml"
+      - ".github/workflows/reusable-deploy.yml"
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      service-path: "notification-service"
+    secrets: inherit

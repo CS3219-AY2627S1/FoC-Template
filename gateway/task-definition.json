@@ -1,0 +1,60 @@
+{
+   "containerDefinitions": [ 
+      { 
+         "name": "gateway",
+         "essential": true,
+         "image": "551162198630.dkr.ecr.ap-southeast-1.amazonaws.com/cs3219ay2627s1/p7:gateway",
+         "logConfiguration": { 
+            "logDriver": "awslogs",
+            "options": { 
+               "awslogs-group" : "/ecs/gateway",
+               "awslogs-region": "ap-southeast-1",
+               "awslogs-stream-prefix": "ecs"
+            }
+         },
+         "portMappings": [ 
+            { 
+               "containerPort": 8080,
+               "protocol": "tcp"
+            }
+         ],
+         "environment": [
+            {
+               "name": "PORT",
+               "value": "8080"
+            },
+            {
+               "name": "FRONTEND_ORIGIN",
+               "value": "https://d3414od56848h5.cloudfront.net"
+            },
+            {
+               "name": "USER_SERVICE_URL",
+               "value": "http://user-service.cs3219.local:3002"
+            },
+            {
+               "name": "SUPPLIER_SERVICE_URL",
+               "value": "http://supplier-service.cs3219.local:3001"
+            },
+            {
+               "name": "CREDIT_SERVICE_URL",
+               "value": "http://credit-service.cs3219.local:3004"
+            },
+            {
+               "name": "ORDER_SERVICE_URL",
+               "value": "http://order-service.cs3219.local:3003"
+            }
+         ]
+      }
+   ],
+   "cpu": "256",
+   "executionRoleArn": "arn:aws:iam::551162198630:role/ecsTaskExecutionRole",
+   "family": "gateway-task",
+   "memory": "512",
+   "networkMode": "awsvpc",
+   "runtimePlatform": {
+        "operatingSystemFamily": "LINUX"
+    },
+   "requiresCompatibilities": [ 
+       "FARGATE" 
+    ]
+}

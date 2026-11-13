@@ -1,0 +1,54 @@
+# AI Assistance Disclosure:
+# Tool: Claude (Opus 5.5), date: 2026-11-10
+# Scope: RabbitMQ settings so the user service can publish USER_REGISTERED
+# Author review: Reviewed and tested locally
+
+services:
+  user-service-postgres:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:?DB_DATABASE is required}
+      POSTGRES_USER: ${DB_USER:?DB_USER is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    ports:
+      - "${DB_EXTERNAL_PORT:-5434}:5432"
+    volumes:
+      - ./migrations/up:/docker-entrypoint-initdb.d
+      - user_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:?DB_USER is required} -d ${DB_DATABASE:?DB_DATABASE is required}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  user-service-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      user-service-postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "${PORT:-3002}:3002"
+    environment:
+      PORT: ${PORT:-3002}
+      NODE_ENV: ${NODE_ENV:-development}
+      CREDIT_SERVICE_URL: http://credit-service-api:3004
+      DB_HOST: user-service-postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${DB_DATABASE:?DB_DATABASE is required}
+      DB_USER: ${DB_USER:?DB_USER is required}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      # USER_REGISTERED events -> notification service (auto SNS subscribe)
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+
+volumes:
+  user_db_data:
+
+  

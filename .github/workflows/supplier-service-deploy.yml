@@ -1,0 +1,16 @@
+name: Supplier Service Deploy
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "supplier-service/**"
+      - ".github/workflows/supplier-service-deploy.yml"
+      - ".github/workflows/reusable-deploy.yml"
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/reusable-deploy.yml
+    with:
+      service-path: "supplier-service"
+    secrets: inherit

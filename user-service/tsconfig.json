@@ -1,0 +1,22 @@
+// AI Assistance Disclosure:
+// Tool: GitHub Copilot, date: 2026-10-20
+// Scope: Remove User Service's TypeScript dependency on common auth files.
+// Author review: Review pending.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": "src",
+    "outDir": "dist",
+
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "sourceMap": true
+  },
+  "include": ["src/**/*", "src/scripts"],
+  "exclude": ["node_modules", "dist"]
+}

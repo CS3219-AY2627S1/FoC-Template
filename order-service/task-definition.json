@@ -1,0 +1,103 @@
+{
+   "containerDefinitions": [ 
+      { 
+         "name": "order-service",
+         "essential": true,
+         "image": "551162198630.dkr.ecr.ap-southeast-1.amazonaws.com/cs3219ay2627s1/p7:order-service",
+         "logConfiguration": { 
+            "logDriver": "awslogs",
+            "options": { 
+               "awslogs-group" : "/ecs/order-service",
+               "awslogs-region": "ap-southeast-1",
+               "awslogs-stream-prefix": "ecs"
+            }
+         },
+         "portMappings": [ 
+            { 
+               "containerPort": 3003,
+               "protocol": "tcp"
+            }
+         ],
+         "environment": [
+            {
+               "name": "PORT",
+               "value": "3003"
+            },
+            {
+               "name": "CORS_ORIGIN",
+               "value": "https://d3414od56848h5.cloudfront.net"
+            },
+            {
+               "name": "DB_HOST",
+               "value": "cs3219-p7-db.cj0ioumo0c66.ap-southeast-1.rds.amazonaws.com"
+            },
+            {
+               "name": "DB_DATABASE",
+               "value": "order_service"
+            },
+            {
+               "name": "DB_PORT",
+               "value": "5432"
+            },
+            {
+               "name": "DB_SSL",
+               "value": "true"
+            },
+            {
+               "name": "DB_LOGGING",
+               "value": "false"
+            },
+            {
+               "name": "RABBITMQ_PORT",
+               "value": "5671"
+            },
+            {
+               "name": "RABBITMQ_URL",
+               "value": "amqps://b-5ce46c1c-10ae-474d-92a7-f9d2cdb6c436.mq.ap-southeast-1.on.aws:5671"
+            },
+            {
+               "name": "RABBITMQ_EXCHANGE",
+               "value": "orders"
+            },
+            {
+               "name": "CREDIT_SERVICE_URL",
+               "value": "http://credit-service.cs3219.local:3004"
+            }
+         ],
+         "secrets": [
+            {
+               "name": "DB_USER",
+               "valueFrom": "arn:aws:secretsmanager:ap-southeast-1:551162198630:secret:rds!db-f0d18bdc-a5c2-4eb9-b798-5e487ccbda7a-aF5Dvf:username::"
+            },
+            {
+               "name": "DB_PASSWORD",
+               "valueFrom": "arn:aws:secretsmanager:ap-southeast-1:551162198630:secret:rds!db-f0d18bdc-a5c2-4eb9-b798-5e487ccbda7a-aF5Dvf:password::"
+            },
+            {
+               "name": "JWT_SECRET",
+               "valueFrom": "arn:aws:secretsmanager:ap-southeast-1:551162198630:secret:jwt-secret-dJMHAB"
+            },
+            {
+               "name": "RABBITMQ_USER",
+               "valueFrom": "arn:aws:secretsmanager:ap-southeast-1:551162198630:secret:rabbitmq-orders-WHwhLb:username::"
+            },
+            {
+               "name": "RABBITMQ_PASSWORD",
+               "valueFrom": "arn:aws:secretsmanager:ap-southeast-1:551162198630:secret:rabbitmq-orders-WHwhLb:password::"
+            }
+         ]
+         
+      }
+   ],
+   "cpu": "256",
+   "executionRoleArn": "arn:aws:iam::551162198630:role/ecsTaskExecutionRole",
+   "family": "order-service-task",
+   "memory": "512",
+   "networkMode": "awsvpc",
+   "runtimePlatform": {
+        "operatingSystemFamily": "LINUX"
+    },
+   "requiresCompatibilities": [ 
+       "FARGATE" 
+    ]
+}

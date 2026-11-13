@@ -1,0 +1,9 @@
+!package.json
+!package-lock.json
+!common
+!order-service
+
+**/node_modules
+**/.env
+**/data
+**/.git

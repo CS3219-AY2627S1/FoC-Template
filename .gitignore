@@ -13,3 +13,7 @@ out/
 # OS
 .DS_Store
 Thumbs.db
+
+node_modules
+supplier-service/data/postgres
+credit-service/data/postgres

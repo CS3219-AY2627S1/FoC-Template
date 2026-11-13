@@ -1,0 +1,28 @@
+name: Reusable Backend CI
+
+on:
+  workflow_call:
+    inputs:
+      service-path:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./${{ inputs.service-path }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20.18.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.18.0"
+          cache: "npm"
+          cache-dependency-path: "./${{ inputs.service-path }}/package-lock.json"
+      - run: npm ci
+      - run: npm test
+      - run: npm run build

@@ -1,0 +1,71 @@
+{
+   "containerDefinitions": [
+      {
+         "name": "notification-service",
+         "essential": true,
+         "image": "551162198630.dkr.ecr.ap-southeast-1.amazonaws.com/cs3219ay2627s1/p7:notification-service",
+         "logConfiguration": {
+            "logDriver": "awslogs",
+            "options": {
+               "awslogs-group" : "/ecs/notification-service",
+               "awslogs-region": "ap-southeast-1",
+               "awslogs-stream-prefix": "ecs"
+            }
+         },
+         "portMappings": [
+            {
+               "containerPort": 3005,
+               "protocol": "tcp"
+            }
+         ],
+         "environment": [
+            {
+               "name": "PORT",
+               "value": "3005"
+            },
+            {
+               "name": "RABBITMQ_URL",
+               "value": "amqps://b-5ce46c1c-10ae-474d-92a7-f9d2cdb6c436.mq.ap-southeast-1.on.aws:5671"
+            },
+            {
+               "name": "RABBITMQ_EXCHANGE",
+               "value": "orders"
+            },
+            {
+               "name": "APP_URL",
+               "value": "https://d3414od56848h5.cloudfront.net"
+            },
+            {
+               "name": "AWS_REGION",
+               "value": "ap-southeast-1"
+            },
+            {
+               "name": "SNS_TOPIC_ARN",
+               "value": "arn:aws:sns:ap-southeast-1:551162198630:foc-notifications"
+            }
+         ],
+         "secrets": [
+            {
+               "name": "RABBITMQ_USER",
+               "valueFrom": "arn:aws:secretsmanager:ap-southeast-1:551162198630:secret:rabbitmq-orders-WHwhLb:username::"
+            },
+            {
+               "name": "RABBITMQ_PASSWORD",
+               "valueFrom": "arn:aws:secretsmanager:ap-southeast-1:551162198630:secret:rabbitmq-orders-WHwhLb:password::"
+            }
+         ]
+      }
+   ],
+   "cpu": "256",
+   "executionRoleArn": "arn:aws:iam::551162198630:role/ecsTaskExecutionRole",
+   "taskRoleArn": "arn:aws:iam::551162198630:role/notification-service-task-role",
+   "family": "notification-service-task",
+   "memory": "512",
+   "networkMode": "awsvpc",
+   "runtimePlatform": {
+        "operatingSystemFamily": "LINUX"
+    },
+   "requiresCompatibilities": [
+       "FARGATE"
+    ]
+}

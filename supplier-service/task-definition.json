@@ -1,0 +1,74 @@
+{
+   "containerDefinitions": [ 
+      { 
+         "name": "supplier-service",
+         "essential": true,
+         "image": "551162198630.dkr.ecr.ap-southeast-1.amazonaws.com/cs3219ay2627s1/p7:supplier-service",
+         "logConfiguration": { 
+            "logDriver": "awslogs",
+            "options": { 
+               "awslogs-group" : "/ecs/supplier-service",
+               "awslogs-region": "ap-southeast-1",
+               "awslogs-stream-prefix": "ecs"
+            }
+         },
+         "portMappings": [ 
+            { 
+               "containerPort": 3001,
+               "protocol": "tcp"
+            }
+         ],
+         "environment": [
+            {
+               "name": "PORT",
+               "value": "3001"
+            },
+            {
+               "name": "DB_HOST",
+               "value": "cs3219-p7-db.cj0ioumo0c66.ap-southeast-1.rds.amazonaws.com"
+            },
+            {
+               "name": "DB_DATABASE",
+               "value": "supplier_service"
+            },
+            {
+               "name": "DB_PORT",
+               "value": "5432"
+            },
+            {
+               "name": "DB_SSL",
+               "value": "true"
+            },
+            {
+               "name": "CORS_ORIGIN",
+               "value": "https://d3414od56848h5.cloudfront.net"
+            }
+         ],
+         "secrets": [
+            {
+               "name": "DB_USER",
+               "valueFrom": "arn:aws:secretsmanager:ap-southeast-1:551162198630:secret:rds!db-f0d18bdc-a5c2-4eb9-b798-5e487ccbda7a-aF5Dvf:username::"
+            },
+            {
+               "name": "DB_PASSWORD",
+               "valueFrom": "arn:aws:secretsmanager:ap-southeast-1:551162198630:secret:rds!db-f0d18bdc-a5c2-4eb9-b798-5e487ccbda7a-aF5Dvf:password::"
+            },
+            {
+               "name": "JWT_SECRET",
+               "valueFrom": "arn:aws:secretsmanager:ap-southeast-1:551162198630:secret:jwt-secret-dJMHAB"
+            }
+         ]
+      }
+   ],
+   "cpu": "256",
+   "executionRoleArn": "arn:aws:iam::551162198630:role/ecsTaskExecutionRole",
+   "family": "supplier-service-task",
+   "memory": "512",
+   "networkMode": "awsvpc",
+   "runtimePlatform": {
+        "operatingSystemFamily": "LINUX"
+    },
+   "requiresCompatibilities": [ 
+       "FARGATE" 
+    ]
+}

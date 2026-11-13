@@ -1,0 +1,46 @@
+# AI Assistance Disclosure:
+# Tool: GitHub Copilot, date: 2026-10-20
+# Scope: Pass JWT_SECRET into the Supplier Service API container for local token verification.
+# Author review: Review pending.
+
+services:
+  supplier-service-postgres:
+    image: postgres:16
+    restart: always
+    environment:
+      - POSTGRES_DB=${DB_DATABASE}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - ./migrations/up:/docker-entrypoint-initdb.d
+      - ./data/postgres:/var/lib/postgresql/data
+  supplier-service-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - ${PORT:-3001}:3001
+    environment:
+      - DB_USER=${DB_USER}
+      - DB_HOST=supplier-service-postgres
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_PORT=5432
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/api/suppliers/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      supplier-service-postgres:
+        condition: service_healthy

@@ -1,0 +1,47 @@
+# AI Assistance Disclosure:
+# Tool: GitHub Copilot, date: 2026-10-20
+# Scope: Give Credit Service distinct Compose names and configure JWT verification for Gateway integration.
+# Author review: Review pending.
+
+services:
+  credit-service-postgres:
+    image: postgres:16
+    restart: always
+    environment:
+      - POSTGRES_DB=${CREDIT_DB_DATABASE:-credit_service}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "${CREDIT_DB_EXTERNAL_PORT:-5436}:5432"
+    volumes:
+      - ./migrations/up:/docker-entrypoint-initdb.d
+      - credit-postgres-data:/var/lib/postgresql/data
+  credit-service-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "${CREDIT_PORT:-3004}:3004"
+    environment:
+      - PORT=3004
+      - DB_USER=${DB_USER}
+      - DB_HOST=credit-service-postgres
+      - DB_DATABASE=${CREDIT_DB_DATABASE:-credit_service}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_PORT=5432
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      - RABBITMQ_EXCHANGE=${RABBITMQ_EXCHANGE:-orders}
+    depends_on:
+      credit-service-postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+volumes:
+  credit-postgres-data:
