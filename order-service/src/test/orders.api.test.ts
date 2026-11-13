@@ -1,0 +1,1225 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-14
+ * Scope: Generated HTTP integration tests for the Phase A endpoints against PostgreSQL and a stub JWKS.
+ * Author review (Zi Yi): Read in full; ran `npm test` (7 passed) and the `compose.test.yaml` integration tests (27 passed).
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-15
+ * Scope: Added a fake Supplier/Credit server and create (with credit clean-up), edit and accept tests (Phase B).
+ * Author review: Reviewed in full.
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-15
+ * Scope: Added lifecycle, requester cancellation and confirmation tests (Phase C).
+ * Author review: Reviewed
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-16
+ * Scope: Replaced the courier timing-change 403 check with a courier proposal that succeeds.
+ * Author review: Reviewed
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-17
+ * Scope: A fake Credit command producer replaces the fake HTTP release; settlement tests for
+ *        transfers, releases, insufficient credits and Kafka being down (Phase D).
+ * Author review: Reviewed
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-18
+ * Scope: Added expiry worker tests (Phase D).
+ * Author review: Reviewed
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-18
+ * Scope: A fake KafkaProducer replaces the fake CreditCommands; order.events and internal
+ *        active-order lookup tests (Phase D).
+ * Author review: Reviewed
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-19
+ * Scope: Added Phase E tests: one courier accepting two orders at once, expiry racing a timing
+ *        approval, and no history or event for failed transitions.
+ * Author review: Reviewed
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-21
+ * Scope: Added UserSuspended consumer tests and the 403 for a create a suspension cancelled (Phase D).
+ * Author review: Tested by Zi Yi (unit and compose.test.yaml integration tests), 2026-10-21.
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-30
+ * Scope: Added SupplierDeactivated consumer tests (issue #121).
+ * Author review: Reviewed by Zi Yi, 2026-10-30.
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-05
+ * Scope: Added admin read route tests and a skipped UserReactivated event (#181).
+ * Author review: Reviewed by Zi Yi, 2026-11-05.
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-07
+ * Scope: The suspension test expects suspendedUserId in the history entry (#184).
+ * Author review: Reviewed and tested locally by Zi Yi, 2026-11-07.
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-08
+ * Scope: Added chat ticket tests and ORDER_CHAT_TICKET_SECRET (the chat plan).
+ * Author review: Reviewed by Deanson, 2026-11-09.
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-09
+ * Scope: Added the GET /orders/assigned?status= filter test.
+ * Author review: Pending review by Deanson.
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-10
+ * Scope: Proposals publish OrderChangeRequest (#186): updated the two order.events tests that now
+ *        see them, and added tests for its payload, ordering, expiry and resend.
+ * Author review: pending — Jie Yang to record the review.
+ */
+import 'reflect-metadata';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { after, before, beforeEach, test } from 'node:test';
+import type { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { jwtVerify } from 'jose';
+import { Pool } from 'pg';
+import { AppModule, configureApp } from '../app.module';
+import { PG_POOL } from '../db/database.module';
+import { CREDIT_COMMANDS_TOPIC, CreditCommand } from '../integrations/credit.commands';
+import { KafkaProducer } from '../integrations/kafka.producer';
+import { ORDER_EVENTS_TOPIC, OrderChangeEvent, OrderEvent, OrderEvents } from '../integrations/order.events';
+import { runMigrations } from '../db/migrator';
+import { OrdersService } from '../orders/orders.service';
+import { SUPPLIER_EVENTS_DLT, SupplierEvents } from '../integrations/supplier.events';
+import { USER_EVENTS_DLT, UserEvents } from '../integrations/user.events';
+import { startJwksStub, type JwksStub } from './jwks-stub';
+
+const connectionString = process.env.ORDER_TEST_DATABASE_URL;
+if (!connectionString) throw new Error('ORDER_TEST_DATABASE_URL is required for integration tests');
+// A random schema per run, so application tables are never touched.
+const schema = `order_api_test_${randomUUID().replaceAll('-', '')}`;
+const admin = new Pool({ connectionString });
+const pool = new Pool({ connectionString, options: `-c search_path=${schema}` });
+
+const alice = randomUUID(); // requester
+const bob = randomUUID(); // courier
+const carol = randomUUID(); // unrelated user
+const dana = randomUUID(); // admin
+let jwks: JwksStub;
+let app: INestApplication;
+let baseUrl: string;
+const tokens: Record<string, string> = {};
+
+// Fake Supplier (GET /locations/:id) and Credit (POST /internal/credits/reserve) on one server.
+const location = (id: number, name: string, extra: Record<string, unknown> = {}) =>
+  [id, { id, name, lat: 1.2949, lon: 103.7737, status: 'ACTIVE', open_time: null, close_time: null, ...extra }] as const;
+const locations = new Map<number, object>([
+  location(1, 'COM3', { open_time: '0800hrs', close_time: '2000hrs' }),
+  location(2, 'UTown', { lat: 1.305, lon: 103.773 }),
+  location(3, 'Closed Kiosk', { status: 'INACTIVE' }),
+  location(4, 'Early Cafe', { open_time: '0900hrs', close_time: '1000hrs' }),
+  location(5, 'Frontier', { lat: 1.2966, lon: 103.7805 }),
+]);
+let creditStatus = 201;
+let beforeCreditReply: (() => Promise<void>) | undefined; // runs while Order waits on Credit
+let creditCalls: Record<string, unknown>[] = [];
+let supplierAuthorization: string | undefined;
+const downstream = createServer(async (req, res) => {
+  if (req.method === 'GET' && req.url?.startsWith('/locations/')) {
+    supplierAuthorization = req.headers.authorization;
+    const found = locations.get(Number(req.url.split('/')[2]));
+    return res.writeHead(found ? 200 : 404, { 'content-type': 'application/json' }).end(JSON.stringify(found ?? {}));
+  }
+  let body = '';
+  for await (const chunk of req) body += chunk;
+  const action = req.url?.split('/').pop();
+  creditCalls.push({ action, serviceKey: req.headers['x-service-key'], ...JSON.parse(body) });
+  await beforeCreditReply?.();
+  res.writeHead(creditStatus, { 'content-type': 'application/json' }).end('{}');
+});
+
+// Records messages instead of sending them to Kafka; `kafkaDown` makes every send fail.
+let commands: CreditCommand[] = [];
+let events: { key: string; value: any }[] = []; // OrderEvent or OrderChangeEvent
+let deadLetters: { key: string; value: unknown; headers?: Record<string, string> }[] = [];
+let kafkaDown = false;
+class FakeKafkaProducer extends KafkaProducer {
+  async onModuleInit() {}
+  async onModuleDestroy() {}
+  async send(topic: string, key: string, value: object | string, headers?: Record<string, string>) {
+    if (kafkaDown) throw new Error('broker unreachable');
+    if (topic === CREDIT_COMMANDS_TOPIC) commands.push(value as CreditCommand);
+    else if (topic === ORDER_EVENTS_TOPIC) events.push({ key, value: value as OrderEvent | OrderChangeEvent });
+    else if (topic === USER_EVENTS_DLT || topic === SUPPLIER_EVENTS_DLT) deadLetters.push({ key, value, headers });
+    else throw new Error(`unexpected topic ${topic}`);
+  }
+}
+const SERVICE_KEY = 'test-order-service-key-at-least-32-chars';
+const CHAT_TICKET_SECRET = 'test-chat-ticket-secret-at-least-32-chars';
+
+before(async () => {
+  await admin.query(`CREATE SCHEMA ${schema}`);
+  await runMigrations(pool);
+  jwks = await startJwksStub();
+  process.env.ORDER_JWKS_URL = jwks.url;
+  await new Promise<void>((resolve) => downstream.listen(0, '127.0.0.1', resolve));
+  const downstreamUrl = `http://127.0.0.1:${(downstream.address() as AddressInfo).port}`;
+  process.env.ORDER_SUPPLIER_URL = downstreamUrl;
+  process.env.ORDER_CREDIT_URL = downstreamUrl;
+  process.env.ORDER_CREDIT_SERVICE_KEY = 'test-service-key';
+  process.env.ORDER_KAFKA_BROKERS = 'unused:9092'; // the producer is faked
+  process.env.ORDER_SERVICE_KEY = SERVICE_KEY;
+  process.env.ORDER_CHAT_TICKET_SECRET = CHAT_TICKET_SECRET;
+  for (const id of [alice, bob, carol]) tokens[id] = await jwks.sign({ sub: id });
+  tokens[dana] = await jwks.sign({ sub: dana, role: 'ADMIN' });
+
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(PG_POOL)
+    .useValue(pool)
+    .overrideProvider(KafkaProducer)
+    .useClass(FakeKafkaProducer)
+    .compile();
+  app = configureApp(moduleRef.createNestApplication({ logger: false }));
+  await app.listen(0, '127.0.0.1');
+  baseUrl = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+});
+after(async () => {
+  await app.close(); // also ends `pool`
+  await jwks.stop();
+  downstream.close();
+  try { await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); }
+  finally { await admin.end(); }
+});
+beforeEach(async () => {
+  await pool.query('TRUNCATE order_confirmations, order_history, orders');
+  creditStatus = 201;
+  beforeCreditReply = undefined;
+  creditCalls = [];
+  commands = [];
+  events = [];
+  deadLetters = [];
+  kafkaDown = false;
+});
+
+async function insertOrder(overrides: Record<string, unknown> = {}): Promise<string> {
+  const fields = {
+    order_description: 'Collect stationery', requester_id: alice,
+    pickup_location_id: 1, pickup_name: 'COM3', pickup_lat: '1.294900000', pickup_lon: '103.773700000',
+    delivery_location_id: 2, delivery_name: 'UTown', delivery_lat: '1.305000000', delivery_lon: '103.773000000',
+    credit_offer: 3, ...overrides,
+  };
+  const keys = Object.keys(fields);
+  const { rows } = await pool.query(
+    `INSERT INTO orders (${keys.join(',')}) VALUES (${keys.map((_, i) => `$${i + 1}`).join(',')}) RETURNING id`,
+    Object.values(fields),
+  );
+  return rows[0].id;
+}
+
+async function send(method: string, path: string, userId?: string, body?: unknown) {
+  const res = await fetch(baseUrl + path, {
+    method,
+    headers: {
+      ...(userId ? { authorization: `Bearer ${tokens[userId]}` } : {}),
+      ...(body ? { 'content-type': 'application/json' } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return { status: res.status, body: await res.json() };
+}
+const get = (path: string, userId?: string) => send('GET', path, userId);
+const count = async (table: string) => Number((await pool.query(`SELECT count(*) AS n FROM ${table}`)).rows[0].n);
+const row = async (id: string) => (await pool.query('SELECT * FROM orders WHERE id = $1', [id])).rows[0];
+const settleCredits = () => app.get(OrdersService).settleCredits();
+const expireOrders = () => app.get(OrdersService).expireOrders();
+const publishEvents = () => app.get(OrderEvents).publishPending();
+const sent = () => commands.map((c) => [c.type, c.orderId]);
+
+const ids = (body: { items: { id: string }[] }) => body.items.map((o) => o.id);
+
+test('order routes need a token', async () => {
+  const { status, body } = await get('/orders/mine');
+  assert.equal(status, 401);
+  assert.equal(body.error.code, 'TOKEN_INVALID');
+});
+
+test('available lists only unexpired PENDING orders from other requesters', async () => {
+  const open = await insertOrder();
+  await insertOrder({ requester_id: bob }); // bob's own
+  await insertOrder({ window_start: '2020-01-01T00:00Z', window_end: '2020-01-02T00:00Z' }); // expired
+  await insertOrder({ status: 'ACCEPTED', courier_id: carol });
+  const { status, body } = await get('/orders/available', bob);
+  assert.equal(status, 200);
+  assert.deepEqual(ids(body), [open]);
+  assert.equal(body.total, 1);
+});
+
+test('mine and assigned list the caller\'s orders in any status, newest first', async () => {
+  const first = await insertOrder({ created_at: '2026-10-01T00:00Z' });
+  const second = await insertOrder({ status: 'CANCELLED', courier_id: bob, created_at: '2026-10-02T00:00Z' });
+  const third = await insertOrder({ status: 'ACCEPTED', courier_id: bob, created_at: '2026-10-03T00:00Z' });
+  await insertOrder({ requester_id: carol });
+
+  assert.deepEqual(ids((await get('/orders/mine', alice)).body), [third, second, first]);
+  assert.deepEqual(ids((await get('/orders/assigned', bob)).body), [third, second]);
+  assert.deepEqual(ids((await get('/orders/assigned', alice)).body), []);
+});
+
+// AI-generated (pending review by Deanson)
+test('assigned filters by an optional status and counts only the matches', async () => {
+  const done = await insertOrder({ status: 'COMPLETED', courier_id: bob, created_at: '2026-10-01T00:00Z' });
+  const doneLater = await insertOrder({ status: 'COMPLETED', courier_id: bob, created_at: '2026-10-02T00:00Z' });
+  await insertOrder({ status: 'CANCELLED', courier_id: bob });
+  await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  await insertOrder({ status: 'COMPLETED', courier_id: carol });
+
+  const { status, body } = await get('/orders/assigned?status=COMPLETED&page=1&pageSize=1', bob);
+  assert.equal(status, 200);
+  assert.deepEqual(ids(body), [doneLater]);
+  assert.equal(body.total, 2);
+  assert.deepEqual(ids((await get('/orders/assigned?status=COMPLETED', bob)).body), [doneLater, done]);
+  assert.equal((await get('/orders/assigned', bob)).body.total, 4);
+
+  for (const query of ['status=BOGUS', 'status=completed', 'state=COMPLETED']) {
+    const res = await get(`/orders/assigned?${query}`, bob);
+    assert.equal(res.status, 400, query);
+    assert.equal(res.body.error.code, 'VALIDATION_ERROR');
+  }
+});
+
+test('lists paginate and reject invalid paging parameters', async () => {
+  for (let day = 1; day <= 3; day++) await insertOrder({ created_at: `2026-10-0${day}T00:00Z` });
+  const { body } = await get('/orders/mine?page=2&pageSize=2', alice);
+  assert.equal(body.items.length, 1);
+  assert.deepEqual({ page: body.page, pageSize: body.pageSize, total: body.total }, { page: 2, pageSize: 2, total: 3 });
+
+  for (const query of ['pageSize=0', 'pageSize=101', 'status=PENDING']) {
+    const res = await get(`/orders/mine?${query}`, alice);
+    assert.equal(res.status, 400, query);
+    assert.equal(res.body.error.code, 'VALIDATION_ERROR');
+  }
+});
+
+test('order detail is visible to participants, and to anyone while it is available', async () => {
+  const pending = await insertOrder();
+  const accepted = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+
+  const { status, body } = await get(`/orders/${accepted}`, alice);
+  assert.equal(status, 200);
+  assert.equal(body.id, accepted);
+  assert.equal(body.pickupLat, 1.2949); // NUMERIC returned as a JSON number
+  assert.equal(body.version, 1);
+  assert.ok(!('requester_id' in body));
+
+  assert.equal((await get(`/orders/${accepted}`, bob)).status, 200);
+  assert.equal((await get(`/orders/${pending}`, carol)).status, 200);
+  assert.equal((await get(`/orders/${accepted}`, carol)).body.error.code, 'FORBIDDEN');
+  assert.equal((await get(`/orders/${randomUUID()}`, alice)).status, 404);
+  assert.equal((await get('/orders/not-a-uuid', alice)).status, 400);
+});
+
+// AI-generated (Claude Code, 2026-11-08): chat ticket tests (the chat plan).
+test('chat ticket: participants of an active order get a 10-second ticket for that order', async () => {
+  const accepted = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  for (const userId of [bob, alice]) {
+    const { status, body } = await send('POST', `/orders/${accepted}/chat-ticket`, userId);
+    assert.equal(status, 200);
+    const { payload, protectedHeader } = await jwtVerify(body.ticket, new TextEncoder().encode(CHAT_TICKET_SECRET), {
+      audience: 'chat',
+    });
+    assert.equal(protectedHeader.alg, 'HS256');
+    assert.equal(payload.sub, userId);
+    assert.equal(payload.orderId, accepted);
+    assert.equal(payload.exp! - Math.floor(Date.now() / 1000) <= 10, true);
+  }
+});
+
+test('chat ticket: refused for non-participants, inactive orders, missing orders and bad IDs', async () => {
+  const ticket = (id: string, userId?: string) => send('POST', `/orders/${id}/chat-ticket`, userId);
+  const accepted = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  expectError(await ticket(accepted, carol), 403, 'FORBIDDEN');
+  expectError(await ticket(await insertOrder(), alice), 403, 'FORBIDDEN'); // PENDING
+  expectError(await ticket(await insertOrder({ status: 'COMPLETED', courier_id: bob }), bob), 403, 'FORBIDDEN');
+  expectError(await ticket(await insertOrder({ status: 'CANCELLED', courier_id: bob }), alice), 403, 'FORBIDDEN');
+  expectError(await ticket(randomUUID(), alice), 404, 'NOT_FOUND');
+  expectError(await ticket('not-a-uuid', alice), 400, 'VALIDATION_ERROR');
+  expectError(await ticket(accepted), 401, 'TOKEN_INVALID');
+});
+
+test('history is chronological and limited to participants', async () => {
+  const order = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  await pool.query(
+    `INSERT INTO order_history (order_id, actor_id, action, previous_status, new_status, occurred_at) VALUES
+     ($1, $3, 'ACCEPTED', 'PENDING', 'ACCEPTED', '2026-10-02T00:00Z'),
+     ($1, $2, 'CREATED', NULL, 'PENDING', '2026-10-01T00:00Z')`,
+    [order, alice, bob],
+  );
+  const { status, body } = await get(`/orders/${order}/history`, bob);
+  assert.equal(status, 200);
+  assert.deepEqual(body.items.map((h: { action: string }) => h.action), ['CREATED', 'ACCEPTED']);
+  assert.equal(body.items[0].actorId, alice);
+
+  const pending = await insertOrder();
+  assert.equal((await get(`/orders/${pending}/history`, carol)).status, 403);
+});
+
+// ---- Phase B: create, edit, accept ----
+
+const newOrder = (overrides: Record<string, unknown> = {}) => ({
+  orderDescription: 'Collect stationery', pickupLocationId: 1, deliveryLocationId: 2, creditOffer: 3, ...overrides,
+});
+const expectError = (res: { status: number; body: any }, status: number, code: string) => {
+  assert.equal(res.status, status, JSON.stringify(res.body));
+  assert.equal(res.body.error.code, code);
+};
+
+test('create reserves credits, then opens the order as PENDING with snapshots and history', async () => {
+  const { status, body } = await send('POST', '/orders', alice, newOrder());
+  assert.equal(status, 201);
+  assert.equal(body.status, 'PENDING');
+  assert.equal(body.requesterId, alice);
+  assert.equal(body.courierId, null);
+  assert.equal(body.version, 2); // AWAITING_CREDIT → PENDING is an order change
+  assert.deepEqual([body.pickupName, body.deliveryName, body.deliveryLat], ['COM3', 'UTown', 1.305]);
+  assert.equal(Date.parse(body.windowEnd) - Date.parse(body.windowStart), 24 * 60 * 60 * 1000);
+
+  assert.equal(supplierAuthorization, `Bearer ${tokens[alice]}`);
+  assert.deepEqual(creditCalls, [
+    { action: 'reserve', serviceKey: 'test-service-key', orderId: body.id, requesterId: alice, amount: 3 },
+  ]);
+  const history = await get(`/orders/${body.id}/history`, alice);
+  assert.deepEqual(history.body.items.map((h: any) => [h.action, h.actorId, h.newStatus]), [
+    ['CREATED', alice, 'AWAITING_CREDIT'],
+    ['CREDIT_RESERVED', alice, 'PENDING'],
+  ]);
+});
+
+test('create checks pickup hours but never delivery hours', async () => {
+  const window = { windowStart: '2030-01-01T10:30:00+08:00', windowEnd: '2030-01-01T12:00:00+08:00' };
+  const ok = await send('POST', '/orders', alice, newOrder({ ...window, deliveryLocationId: 4 })); // Early Cafe closes 10:00
+  assert.equal(ok.status, 201);
+  assert.equal(ok.body.windowStart, '2030-01-01T02:30:00.000Z');
+
+  const night = { windowStart: '2030-01-01T21:00:00+08:00', windowEnd: '2030-01-01T22:00:00+08:00' };
+  expectError(await send('POST', '/orders', alice, newOrder(night)), 400, 'PICKUP_CLOSED');
+});
+
+test('a failed reservation cancels the order and releases any hold, unless Credit kept nothing', async () => {
+  creditStatus = 409;
+  expectError(await send('POST', '/orders', alice, newOrder()), 409, 'INSUFFICIENT_CREDITS');
+  creditStatus = 500;
+  expectError(await send('POST', '/orders', alice, newOrder()), 503, 'SERVICE_UNAVAILABLE');
+
+  const { rows } = await pool.query('SELECT id, status, credit_settled_at FROM orders ORDER BY created_at');
+  assert.deepEqual(rows.map((r) => [r.status, r.credit_settled_at !== null]), [['CANCELLED', true], ['CANCELLED', true]]);
+  assert.deepEqual(creditCalls.map((c) => c.action), ['reserve', 'reserve']);
+  // Insufficient credits: Credit kept nothing, so only the failed reserve is released.
+  assert.deepEqual(sent(), [['ReleaseCredits', rows[1].id]]);
+  const history = (await get(`/orders/${rows[0].id}/history`, alice)).body.items;
+  assert.deepEqual(history.map((h: any) => [h.action, h.actorId, h.newStatus]), [
+    ['CREATED', alice, 'AWAITING_CREDIT'],
+    ['CANCELLED', null, 'CANCELLED'],
+  ]);
+  assert.deepEqual(history[1].changeDetails, { reason: 'CREDIT_NOT_RESERVED' });
+  assert.equal((await get('/orders/available', bob)).body.total, 0);
+});
+
+test('the settlement job resends commands Kafka did not store and cancels creates that never finished', async () => {
+  creditStatus = 500;
+  kafkaDown = true;
+  expectError(await send('POST', '/orders', alice, newOrder()), 503, 'SERVICE_UNAVAILABLE');
+  const [failed] = (await pool.query('SELECT id FROM orders')).rows;
+  assert.equal((await row(failed.id)).credit_settled_at, null);
+
+  const stale = await insertOrder({ status: 'AWAITING_CREDIT', created_at: new Date(Date.now() - 60_000) });
+  const inFlight = await insertOrder({ status: 'AWAITING_CREDIT' });
+  await settleCredits(); // Kafka still down: resent next run
+  assert.equal((await row(stale)).status, 'CANCELLED');
+  assert.equal((await row(failed.id)).credit_settled_at, null);
+
+  kafkaDown = false;
+  await settleCredits();
+  assert.deepEqual(sent().sort(), [['ReleaseCredits', failed.id], ['ReleaseCredits', stale]].sort());
+  for (const id of [failed.id, stale]) assert.notEqual((await row(id)).credit_settled_at, null);
+  assert.equal((await row(inFlight)).status, 'AWAITING_CREDIT');
+
+  await settleCredits(); // settled orders are not sent again
+  assert.equal(commands.length, 2);
+});
+
+test('create rejects bad locations and invalid bodies before reserving credits', async () => {
+  expectError(await send('POST', '/orders', alice, newOrder({ pickupLocationId: 3 })), 409, 'LOCATION_INACTIVE');
+  expectError(await send('POST', '/orders', alice, newOrder({ deliveryLocationId: 99 })), 404, 'NOT_FOUND');
+  for (const body of [
+    newOrder({ requesterId: bob }),
+    newOrder({ creditOffer: 0 }),
+    newOrder({ creditOffer: 1.5 }),
+    newOrder({ orderDescription: ' ' }),
+    newOrder({ windowStart: '2030-01-02T10:00:00+08:00', windowEnd: '2030-01-02T09:00:00+08:00' }),
+    newOrder({ windowStart: '2020-01-01T10:00:00+08:00', windowEnd: '2020-01-01T11:00:00+08:00' }),
+    newOrder({ windowStart: 'tomorrow' }),
+  ]) {
+    expectError(await send('POST', '/orders', alice, body), 400, 'VALIDATION_ERROR');
+  }
+  assert.deepEqual(creditCalls, []);
+  assert.equal(await count('orders'), 0);
+});
+
+test('requester edit refreshes the snapshot, bumps the version and records old and new values', async () => {
+  const id = await insertOrder();
+  const { status, body } = await send('PATCH', `/orders/${id}`, alice, {
+    version: 1, orderDescription: 'Collect printouts', pickupLocationId: 5,
+  });
+  assert.equal(status, 200);
+  assert.deepEqual([body.version, body.orderDescription, body.pickupName, body.pickupLon], [2, 'Collect printouts', 'Frontier', 103.7805]);
+
+  const [edited] = (await get(`/orders/${id}/history`, alice)).body.items;
+  assert.equal(edited.action, 'EDITED');
+  assert.deepEqual(edited.changeDetails.orderDescription, { from: 'Collect stationery', to: 'Collect printouts' });
+  assert.deepEqual(edited.changeDetails.pickupName, { from: 'COM3', to: 'Frontier' });
+});
+
+test('edit rejects other users, stale versions, non-PENDING orders, credit changes and closed pickup windows', async () => {
+  const id = await insertOrder();
+  const patch = (userId: string, body: unknown) => send('PATCH', `/orders/${id}`, userId, body);
+  expectError(await patch(bob, { version: 1, orderDescription: 'x' }), 403, 'FORBIDDEN');
+  expectError(await patch(alice, { version: 2, orderDescription: 'x' }), 409, 'VERSION_CONFLICT');
+  expectError(await patch(alice, { version: 1, creditOffer: 5 }), 400, 'VALIDATION_ERROR');
+  expectError(await patch(alice, { version: 1 }), 400, 'VALIDATION_ERROR');
+  expectError(
+    await patch(alice, { version: 1, windowStart: '2030-01-01T21:00:00+08:00', windowEnd: '2030-01-01T22:00:00+08:00' }),
+    400, 'PICKUP_CLOSED',
+  );
+  expectError(await patch(alice, { version: 1, deliveryLocationId: 3 }), 409, 'LOCATION_INACTIVE');
+  assert.equal((await get(`/orders/${id}`, alice)).body.version, 1);
+  assert.equal(await count('order_history'), 0);
+
+  const accepted = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  expectError(await send('PATCH', `/orders/${accepted}`, alice, { version: 1, orderDescription: 'x' }), 409, 'INVALID_STATE');
+});
+
+test('courier accept assigns the order and records ACCEPTED history', async () => {
+  const id = await insertOrder();
+  const { status, body } = await send('POST', `/orders/${id}/accept`, bob, { version: 1 });
+  assert.equal(status, 200);
+  assert.deepEqual([body.status, body.courierId, body.version], ['ACCEPTED', bob, 2]);
+  const history = await get(`/orders/${id}/history`, bob);
+  assert.deepEqual(history.body.items.map((h: any) => [h.action, h.actorId]), [['ACCEPTED', bob]]);
+});
+
+test('accept rejects self-acceptance, stale versions, expired orders and busy couriers', async () => {
+  const id = await insertOrder();
+  const accept = (orderId: string, userId: string, version = 1) => send('POST', `/orders/${orderId}/accept`, userId, { version });
+  expectError(await accept(id, alice), 403, 'FORBIDDEN');
+  expectError(await accept(id, bob, 2), 409, 'VERSION_CONFLICT');
+  const expired = await insertOrder({ window_start: '2020-01-01T00:00Z', window_end: '2020-01-02T00:00Z' });
+  expectError(await accept(expired, bob), 409, 'INVALID_STATE');
+
+  await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  expectError(await accept(id, bob), 409, 'COURIER_BUSY');
+  assert.equal((await get(`/orders/${id}`, alice)).body.status, 'PENDING');
+});
+
+test('two couriers accepting at once: exactly one wins', async () => {
+  const id = await insertOrder();
+  const results = await Promise.all([bob, carol].map((userId) => send('POST', `/orders/${id}/accept`, userId, { version: 1 })));
+  assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
+  assert.equal(results.find((r) => r.status === 409)!.body.error.code, 'INVALID_STATE');
+  assert.equal(await count('order_history'), 1);
+});
+
+test('one courier accepting two orders at once gets exactly one', async () => {
+  const first = await insertOrder();
+  const second = await insertOrder();
+  const results = await Promise.all([first, second].map((id) => send('POST', `/orders/${id}/accept`, bob, { version: 1 })));
+  assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
+  assert.equal(results.find((r) => r.status === 409)!.body.error.code, 'COURIER_BUSY');
+  assert.equal(await count('order_history'), 1);
+});
+
+// ---- Phase C: lifecycle, cancellation, confirmations ----
+
+const post = (path: string, userId: string, body: unknown) => send('POST', path, userId, body);
+const history = async (id: string) => (await get(`/orders/${id}/history`, alice)).body.items;
+const confirmations = (id: string) => `/orders/${id}/confirmations`;
+const respond = (id: string, proposal: { body: { id: string } }, userId: string, response: string) =>
+  post(`${confirmations(id)}/${proposal.body.id}/respond`, userId, { response });
+const expiredWindow = { window_start: '2020-01-01T00:00Z', window_end: '2020-01-02T00:00Z' };
+const timingChange = { kind: 'TIMING_CHANGE', windowStart: '2030-01-01T10:00:00+08:00', windowEnd: '2030-01-01T12:00:00+08:00' };
+const nightChange = { kind: 'TIMING_CHANGE', windowStart: '2030-01-01T21:00:00+08:00', windowEnd: '2030-01-01T22:00:00+08:00' };
+
+test('the assigned courier moves an order ACCEPTED → PICKED_UP → IN_PROGRESS → ARRIVED with history', async () => {
+  const id = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  let version = 1;
+  for (const [step, status] of [['pick-up', 'PICKED_UP'], ['start-delivery', 'IN_PROGRESS'], ['arrive', 'ARRIVED']]) {
+    const res = await post(`/orders/${id}/${step}`, bob, { version });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual([res.body.status, res.body.version], [status, ++version]);
+  }
+  assert.deepEqual((await history(id)).map((h: any) => [h.action, h.actorId, h.previousStatus, h.newStatus]), [
+    ['PICKED_UP', bob, 'ACCEPTED', 'PICKED_UP'],
+    ['IN_PROGRESS', bob, 'PICKED_UP', 'IN_PROGRESS'],
+    ['ARRIVED', bob, 'IN_PROGRESS', 'ARRIVED'],
+  ]);
+});
+
+test('lifecycle steps reject other users, skipped or repeated steps, stale versions and ended windows', async () => {
+  const id = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  expectError(await post(`/orders/${id}/pick-up`, alice, { version: 1 }), 403, 'FORBIDDEN');
+  expectError(await post(`/orders/${id}/pick-up`, carol, { version: 1 }), 403, 'FORBIDDEN');
+  expectError(await post(`/orders/${id}/arrive`, bob, { version: 1 }), 409, 'INVALID_STATE'); // skips a step
+  expectError(await post(`/orders/${id}/pick-up`, bob, { version: 2 }), 409, 'VERSION_CONFLICT');
+  expectError(await post(`/orders/${id}/pick-up`, bob, {}), 400, 'VALIDATION_ERROR');
+  assert.equal((await post(`/orders/${id}/pick-up`, bob, { version: 1 })).status, 200);
+  expectError(await post(`/orders/${id}/pick-up`, bob, { version: 2 }), 409, 'INVALID_STATE'); // repeated
+
+  const expired = await insertOrder({ status: 'ACCEPTED', courier_id: carol, ...expiredWindow });
+  expectError(await post(`/orders/${expired}/pick-up`, carol, { version: 1 }), 409, 'INVALID_STATE');
+  assert.equal(await count('order_history'), 1);
+});
+
+test('the same step sent twice at once succeeds exactly once', async () => {
+  const id = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  const results = await Promise.all([1, 2].map(() => post(`/orders/${id}/pick-up`, bob, { version: 1 })));
+  assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
+  assert.equal(await count('order_history'), 1);
+});
+
+test('the requester cancels a PENDING order, even after its window, and the settlement job releases it', async () => {
+  const id = await insertOrder();
+  expectError(await post(`/orders/${id}/cancel`, carol, { version: 1 }), 403, 'FORBIDDEN');
+  const res = await post(`/orders/${id}/cancel`, alice, { version: 1 });
+  assert.deepEqual([res.status, res.body.status, res.body.version], [200, 'CANCELLED', 2]);
+  const [entry] = await history(id);
+  assert.deepEqual([entry.action, entry.actorId, entry.changeDetails], ['CANCELLED', alice, { reason: 'REQUESTER_CANCELLED' }]);
+
+  const expired = await insertOrder(expiredWindow);
+  assert.equal((await post(`/orders/${expired}/cancel`, alice, { version: 1 })).status, 200);
+  await settleCredits();
+  assert.deepEqual(sent().sort(), [['ReleaseCredits', id], ['ReleaseCredits', expired]].sort());
+
+  const accepted = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  expectError(await post(`/orders/${accepted}/cancel`, alice, { version: 1 }), 409, 'INVALID_STATE');
+});
+
+test('completion needs both participants: the second approval completes the order and the job pays the courier', async () => {
+  const id = await insertOrder({ status: 'ARRIVED', courier_id: bob });
+  const proposed = await post(confirmations(id), bob, { kind: 'COMPLETION' });
+  assert.equal(proposed.status, 201);
+  const { proposedBy, status, requesterResponse, courierResponse } = proposed.body;
+  assert.deepEqual([proposedBy, status, requesterResponse, courierResponse], [bob, 'PENDING', 'PENDING', 'ACCEPTED']);
+  assert.equal((await row(id)).version, 1); // proposing does not change the order
+
+  expectError(await post(confirmations(id), alice, { kind: 'CANCELLATION' }), 409, 'CONFIRMATION_PENDING');
+  expectError(await respond(id, proposed, bob, 'ACCEPTED'), 409, 'INVALID_STATE'); // the proposer already accepted
+  expectError(await respond(id, proposed, carol, 'ACCEPTED'), 403, 'FORBIDDEN');
+
+  const approved = await respond(id, proposed, alice, 'ACCEPTED');
+  assert.deepEqual([approved.status, approved.body.status, approved.body.requesterResponse], [200, 'APPROVED', 'ACCEPTED']);
+  assert.notEqual(approved.body.resolvedAt, null);
+  assert.deepEqual([(await row(id)).status, (await row(id)).version], ['COMPLETED', 2]);
+  const [entry] = await history(id);
+  assert.deepEqual([entry.action, entry.actorId, entry.previousStatus, entry.changeDetails], [
+    'COMPLETED', alice, 'ARRIVED', { confirmationId: proposed.body.id },
+  ]);
+
+  expectError(await respond(id, proposed, alice, 'ACCEPTED'), 409, 'INVALID_STATE'); // already APPROVED
+  await settleCredits();
+  assert.deepEqual(commands, [{ type: 'TransferCredits', eventId: commands[0]?.eventId, orderId: id, courierId: bob }]);
+  assert.match(commands[0].eventId, /^[0-9a-f-]{36}$/);
+});
+
+test('proposals check the order state, who proposes and the body', async () => {
+  const pending = await insertOrder();
+  expectError(await post(confirmations(pending), alice, { kind: 'CANCELLATION' }), 409, 'INVALID_STATE');
+  const accepted = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  expectError(await post(confirmations(accepted), bob, { kind: 'COMPLETION' }), 409, 'INVALID_STATE');
+  expectError(await post(confirmations(accepted), carol, { kind: 'CANCELLATION' }), 403, 'FORBIDDEN');
+  for (const body of [
+    { kind: 'TIMING_CHANGE' },
+    { kind: 'COMPLETION', windowStart: timingChange.windowStart },
+    { kind: 'REFUND' },
+    { ...timingChange, windowEnd: timingChange.windowStart },
+  ]) {
+    expectError(await post(confirmations(accepted), alice, body), 400, 'VALIDATION_ERROR');
+  }
+  assert.equal(await count('order_confirmations'), 0);
+});
+
+test('mutual cancellation: a rejection changes nothing, an approval cancels even after the window', async () => {
+  const id = await insertOrder({ status: 'PICKED_UP', courier_id: bob, ...expiredWindow });
+  const first = await post(confirmations(id), alice, { kind: 'CANCELLATION' });
+  const rejected = await respond(id, first, bob, 'REJECTED');
+  assert.deepEqual([rejected.status, rejected.body.status, rejected.body.courierResponse], [200, 'REJECTED', 'REJECTED']);
+  assert.deepEqual([(await row(id)).status, (await row(id)).version], ['PICKED_UP', 1]);
+
+  const second = await post(confirmations(id), bob, { kind: 'CANCELLATION' });
+  assert.equal((await respond(id, second, alice, 'ACCEPTED')).status, 200);
+  assert.deepEqual([(await row(id)).status, (await row(id)).version], ['CANCELLED', 2]);
+  const [entry] = await history(id);
+  assert.deepEqual([entry.action, entry.actorId, entry.previousStatus, entry.changeDetails], [
+    'CANCELLED', alice, 'PICKED_UP', { reason: 'MUTUAL_CANCELLATION', confirmationId: second.body.id },
+  ]);
+  await settleCredits();
+  assert.deepEqual(sent(), [['ReleaseCredits', id]]);
+
+  const list = await get(confirmations(id), bob);
+  assert.deepEqual(list.body.items.map((c: any) => [c.id, c.status]), [[first.body.id, 'REJECTED'], [second.body.id, 'APPROVED']]);
+  assert.equal((await get(confirmations(id), carol)).status, 403);
+});
+
+test('an approved timing change updates the window and is recorded as an edit', async () => {
+  const id = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  expectError(await post(confirmations(id), alice, nightChange), 400, 'PICKUP_CLOSED'); // COM3 closes at 20:00
+  const proposed = await post(confirmations(id), alice, timingChange);
+  assert.equal(proposed.body.proposedWindowStart, '2030-01-01T02:00:00.000Z');
+  assert.equal((await respond(id, proposed, bob, 'ACCEPTED')).status, 200);
+
+  const order = (await get(`/orders/${id}`, alice)).body;
+  assert.deepEqual([order.status, order.windowStart, order.windowEnd, order.version], [
+    'ACCEPTED', '2030-01-01T02:00:00.000Z', '2030-01-01T04:00:00.000Z', 2,
+  ]);
+  const [edited] = await history(id);
+  assert.deepEqual([edited.action, edited.actorId, edited.changeDetails.confirmationId], ['EDITED', bob, proposed.body.id]);
+  assert.equal(edited.changeDetails.windowEnd.to, '2030-01-01T04:00:00.000Z');
+
+  // Once picked up, pickup hours no longer constrain the window. The courier can propose too.
+  await pool.query(`UPDATE orders SET status = 'PICKED_UP' WHERE id = $1`, [id]);
+  const byCourier = await post(confirmations(id), bob, nightChange);
+  assert.deepEqual([byCourier.status, byCourier.body.courierResponse, byCourier.body.requesterResponse], [201, 'ACCEPTED', 'PENDING']);
+});
+
+test('a timing change answered after the current window ends becomes EXPIRED and changes nothing', async () => {
+  const id = await insertOrder({ status: 'IN_PROGRESS', courier_id: bob });
+  const proposed = await post(confirmations(id), alice, timingChange);
+  await pool.query('UPDATE orders SET window_start = $2, window_end = $3 WHERE id = $1', [id, expiredWindow.window_start, expiredWindow.window_end]);
+
+  expectError(await respond(id, proposed, bob, 'ACCEPTED'), 409, 'INVALID_STATE');
+  const [expired] = (await get(confirmations(id), alice)).body.items;
+  assert.equal(expired.status, 'EXPIRED');
+  assert.notEqual(expired.resolvedAt, null);
+  assert.equal((await row(id)).version, 1);
+
+  // An ended window blocks new timing changes, but not a cancellation.
+  expectError(await post(confirmations(id), alice, timingChange), 409, 'INVALID_STATE');
+  assert.equal((await post(confirmations(id), bob, { kind: 'CANCELLATION' })).status, 201);
+});
+
+test('arriving supersedes a pending timing change so completion can be proposed', async () => {
+  const id = await insertOrder({ status: 'IN_PROGRESS', courier_id: bob });
+  const proposed = await post(confirmations(id), alice, timingChange);
+  assert.equal((await post(`/orders/${id}/arrive`, bob, { version: 1 })).status, 200);
+  expectError(await respond(id, proposed, bob, 'ACCEPTED'), 409, 'INVALID_STATE');
+  assert.equal((await get(confirmations(id), alice)).body.items[0].status, 'SUPERSEDED');
+  assert.equal((await post(confirmations(id), bob, { kind: 'COMPLETION' })).status, 201);
+});
+
+test('two approvals of the same proposal at once complete the order exactly once', async () => {
+  const id = await insertOrder({ status: 'ARRIVED', courier_id: bob });
+  const proposed = await post(confirmations(id), bob, { kind: 'COMPLETION' });
+  const results = await Promise.all([1, 2].map(() => respond(id, proposed, alice, 'ACCEPTED')));
+  assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
+  assert.equal(await count('order_history'), 1);
+  assert.equal((await row(id)).version, 2);
+});
+
+// ---- Phase D: expiry worker ----
+
+test('the expiry worker cancels ended orders before ARRIVED, and the settlement job releases them', async () => {
+  const expirable = ['PENDING', 'ACCEPTED', 'PICKED_UP', 'IN_PROGRESS'];
+  const expired = await Promise.all(
+    // Separate couriers: each may hold only one active order.
+    expirable.map((status) => insertOrder({ status, courier_id: status === 'PENDING' ? null : randomUUID(), ...expiredWindow })),
+  );
+  const arrived = await insertOrder({ status: 'ARRIVED', courier_id: bob, ...expiredWindow });
+  const open = await insertOrder({ status: 'ACCEPTED', courier_id: carol });
+  const done = await insertOrder({ status: 'COMPLETED', courier_id: carol, ...expiredWindow });
+
+  await expireOrders();
+  for (const [i, id] of expired.entries()) {
+    assert.deepEqual([(await row(id)).status, (await row(id)).version], ['CANCELLED', 2]);
+    const [entry] = await history(id);
+    assert.deepEqual(
+      [entry.actorId, entry.action, entry.previousStatus, entry.newStatus, entry.changeDetails],
+      [null, 'CANCELLED', expirable[i], 'CANCELLED', { reason: 'EXPIRED' }],
+    );
+  }
+  for (const [id, status] of [[arrived, 'ARRIVED'], [open, 'ACCEPTED'], [done, 'COMPLETED']]) {
+    assert.deepEqual([(await row(id)).status, (await row(id)).version], [status, 1]);
+  }
+
+  await expireOrders(); // nothing left to expire
+  assert.equal(await count('order_history'), 4);
+  await settleCredits();
+  assert.deepEqual(sent().filter(([type]) => type === 'ReleaseCredits').map(([, id]) => id).sort(), [...expired].sort());
+});
+
+test('expiry marks a pending timing change EXPIRED and a pending cancellation SUPERSEDED', async () => {
+  const timed = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  const cancelling = await insertOrder({ status: 'PICKED_UP', courier_id: carol });
+  assert.equal((await post(confirmations(timed), alice, timingChange)).status, 201);
+  assert.equal((await post(confirmations(cancelling), carol, { kind: 'CANCELLATION' })).status, 201);
+  await pool.query('UPDATE orders SET window_start = $1, window_end = $2', [expiredWindow.window_start, expiredWindow.window_end]);
+
+  await expireOrders();
+  const [timing] = (await get(confirmations(timed), alice)).body.items;
+  const [cancellation] = (await get(confirmations(cancelling), alice)).body.items;
+  assert.deepEqual([timing.status, cancellation.status], ['EXPIRED', 'SUPERSEDED']);
+  assert.notEqual(timing.resolvedAt, null);
+  assert.equal((await row(cancelling)).status, 'CANCELLED');
+});
+
+test('expiry waits for a concurrent change and skips the order if it moved on to ARRIVED', async () => {
+  const id = await insertOrder({ status: 'IN_PROGRESS', courier_id: bob, ...expiredWindow });
+  const other = await pool.connect();
+  try {
+    await other.query('BEGIN');
+    await other.query(`UPDATE orders SET status = 'ARRIVED', version = 2 WHERE id = $1`, [id]);
+    const expiring = expireOrders(); // blocks on the row lock
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await other.query('COMMIT');
+    await expiring;
+  } finally {
+    other.release();
+  }
+  assert.equal((await row(id)).status, 'ARRIVED');
+  assert.equal(await count('order_history'), 0);
+});
+
+test('expiry racing a timing approval: whichever commits first wins', async () => {
+  // The approval commits first and moves the window forward, so expiry skips the order.
+  const approved = await insertOrder({ status: 'ACCEPTED', courier_id: bob, ...expiredWindow });
+  const other = await pool.connect();
+  try {
+    await other.query('BEGIN');
+    await other.query(`UPDATE orders SET window_end = now() + interval '1 hour', version = 2 WHERE id = $1`, [approved]);
+    const expiring = expireOrders(); // blocks on the row lock
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await other.query('COMMIT');
+    await expiring;
+  } finally {
+    other.release();
+  }
+  assert.equal((await row(approved)).status, 'ACCEPTED');
+
+  // Expiry commits first, so the later approval is refused and changes nothing.
+  const expired = await insertOrder({ status: 'ACCEPTED', courier_id: carol });
+  const proposed = await post(confirmations(expired), alice, timingChange);
+  await pool.query('UPDATE orders SET window_start = $2, window_end = $3 WHERE id = $1', [expired, expiredWindow.window_start, expiredWindow.window_end]);
+  await expireOrders();
+  expectError(await respond(expired, proposed, carol, 'ACCEPTED'), 409, 'INVALID_STATE');
+  assert.equal((await row(expired)).status, 'CANCELLED');
+  assert.deepEqual((await history(expired)).map((h: any) => h.action), ['CANCELLED']);
+});
+
+// ---- Phase D: order.events ----
+
+const eventTypes = () => events.map((e) => e.value.eventType);
+// Without OrderChangeRequest (#186), for tests about state changes that also leave a proposal behind.
+const stateEventsOnly = () => events.filter((e) => e.value.eventType !== 'OrderChangeRequest');
+
+test('each state change is published once to order.events, in order, keyed by order, with its history ID', async () => {
+  const id = await insertOrder();
+  assert.equal((await post(`/orders/${id}/accept`, bob, { version: 1 })).status, 200);
+  for (const [i, step] of ['pick-up', 'start-delivery', 'arrive'].entries()) {
+    assert.equal((await post(`/orders/${id}/${step}`, bob, { version: i + 2 })).status, 200);
+  }
+  const proposed = await post(confirmations(id), bob, { kind: 'COMPLETION' });
+  assert.equal((await respond(id, proposed, alice, 'ACCEPTED')).status, 200);
+
+  await publishEvents();
+  // The completion proposal and its approval come from order_confirmations (#186); at the same
+  // instant the approval goes before the state change it caused.
+  assert.deepEqual(eventTypes(), [
+    'OrderAccepted', 'OrderPickedUp', 'OrderInProgress', 'OrderArrived',
+    'OrderChangeRequest', 'OrderChangeRequest', 'OrderCompleted',
+  ]);
+  assert.deepEqual(events.filter((e) => e.value.data.outcome).map((e) => e.value.data.outcome), ['CREATED', 'APPROVED']);
+  assert.ok(events.every((e) => e.key === id));
+  const stateEvents = events.filter((e) => e.value.eventType !== 'OrderChangeRequest');
+  assert.deepEqual(stateEvents.map((e) => e.value.eventId), (await history(id)).map((h: { id: string }) => h.id));
+  const completed = events.at(-1)!.value;
+  assert.deepEqual(completed.data, { orderId: id, requesterId: alice, courierId: bob, status: 'COMPLETED' });
+  assert.ok(!Number.isNaN(Date.parse(completed.occurredAt)));
+
+  await publishEvents(); // already published
+  assert.equal(events.length, 7);
+});
+
+test('OrderCancelled carries the reason; a create Credit refused publishes nothing', async () => {
+  const pending = await insertOrder();
+  assert.equal((await post(`/orders/${pending}/cancel`, alice, { version: 1 })).status, 200);
+  const expired = await insertOrder({ status: 'ACCEPTED', courier_id: bob, ...expiredWindow });
+  await expireOrders();
+  creditStatus = 409; // insufficient credits
+  expectError(await post('/orders', alice, newOrder()), 409, 'INSUFFICIENT_CREDITS');
+
+  await publishEvents();
+  assert.deepEqual(events.map((e) => [e.value.eventType, e.value.data.orderId, e.value.data.courierId, e.value.data.reason]), [
+    ['OrderCancelled', pending, null, 'REQUESTER_CANCELLED'],
+    ['OrderCancelled', expired, bob, 'EXPIRED'],
+  ]);
+});
+
+test('events Kafka did not store are resent later with the same event ID', async () => {
+  const id = await insertOrder();
+  assert.equal((await post(`/orders/${id}/accept`, bob, { version: 1 })).status, 200);
+  kafkaDown = true;
+  await publishEvents();
+  assert.equal(events.length, 0);
+  kafkaDown = false;
+  await publishEvents();
+  assert.deepEqual([eventTypes(), events[0].value.eventId], [['OrderAccepted'], (await history(id))[0].id]);
+});
+
+test('failed transitions add no history and publish no event', async () => {
+  const id = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  expectError(await post(`/orders/${id}/pick-up`, carol, { version: 1 }), 403, 'FORBIDDEN');
+  expectError(await post(`/orders/${id}/pick-up`, bob, { version: 2 }), 409, 'VERSION_CONFLICT');
+  expectError(await post(`/orders/${id}/arrive`, bob, { version: 1 }), 409, 'INVALID_STATE');
+  expectError(await post(`/orders/${id}/cancel`, alice, { version: 1 }), 409, 'INVALID_STATE'); // not PENDING
+  assert.equal((await post(`/orders/${id}/pick-up`, bob, { version: 1 })).status, 200);
+  expectError(await post(`/orders/${id}/pick-up`, bob, { version: 2 }), 409, 'INVALID_STATE'); // repeated
+  const proposed = await post(confirmations(id), bob, { kind: 'CANCELLATION' });
+  assert.equal((await respond(id, proposed, alice, 'REJECTED')).status, 200);
+  expectError(await respond(id, proposed, alice, 'ACCEPTED'), 409, 'INVALID_STATE'); // already resolved
+
+  await publishEvents();
+  // The rejected proposal is announced (#186), but adds no history entry.
+  assert.deepEqual(
+    events.map((e) => [e.value.eventType, e.value.data.outcome]),
+    [['OrderPickedUp', undefined], ['OrderChangeRequest', 'CREATED'], ['OrderChangeRequest', 'REJECTED']],
+  );
+  assert.deepEqual((await history(id)).map((h: any) => h.action), ['PICKED_UP']);
+});
+
+// ---- Phase D: internal active-order lookup ----
+
+const lookup = (userId: string, key?: string) =>
+  fetch(`${baseUrl}/internal/orders/users/${userId}/active`, { headers: key ? { 'x-service-key': key } : {} })
+    .then(async (res) => ({ status: res.status, body: await res.json() }));
+
+test('the active-order lookup needs the service key, not a user token', async () => {
+  expectError(await lookup(alice), 401, 'SERVICE_KEY_INVALID');
+  expectError(await lookup(alice, 'wrong-key'), 401, 'SERVICE_KEY_INVALID');
+  expectError(await get(`/internal/orders/users/${alice}/active`, alice), 401, 'SERVICE_KEY_INVALID');
+  expectError(await lookup('not-a-uuid', SERVICE_KEY), 400, 'VALIDATION_ERROR');
+});
+
+test('the active-order lookup counts unfinished orders as requester or courier', async () => {
+  const active = async (userId: string) => (await lookup(userId, SERVICE_KEY)).body;
+  assert.deepEqual(await active(alice), { userId: alice, hasActiveOrders: false });
+
+  await insertOrder({ status: 'COMPLETED', courier_id: bob });
+  await insertOrder({ status: 'CANCELLED' });
+  assert.equal((await active(alice)).hasActiveOrders, false);
+  assert.equal((await active(bob)).hasActiveOrders, false);
+
+  await insertOrder({ status: 'ARRIVED', courier_id: bob, ...expiredWindow }); // ARRIVED never expires
+  assert.equal((await active(alice)).hasActiveOrders, true);
+  assert.equal((await active(bob)).hasActiveOrders, true);
+  assert.equal((await active(carol)).hasActiveOrders, false);
+});
+
+// ---- UserSuspended (user.events) ----
+
+const userEvent = (type: string, userId: string) =>
+  ({ key: userId, value: JSON.stringify({ type, eventId: randomUUID(), userId, occurredAt: new Date().toISOString() }) });
+const suspend = (userId: string) => app.get(UserEvents).handle(userEvent('UserSuspended', userId));
+
+test('UserSuspended cancels every unfinished order the user is on, as requester or courier', async () => {
+  const awaiting = await insertOrder({ status: 'AWAITING_CREDIT' });
+  const pending = await insertOrder();
+  const arrived = await insertOrder({ status: 'ARRIVED', requester_id: carol, courier_id: alice });
+  const completion = await post(confirmations(arrived), alice, { kind: 'COMPLETION' });
+  const done = await insertOrder({ status: 'COMPLETED', courier_id: bob, credit_settled_at: new Date() });
+  const others = await insertOrder({ requester_id: carol });
+
+  await suspend(alice);
+
+  const statuses = async () => Promise.all([awaiting, pending, arrived, done, others].map(async (id) => (await row(id)).status));
+  assert.deepEqual(await statuses(), ['CANCELLED', 'CANCELLED', 'CANCELLED', 'COMPLETED', 'PENDING']);
+  const proposal = (await pool.query('SELECT status FROM order_confirmations WHERE id = $1', [completion.body.id])).rows[0];
+  assert.equal(proposal.status, 'SUPERSEDED');
+  const [entry] = (await history(arrived)).slice(-1);
+  assert.deepEqual([entry.actorId, entry.previousStatus, entry.changeDetails], [null, 'ARRIVED', { reason: 'USER_SUSPENDED', suspendedUserId: alice }]);
+
+  // A repeat changes nothing.
+  const entries = await count('order_history');
+  await suspend(alice);
+  assert.equal(await count('order_history'), entries);
+
+  await settleCredits();
+  assert.deepEqual(sent().sort(), [awaiting, pending, arrived].map((id) => ['ReleaseCredits', id]).sort());
+  // The AWAITING_CREDIT order was never visible, so nobody is told it was cancelled.
+  await publishEvents();
+  assert.deepEqual(stateEventsOnly().map((e) => [e.value.data.orderId, e.value.data.reason]).sort(), [
+    [arrived, 'USER_SUSPENDED'],
+    [pending, 'USER_SUSPENDED'],
+  ].sort());
+});
+
+test('a create cancelled by a suspension while Credit reserves returns 403 and the hold is released', async () => {
+  beforeCreditReply = () => suspend(alice);
+  expectError(await post('/orders', alice, newOrder()), 403, 'USER_SUSPENDED');
+  const { rows } = await pool.query('SELECT id, status FROM orders');
+  assert.deepEqual(rows.map((r) => r.status), ['CANCELLED']);
+  await settleCredits();
+  assert.deepEqual(sent(), [['ReleaseCredits', rows[0].id]]);
+});
+
+test('user.events: other types are skipped, unreadable events go to the dead-letter topic', async () => {
+  const id = await insertOrder();
+  await app.get(UserEvents).handle(userEvent('UserRegistered', alice));
+  await app.get(UserEvents).handle(userEvent('UserReactivated', alice));
+  await app.get(UserEvents).handle({ key: alice, value: '{"type":"UserSuspended","userId":"not-a-uuid"}' });
+  await app.get(UserEvents).handle({ key: alice, value: 'not json' });
+  assert.equal((await row(id)).status, 'PENDING');
+  assert.deepEqual(deadLetters.map((d) => [d.key, d.value, d.headers?.['x-source-topic']]), [
+    [alice, '{"type":"UserSuspended","userId":"not-a-uuid"}', 'user.events'],
+    [alice, 'not json', 'user.events'],
+  ]);
+});
+
+// ---- SupplierDeactivated (supplier.events) ----
+
+const supplierEvent = (eventType: string, locationId: number, occurredAt = new Date()) => ({
+  key: String(locationId),
+  value: JSON.stringify({ eventId: randomUUID(), eventType, occurredAt: occurredAt.toISOString(), data: { locationId } }),
+});
+const deactivate = (locationId: number, occurredAt?: Date) =>
+  app.get(SupplierEvents).handle(supplierEvent('SupplierDeactivated', locationId, occurredAt));
+const courier = () => randomUUID(); // one active order per courier
+
+test('SupplierDeactivated cancels orders delivering to the location, and those picking up there before pickup', async () => {
+  const awaiting = await insertOrder({ status: 'AWAITING_CREDIT' });
+  const pending = await insertOrder({ pickup_location_id: 5, delivery_location_id: 1 }); // delivers there
+  const accepted = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  const cancellation = await post(confirmations(accepted), alice, { kind: 'CANCELLATION' });
+  assert.equal(cancellation.status, 201, JSON.stringify(cancellation.body));
+  const pickedUp = []; // picking up there, already collected
+  const delivering = []; // delivering there, after pickup
+  for (const status of ['PICKED_UP', 'IN_PROGRESS', 'ARRIVED']) {
+    pickedUp.push(await insertOrder({ status, courier_id: courier() }));
+    delivering.push(await insertOrder({ status, courier_id: courier(), pickup_location_id: 5, delivery_location_id: 1 }));
+  }
+  const elsewhere = await insertOrder({ pickup_location_id: 2, delivery_location_id: 5 });
+  const done = await insertOrder({ status: 'COMPLETED', courier_id: carol, credit_settled_at: new Date() });
+
+  await deactivate(1);
+
+  const cancelled = [awaiting, pending, accepted, ...delivering];
+  for (const id of cancelled) assert.equal((await row(id)).status, 'CANCELLED', id);
+  // The courier already has the items, so these carry on.
+  assert.deepEqual(await Promise.all(pickedUp.map(async (id) => (await row(id)).status)), ['PICKED_UP', 'IN_PROGRESS', 'ARRIVED']);
+  assert.equal((await row(elsewhere)).status, 'PENDING');
+  assert.equal((await row(done)).status, 'COMPLETED');
+  const proposal = (await pool.query('SELECT status FROM order_confirmations WHERE id = $1', [cancellation.body.id])).rows[0];
+  assert.equal(proposal.status, 'SUPERSEDED');
+  const [entry] = (await history(accepted)).slice(-1);
+  assert.deepEqual([entry.actorId, entry.previousStatus, entry.changeDetails], [null, 'ACCEPTED', { reason: 'SUPPLIER_DEACTIVATED' }]);
+
+  // A repeat changes nothing.
+  const entries = await count('order_history');
+  await deactivate(1);
+  assert.equal(await count('order_history'), entries);
+
+  await settleCredits();
+  assert.deepEqual(sent().sort(), cancelled.map((id) => ['ReleaseCredits', id]).sort());
+  await publishEvents();
+  // One OrderCancelled per order anyone saw; the AWAITING_CREDIT one was never visible.
+  assert.deepEqual(stateEventsOnly().map((e) => [e.value.data.orderId, e.value.data.reason]).sort(),
+    [pending, accepted, ...delivering].map((id) => [id, 'SUPPLIER_DEACTIVATED']).sort());
+});
+
+test('a replayed SupplierDeactivated leaves orders placed after the event alone', async () => {
+  const deactivatedAt = new Date();
+  const later = await insertOrder({ created_at: new Date(deactivatedAt.getTime() + 60_000) }); // after a restore
+  await deactivate(1, deactivatedAt);
+  assert.equal((await row(later)).status, 'PENDING');
+});
+
+test('a pickup location\'s deactivation racing an accept cancels the order; racing a pick-up, whichever commits first wins', async () => {
+  const open = await insertOrder();
+  const accepted = await insertOrder({ status: 'ACCEPTED', courier_id: carol });
+  const [acceptRes, stepRes] = await Promise.all([
+    post(`/orders/${open}/accept`, bob, { version: 1 }),
+    post(`/orders/${accepted}/pick-up`, carol, { version: 1 }),
+    deactivate(1),
+  ]);
+  // An accept that lands first leaves the order ACCEPTED, which the deactivation still cancels.
+  assert.ok([200, 409].includes(acceptRes.status), JSON.stringify(acceptRes.body));
+  assert.equal((await row(open)).status, 'CANCELLED');
+  // A pick-up that lands first saves the order; otherwise the pick-up is refused.
+  assert.equal((await row(accepted)).status, stepRes.status === 200 ? 'PICKED_UP' : 'CANCELLED');
+  for (const id of [open, accepted]) {
+    const cancels = (await history(id)).filter((h: any) => h.action === 'CANCELLED');
+    assert.equal(cancels.length, (await row(id)).status === 'CANCELLED' ? 1 : 0);
+  }
+});
+
+test('a deactivation waiting on a pick-up skips the order once it is picked up', async () => {
+  const id = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  // Hold the row lock, pick up inside it, and let the deactivation wait on the lock.
+  const client = await pool.connect();
+  await client.query('BEGIN');
+  await client.query('SELECT 1 FROM orders WHERE id = $1 FOR UPDATE', [id]);
+  const deactivation = deactivate(1);
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  await client.query(`UPDATE orders SET status = 'PICKED_UP', version = version + 1 WHERE id = $1`, [id]);
+  await client.query('COMMIT');
+  client.release();
+  await deactivation;
+  assert.equal((await row(id)).status, 'PICKED_UP');
+  assert.equal(await count('order_history'), 0);
+});
+
+test('a create cancelled by a deactivation while Credit reserves returns 409 and the hold is released', async () => {
+  beforeCreditReply = () => deactivate(1);
+  expectError(await post('/orders', alice, newOrder()), 409, 'LOCATION_INACTIVE');
+  const { rows } = await pool.query('SELECT id, status FROM orders');
+  assert.deepEqual(rows.map((r) => r.status), ['CANCELLED']);
+  await settleCredits();
+  assert.deepEqual(sent(), [['ReleaseCredits', rows[0].id]]);
+});
+
+test('supplier.events: other types are skipped, unreadable events go to the dead-letter topic', async () => {
+  const id = await insertOrder();
+  await app.get(SupplierEvents).handle(supplierEvent('SupplierRestored', 1));
+  const bad = '{"eventType":"SupplierDeactivated","eventId":"x","data":{"locationId":1}}';
+  await app.get(SupplierEvents).handle({ key: '1', value: bad });
+  await app.get(SupplierEvents).handle({ key: '1', value: 'not json' });
+  assert.equal((await row(id)).status, 'PENDING');
+  assert.deepEqual(deadLetters.map((d) => [d.key, d.value, d.headers?.['x-source-topic']]), [
+    ['1', bad, 'supplier.events'],
+    ['1', 'not json', 'supplier.events'],
+  ]);
+});
+
+// ---- Admin read routes (#181) ----
+
+const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000);
+
+test('admin routes need an ADMIN token, checked before the query is validated', async () => {
+  const id = await insertOrder();
+  for (const path of ['/admin/orders/overview', '/admin/orders', '/admin/orders?scope=nope', `/admin/orders/${id}/history`]) {
+    expectError(await get(path, alice), 403, 'FORBIDDEN');
+  }
+  expectError(await get('/admin/orders'), 401, 'TOKEN_INVALID');
+});
+
+test('admin overview counts every live state, zeros included, and lists the last hour of cancellations newest first', async () => {
+  await insertOrder();
+  await insertOrder({ requester_id: bob });
+  await insertOrder({ status: 'ARRIVED', courier_id: bob });
+  await insertOrder({ status: 'AWAITING_CREDIT' });
+  await insertOrder({ status: 'COMPLETED', courier_id: bob });
+  const older = await insertOrder({ status: 'CANCELLED', updated_at: minutesAgo(30) });
+  const newer = await insertOrder({ status: 'CANCELLED', updated_at: minutesAgo(5) });
+  await insertOrder({ status: 'CANCELLED', updated_at: minutesAgo(61) });
+
+  const { status, body } = await get('/admin/orders/overview', dana);
+  assert.equal(status, 200);
+  assert.deepEqual(body.live, { total: 3, byState: { PENDING: 2, ACCEPTED: 0, PICKED_UP: 0, IN_PROGRESS: 0, ARRIVED: 1 } });
+  assert.deepEqual(ids({ items: body.recentCancellations }), [newer, older]);
+});
+
+test('admin list filters by scope, state and user as requester or courier, newest first, never AWAITING_CREDIT', async () => {
+  const pending = await insertOrder({ created_at: minutesAgo(1) });
+  const carried = await insertOrder({ status: 'ACCEPTED', requester_id: carol, courier_id: alice, created_at: minutesAgo(2) });
+  const completed = await insertOrder({ status: 'COMPLETED', courier_id: bob, created_at: minutesAgo(3) });
+  const cancelled = await insertOrder({ status: 'CANCELLED', requester_id: carol, created_at: minutesAgo(4) });
+  await insertOrder({ status: 'AWAITING_CREDIT', created_at: minutesAgo(5) });
+
+  const list = async (query: string) => ids((await get(`/admin/orders?${query}`, dana)).body);
+  assert.deepEqual(await list(''), [pending, carried, completed, cancelled]);
+  assert.deepEqual(await list('scope=live'), [pending, carried]);
+  assert.deepEqual(await list('scope=past'), [completed, cancelled]);
+  assert.deepEqual(await list('scope=past&state=CANCELLED'), [cancelled]);
+  assert.deepEqual(await list('state=ACCEPTED'), [carried]);
+  assert.deepEqual(await list(`userId=${alice}`), [pending, carried, completed]);
+  assert.deepEqual(await list(`userId=${bob}&scope=past`), [completed]);
+  assert.deepEqual(await list(`userId=${carol}&scope=live`), [carried]);
+
+  // The same Order shape as /orders/mine.
+  const [mine] = (await get('/orders/mine', alice)).body.items;
+  assert.deepEqual((await get('/admin/orders?state=PENDING', dana)).body.items, [mine]);
+});
+
+test('admin list rejects a state outside its scope and unknown parameters, and pages with correct totals', async () => {
+  for (const query of ['scope=live&state=COMPLETED', 'scope=past&state=PENDING', 'state=AWAITING_CREDIT', 'scope=all', 'userId=nope', 'status=PENDING']) {
+    expectError(await get(`/admin/orders?${query}`, dana), 400, 'VALIDATION_ERROR');
+  }
+  for (let i = 0; i < 5; i++) await insertOrder();
+  await insertOrder({ status: 'AWAITING_CREDIT' });
+  const pages = await Promise.all([1, 2, 3].map(async (page) => (await get(`/admin/orders?pageSize=2&page=${page}`, dana)).body));
+  assert.deepEqual(pages.map((p) => [p.page, p.pageSize, p.total, p.items.length]), [[1, 2, 5, 2], [2, 2, 5, 2], [3, 2, 5, 1]]);
+  assert.equal(new Set(pages.flatMap((p) => ids(p))).size, 5);
+});
+
+test('admin history matches the participant view and carries the cancellation reason; an unknown order is 404', async () => {
+  const id = await insertOrder();
+  await post(`/orders/${id}/cancel`, alice, { version: 1 });
+  const { status, body } = await get(`/admin/orders/${id}/history`, dana);
+  assert.equal(status, 200);
+  assert.deepEqual(body, (await get(`/orders/${id}/history`, alice)).body);
+  assert.deepEqual(body.items.map((h: any) => h.changeDetails), [{ reason: 'REQUESTER_CANCELLED' }]);
+  expectError(await get(`/admin/orders/${randomUUID()}/history`, dana), 404, 'NOT_FOUND');
+  expectError(await get('/admin/orders/not-a-uuid/history', dana), 400, 'VALIDATION_ERROR');
+});
+
+// ---- #186: OrderChangeRequest ----
+
+test('a proposal and its rejection are published once each, with the proposal in the payload', async () => {
+  const id = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  const proposed = await post(confirmations(id), alice, timingChange);
+  assert.equal((await respond(id, proposed, bob, 'REJECTED')).status, 200);
+
+  await publishEvents();
+  assert.equal(events.length, 2);
+  const [created, rejected] = events.map((e) => e.value as OrderChangeEvent);
+  assert.ok(events.every((e) => e.key === id));
+  assert.equal(created.eventId, proposed.body.id);
+  assert.notEqual(rejected.eventId, created.eventId);
+  assert.deepEqual(created.data, {
+    orderId: id,
+    requesterId: alice,
+    courierId: bob,
+    status: 'ACCEPTED',
+    outcome: 'CREATED',
+    confirmationId: proposed.body.id,
+    kind: 'TIMING_CHANGE',
+    proposedBy: alice,
+    proposedWindowStart: '2030-01-01T02:00:00.000Z',
+    proposedWindowEnd: '2030-01-01T04:00:00.000Z',
+  });
+  assert.deepEqual([rejected.eventType, rejected.data.outcome, rejected.data.confirmationId], [
+    'OrderChangeRequest', 'REJECTED', proposed.body.id,
+  ]);
+  assert.ok(Date.parse(rejected.occurredAt) >= Date.parse(created.occurredAt));
+
+  await publishEvents(); // already published
+  assert.equal(events.length, 2);
+});
+
+test('a cancellation proposal carries no window; an approved timing change is published', async () => {
+  const id = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  const timing = await post(confirmations(id), bob, timingChange);
+  assert.equal((await respond(id, timing, alice, 'ACCEPTED')).status, 200);
+  const cancel = await post(confirmations(id), bob, { kind: 'CANCELLATION' });
+
+  await publishEvents();
+  assert.deepEqual(events.map((e) => [e.value.data.kind, e.value.data.outcome, e.value.data.proposedBy]), [
+    ['TIMING_CHANGE', 'CREATED', bob],
+    ['TIMING_CHANGE', 'APPROVED', bob],
+    ['CANCELLATION', 'CREATED', bob],
+  ]);
+  assert.equal(events[2].value.eventId, cancel.body.id);
+  assert.ok(!('proposedWindowStart' in events[2].value.data));
+});
+
+test('an expired timing change is published; a superseded proposal is not', async () => {
+  const late = await insertOrder({ status: 'IN_PROGRESS', courier_id: bob });
+  const proposed = await post(confirmations(late), alice, timingChange);
+  await pool.query('UPDATE orders SET window_start = $2, window_end = $3 WHERE id = $1', [late, expiredWindow.window_start, expiredWindow.window_end]);
+  expectError(await respond(late, proposed, bob, 'ACCEPTED'), 409, 'INVALID_STATE');
+
+  const arriving = await insertOrder({ status: 'IN_PROGRESS', courier_id: carol }); // one active order per courier
+  await post(confirmations(arriving), alice, timingChange);
+  assert.equal((await post(`/orders/${arriving}/arrive`, carol, { version: 1 })).status, 200); // supersedes it
+
+  await publishEvents();
+  assert.deepEqual(events.filter((e) => e.key === late).map((e) => e.value.data.outcome), ['CREATED', 'EXPIRED']);
+  assert.deepEqual(events.filter((e) => e.key === arriving).map((e) => [e.value.eventType, e.value.data.outcome]), [
+    ['OrderChangeRequest', 'CREATED'],
+    ['OrderArrived', undefined],
+  ]);
+});
+
+test('proposal events Kafka did not store are resent with the same event ID', async () => {
+  const id = await insertOrder({ status: 'ACCEPTED', courier_id: bob });
+  const proposed = await post(confirmations(id), alice, { kind: 'CANCELLATION' });
+  kafkaDown = true;
+  await publishEvents();
+  assert.equal(events.length, 0);
+  kafkaDown = false;
+  await publishEvents();
+  assert.deepEqual(events.map((e) => e.value.eventId), [proposed.body.id]);
+});

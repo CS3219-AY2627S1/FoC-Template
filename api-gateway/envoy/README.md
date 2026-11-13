@@ -1,0 +1,132 @@
+<!--
+AI Assistance Disclosure:
+Tool: Codex (model: GPT-6), date: 2026-10-13
+Scope: Document Envoy startup, tests, standard Dockerfile and the approved JWKS failure response exception.
+Author review: User approved stock defaults; generated changes review pending.
+Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-22
+Scope: Listed the Order route file.
+Author review: Pending review by Deanson.
+Scope: Listed the Credit route file (#61).
+Author review: pending — Jie Yang to record the review.
+Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-27
+Scope: Documented the /gateway prefix and the edge listener (#141).
+Author review (Jian Bing, 2026-11-07): Looked through the code and think it's okay.
+Tool: Claude Code (model: Claude Opus 5), date: 2026-11-09
+Scope: Listed the chat and logging route files, and what adding a route file costs the integration
+  harness (#52).
+Author review: pending - Jie Yang owns the gateway's route files.
+-->
+
+# Stock Envoy gateway
+
+The user chose the official Envoy defaults on 2026-10-13. The runtime uses official
+`envoyproxy/envoy:v1.38.6`, pinned by digest in `Dockerfile`. Python renders configuration
+and then replaces itself with Envoy. No helper service, custom compiler, native patch,
+release pipeline or unpublished base image is involved.
+
+## Start from the repository root
+
+```powershell
+docker compose up -d --build --no-deps api-gateway
+```
+
+Use `docker compose up -d --build` if User/Supplier are not already running. The gateway
+keeps port 3003 and the frontend's `api-gateway:3003` address. Health is at `/health`.
+The first build downloads the image and installs Python; subsequent builds cache that
+layer. Editing the renderer, route files or Lua header filter only copies those files.
+
+## Route files
+
+`render.py` reads `routes/*.routes.json` in filename order. The User routes live in
+`10-user.routes.json`, Supplier routes in `20-supplier.routes.json`, Order routes
+(approved by Jie Yang, 2026-10-22; never `/internal/**`) in `30-order.routes.json`, and
+Credit's balance and history reads in `40-credit.routes.json` (Credit's `/internal` and
+`/admin` routes are not routed). `50-chat.routes.json` holds the public chat socket, and
+`50-logging.routes.json` the log store's one ADMIN-only read, `GET /logs` (#52): authentication is
+this gateway's, while the ADMIN check stays in the service, and the store's ingest is Kafka rather
+than HTTP, so nothing else of it is routed.
+Each file declares a `service` (upstream cluster name), `urlEnv` (the service URL's
+environment variable), and a `routes` array. JSON files carry their AI disclosure
+in the first `_disclosure` field because JSON does not support comments.
+
+Each route has a `method` and either an exact `path` or a `regex`. JWT authentication
+is required unless `"public": true` is explicitly set. Paths are forwarded unchanged;
+regex matching does not rewrite them. Declared `prefixes` support placeholders such
+as `{auth}`, `{locations}` and `{orders}` using an environment variable and a default value.
+The renderer escapes substituted prefixes in regex routes. Health and the final
+404 response remain shared renderer configuration.
+
+A new route file's `urlEnv` is **required**: the renderer refuses to start without it, so adding one
+means adding that variable to `compose.yaml`, to `.env.example`, and to the environment
+`test/envoy.integration.mjs` starts Envoy with. Omitting the last one fails all 29 integration tests
+at once while the unit suite, which builds its own environment, still passes.
+
+Every route is also served under `/gateway` (for example `/gateway/locations`), with the prefix
+removed before forwarding. That is the public API path on AWS, and Postman uses it locally too, so
+only `baseUrl` differs. Unprefixed paths stay for the frontend's server-side calls. `/internal/**`
+is not routed under either form.
+
+For an additional service with team-approved endpoints, add another `*.routes.json`
+file and set its `urlEnv` variable in the gateway Compose environment and
+`.env.example`. Keep the service reachable on the Compose network, add integration
+and Postman coverage, then rebuild/restart the gateway. No renderer changes are
+needed for ordinary routes. File and array order determine precedence; put specific
+routes before broader regex routes. Missing URLs, duplicate service names and
+malformed route definitions fail startup rather than being silently ignored.
+
+Run the route-loader tests from the repository root:
+
+```powershell
+python api-gateway/test/envoy_routes_test.py
+```
+
+## Edge listener (AWS)
+
+On AWS, CloudFront sends every request to a second listener, turned on by `GATEWAY_EDGE_PORT`
+(8080 in the container, published as the server's port 80). Locally it stays off.
+
+- Every request must carry CloudFront's `X-Origin-Key` header with the value of
+  `GATEWAY_ORIGIN_KEY` (at least 32 characters). Without it the answer is `403 {"error":"Forbidden"}`,
+  including `/health`. The header is removed before forwarding.
+- `/gateway/*` goes to the API routes with the prefix removed. Unknown `/gateway` paths get the JSON 404.
+- Every other path goes to the frontend at `FRONTEND_URL`. That route keeps `Cookie` and `Host`
+  (the frontend's session and origin checks need them), removes `X-User-Id`, `X-User-Role` and
+  `X-Forwarded-*`, then sets `X-Forwarded-Proto` from CloudFront's `CloudFront-Forwarded-Proto`
+  (`frontend.lua`). API routes keep using `compatibility.lua`.
+- The listener never redirects to HTTPS: CloudFront already did, and talks plain HTTP to it.
+
+Startup fails if `GATEWAY_EDGE_PORT` is set without a valid key or frontend URL, or equals `GATEWAY_PORT`.
+
+## Verify accepted behaviour
+
+```powershell
+cd api-gateway
+node --test --test-concurrency=1 test/envoy.integration.mjs
+```
+
+Tests require Node.js 20+ and Docker and use only built-in Node modules; no npm
+install or TypeScript build is needed. They use ephemeral signing keys and isolated
+upstreams to verify routing and the accepted stock Envoy behavior. See
+[behaviour differences](behaviour-differences.md). Two test Supplier replicas demonstrate
+round-robin balancing; the main stack still has one instance per service.
+
+## Migration history
+
+The legacy Node gateway, its tests, npm manifests, Dockerfile and rollback Compose
+file were removed at the user's request after the Envoy checks passed. Historical
+comparison results remain in the behaviour-differences document and Git history.
+
+## JWKS availability failures
+
+JWT failure metadata drives a response-status override in `compatibility.lua`:
+fetch failures, malformed/missing/non-array keys and empty/no-valid-key sets return
+503 text. The original verifier error body remains unchanged. Unknown key IDs,
+invalid signatures and expired tokens retain their authentication errors. Service
+401 responses are unaffected. The frontend treats 503 as a temporary failure and
+preserves existing or successfully rotated session cookies. Its BFF currently
+presents non-JSON profile errors as 500 initially or 502 after rotation; session
+preservation is verified separately from that browser error status.
+
+The status-code mapping is verified on pinned Envoy 1.38.6; rerun the gateway and
+frontend session tests when upgrading. This is an explicit user-approved exception
+to stock Envoy defaults, requiring no custom binary or helper service.

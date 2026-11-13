@@ -1,0 +1,119 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: Claude Code (model: Claude Opus 5), date: 2026-09-28
+ * Scope: Replaced the dev-only header guard with JWT verification against the User Service's
+ *        JWKS, keeping the @Roles decorator and the logging of denied attempts.
+ * Author review (Cole Lin): Read in full; ran it with Postman and checked the 401 and 403 cases, including that dev headers are ignored when a token is sent.
+ * Tool: Claude Code (model: Claude Opus 5), date: 2026-10-11
+ * Scope: Added the requestId field to the access_denied log line.
+ * Tool: Claude Code (model: Claude Opus 5), date: 2026-10-16
+ * Scope: After the PR #90 review: log the path without its query string, and keep the JWKS
+ *        failure message out of the structured line.
+ * Author review (Cole Lin): Read in full; confirmed the denial and error lines carry the id, that
+ *        no token or failure message appears in them, and that the logged path has no query string.
+ * Tool: Claude Code (model: Claude Opus 5), date: 2026-10-21
+ * Scope: Emit the denial and JWKS lines through the shipper, so they carry lineId, ts and
+ *        service and the Logging Service can store them (issue #52).
+ * Author review: Cole Lin, read and approved.
+ */
+import { CanActivate, ExecutionContext, Injectable, Logger, SetMetadata } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import type { Request } from 'express';
+import { config } from '../config';
+import { JwksUnavailableError, verifyToken } from './jwks';
+import { log } from './log';
+import { ProblemException } from './problem';
+import { logPath, requestIdOf } from './request-id';
+
+export type Role = 'ADMIN' | 'USER';
+export interface Caller {
+  id: string;
+  role: Role;
+}
+export type AuthedRequest = Request & { caller: Caller };
+
+const ROLES_KEY = 'roles';
+export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
+
+const logger = new Logger('Access');
+
+/** Log a denied attempt in one structured format (401 and 403) and return the exception to throw. */
+export function denied(req: Request, status: 401 | 403, detail: string, caller?: Caller): ProblemException {
+  // AI-generated (reviewed by Cole Lin).
+  log.emit({
+    level: 'warn',
+    event: 'access_denied',
+    requestId: requestIdOf(req),
+    status,
+    method: req.method,
+    path: logPath(req),
+    userId: caller?.id,
+    role: caller?.role,
+  });
+  return new ProblemException(status, detail);
+}
+
+/**
+ * Every request must carry a bearer token issued by the User Service. The gateway verifies it
+ * too, but this service re-verifies rather than trusting whatever reached it over the network.
+ */
+@Injectable()
+export class JwtAuthGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const req = context.switchToHttp().getRequest<AuthedRequest>();
+    const authorization = req.header('authorization');
+    const bearer = authorization?.startsWith('Bearer ') ? authorization.slice(7).trim() : undefined;
+
+    // LOCAL TESTING ONLY, and only when no token was sent: a real token is always verified, so
+    // these headers can never override or downgrade one.
+    if (!bearer && config.devAuth) {
+      const id = req.header('x-user-id');
+      const role = req.header('x-user-role');
+      if (!id || (role !== 'ADMIN' && role !== 'USER')) {
+        throw denied(req, 401, 'Missing or invalid credentials.');
+      }
+      req.caller = { id, role };
+      return this.checkRole(context, req);
+    }
+
+    let claims;
+    try {
+      claims = await verifyToken(authorization);
+    } catch (err) {
+      if (err instanceof JwksUnavailableError) {
+        // AI-generated (reviewed by Cole Lin).
+        log.emit({
+          level: 'error',
+          event: 'jwks_unavailable',
+          requestId: requestIdOf(req),
+          method: req.method,
+          path: logPath(req),
+        });
+        // The message names the JWKS URL and the underlying failure, so it stays in Nest's local
+        // log and out of the shipped line: the store is queryable by anyone with access.
+        logger.error(`Cannot verify tokens: ${err.message}`);
+        throw new ProblemException(503, 'Cannot verify credentials right now. Try again shortly.');
+      }
+      throw err;
+    }
+
+    if (!claims || (claims.role !== 'ADMIN' && claims.role !== 'USER')) {
+      throw denied(req, 401, 'Missing or invalid credentials.');
+    }
+    req.caller = { id: claims.sub, role: claims.role };
+    return this.checkRole(context, req);
+  }
+
+  private checkRole(context: ExecutionContext, req: AuthedRequest): boolean {
+    const allowed = this.reflector.getAllAndOverride<Role[] | undefined>(ROLES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (allowed && !allowed.includes(req.caller.role)) {
+      throw denied(req, 403, 'This action requires the ADMIN role.', req.caller);
+    }
+    return true;
+  }
+}

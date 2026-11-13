@@ -1,0 +1,237 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-25
+# Scope: Generated from the deployment plan (Task 1). Runs with a mocked AWS provider: no credentials needed.
+#        2026-10-27 (Claude Code, Claude Opus 5.5): fixes from the Codex review on PR #146.
+# Author review (Jian Bing, 2026-11-06): Not read line by line; ran infra/terraform/check.sh, which runs these
+#   tests (all passed).
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-05
+# Scope: Deploy part 3 (#143): the checks and notification-service repos, the plan role's parameter
+#        exceptions, and the deploy roles' tag parameters and log reads.
+# Author review (Jian Bing, 2026-11-09): Looked through the code and think it's okay; watched the staging dry run pass (deploy, checks, and the fixes it needed).
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-09
+# Scope: Chat on AWS: expect its repository, database, migrations and service.
+# Author review: Pending Jian Bing's review.
+# Tool: Claude Code (model: Claude Opus 5), date: 2026-11-09
+# Scope: An eleventh ECR repository, foc/logging-service (issue #52).
+# Author review: pending - Jian Bing owns the deployment.
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-11
+# Scope: Checks the deploy roles' access to the state bucket is only their own lock file (deploy lock).
+# Author review: Pending Jian Bing's review.
+# AI-generated (Claude Code).
+
+mock_provider "aws" {
+  mock_data "aws_caller_identity" {
+    defaults = { account_id = "111122223333" }
+  }
+}
+
+variables {
+  monthly_budget_usd = 50
+  budget_emails      = ["team@example.com"]
+}
+
+run "global" {
+  command = apply
+
+  assert {
+    condition     = aws_s3_bucket.state.bucket == "foc-terraform-state-111122223333"
+    error_message = "State bucket must be named foc-terraform-state-<account_id>."
+  }
+  assert {
+    condition     = aws_s3_bucket_versioning.state.versioning_configuration[0].status == "Enabled"
+    error_message = "State bucket versioning must be enabled."
+  }
+  assert {
+    condition = alltrue([
+      aws_s3_bucket_public_access_block.state.block_public_acls,
+      aws_s3_bucket_public_access_block.state.block_public_policy,
+      aws_s3_bucket_public_access_block.state.ignore_public_acls,
+      aws_s3_bucket_public_access_block.state.restrict_public_buckets,
+    ])
+    error_message = "State bucket must block all public access."
+  }
+  assert {
+    condition = length(aws_ecr_repository.service) == 11 && alltrue([
+      for r in aws_ecr_repository.service : r.image_tag_mutability == "IMMUTABLE"
+    ])
+    error_message = "Eleven immutable ECR repositories expected."
+  }
+  assert {
+    condition = toset(keys(output.ecr_repository_urls)) == toset([
+      "user-service", "supplier-service", "credit-service", "order-service", "notification-service",
+      "chat-service", "logging-service", "api-gateway", "frontend", "kafka-init", "checks",
+    ])
+    error_message = "ecr_repository_urls must be keyed by the eleven image names."
+  }
+  assert {
+    condition     = jsondecode(aws_iam_role.github["deploy-production"].assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:AY2627S1-CS3219-P3@326464642/GrabFoc@1361285513:environment:production"
+    error_message = "Production deploy role must trust only the production environment."
+  }
+  assert {
+    condition     = jsondecode(aws_iam_role.github["deploy-staging"].assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:AY2627S1-CS3219-P3@326464642/GrabFoc@1361285513:ref:refs/heads/main"
+    error_message = "Staging deploy role must trust only main."
+  }
+  assert {
+    condition     = jsondecode(aws_iam_role.github["plan"].assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:AY2627S1-CS3219-P3@326464642/GrabFoc@1361285513:pull_request"
+    error_message = "Plan role must trust pull requests."
+  }
+  assert {
+    condition     = aws_iam_role_policy_attachment.plan_read_only.policy_arn == "arn:aws:iam::aws:policy/ReadOnlyAccess"
+    error_message = "Plan role must be read-only."
+  }
+  assert {
+    condition     = toset(keys(output.github_role_arns)) == toset(["plan", "deploy-staging", "deploy-production"])
+    error_message = "github_role_arns must list the three roles."
+  }
+  assert {
+    condition = aws_budgets_budget.monthly.limit_amount == "50" && toset([
+      for n in aws_budgets_budget.monthly.notification : n.threshold
+    ]) == toset([50, 80, 100])
+    error_message = "Monthly budget must alert at 50/80/100 % of var.monthly_budget_usd."
+  }
+}
+
+# Security review (2026-10-25): each role holds only what its environment needs.
+run "least_privilege" {
+  command = apply
+
+  assert {
+    condition = alltrue([
+      for env in ["staging", "production"] : alltrue([
+        for s in jsondecode(aws_iam_role_policy.deploy["deploy-${env}"].policy).Statement :
+        contains(flatten([s.Action]), "ecs:UpdateService") ? s.Resource == "arn:aws:ecs:ap-southeast-1:111122223333:service/foc-${env}/*" : true
+      ])
+    ])
+    error_message = "A deploy role may update only its own environment's ECS services."
+  }
+  assert {
+    condition = alltrue([
+      for env in ["staging", "production"] : anytrue([
+        for s in jsondecode(aws_iam_role_policy.deploy["deploy-${env}"].policy).Statement :
+        contains(flatten([s.Action]), "ecs:RunTask") && try(s.Condition.ArnEquals["ecs:cluster"], "") == "arn:aws:ecs:ap-southeast-1:111122223333:cluster/foc-${env}"
+      ])
+    ])
+    error_message = "A deploy role may run tasks only on its own environment's cluster."
+  }
+  assert {
+    condition = alltrue([
+      for env in ["staging", "production"] : anytrue([
+        for s in jsondecode(aws_iam_role_policy.deploy["deploy-${env}"].policy).Statement :
+        s.Action == "iam:PassRole" && try(s.Condition.StringEquals["iam:PassedToService"], "") == "ecs-tasks.amazonaws.com"
+      ])
+    ])
+    error_message = "PassRole must be limited to ECS tasks."
+  }
+  assert {
+    condition = anytrue([
+      for s in jsondecode(aws_iam_role_policy.plan_state_lock.policy).Statement :
+      s.Effect == "Deny" && contains(s.Action, "ssm:GetParameter")
+      ]) && anytrue([
+      for s in jsondecode(aws_iam_role_policy.plan_state_lock.policy).Statement :
+      s.Effect == "Deny" && contains(s.Action, "kms:Decrypt")
+    ])
+    error_message = "The pull-request plan role must be denied secret values."
+  }
+  assert {
+    condition = anytrue([
+      for s in jsondecode(aws_iam_role_policy.plan_state_lock.policy).Statement :
+      s.Effect == "Allow" && toset(flatten([s.Resource])) == toset([
+        "${aws_s3_bucket.state.arn}/staging/terraform.tfstate.tflock",
+        "${aws_s3_bucket.state.arn}/production/terraform.tfstate.tflock",
+      ])
+    ])
+    error_message = "The plan role may write only the two environments' lock files."
+  }
+  # AI-generated (Claude Code, 2026-11-11): a deploy holds Terraform's state lock (deploy-images.sh),
+  # so it may create, read and delete its own environment's lock file, and nothing else in the bucket.
+  assert {
+    condition = alltrue([
+      for env in ["staging", "production"] : [
+        for s in jsondecode(aws_iam_role_policy.deploy["deploy-${env}"].policy).Statement : s
+        if length([for a in flatten([s.Action]) : a if startswith(a, "s3:")]) > 0
+        ] == [{
+          Effect   = "Allow"
+          Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+          Resource = "${aws_s3_bucket.state.arn}/${env}/terraform.tfstate.tflock"
+      }]
+    ])
+    error_message = "A deploy role may touch only its own environment's state lock file in the state bucket."
+  }
+}
+
+# Final review, Important 7: the Deny must not block the public ECS AMI parameter that plan reads.
+# Deploy part 3: plan also reads the deployed tag and the origin key, and nothing else under /foc/.
+run "plan_parameter_exceptions" {
+  command = apply
+
+  assert {
+    condition = alltrue([
+      for st in jsondecode(aws_iam_role_policy.plan_state_lock.policy).Statement :
+      # AI-generated (Claude Code).
+      toset(st.NotResource) == toset([
+        "arn:aws:ssm:*::parameter/aws/service/*",
+        "arn:aws:ssm:*:111122223333:parameter/foc-deploy/*",
+        "arn:aws:ssm:*:111122223333:parameter/foc/*/CLOUDFRONT_ORIGIN_KEY",
+      ])
+      if st.Effect == "Deny" && contains(flatten([st.Action]), "ssm:GetParameter")
+    ])
+    error_message = "Plan may read AWS's public parameters, the deploy tags and the origin key; no other parameter."
+  }
+  assert {
+    condition = length([
+      for st in jsondecode(aws_iam_role_policy.plan_state_lock.policy).Statement : st
+      if st.Effect == "Allow" && contains(flatten([st.Action]), "kms:Decrypt") &&
+      st.Condition.StringLike["kms:EncryptionContext:PARAMETER_ARN"] == "arn:aws:ssm:*:111122223333:parameter/foc/*/CLOUDFRONT_ORIGIN_KEY"
+    ]) == 1
+    error_message = "Plan may decrypt only the origin key."
+  }
+  assert {
+    condition = length([
+      for st in jsondecode(aws_iam_role_policy.plan_state_lock.policy).Statement : st
+      if st.Effect == "Deny" && contains(flatten([st.Action]), "kms:Decrypt") &&
+      st.Condition.StringNotLike["kms:EncryptionContext:PARAMETER_ARN"] == "arn:aws:ssm:*:111122223333:parameter/foc/*/CLOUDFRONT_ORIGIN_KEY"
+    ]) == 1
+    error_message = "Every other decrypt stays denied."
+  }
+}
+
+# Deploy part 3: each deploy role keeps its own environment's tags and reads its own logs.
+run "deploy_role_tags_and_logs" {
+  command = apply
+
+  assert {
+    condition = alltrue([
+      for env in ["staging", "production"] : anytrue([
+        for s in jsondecode(aws_iam_role_policy.deploy["deploy-${env}"].policy).Statement :
+        contains(flatten([s.Action]), "ssm:PutParameter") && contains(flatten([s.Action]), "ssm:GetParameter") &&
+        s.Resource == "arn:aws:ssm:ap-southeast-1:111122223333:parameter/foc-deploy/${env}/*"
+      ])
+    ])
+    error_message = "A deploy role reads and writes only its own environment's tag parameters."
+  }
+  assert {
+    condition = anytrue([
+      for s in jsondecode(aws_iam_role_policy.deploy["deploy-production"].policy).Statement :
+      s.Action == "ssm:GetParameter" && s.Resource == "arn:aws:ssm:ap-southeast-1:111122223333:parameter/foc-deploy/staging/passed-tag"
+    ])
+    error_message = "Production reads the tag staging passed."
+  }
+  assert {
+    condition = !anytrue(flatten([
+      for s in jsondecode(aws_iam_role_policy.deploy["deploy-staging"].policy).Statement : [
+        for r in flatten([s.Resource]) : strcontains(r, "foc-deploy/production")
+      ]
+    ]))
+    error_message = "Staging has no access to production's tags."
+  }
+  assert {
+    condition = alltrue([
+      for env in ["staging", "production"] : anytrue([
+        for s in jsondecode(aws_iam_role_policy.deploy["deploy-${env}"].policy).Statement :
+        contains(flatten([s.Action]), "logs:FilterLogEvents") &&
+        s.Resource == "arn:aws:logs:ap-southeast-1:111122223333:log-group:/foc/${env}/*"
+      ])
+    ])
+    error_message = "A deploy role reads only its own environment's logs."
+  }
+}

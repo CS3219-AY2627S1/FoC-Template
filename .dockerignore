@@ -1,0 +1,34 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5), date: 2026-09-28
+# Scope: Generated this file so builds whose context is the repository root (supplier-service)
+#        don't send node_modules, build output or secrets to the Docker daemon.
+# Author review: reviewed by Jian Bing, 2026-10-18 — read and checked; it is what we want.
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-18
+# Scope: Wrote the 2026-10-18 Author review text above from Jian Bing's account of what he checked (PR #97).
+# Author review: Jian Bing supplied what it states; the wording is Claude's.
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-05
+# Scope: Left infra/secrets out of the build context (Codex review on PR #146).
+# Author review (Jian Bing, 2026-11-06): Went through it with Claude Code's walkthrough and understood it; ran
+#   infra/terraform/check.sh (every stack valid, all tests passed) and checked staging (the locations list and
+#   the admin locations page load).
+
+# Tool: Claude Code (model: Claude Opus 5), date: 2026-11-08
+# Scope: Keep Syncthing's conflict copies out of the build context; with them in, nest build
+#   compiles stale drafts and the image cannot be built (issue #52).
+# Author review: Cole Lin, read and approved.
+**/node_modules
+**/dist
+**/.next
+**/build
+.git
+.env
+.env.*
+!.env.example
+infra/secrets
+*.log
+
+# Syncthing's conflict copies. They sit next to the file they diverged from, so `COPY src ./src`
+# pulls them into the image and the build compiles them - and they are older than the file they
+# came from, so they fail. On a machine that syncs this repo, `docker compose up --build` cannot
+# work without this (issue #52).
+**/*.sync-conflict-*

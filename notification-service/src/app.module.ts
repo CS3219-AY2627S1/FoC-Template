@@ -1,0 +1,55 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-30
+ * Scope: Generated the scaffold's module (#149).
+ * Author review: pending — Jie Yang to record the review.
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-01
+ * Scope: Registered the order.events consumer and dead-letter recording (#152).
+ * Author review: pending — Jie Yang to record the review.
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-04
+ * Scope: Registered the email sender, mailer and User client (#153).
+ * Author review: pending — Jie Yang to record the review.
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-04
+ * Scope: The topics now include one retry topic per NOTIFICATION_RETRY_DELAYS entry (#154).
+ * Author review: pending — Jie Yang to record the review.
+ * Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-04
+ * Scope: Registered AccountEmailsService (#183).
+ * Author review: pending — Jie Yang to record the review.
+ * Tool: Claude Code (model: Claude Opus 5), date: 2026-11-09
+ * Scope: Registered LogShipping, so the buffered log lines are flushed and the producer closed
+ *        on shutdown rather than dropped (issue #52).
+ * Author review: Cole Lin, read and approved.
+ */
+import { Module } from '@nestjs/common';
+import { LogShipping } from './common/log';
+import { config } from './config';
+import { DatabaseModule } from './db/database';
+import { DeadLettersService } from './dead-letters/dead-letters.service';
+import { AccountEmailsService } from './events/account-emails.service';
+import { OrderEventsService } from './events/order-events.service';
+import { SenderService } from './events/sender.service';
+import { HealthController } from './health/health.controller';
+import { Mailer } from './mail/mailer';
+import { KafkaConnection } from './messaging/kafka.connection';
+import { KafkaRunner } from './messaging/kafka.runner';
+import { buildTopics, TOPICS } from './messaging/topics';
+import { UserClient } from './users/user.client';
+
+@Module({
+  imports: [DatabaseModule],
+  controllers: [HealthController],
+  providers: [
+    // Flushes the buffered log lines and closes the producer on shutdown.
+    LogShipping,
+    { provide: TOPICS, useValue: buildTopics(config.retryDelaysMs) },
+    KafkaConnection,
+    OrderEventsService,
+    UserClient,
+    Mailer,
+    SenderService,
+    AccountEmailsService,
+    DeadLettersService,
+    KafkaRunner,
+  ],
+})
+export class AppModule {}

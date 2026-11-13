@@ -1,0 +1,218 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: Claude Code (model: Claude Opus 5), date: 2026-10-16
+ * Scope: Generated these unit tests for the correlation-id helpers and for the requestId field
+ *        in the access_denied log.
+ * Tool: Claude Code (model: Claude Opus 5), date: 2026-10-16
+ * Scope: Added the logPath cases after the PR #90 review.
+ * Tool: Claude Code (model: Claude Opus 5), date: 2026-10-21
+ * Scope: Read the denial line from the shipper rather than Nest's logger (issue #52).
+ * Tool: Claude Code (model: Claude Opus 5), date: 2026-10-23
+ * Scope: Rewrote the logPath cases for the route template (PR #145 review).
+ * Author review (Cole Lin): Read in full; ran `npm test` (176 passed) and checked a supplied id,
+ *        a minted one and a rejected one all reach the log line and the response header, and that
+ *        a query string never reaches a log line.
+ * Tool: Claude Code (model: Claude Opus 5), date: 2026-11-09
+ * Scope: Cases for the header an outbound call carries, which nothing covered: without it
+ *        a call to another service sent no request id, the far side minted its own, and the
+ *        two halves of one flow were stored under ids that cannot be joined (issue #52).
+ * Author review: Cole Lin, read and approved.
+ */
+import { ExecutionContext, Logger } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import type { NextFunction, Request, Response } from 'express';
+import { config } from '../config';
+import { AuthedRequest, JwtAuthGuard } from './auth';
+import { UNROUTED, logPath, requestIdHeader, requestIdMiddleware, requestIdOf, resolveRequestId } from './request-id';
+
+// AI-generated (reviewed by Cole Lin).
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+describe('resolveRequestId', () => {
+  it('keeps a well-formed header, so the gateway id is the one logged', () => {
+    expect(resolveRequestId('abc-123_X.4:9')).toBe('abc-123_X.4:9');
+  });
+
+  it('mints an id when the header is absent, so direct calls stay joinable', () => {
+    expect(resolveRequestId(undefined)).toMatch(UUID);
+  });
+
+  it('takes the first value of a repeated header', () => {
+    expect(resolveRequestId(['first', 'second'])).toBe('first');
+  });
+
+  // Envoy drops the Node gateway's length and charset rule and can pass a caller's id through
+  // unchanged (api-gateway/envoy/behaviour-differences.md), so this service is the only check.
+  it.each([
+    ['over 128 characters', 'x'.repeat(129)],
+    ['spaces', 'has spaces'],
+    ['a newline', 'line\nbreak'],
+    ['an unsafe path', 'unsafe/id'],
+    ['empty', ''],
+  ])('replaces a header with %s rather than rejecting the request', (_why, value) => {
+    expect(resolveRequestId(value)).toMatch(UUID);
+  });
+});
+
+describe('logPath', () => {
+  /** A request Express has routed: `route.path` is the template, not what the caller typed. */
+  const routed = (route: string, originalUrl: string) =>
+    ({ route: { path: route }, originalUrl, baseUrl: '' }) as unknown as Request;
+
+  it('logs the route template, so an id never reaches the line', () => {
+    expect(logPath(routed('/locations/:locationId', '/locations/7'))).toBe('/locations/:locationId');
+  });
+
+  /**
+   * The case the PR #145 review raised: redaction matches field names, so a secret sitting in a
+   * path segment would have gone to the store verbatim.
+   */
+  it('logs the template even when the caller put a token in the path', () => {
+    const line = logPath(routed('/locations/:locationId', '/locations/eyJhbGciOiJSUzI1NiJ9.secret'));
+    expect(line).toBe('/locations/:locationId');
+    expect(line).not.toContain('secret');
+  });
+
+  it('drops the query string with it', () => {
+    expect(logPath(routed('/locations', '/locations?lat=1.2966&lon=103.7764'))).toBe('/locations');
+  });
+
+  // Nothing matched, so the URL is whatever somebody invented - the one case with no safe template.
+  it('says unrouted when no route matched', () => {
+    expect(logPath({ originalUrl: '/reset/abc123token' } as Request)).toBe(UNROUTED);
+  });
+
+  it('survives a request object with nothing on it', () => {
+    expect(logPath({} as Request)).toBe(UNROUTED);
+  });
+});
+
+describe('requestIdMiddleware', () => {
+  function run(headers: Record<string, string>) {
+    const sent: Record<string, string> = {};
+    const req = { headers } as unknown as Request;
+    const res = { setHeader: (name: string, value: string) => (sent[name] = value) } as unknown as Response;
+    const next = jest.fn() as unknown as NextFunction;
+    requestIdMiddleware(req, res, next);
+    return { req, sent, next };
+  }
+
+  it('stores the id, echoes it back and continues', () => {
+    const { req, sent, next } = run({ 'x-request-id': 'cole-test-1' });
+    expect(requestIdOf(req)).toBe('cole-test-1');
+    expect(sent['x-request-id']).toBe('cole-test-1');
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('echoes back the same id it minted, so a reply can be traced', () => {
+    const { req, sent } = run({});
+    expect(sent['x-request-id']).toMatch(UUID);
+    expect(sent['x-request-id']).toBe(requestIdOf(req));
+  });
+});
+
+it('gives a log site an id even when the middleware did not run', () => {
+  expect(requestIdOf({} as Request)).toMatch(UUID);
+});
+
+// The guard's own outcomes are covered in auth.spec.ts; this is only about the logged id.
+describe('the requestId in the access_denied log', () => {
+  const guard = new JwtAuthGuard(new Reflector());
+  let shipped: jest.SpyInstance;
+
+  beforeEach(() => {
+    shipped = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  /** Denies an unauthenticated request and returns the line the guard logged. */
+  async function deniedLine(headers: Record<string, string>, originalUrl = '/locations') {
+    const req = {
+      headers,
+      header: () => undefined,
+      method: 'POST',
+      originalUrl,
+      baseUrl: '',
+      route: { path: '/locations' },
+    } as unknown as AuthedRequest;
+    requestIdMiddleware(req, { setHeader: () => undefined } as unknown as Response, (() => undefined) as NextFunction);
+    await guard
+      .canActivate({
+        switchToHttp: () => ({ getRequest: () => req }),
+        getHandler: () => () => undefined,
+        getClass: () => class {},
+      } as unknown as ExecutionContext)
+      .catch(() => undefined);
+    return JSON.parse(shipped.mock.calls[0][0] as string);
+  }
+
+  it('carries the caller-supplied id through to the log line', async () => {
+    expect(await deniedLine({ 'x-request-id': 'trace-123' })).toMatchObject({
+      event: 'access_denied',
+      requestId: 'trace-123',
+      status: 401,
+      method: 'POST',
+      path: '/locations',
+    });
+  });
+
+  it('logs the route template, so neither the query nor an id reaches the line', async () => {
+    const line = await deniedLine({}, '/locations?lat=1.2966&lon=103.7764');
+    expect(line.path).toBe('/locations');
+    expect(JSON.stringify(line)).not.toContain('103.7764');
+  });
+
+  it('logs a minted id when none was supplied', async () => {
+    expect((await deniedLine({})).requestId).toMatch(UUID);
+  });
+
+  it('is unaffected by the dev-auth fallback', async () => {
+    const devAuth = config.devAuth;
+    (config as { devAuth: boolean }).devAuth = true;
+    try {
+      expect((await deniedLine({ 'x-request-id': 'dev-trace' })).requestId).toBe('dev-trace');
+    } finally {
+      (config as { devAuth: boolean }).devAuth = devAuth;
+    }
+  });
+});
+
+/**
+ * The header an outbound call carries. This is the mechanism every service's internal clients use
+ * - Order calling Supplier and Credit, User calling Order - and before it they sent no id at all,
+ * so the far side minted its own and the two halves of one flow were stored under ids that cannot
+ * be joined. Tested here once; the call sites are a two-line spread each.
+ */
+describe('the header for a call to another service', () => {
+  const run = (headers: Record<string, string>, body: () => void) =>
+    new Promise<void>((resolve) => {
+      requestIdMiddleware(
+        { headers, method: 'GET' } as unknown as Request,
+        { setHeader: () => undefined } as unknown as Response,
+        () => {
+          body();
+          resolve();
+        },
+      );
+    });
+
+  it('carries the id of the request being handled', async () => {
+    await run({ 'x-request-id': 'r-42' }, () => {
+      expect(requestIdHeader()).toEqual({ 'x-request-id': 'r-42' });
+    });
+  });
+
+  it('carries a minted id when the caller supplied none', async () => {
+    await run({}, () => {
+      expect(requestIdHeader()['x-request-id']).toMatch(UUID);
+    });
+  });
+
+  it('is empty outside a request, so a job or a test adds no header', () => {
+    // Nothing rather than an empty value: an empty header reads as "there was no request", and the
+    // far side would mint an id anyway.
+    expect(requestIdHeader()).toEqual({});
+  });
+});

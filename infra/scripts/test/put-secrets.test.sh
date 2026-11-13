@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-25
+# Scope: Generated from the deployment plan (Task 7): tests put-secrets.sh against a fake `aws`.
+#        2026-10-27 (Claude Code, Claude Opus 5.5): fixes from the Codex review on PR #146.
+# Author review (Jian Bing, 2026-11-06): Not read line by line; these tests pass in CI (terraform.yml).
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-05
+# Scope: Notification's secrets (deploy part 3).
+# Author review (Jian Bing, 2026-11-09): Looked through the code and think it's okay; watched the staging dry run pass (deploy, checks, and the fixes it needed).
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-09
+# Scope: CHAT_TICKET_SECRET is written (chat, #230).
+# Author review (Jian Bing, 2026-11-09): Looked through the code and think it's okay; watched the staging dry run pass (deploy, checks, and the fixes it needed).
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-09
+# Scope: Expects CHAT_POSTGRES_PASSWORD to be written (chat on AWS).
+# Author review: Pending Jian Bing's review.
+# Tool: Claude Code (model: Claude Opus 5), date: 2026-11-09
+# Scope: LOGGING_POSTGRES_PASSWORD, and LOGGING_DATABASE_URL built from it - 23 parameters
+#        (issue #52).
+# Author review: pending - Jian Bing owns the deployment.
+#
+# Run: infra/scripts/test/put-secrets.test.sh   (no AWS access needed)
+# AI-generated (Claude Code).
+set -uo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT="$HERE/../put-secrets.sh"
+fails=0
+check() { if eval "$2"; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails + 1)); fi; }
+
+work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+mkdir -p "$work/bin" "$work/repo/infra/secrets"
+# Fake aws: records "<name>=<value>" for each put-parameter (reading --value file://…).
+cat > "$work/bin/aws" <<'FAKE'
+#!/usr/bin/env bash
+name=""; value=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --name) name="$2"; shift ;;
+    --value) value="$(cat "${2#file://}")"; shift ;;
+    --region) echo "$2" >> "$AWS_CALLS.region"; shift ;;
+  esac
+  shift
+done
+printf '%s=%s\n' "$name" "$value" >> "$AWS_CALLS"
+FAKE
+chmod +x "$work/bin/aws"
+export PATH="$work/bin:$PATH" AWS_CALLS="$work/calls"
+
+full() {
+  cat <<'ENV'
+# staging secrets
+POSTGRES_PASSWORD=pg-user-pw
+SUPPLIER_POSTGRES_PASSWORD=pg-supplier-pw
+CREDIT_POSTGRES_PASSWORD=pg-credit-pw
+ORDER_DB_PASSWORD=pg-order-pw
+NOTIFICATION_POSTGRES_PASSWORD=pg-notification-pw
+LOGGING_POSTGRES_PASSWORD=pg-logging-pw
+USER_AES_KEY=aes-secret
+USER_EMAIL_HMAC_KEY=email-hmac-secret
+USER_OTP_HMAC_KEY=otp-hmac-secret
+USER_JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----"
+USER_JWT_KID=kid-1
+USER_SMTP_USER=foc.app@gmail.com
+USER_SMTP_PASS=gmail-app-password
+USER_SMTP_FROM=FoC <foc.app@gmail.com>
+USER_BOOTSTRAP_ADMIN_EMAIL=admin@u.nus.edu
+CREDIT_SERVICE_KEY=credit-key
+ORDER_SERVICE_KEY=order-key
+USER_INTERNAL_SERVICE_KEY=user-internal-key
+CHAT_TICKET_SECRET=chat-ticket-secret
+CHAT_POSTGRES_PASSWORD=pg-chat-pw
+ENV
+}
+
+# 1. A missing name stops everything before any call.
+full | grep -v '^USER_AES_KEY=' > "$work/repo/infra/secrets/staging.env"
+: > "$AWS_CALLS"
+out=$(FOC_REPO_ROOT="$work/repo" "$SCRIPT" staging 2>&1); code=$?
+check "missing name exits non-zero" '[ $code -ne 0 ]'
+check "missing name is named" 'grep -q USER_AES_KEY <<<"$out"'
+check "missing name makes no AWS call" '[ ! -s "$AWS_CALLS" ]'
+
+# 2. A full file writes every parameter, plus the four built from them.
+full > "$work/repo/infra/secrets/staging.env"
+: > "$AWS_CALLS"
+out=$(FOC_REPO_ROOT="$work/repo" "$SCRIPT" staging 2>&1); code=$?
+check "full file exits zero" '[ $code -eq 0 ]'
+check "24 parameters written" '[ "$(wc -l < "$AWS_CALLS" | tr -d " ")" = 24 ]'
+# AI-generated (Claude Code): Order needs it since chat (#230).
+# AI-generated (Claude Code, 2026-11-09): chat on AWS.
+check "chat's database password written" 'grep -qx "/foc/staging/CHAT_POSTGRES_PASSWORD=pg-chat-pw" "$AWS_CALLS"'
+check "chat's ticket secret written" 'grep -qx "/foc/staging/CHAT_TICKET_SECRET=chat-ticket-secret" "$AWS_CALLS"'
+check "Notification's secrets written" 'grep -qx "/foc/staging/NOTIFICATION_POSTGRES_PASSWORD=pg-notification-pw" "$AWS_CALLS" && grep -qx "/foc/staging/USER_INTERNAL_SERVICE_KEY=user-internal-key" "$AWS_CALLS"'
+check "names are under /foc/staging/" '! grep -qv "^/foc/staging/" "$AWS_CALLS"'
+check "user database URL built as in compose" 'grep -qx "/foc/staging/USER_DATABASE_URL=postgres://foc:pg-user-pw@user-db:5432/users" "$AWS_CALLS"'
+check "supplier database URL built as in compose" 'grep -qx "/foc/staging/SUPPLIER_DATABASE_URL=postgres://foc:pg-supplier-pw@supplier-db:5432/supplier" "$AWS_CALLS"'
+# AI-generated (Claude Code): the log store reads one connection string, password included (#52).
+check "logging database URL built as in compose" 'grep -qx "/foc/staging/LOGGING_DATABASE_URL=postgres://foc:pg-logging-pw@logging-db:5432/logging" "$AWS_CALLS"'
+check "Mailpit login is user:password" 'grep -qx "/foc/staging/MAILPIT_SMTP_AUTH=foc.app@gmail.com:gmail-app-password" "$AWS_CALLS"'
+check "quotes around a value are removed" 'grep -q "^/foc/staging/USER_JWT_PRIVATE_KEY=-----BEGIN" "$AWS_CALLS"'
+check "no secret value is printed" '! grep -qE "pg-user-pw|gmail-app-password|aes-secret|order-key" <<<"$out"'
+
+# 3. Every call goes to the deployment region, whatever the profile's default.
+calls=$(wc -l < "$AWS_CALLS" | tr -d " ")
+check "every call pins ap-southeast-1" '[ "$(grep -cx ap-southeast-1 "$AWS_CALLS.region")" = "$calls" ]'
+
+# 4. A file saved with Windows line endings uploads the same values.
+full | sed 's/$/\r/' > "$work/repo/infra/secrets/staging.env"
+: > "$AWS_CALLS"
+FOC_REPO_ROOT="$work/repo" "$SCRIPT" staging >/dev/null 2>&1
+check "CRLF: no carriage return reaches SSM" '! grep -q $'"'"'\r'"'"' "$AWS_CALLS"'
+check "CRLF: quotes are still removed" 'grep -q "^/foc/staging/USER_JWT_PRIVATE_KEY=-----BEGIN" "$AWS_CALLS"'
+
+# 5. Database passwords are percent-encoded inside the URLs.
+full | sed 's|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=a/b?c#d@e:f%g h|' > "$work/repo/infra/secrets/staging.env"
+: > "$AWS_CALLS"
+FOC_REPO_ROOT="$work/repo" "$SCRIPT" staging >/dev/null 2>&1
+check "password is encoded in the URL" 'grep -qx "/foc/staging/USER_DATABASE_URL=postgres://foc:a%2Fb%3Fc%23d%40e%3Af%25g%20h@user-db:5432/users" "$AWS_CALLS"'
+check "the password itself is stored as written" 'grep -qx "/foc/staging/POSTGRES_PASSWORD=a/b?c#d@e:f%g h" "$AWS_CALLS"'
+
+# 6. Only staging and production are accepted.
+out=$(FOC_REPO_ROOT="$work/repo" "$SCRIPT" dev 2>&1); code=$?
+check "unknown environment rejected" '[ $code -ne 0 ]'
+
+echo "$fails failed"
+[ "$fails" -eq 0 ]

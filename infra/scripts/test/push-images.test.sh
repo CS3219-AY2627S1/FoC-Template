@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-27
+# Scope: Tests that push-images.sh can be rerun after a partial push, and that the root build context
+#        leaves out infra/secrets (Codex review on #146).
+# Author review (Jian Bing, 2026-11-06): Not read line by line; these tests pass in CI (terraform.yml).
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-05
+# Scope: the Notification and checks images (deploy part 3).
+# Author review (Jian Bing, 2026-11-09): Looked through the code and think it's okay; watched the staging dry run pass (deploy, checks, and the fixes it needed).
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-09
+# Scope: Expects the chat-service image (chat on AWS).
+# Author review: Pending Jian Bing's review.
+# Tool: Claude Code (model: Claude Opus 5), date: 2026-11-09
+# Scope: Eight images, and that the Logging Service builds from the repository root (issue #52).
+# Author review: pending - Jian Bing owns the deployment.
+#
+# Run: infra/scripts/test/push-images.test.sh   (no AWS or Docker access needed)
+# AI-generated (Claude Code).
+set -uo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+fails=0
+check() { if eval "$2"; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails + 1)); fi; }
+work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+mkdir -p "$work/bin"
+# Fake aws: user-service and order-service already have the tag in ECR (immutable tags).
+cat > "$work/bin/aws" <<'FAKE'
+#!/usr/bin/env bash
+case "$*" in
+  *get-caller-identity*) echo 123456789012 ;;
+  *get-login-password*) echo token ;;
+  *describe-images*foc/user-service*|*describe-images*foc/order-service*) echo '{}' ;;
+  *describe-images*) echo "ImageNotFoundException" >&2; exit 254 ;;
+esac
+FAKE
+# Fake docker: records builds and pushes; pushing an existing tag fails as ECR does.
+cat > "$work/bin/docker" <<'FAKE'
+#!/usr/bin/env bash
+echo "$*" >> "$DOCKER_CALLS"
+case "$*" in push*user-service*|push*order-service*) echo "tag already exists" >&2; exit 1 ;; esac
+FAKE
+chmod +x "$work/bin/aws" "$work/bin/docker"
+export PATH="$work/bin:$PATH" DOCKER_CALLS="$work/calls"
+
+out=$("$HERE/../push-images.sh" abc1234 2>&1); code=$?
+check "rerun succeeds" '[ $code -eq 0 ]'
+check "existing tags are skipped" '! grep -qE "(build|push).*foc/(user|order)-service:" "$DOCKER_CALLS"'
+check "skips are reported" 'grep -q "foc/user-service:abc1234 already in ECR, skipped" <<<"$out"'
+# AI-generated (Claude Code).
+check "missing tags are built and pushed" '[ "$(grep -c "^push " "$DOCKER_CALLS")" = 9 ]'
+# AI-generated (Claude Code): its Dockerfile copies logging-service/... paths (#52).
+check "the log store builds from the repository root" 'grep -qE "^build .*foc/logging-service:abc1234 .*logging-service/Dockerfile [^ ]+$" "$DOCKER_CALLS"'
+check "Notification builds from its own folder" 'grep -qE "^build .*foc/notification-service:abc1234 .*notification-service/Dockerfile .*/notification-service$" "$DOCKER_CALLS"'
+# AI-generated (Claude Code, 2026-11-09): chat on AWS.
+check "Chat builds from its own folder" 'grep -qE "^build .*foc/chat-service:abc1234 .*chat-service/Dockerfile .*/chat-service$" "$DOCKER_CALLS"'
+check "checks build from the repository root" 'grep -qE "^build .*foc/checks:abc1234 .*infra/checks/Dockerfile " "$DOCKER_CALLS"'
+
+# Codex review on #146: supplier-service builds from the repository root, where infra/secrets/ lives.
+check "the root build context leaves out the secrets files" 'grep -qxF "infra/secrets" "$HERE/../../../.dockerignore"'
+
+echo "$fails failed"
+[ "$fails" -eq 0 ]

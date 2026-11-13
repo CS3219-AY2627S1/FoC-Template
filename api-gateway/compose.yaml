@@ -1,0 +1,58 @@
+# AI Assistance Disclosure:
+# Tool: Codex (model: GPT-6), date: 2026-10-13
+# Scope: Use stock Envoy from the standard Dockerfile and pass existing infrastructure settings through Compose environment interpolation.
+# Author review: Pending Jie Yang's review and live integration check.
+# AI Assistance Disclosure update:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-22
+# Scope: Passed ORDER_SERVICE_URL and GATEWAY_ORDERS_PREFIX through for the Order routes.
+# Author review: Pending review by Deanson.
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-22
+# Scope: restart: unless-stopped on every long-running container (one-shot init containers excluded).
+# Scope: Passed CREDIT_SERVICE_URL and GATEWAY_CREDITS_PREFIX through for the Credit routes (#61).
+# Author review: pending — Jie Yang to record the review.
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-11-08
+# Scope: Passed CHAT_SERVICE_URL through for the chat socket route (the chat plan).
+# Author review: Reviewed by Deanson, 2026-11-09.
+# Tool: Claude Code (model: Claude Opus 5), date: 2026-11-09
+# Scope: Passed LOGGING_SERVICE_URL through for the log store's GET /logs route (issue #52).
+# Author review: pending - Jie Yang owns the gateway's route files.
+
+name: foc
+
+services:
+  api-gateway:
+    # Restarted after a crash or a Docker restart; `docker compose stop` still stops it.
+    restart: unless-stopped
+    # AI-generated; official precompiled Envoy, no custom native build.
+    image: foc-envoy:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      GATEWAY_PORT: 3003
+      GATEWAY_LB_POLICY: ${GATEWAY_LB_POLICY:-ROUND_ROBIN}
+      GATEWAY_CONNECT_TIMEOUT: ${GATEWAY_CONNECT_TIMEOUT:-3s}
+      GATEWAY_ROUTE_TIMEOUT: ${GATEWAY_ROUTE_TIMEOUT:-0s}
+      GATEWAY_ROUTE_IDLE_TIMEOUT: ${GATEWAY_ROUTE_IDLE_TIMEOUT:-10s}
+      GATEWAY_JWKS_FETCH_TIMEOUT: ${GATEWAY_JWKS_FETCH_TIMEOUT:-3s}
+      GATEWAY_JWKS_CACHE_DURATION: ${GATEWAY_JWKS_CACHE_DURATION:-60s}
+      GATEWAY_WORKERS: ${GATEWAY_WORKERS:-2}
+      USER_SERVICE_URL: ${USER_SERVICE_URL:-http://user-service:3001}
+      SUPPLIER_SERVICE_URL: ${SUPPLIER_SERVICE_URL:-http://supplier-service:3002}
+      # AI-generated (Claude Code, 2026-10-22; pending review by Deanson): Order routes in 30-order.routes.json.
+      ORDER_SERVICE_URL: ${ORDER_SERVICE_URL:-http://order-service:3005}
+      # Credit routes in 40-credit.routes.json (balance and history only).
+      CREDIT_SERVICE_URL: ${CREDIT_SERVICE_URL:-http://credit-service:3004}
+      # The chat socket route in 50-chat.routes.json. Required: the gateway won't start without it.
+      CHAT_SERVICE_URL: ${CHAT_SERVICE_URL:-http://chat-service:3007}
+      LOGGING_SERVICE_URL: ${LOGGING_SERVICE_URL:-http://logging-service:3006}
+      USER_SERVICE_JWKS_URL: ${USER_SERVICE_JWKS_URL:-}
+      GATEWAY_AUTH_PREFIX: ${GATEWAY_AUTH_PREFIX:-/auth}
+      GATEWAY_LOCATIONS_PREFIX: ${GATEWAY_LOCATIONS_PREFIX:-/locations}
+      GATEWAY_ORDERS_PREFIX: ${GATEWAY_ORDERS_PREFIX:-/orders}
+      GATEWAY_CREDITS_PREFIX: ${GATEWAY_CREDITS_PREFIX:-/credits}
+      GATEWAY_JWT_ISSUER: ${GATEWAY_JWT_ISSUER:-}
+      GATEWAY_JWT_AUDIENCE: ${GATEWAY_JWT_AUDIENCE:-}
+      FOC_TEST_SUPPLIER_URLS: ${FOC_TEST_SUPPLIER_URLS:-}
+    ports:
+      - "3003:3003"
