@@ -1,0 +1,1590 @@
+<!-- AI-INFLUENCED: Record order details, proof photos, UI styling, and request/delivery navigation updates with Codex. -->
+
+# AI Usage Log
+
+Per the CS3219 AI Usage Policy (Project Document, Appendix 2). Record every
+AI-assisted contribution here with timestamp, tool + model, scope, prompt(s),
+and author review. Requirements elicitation and architecture/design decisions
+must NOT be outsourced to AI.
+
+Format for each entry:
+
+```
+## <date> — <author>
+- Tool: <tool> (model: <model>)
+- Scope: <what was generated/refactored/debugged/explained>
+- Prompt(s): <exact prompt(s) + key responses, or a link>
+- Author review: <how you validated/edited/tested the output>
+```
+
+## 07/11/2026 — Javier
+
+- Tool: Claude (model: Claude Opus 5.5)
+- Scope: Integrated the standalone chat-service (supplied as a zip) into the
+  monorepo as the requester-courier chat N2H. Ported it to the repo layout and
+  conventions (`requirements.txt`, `ruff.toml`, `pytest.ini`, repo-root Dockerfile
+  with `foc_shared`, `GET /health`, gateway-trusted `X-User-Id`, `{code, message}`
+  errors, shared env names); added an order-event adapter (From slide deck) 
+  (`app/integrations/order_events.py`) that maps `foc.order.events` onto the 
+  generic chat operations with an idempotency inbox; added a WebSocket relay,
+  chat routes and an Origin allowlist to the API gateway; added the Messages page,
+  chat client and order chat button to the frontend; wired chat-service into compose,
+  `.env.example`, the Makefile and scripts, a Helm chart + namespace, the secrets 
+  scripts, CI (lint, Postgres-backed tests, compose e2e, k3d smoke, image build, tag bump)
+  and the docs. Top-level dirs changed: `chat-service` (new), `api-gateway`,
+  `frontend`, `infra`, `scripts`, `.github`, `docs`, root files.
+- Prompt(s): "Integrate this [chat-service.zip] to foc project main branch with
+  the project standard and format with this [chat-service.md] concept and architecture
+  design."
+- Author review: Passed pytests, and end to end tested chat feature. Did manual 
+  tweak on UI for better UX. Tweak backend to delete closed chat within a time
+  but deactivate for now. 
+
+## 08/11/2026 — John
+
+- Tool: Claude Code (model: Opus 4.8)
+- Scope: Migrated Terraform state from local to a shared S3 backend with native S3
+  locking (no DynamoDB). Added the `infra/terraform-bootstrap` module that creates
+  the versioned, SSE-S3-encrypted, TLS-only, public-access-blocked state bucket with
+  `prevent_destroy`; added the `backend "s3"` block and bumped `required_version` to
+  `>= 1.10` in `infra/terraform/versions.tf`; pinned CI Terraform to 1.10.5 and added
+  fmt/init/validate for the bootstrap module; added `scripts/tf-state-bootstrap.sh`
+  and `scripts/tf-state-migrate.sh`; added `infra/terraform/README.md` with the
+  migration runbook and updated `infra/argocd/README.md` and `infra/BACKUP.md`. Dirs
+  changed: `infra/terraform`, `infra/terraform-bootstrap`, `scripts`, `.github`, `ai`.
+- Prompt(s): Move Terraform state to a shared S3 backend with native locking, a
+  bootstrap module for the bucket, and a one-time migration runbook (full task spec
+  in the PR description).
+- Author review: Ran `terraform fmt -check -recursive infra/`, `init -backend=false`
+  + `validate` for both `infra/terraform` and `infra/terraform-bootstrap`, `shellcheck`
+  on both new scripts, and `actionlint` on the workflows; confirmed via `git check-ignore`
+  that no `*.tfstate*` or backup files can be committed. Nothing was run against AWS.
+
+## 31/10/2026 — John
+
+- Tool: Claude Code (model: Opus 4.8)
+- Scope: Added ArgoCD GitOps deployment for the FoC k3s-on-EC2 cluster -
+  Terraform Elastic IP for a stable nip.io host, chart hardening
+  (`createNamespaces` flag, ArgoCD sync-option annotations, optional PostSync
+  smoke Job), a Sealed Secrets refactor (shared builder script with local and
+  sealed modes), the ArgoCD app-of-apps manifests plus bootstrap values and a
+  Let's Encrypt ClusterIssuer, the `render-ec2-values` / `argocd-bootstrap` /
+  `sealed-secrets-keygen` scripts, a restructured gated CI pipeline with a Trivy
+  scan + GHCR push + image-tag bump, Dependabot config, and these docs. Top-level
+  dirs changed: `infra/terraform`, `infra/helm/foc`, `infra/argocd`, `infra/k8s`,
+  `scripts`, `.github`, `docs`, `frontend`.
+- Prompt(s): Implement the team's ArgoCD GitOps design for the FoC k3s cluster
+  (full task spec in the PR description).
+- Author review: Validated the helm charts with helm lint and also deployed onto the cluster.
+
+## 20/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Restricted requester deletion to unassigned `OPEN` orders and requester
+  cancellation to assigned `ACCEPTED` orders at task initiation and credit-result
+  handling. Preserved independent supplier-deactivation cancellation. Updated
+  focused tests and Order Service lifecycle documentation and diagram.
+- Prompt(s): “Update Order Service so requester deletion applies only to
+  unassigned `OPEN` orders, and requester cancellation only to assigned
+  `ACCEPTED` orders before pickup. Preserve supplier deactivation cancellation.
+  Update relevant tests and documentation. Keep published events as facts about
+  Order Service. Change files only in `order-service/`, except the required
+  `ai/usage-log.md` entry.”
+- Author review: Contributor review pending. Order Service tests, Ruff checks,
+  and `git diff --check` passed.
+
+## 19/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Implemented the specified supplier-deactivation propagation. Supplier
+  Service now commits its inactive state with a durable `SupplierDeactivated`
+  outbox fact and retries publication. Order Service consumes that fact,
+  cancels matching `OPEN` and `ACCEPTED` orders atomically with `OrderCancelled`
+  outbox facts, and records completed event IDs to handle retries. Late credit
+  amendment replies now reject updates to cancelled orders instead of requeueing
+  forever. Added a migration and focused tests. Only `supplier-service/`,
+  `order-service/`, and this log were changed for this work.
+- Prompt(s): “Implement supplier deactivation propagation. When an admin
+  deactivates a supplier, commit its inactive state and a durable
+  `SupplierDeactivated` fact together. Order Service should consume that fact
+  idempotently, cancel matching `OPEN` and `ACCEPTED` orders, publish
+  `OrderCancelled` facts with a supplier-deactivation reason, and leave orders
+  at `PICKED_UP` or later unchanged. Handle concurrent state changes and broker
+  retries, add focused tests, and record AI usage. Make sure the code is neat,
+  simple to understand, and add clear comments where appropriate but don't
+  overdo the comments either. Make sure it follows the project's architecture.
+  Make sure it works together with the supplier service and works end to end.”
+- Author review: Contributor review pending. Automated verification passed:
+  Supplier and Order Service suites, Ruff lint and format checks,
+  `git diff --check`, and the PostgreSQL pickup/deactivation concurrency test.
+  A live isolated PostgreSQL/RabbitMQ check passed from admin deactivation
+  through both outboxes and `OrderCancelled` delivery; temporary containers
+  were removed afterward.
+
+## 18/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Removed the unused `OrderUpdateTask.rejection_code` field and its
+  assignments. Added a new Order Service migration to drop the database column
+  and updated the affected tests. No other service was changed.
+- Prompt(s): “Remove `OrderUpdateTask.rejection_code` and its assignments while
+  retaining `status` and `last_error`. Add a new migration to drop the column;
+  do not edit old migrations. Update and run relevant order-service tests. Add
+  required AI attribution headers and record the exchange in `ai/usage-log.md`.
+  Change no files outside `order-service/` except that log.”
+- Author review: 87 focused tests passed. Ruff lint and format checks passed,
+  and `git diff --check` passed. One existing Starlette `httpx` deprecation
+  warning remains.
+
+## 17/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Implemented the user-specified category lookup flow, reward-range
+  filters, and deadline/reward sorting for Order Service listings. Category
+  filters resolve supplier IDs via Supplier Service's paginated HTTP API;
+  Order Service stores no category map. Default ordering remains nearest
+  deadline first. No other service was changed.
+- Prompt(s): “Make sure the code is neat, simple to understand, and add clear
+  comments where appropriate but don't overdo the comments either. Make sure
+  it follows the project's architecture. Implement this for the filtering and
+  sorting then which addresses F2.1, F2.1.1, F2.2, and F2.2.1.”
+- Author review: Pending contributor review. Tests were not run.
+
+---
+
+## 17/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Removed the “Credit release workflows” section from
+  `order-service/README.md` as requested.
+- Prompt(s): “Remove the entire Credit Relesae Workflows section from the
+  order service's readme”
+- Author review: Confirmed the section is removed and the following
+  “Order acceptance” section remains intact. Documentation-only change; no
+  tests run.
+
+## 18/09/2026 — John Gao Jiahao
+
+- Tool: Claude Code (model: Opus)
+- Scope: Initial repository skeleton scaffolding only (boilerplate — no business
+  logic). Generated: per-service FastAPI app structure (config, db, api/routes,
+  models/schemas/services/repositories, `/health`, smoke tests) for
+  api-gateway, user-, supplier-, order-, credit-, and notification-service; the
+  `shared/` contracts library (event schemas, auth-header contract, error
+  envelope); Dockerfiles; `compose.yaml` (5 services + gateway + frontend + 5
+  Postgres + RabbitMQ); `.env.example`, `.gitignore`; root/per-service
+  `README.md` and `AGENTS.md`; `Makefile` + `scripts/`; React+Vite frontend
+  shell (routing + placeholder pages); `docs/` templates; CI workflow.
+  All product requirements and architecture/design decisions (microservices,
+  DB-per-service, RabbitMQ, custom gateway, tech stack) were made by the team;
+  the tool only implemented the chosen structure.
+- Prompt(s):
+  1. "With reference to [the D1 backlog PDF] and the lecture slides in the
+     CS3219 folder, come up with a plan to create the skeleton repo from this
+     repo that will allow the team to work on the project."
+  2. Answered clarifying questions selecting the stack: Python + FastAPI
+     backend, custom FastAPI API gateway, React + TypeScript + Vite frontend,
+     PostgreSQL per service, RabbitMQ, runnable hello-world + full wiring,
+     `requirements.txt` + venv, one Postgres container per service, generic
+     ownership placeholders, standalone `ruff.toml` + `pytest.ini`, plus a
+     `Makefile`/scripts for developer experience. "Do keep in mind our N2Hs."
+  3. "Lets execute but remember to make a new branch."
+- Author review: Reviewed all generated files. Verified `docker compose config`
+  validates, `ruff check` passes across all Python packages, and `pytest`
+  passes for every service (including the gateway's unknown-route → 404 test).
+  Endpoints are intentionally stubbed (`501 Not Implemented`); business logic,
+  auth/RBAC enforcement, and event wiring remain to be implemented and reviewed
+  by the team.
+
+## 25/09/2026 — Javier Enrique Wong
+
+- Tool: Claude (claude.ai, model: Claude Sonnet 5)
+- Scope: Documentation generation only, scoped to `user-service/docs/`
+  (`architecture.md` and `flowchart.md`). The tool wrote the prose (component
+  tables, explained-elements bullets) and Mermaid diagrams describing
+  user-service's existing internal layering (`api/routes` → `services` →
+  `repositories` → `models`), its two external boundaries (`user-db`,
+  RabbitMQ), and its auth/OTP request flows. No architecture or design
+  decisions were made by the tool — the layering convention, component
+  boundaries, and models (`EmailOtp`, later renamed `OtpCode`, and `User`)
+  were already implemented in the code by the team beforehand. The docs were
+  regenerated a second time after the source code changed, purely to bring
+  the documentation back in sync — the tool re-read the existing `app/`
+  source and updated the write-up and diagrams to match, again without
+  introducing any new design decisions.
+- Prompt(s):
+  1. "Draw out architecture.md and flowchart.md" — with the `api/` and
+     `services` layers, and the `EmailOtp` and `User` models, described
+     to the tool in a table.
+  2. "Update architecture.md and flowchart.md based on the source code."
+  3. "Update this usage-log.md."
+  4. "make commit msg for all my changes"
+- Author review: Regenerated `architecture.md` and `flowchart.md` against the
+  current source code and reviewed both against `app/` for accuracy.
+
+- Tool: Claude (claude.ai, model: Claude Sonnet 5)
+- Scope: Test generation only, scoped to `user-service/tests/`: `conftest.py`
+  (per-test isolated sqlite fixture instead of the real Postgres, and a
+  mocked RabbitMQ publish so tests don't need a live broker), `test_auth.py`
+  (unit coverage for the token-verification and trusted-header-building
+  helpers), and `test_user_flow.py` (register → verify/resend-otp → login →
+  profile, covering the happy path plus validation, conflict, and
+  auth-failure branches). No new behavior, validation rules, or design
+  decisions were introduced by the tool — every assertion targets logic
+  already implemented in `app/services/user.py` and
+  `app/api/routes/users.py`; the tool only wrote pytest coverage for it.
+- Prompt(s):
+  1. "Write pytest for user Service: register, login, OTP
+     verify, resend, and profile, including reregister while unverified
+     and already verified, plus a fixture so the suite runs
+     against isolated DB and mocked rabbitMQ publish instead of
+     the real psql."
+- Author review: Ran the generated suite against the current implementation
+  and confirmed every test passes; checked that no test asserts on behavior
+  the code doesn't actually implement.
+
+---
+
+## 25/09/2026 — John Gao Jiahao
+
+- Tool: Claude Code (model: Claude Sonnet)
+- Scope: supplier-service API documentation. The team designed and agreed on
+  the endpoint set, field names, enums, and error codes for supplier-service. The tool was used only to write up that agreed design as a
+  Markdown reference and an OpenAPI 3.1 YAML file, and to cross-check the two
+  against each other and against the existing code and contracts for
+  consistency. No endpoint, schema, or interface decisions were made by the
+  tool.
+- Prompt(s):
+  1. "Here is our agreed endpoint spec for supplier-service:[Txt File]. Write this up as (a) a Markdown API reference
+     and (b) an OpenAPI 3.1 YAML file, matching our existing docs style." → clarified to supplier-service only.
+  2. "Cross-check the Markdown and YAML against each other and against the
+     current supplier-service code/contracts for mismatches"
+  3. "Implement the formatting fixes" (with a follow-up to hold off on committing pending
+     review).
+- Author review: Confirmed the Markdown and YAML match the team's agreed
+  design exactly (no unrequested endpoints/fields). Verified the OpenAPI file
+  parses as valid YAML/OpenAPI 3.1 and all $refs resolve. Not yet
+  merged, pending final team review.
+
+## 25/09/2026 — John Gao Jiahao
+
+- Tool: OpenCode (model: Claude Sonnet)
+- Scope: supplier-service implementation (backlog Supplier F1–F5). Implemented,
+  under team-owned design decisions and the pre-agreed API contract: the
+  Supplier ORM model + init_db; Pydantic DTOs (camelCase) with the locked
+  Category enum; repository (CRUD, case-insensitive keyword search over
+  name/building/location, category+zone filters, pagination); service layer
+  (404/409/validation rules); RBAC dependency reading the gateway-injected
+  X-User-Id/X-User-Role headers (admin-only create/update/deactivate);
+  error-envelope exception handlers; /api/suppliers CRUD routes + app wiring
+  (lifespan init_db); and the idempotent CSV seeder (backlog F4). Also added
+  aiosqlite as a test dependency and a flake8-bugbear ruff setting for
+  FastAPI DI defaults.
+
+  Separately, while implementing against the existing docs/OpenAPI, the tool
+  flagged four inconsistencies between those docs and the actual seed data /
+  gateway routing: no `campusLocation` column in the CSV, a mismatched base
+  path, an unlocked category enum, and PATCH/deactivate listed as planned
+  rather than implemented. The team reviewed each and decided the resolution
+  (see Prompt 2); the tool then applied only those team-decided resolutions
+  to the docs and code. The tool did not choose the field name, base path,
+  enum values, or which endpoints to implement — it surfaced the mismatch and
+  the team resolved it.
+
+  All product requirements and the endpoint/schema/error-code contract were
+  decided by the team beforehand; the tool implemented that agreed design and
+  did not make requirements or architecture decisions.
+
+- Prompt(s):
+  1. "Help me implement the supplier service based on the API spec and the
+     documentation/architecture in the docs folder … this is for the D2
+     milestone." (+ pointed the tool at the CS3219 docs and data.zip seed data.)
+  2. Tool surfaced the four inconsistencies above; team discussed and decided:
+     rename campusLocation→building (no such CSV column), keep the 4
+     categories as-is, load the CSV bytes as-is, implement full CRUD incl.
+     PATCH+deactivate, and mount routes at /api/suppliers to match the
+     gateway (updating docs to match). These decisions were then given back
+     to the tool to apply.
+  3. "Use TDD, feel free to use subagent-driven development, commit at each
+     step, keep commit messages succinct."
+- Author review:
+  I have reviewed all generated files against the team's agreed contract. Ran
+  `make test-supplier-service` (46 passing) and `ruff check`/`format`
+  (clean). Spot-checked the running service: RBAC 403 (non-admin) / 201
+  (admin create), 422 on bad category, deactivate 200 then 409 on repeat,
+  404 on missing supplier. Confirmed the idempotent seeder re-run produces
+  0 new rows on a second pass (21 → 0). Confirmed docs/OpenAPI match the
+  team-decided contract from Prompt 2.
+
+---
+
+## 26/09/2026 — Javier Enrique Wong
+
+- Tool: Claude (claude.ai, model: Claude Sonnet 5)
+- Scope: Helped understanding the transactional outbox pattern
+  for reliable RabbitMQ event delivery; implementing secure, idempotent
+  first-admin bootstrap on application startup; OTP rate limiting,
+  failed-attempt tracking, and temporary lockout behavior;
+  updating `user-service/docs/api-contract.md` with endpoint paths,
+  request bodies, headers, response payloads, validation rules,
+  and status codes; and updating user-service and API gateway tests
+  to match the `/users` internal prefix
+- Prompt(s):
+  1. "Explain the outbox pattern and how to implement"
+  2. "How should OTP rate limiting and failed-attempt handling be
+     implemented?"
+  3. "Update `api-contract.md` to document current API request and
+     response contracts based on the source code"
+  4. "Help update pytest after the code changes"
+- Author review: Reviewed the generated explanations and code changes,
+  checked and verified that the updated Python files compile successfully.
+  Reviewed api-contracts as well.
+- Scope: Documentation and test generation only, scoped to `api-gateway`.
+  Updated `docs/architecture.md` and `docs/flowchart.md` (the internal
+  layering diagram and the resolve → authorize → forward request pipeline)
+  to match the current source code. Generated `tests/test_routing.py`
+  (`resolve_upstream`'s known-prefix, unknown-prefix, and partial-segment
+  boundary cases) and `tests/test_gateway.py` (`GatewayService`'s
+  resolve/authorize/forward behavior, including the public-route,
+  missing-token, invalid-token, and valid-token outcomes, and that
+  `forward()` actually strips client-supplied `Authorization`/`X-User-*`
+  headers before proxying). Also fixed a stale import path in
+  `tests/test_auth.py` (`app.auth` → `app.services.auth`). No architecture
+  or design decisions were made by the tool — the docs describe layering
+  and behavior that already existed in the code.
+- Prompt(s):
+  1. "Given this architecuture.md and flowchart.md update based on the
+     source code."
+  2. "Also generate pytest: `test_routing.py` covering `resolve_upstream`,
+     unknown-prefix, and partial-segment cases and `test_gateway.py`
+     covering `GatewayService` resolve, authorize, forward behavior, and
+     fix `test_auth.py` below."
+- Author review: Reviewed `docs/architecture.md`/`flowchart.md` against the
+  actual resulting file layout for accuracy. Ran the generated suite and
+  confirmed every test passes; checked that no test asserts on behavior the
+  code doesn't actually implement.
+- Tool: Claude (claude.ai, model: Claude Sonnet 5)
+- Scope: Generated `api-gateway/docs/api-contract.md` from the existing gateway
+  routes, routing table, authentication behavior, path rewriting, CORS settings,
+  and error responses
+- Prompt(s): "generate api-contract.md for api-gateway based on below"
+- Author review: Compared the contract against `proxy.py`, `routing.py`, `auth.py`,
+  `gateway.py`, and gateway configuration, then corrected the documentation to
+  distinguish gateway `/api/...` routes from backend routes.
+
+---
+
+## 27/09/2026 — John Gao Jiahao
+
+- Tool: OpenCode (model: Claude Opus)
+- Scope: D2 frontend implementation, plus one small backend dev-mode toggle.
+  Implemented the React + TypeScript + Vite SPA against the team's existing,
+  already-agreed user-service and supplier-service API contracts and the
+  team's Penpot wireframe (which defined the visual design, layout, and
+  screens). Added the Mantine UI library. Frontend files created/rewritten:
+  `lib/api.ts` (typed gateway client with JWT bearer + error parsing),
+  `lib/types.ts`, `lib/auth.tsx` (JWT auth context), `lib/theme.ts`;
+  `components/` (AppLayout responsive shell, RouteGuards, StatusPill,
+  SupplierCard); auth pages (Login, Register, VerifyOtp, AuthLayout);
+  supplier pages (SupplierList with live search/category+zone filter/
+  client-side sort/pagination, SupplierDetail); admin pages (AdminSuppliers
+  table + SupplierForm create/edit/deactivate, AdminClients with
+  suspend/reinstate + create-admin); Profile; `App.tsx` routing; `main.tsx`;
+  `index.css`; `package.json`. Removed dormant errand placeholder pages.
+  Backend: added an `OTP_DEV_MODE` config flag to user-service so that, when
+  SMTP is unset, the verification code is logged instead of emailed, enabling
+  the register → verify → login flow to be demoed without a mail provider
+  (`config.py`, `services/notification.py`, `.env.example`). No product
+  requirements or architecture/design decisions were made by the tool — the
+  API contract, RBAC model, and UI design were decided by the team; the tool
+  implemented the frontend against them.
+- Prompt(s):
+  1. "Currently i need to link up the frontend to the user service and supplier service …
+     I am pretty sure we need an admin portal and also the main page itself" Here is the penpot design that the team has already created.
+  2. Selected full scope (suppliers + auth + admin portal), Mantine UI, full
+     register/OTP UI with a dev-mode verification path, and to implement on a
+     new branch off main.
+- Author review: Verified `npm run build` (tsc) passes cleanly;
+  brought the stack up with `docker compose up` and tested end-to-end via the
+  gateway: admin login, supplier list/create (201) as admin vs create denied
+  (403) as client, client list allowed (200), register → OTP (dev-mode log) →
+  verify → login, and profile `/me`. Manually exercised the running UI at
+  desktop and mobile viewports (browse grid, admin suppliers table + edit
+  form, client accounts table, mobile burger nav). No console errors (only
+  React Router v7 future-flag warnings).
+
+## 26/09/2026 — Frank Yu / Zhou Shiyao
+
+- Tool: GitHub Copilot (model: DeepSeek V4 Pro)
+- Scope: credit-service implementation per the team's D1 backlog (Credit
+  Service F1–F5, N1–N2) and the shared event contracts. Generated: ORM models
+  (account, reservation with unique order_id, transaction history), schemas,
+  repositories with SELECT ... FOR UPDATE, `CreditService` business logic
+  (provisioning with 100-credit initial allocation, reserve/amend/transfer/
+  release, idempotent event handling, CourierWithdrawn no-op), error hierarchy
+  - handlers, HTTP routes (`/credits` prefix), RabbitMQ consumer
+    (`foc.user.events` fanout + `foc.order.events` topic) and best-effort
+    reservation-event publisher (`foc.credit.events`), lifespan wiring, tests,
+    README, `.env.example`.
+    All requirements and design decisions come from the D1 document and the
+    team's existing PR patterns (supplier-service layering/error envelope,
+    user-service event publishing); the tool only implemented the chosen design.
+- Prompt(s):
+  1. "Read the Credit Service FR and NFR sections of this document; based on the D1 requirements document and the parts of the existing PRs worth following, produce the credit service implementation. Implement strictly per D1; do not add features on your own."
+  2. "Review your implementation: reuse shared project components as much as possible, minimise coupling with other services, and keep the layers clean."
+  3. "Audit all security checks and defensive code; remove defensive code that guards impossible situations, and make the code as simple as possible."
+  4. "Fix: dead-letter invalid events, idempotent reserve retries, fixed account lock ordering, no double-counting in transaction history, and releasing the row lock before publishing events."
+- Author review: Both authors reviewed the generated code against the D1 backlog
+  (Credit F1–F5, N1–N2) and the shared event contracts. Verified with
+  `pytest` (55 tests passing) and `ruff check`/`ruff format` (clean).
+  Incorporated PR #7 review feedback (dead-lettering invalid events,
+  idempotent reserve retries, fixed lock ordering, history amounts summing
+  to balances, releasing the row lock before publishing).
+
+---
+
+## 27/09/2026 — John Gao Jiahao
+
+- Tool: OpenCode (model: Claude Opus)
+- Scope: D2 demo tooling only — no product/business logic and no service-code
+  changes. Generated a Postman v2.1 collection
+  (`postman/FoC-D2.postman_collection.json`) and matching local environment
+  (`postman/FoC-local.postman_environment.json`) that exercise the User Service
+  and Supplier Service end-to-end through the API Gateway (health, registration
+  - OTP verify/resend, authentication, RBAC evidence incl. gateway header-strip,
+    supplier discovery/CRUD, profile self-update, and user administration incl.
+    suspend/role-change), each request asserting the status code and key body
+    fields and chaining tokens/ids via environment variables; a curl + jq twin
+    (`scripts/demo.sh`, numbered 01–07 to match the folders, non-aborting, with
+    per-step pauses and dev-mode OTP auto-extraction); and `postman/README.md`
+    (import, prerequisites, and two newman run modes). Every endpoint, field name
+    (snake_case for user, camelCase for supplier), and expected status code was
+    derived from the service code, not invented. The tool surfaced one docs-vs-code
+    mismatch (see review) and left the test asserting the code's actual behavior.
+- Prompt(s):
+  1. "Create a Postman collection and a matching shell script to demo Milestone
+     D2 (User Service + Supplier Service) through the API gateway, without the
+     UI." (+ detailed folder/step spec and 'derive every request from the code'.)
+  2. Answered clarifying questions: match the current `.env` bootstrap admin
+     exactly in the environment file, and follow the code (assert lowercase
+     `role`) over the user-service `api-contract.md` which shows uppercase.
+- Author review: Validated both JSON files parse (`python -m json.tool`).
+  Brought the full stack up with `docker compose up --build -d` (OTP*DEV_MODE
+  and BOOTSTRAP_ADMIN*\* set), waited for gateway `/health`, ran `scripts/demo.sh`
+  (all steps returned the expected codes), and ran `newman` in the CI-ish mode
+  against a freshly verified client: **62/62 assertions passed, 0 failures**.
+  Docs-vs-code mismatch found and reported (not fixed here): user-service
+  `docs/api-contract.md` documents `role` as uppercase `CLIENT`/`ADMIN`, but the
+  service serializes the enum value lowercase (`client`/`admin`); the collection
+  asserts the code's actual lowercase output. No service code was modified.
+
+---
+
+## 27/09/2026 — John Gao Jiahao
+
+- Tool: OpenCode (model: Claude Opus)
+- Scope: D2 architecture/design documentation only — Mermaid-in-Markdown
+  diagrams and small factual doc corrections; **no code changes**. Every box,
+  column, arrow, and status code was derived from the source (compose.yaml,
+  .env.example, gateway/user/supplier/credit service code, the shared auth/event
+  contracts, and the unmerged order-service PR #5 clients), matching the
+  existing docs' `Title / Legend / Explained elements` house style. Added: a C4
+  Level-2 system container diagram in `docs/architecture.md` (above the existing
+  supplier component diagram); a user-db ER diagram (`users`, `email_otps`,
+  `event_outbox`) in `user-service/docs/architecture.md`; a supplier-db ER
+  diagram in the new `supplier-service/docs/data-model.md`; a role→capability
+  matrix plus an authenticated-supplier-write sequence diagram in the new
+  `docs/rbac.md`; and three additions to `user-service/docs/flowchart.md`
+  (registration→initial-credits sequence, first-admin bootstrap flowchart, and a
+  role-change guard flowchart). Doc fixes: replaced the README ASCII sketch with
+  a one-paragraph summary linking `docs/architecture.md` and corrected "edge auth
+  - RBAC" wording (the gateway authenticates only; RBAC is enforced in services);
+    removed the reference to the non-existent `supplier-service-architecture.excalidraw.json`;
+    corrected `docs/supplier-service-api.md` §3 (gateway does not enforce RBAC); and
+    added the `UserRegistered` event on `foc.user.events` to `docs/event-catalog.md`.
+    The team-authored "Key decisions" / ADR sections were left untouched.
+- Prompt(s):
+  1. "Add the architecture/design diagrams missing for the repo's current state, as Mermaid
+     inside Markdown … match the existing diagram docs' style … derive every box,
+     field, arrow and status code from the code." (+ detailed list of the eight
+     diagrams and the small factual doc fixes.)
+  2. "Use the diagrams mcp to draw the diagrams." (Used to draft; final diagrams
+     were hand-authored to the repo's exact Title/Legend/Explained-elements
+     house style and validated with mermaid-cli.)
+- Author review: Rendered **all 11** Mermaid blocks with
+  `npx @mermaid-js/mermaid-cli` (v12.0.0) — all pass (one initial hexagon-shape
+  syntax issue for the RabbitMQ node was fixed by switching to a stadium shape).
+  Cross-checked every column/enum/route/status against the source files.
+  Code-vs-doc mismatches found and reported (docs corrected where factual; code
+  left unchanged): (a) the `UserRegistered` outbox relay is **implemented**
+  (`outbox_worker`), not planned, so its publish path is drawn solid — this
+  corrects the task's "draw dashed if absent" assumption; (b) README + old
+  `docs/architecture.md` claimed the gateway does "edge auth + RBAC" whereas the
+  gateway authenticates only and services enforce RBAC; (c) `docs/architecture.md`
+  referenced a `.excalidraw.json` that does not exist; (d) `docs/supplier-service-api.md`
+  claimed the gateway also enforces RBAC; (e) the user-service `docs/api-contract.md`
+  documents `role` as uppercase while the code serializes lowercase (noted, not
+  changed here). order-service and its event/HTTP flows are drawn dashed and
+  labelled "PR #5" because they exist only on the unmerged branch.
+
+## 18/10/2026 — John Gao Jiahao
+
+- Tool: Claude Code (model: Claude Opus 4.8) with the draw.io MCP server
+- Scope: Generated the cluster infrastructure diagram
+  (`docs/cluster-infrastructure.drawio`) depicting the k3s-on-EC2 Kubernetes
+  deployment: VPC/public subnet, the EC2 node, namespace-per-service with each
+  service's co-located Postgres, RabbitMQ, Traefik ingress, HPA, S3 backups, and
+  the CloudWatch/EventBridge/Budgets auto-stop. Exported it to PNG/SVG and added
+  a "Cluster infrastructure" section embedding it in `docs/deployment.md`. The
+  architecture was decided by the team; AI only drew the diagram from it.
+- Prompt(s):
+  1. "make a cluster infrastructure diagram using drawio mcp"
+  2. "can you export and put it in the documentation markdown files"
+- Author review: Checked every node and edge against the Helm charts
+  (`infra/helm/foc`) and Terraform (`infra/terraform`).
+
+## 04/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-5)
+- Scope: Updated the human-readable Order Service API reference and service
+  README to match the Supplier Service documentation style and the implemented
+  Sprint 1 behavior. No endpoint or architecture decisions were introduced.
+- Prompt(s): "Check that the endpoints in the order service are documented
+  properly. Make sure it follows the style of the docs/supplier service's
+  endpoint documentation in the repo root. Then, stage the change for the
+  documentation and show me what the file looks like. Don't commit yet."
+- Author review: Pending contributor review. Codex cross-checked the staged
+  documentation against the FastAPI routes, Pydantic schemas, service and
+  repository workflows, dependency clients, centralized error mappings, and
+  API Gateway route table. No commit was created.
+
+## 04/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-5)
+- Scope: Reset the Order Service's Alembic revision history while preserving
+  the Alembic configuration, migration environment, template, and dependency.
+  The migration strategy decision and requested clean revision state were
+  supplied by the contributor.
+- Prompt(s): "keep alembic but remove migrations and currently stored
+  versioning. I want it to be clean."
+- Author review: Pending contributor review. Codex restored the Alembic
+  scaffold and dependency, removed only the two tracked revision files, kept
+  the versions directory, and did not modify a live database.
+
+## 19/10/2026 — Zhou Shiyao
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Added Playwright end-to-end regression tests for the frontend:
+  (a) **auth** — login, registration, OTP verification, session
+  hydration/expiry, logout, and client/admin route guards; (b) **suppliers** —
+  browse with search/category/zone/sort/pagination, detail with optional-field
+  fallbacks and 404s, plus admin create/edit/deactivate/reactivate; (c) **admin
+  client accounts** — list/self-row behaviour, search + status filters,
+  suspend/reinstate, promote/demote, create-admin validation and gateway
+  rejection; and (d) **profile** — read-only account fields, editable
+  name/contact, client-side validation and error handling. Also added the shared
+  API-gateway mock helper (with query-parameter capture and request recording),
+  supplier/admin fixtures, a Vite warm-up global setup, Playwright config
+  updates, and the frontend test documentation. Test tooling only; no
+  application behavior, endpoint contracts, or architecture decisions were
+  changed.
+- Prompt(s):
+  1. "Help me to write regression tests for frontend/auth."
+  2. "Now generate the regression tests for supplier pages. …" (detailed
+     instruction: inspect the code/contracts first; cover positive, negative,
+     edge and state-transition scenarios; avoid redundant or fragile tests;
+     then implement, run, and summarize), followed by "commit the changes".
+  3. "commit the changes then continue to generate tests for admin and profile
+     following the same instruction."
+- Author review: Reviewed every spec against the code it exercises —
+  `src/pages/{auth,suppliers,admin}`, `src/pages/Profile.tsx`,
+  `src/components/RouteGuards.tsx`, and the client logic in `src/lib/api.ts` /
+  `src/lib/auth.tsx` — so each assertion matches actual behavior. Cross-checked
+  request payloads and query parameters against
+  `docs/supplier-service-api.md` and `user-service/docs/api-contract.md`.
+  Ran `npx tsc --noEmit -p tsconfig.json` (clean; tests are part of the
+  TypeScript project) and
+  `cd frontend && npx playwright test tests/auth tests/suppliers tests/admin tests/profile`
+  — **162 passed** (54 tests × Chromium/Firefox/WebKit) with a cold Vite cache.
+  Tests use a mocked gateway (no backend/DB required); no production code was
+  modified.
+
+## 14/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Added a dedicated Order Service error for update attempts on orders
+  that are no longer open or have an assigned courier, with a 409 API mapping
+  and focused service/handler tests.
+- Prompt(s): "This would falsely say the error message. The frontend should be
+  able to receive it and interpret it as trying to update an order that is
+  already has a courier and not OPEN anymore. So create a new error for this.
+  I give perms to change the code."
+- Author review: Pending contributor review. Codex ran focused tests and
+  checked the new error mapping and update guard. Existing create/delete test
+  failures and unrelated lint errors from the in-progress client refactor remain.
+
+## 16/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Implemented the Order Service cancellation workflow and generalized
+  terminal-action result dispatcher. Added the cancellation API, durable
+  `cancel` task creation, Order-domain event publication (`OrderDelete`,
+  `OrderCancelled`, or `OrderExpired`), separate delete/cancel/expire handlers,
+  Credit outcome routing by reservation ID, transactional result handling, and
+  retry/idempotency tests. No service outside `order-service/` was modified.
+- Prompt(s): "Implement this: To cancel, Order Service authenticates the
+  requester, locks the order, and validates ownership, status, pending updates,
+  and conflicting tasks. It returns an existing pending task or creates a
+  CANCEL task and responds 202. A publisher maps pending DELETE, CANCEL, and
+  EXPIRE tasks to OrderDelete, OrderCancel, and OrderExpire events, publishing
+  with retries. Credit Service independently releases the reservation
+  idempotently, then publishes CreditReleased or CreditReleaseFailed. Order
+  Service locks the matching task by reservation ID. Failure marks it failed;
+  success calls its mapped handler. Each handler locks and revalidates the
+  order, then deletes it or changes its state, records any final lifecycle
+  event, and completes the task. Transaction errors roll back and requeue;
+  unmatched or duplicate events are acknowledged. Implement this and this
+  pseudocode. Make sure the code is neat, simple to understand, and add clear
+  comments where appropriate but don't overdo the comments either. Make sure
+  it follows the project's architecture."
+- Author review: Pending contributor review. Ruff passed; 131 tests passed and
+  12 optional PostgreSQL tests were skipped because no PostgreSQL test URL was
+  provided.
+
+## 16/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Revised the cancellation saga to publish
+  `OrderCancellationRequested` when a valid request becomes pending, then
+  durably record `OrderCancelled` after `CreditReleased` or
+  `OrderCancellationFailed` after `CreditReleaseFailed`. The final order/task
+  state and outcome event are committed atomically. No service outside
+  `order-service/` was modified.
+- Prompt(s): "To cancel an order, Order Service authenticates the requester,
+  locks the order, validates ownership and status, and rejects pending updates
+  or conflicting terminal actions... Make sure the code is neat, simple to
+  understand, and add clear comments where appropriate but don't overdo the
+  comments either. Make sure it follows the project's architecture."
+- Author review: Pending contributor review. Codex added focused request,
+  success, failure, publication, duplicate, and rollback coverage and ran the
+  complete Order Service validation suite.
+
+## 16/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Revised the deletion saga to publish `OrderDeletionRequested` while
+  deletion is pending, followed by the durable Order-domain outcome
+  `OrderDeleted` or `OrderDeletionFailed`. The final task, order, and outcome
+  event changes are transactional. No service outside `order-service/` was
+  modified.
+- Prompt(s): "Okay so change the initial published event to be
+  OrderDeletionRequested. After receiving the corresponding credit events,
+  should publish OrderDeleted or OrderDeletionFailed."
+- Author review: Pending contributor review. Codex added focused outcome,
+  publication, parsing, and rollback coverage and ran the Order Service
+  validation suite.
+
+## 16/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Corrected deletion conflict handling so only a repeated pending
+  deletion returns its existing task. Pending cancellation or expiry and any
+  failed terminal action now reject the DELETE request with the existing state
+  conflict API behavior. No service outside `order-service/` was modified.
+- Prompt(s): "Implement this logic in the deletion workflow: existing pending
+  DELETE task return the same task; existing pending CANCEL or EXPIRE task
+  reject deletion; existing FAILED terminal task reject for review; reject an
+  ineligible order; otherwise create a pending DELETE task."
+- Author review: Pending contributor review. Codex added focused service tests
+  and ran the Order Service validation suite.
+
+## 16/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Added durable final Order Service outcomes for the asynchronous update
+  workflow. `CreditAmended` now results in `OrderUpdated`, while
+  `CreditAmendRejected` results in `OrderUpdateFailed`; each outcome event is
+  committed atomically with its order/task state. No service outside
+  `order-service/` was modified.
+- Prompt(s): "Make Order Service publish a final `OrderUpdated` or
+  `OrderUpdateFailed` event after completion of consuming the CreditAmended/
+  CreditAmendRejected."
+- Author review: Pending contributor review. Codex added focused success,
+  failure, parsing, duplicate, and rollback coverage and ran the Order Service
+  validation suite.
+
+## 16/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Consolidated Order Service outbound event publication into one event
+  outbox and one publisher, while keeping the credit-release and credit-update
+  result consumers separate. Both consumers now look up and lock tasks by
+  `task_id`, ignore non-pending duplicates, validate reservation and optional
+  order IDs, and check event type against the RabbitMQ routing key. Release
+  dispatch is chosen from the local task action. A migration preserves
+  unpublished task events while renaming the workflow tables. No service
+  outside `order-service/` was modified.
+- Prompt(s): "Apply this to the current order service: make both consumer flows
+  match using task ID, verify reservation ID and any supplied order ID, validate
+  event type against the routing key, and dispatch release results using the
+  local task action. Use one Order Service event outbox and one event worker."
+- Author review: Pending contributor review. Ruff checks and formatting passed;
+  the Order Service test suite passed with 12 optional PostgreSQL tests skipped.
+
+## 16/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Aligned credit release result handling so the locked pending task's
+  local `action` selects the delete, cancel, or expire handler for both
+  `CreditReleased` and `CreditReleaseFailed`. The release and update consumers
+  correlate results by `task_id`, validate reservation and optional order IDs,
+  acknowledge duplicate non-pending tasks, and validate event routing keys.
+  No service outside `order-service/` was modified.
+- Prompt(s): "Apply this to the current order service: Make sure that both
+  consumer flows in order service match using task id for consistency and
+  correctness. Then, make sure their reservation id matches as well. Conduct
+  the checks to ensure that the order that the reservation by the credit
+  service and the order referenced by the task matches... [the request also
+  specified pending-state duplicate handling, optional order ID validation,
+  type/routing-key validation, task-action dispatch, and one outbound event
+  outbox and worker]."
+- Author review: Pending contributor review. Focused Order Service checks run.
+
+## 17/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Replaced the separate Order Service update, deletion, and action task
+  response schemas with one `OrderActionResponse`. It exposes a shared optional
+  `failure_reason` sourced from the task's stored error. No service outside
+  `order-service/` was modified.
+- Prompt(s): "okay so get rid of the orderupdatetaskresponse, and use one
+  \"OrderActionResponse\" exactly."
+- Author review: Pending contributor review. Tests were not run.
+
+## 17/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Added concise FastAPI docstrings to each Order Service route, each
+  limited to ten words. No service outside `order-service/` was modified.
+- Prompt(s): "For each of the endpoints in routes/orders.py, add the
+  `description` of what the endpoint does in 10 words max for each of them."
+- Author review: Pending contributor review. Tests were not run.
+
+## 17/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Applied Ruff formatting to remove trailing whitespace in
+  `order-service/app/api/routes/orders.py`. Order Service Ruff lint, format,
+  and diff whitespace checks passed.
+- Prompt(s): "ok make the code base agree with ruff and the CI linting"
+- Author review: Pending contributor review. Tests were not run.
+
+## 17/10/2026 — Direct order expiry workflow
+
+- Tool: Codex (model: GPT-6)
+- Scope: Added an Order Service expiry sweeper that runs every five seconds,
+  locks and processes up to 100 due open orders per transaction in deadline
+  order, marks them `EXPIRED`, and records `OrderExpired` facts in the existing
+  event outbox. The sweeper drains subsequent batches immediately and emits a
+  structured log signal when an order exceeds the 20-second expiry target. The
+  existing event worker publishes these events with broker confirmation and
+  retries. Expiry no longer waits for a Credit result or creates new release
+  tasks. Added a partial index migration, updated Order Service docs, and
+  aligned release-worker tests with the new ownership of expiry. Added tests
+  for eligibility, outbox records, and multi-batch draining. No service outside
+  `order-service/` was modified.
+- Prompt: "Implement the Order Service expiry workflow: run a sweeper every
+  five seconds; process up to 100 due eligible orders per transaction in
+  oldest-deadline order with row locks and `SKIP LOCKED`; recheck eligibility,
+  set each to `EXPIRED`, and add `OrderExpired` to the existing event outbox;
+  drain batches immediately; use no task table; reuse the confirmed, retrying
+  event worker; leave reservation release and retries to Credit Service; and
+  signal orders overdue by more than 20 seconds. Keep the code neat and follow
+  the architecture. Change only `order-service/` and this permitted AI usage
+  log."
+- Author review: Pending contributor review. `make test-order-service` passed
+  with 145 passed and 12 optional PostgreSQL tests skipped. Ruff lint,
+  formatting, and `git diff --check` passed; one existing Starlette deprecation
+  warning remains.
+
+## 17/10/2026 — Name the update request event explicitly
+
+- Tool: Codex (model: GPT-6)
+- Scope: Renamed the Order Service's outbound update request event to
+  `OrderUpdateRequested`, updated its schema, outbox worker and README. Added a
+  migration to rename unpublished legacy outbox payloads while preserving
+  already-published event history.
+- Prompt: "ok so change this to OrderUpdateRequested"
+- Author review: Pending contributor review. Ruff lint, formatting, and
+  `git diff --check` passed. Tests were not run.
+
+## 17/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Implemented the F3 courier assigned-orders listing in Order Service.
+  The endpoint uses trusted caller headers, lists ongoing assigned orders in
+  deadline and ID order, and follows the existing route → service → repository
+  architecture. Added focused API and service tests and documented the
+  endpoint. No other service or the API Gateway was modified.
+- Prompt(s): “Implement F3 in `order-service` only: add `GET /orders/assigned`,
+  requiring trusted `X-User-Id` and `X-User-Role: client` headers. Return a
+  JSON array of existing `OrderResponse` objects for that courier’s orders in
+  `ACCEPTED`, `PICKED_UP`, or `AWAITING_APPROVAL` status, sorted by deadline
+  then order ID; return `[]` when none match. Follow the route → service →
+  repository architecture and query only Order Service’s database. Register
+  the static route before `/{order_id}`. Keep it read-only and publish no
+  events. Add focused tests and update Order Service documentation. Add
+  required AI attribution headers and record this prompt in the permitted AI
+  usage log. Do not modify other services or the gateway. Make sure the code
+  is neat, simple to understand, and add clear comments where appropriate but
+  don't overdo the comments either. Make sure it follows the project's
+  architecture.”
+- Author review: The focused Order Service API and service tests passed. Ruff
+  lint and format checks passed, and `git diff --check` passed.
+  One pre-existing Starlette `httpx` deprecation warning remains.
+
+## 19/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Implemented proof-of-delivery photo upload in the Order Service's
+  existing deliver endpoint, saved a private S3 object key on the order, and
+  returned the image as a data URI in the existing order-detail response for
+  the requester or assigned courier. Added validation, S3 failure handling,
+  a migration, configuration documentation, and focused tests. No other
+  service, shared code, or infrastructure source file was changed.
+- Prompt(s): “So make two endpoint updates: 1. Update the existing courier
+  `POST /orders/{order_id}/deliver` endpoint to accept the photo. This marks
+  the order `AWAITING_APPROVAL`; the courier does not submit the requester’s
+  approval. 2. Update the existing GET order id endpoint so that it returns
+  the order information alongside a photo proof of delivery right? This GET
+  will not have a picture in the open orders listing, but in completed orders
+  page of the requester/courier it will have a picture, because now the
+  picture is there. Also update the orders table so that it has a photo key
+  field. Make sure the code is neat, simple to understand, and add clear
+  comments where appropriate but don't overdo the comments either. Make sure
+  it follows the project's architecture.” Earlier exchange specified that the
+  deliver endpoint must reject missing, oversized, or invalid photo types
+  without publishing; requester and assigned courier may view order detail;
+  and the photo should appear in the same detail response rather than from a
+  separate photo endpoint.
+- Author review: 199 Order Service tests passed; 14 PostgreSQL tests were
+  skipped because no test database URL was supplied. Ruff lint/format and
+  `git diff --check` passed.
+
+## 17/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Implemented Order Service's asynchronous approval workflow. The
+  service validates the requester and order state, atomically records a
+  pending approval task and `OrderApprovalRequested`, then applies correlated
+  credit-transfer results atomically with the task, order status, and final
+  order event. Added an approval-result consumer, task persistence and
+  migration, API route, event schemas, and Order Service documentation. No
+  service outside `order-service/` was modified.
+- Prompt(s): “Implement the order approval workflow, following Order Service’s
+  deletion and cancellation patterns. Modify only files under order-service/
+  and the root ai/usage-log.md; do not modify any other files or services. Add
+  AI attribution headers to modified AI-influenced files and log this prompt.
+
+  When the authenticated requester approves their order, validate ownership
+  and AWAITING_APPROVAL status. In one Order Service transaction, create a
+  pending approval task and write OrderApprovalRequested to the outbox. Return
+  202 with the task ID; publish through the event worker.
+
+  Treat events as facts about the publishing service, not commands. The Credit
+  Service independently validates the reservation, transfers the reward
+  idempotently, and publishes a success or failure result.
+
+  Handle each result in one Order Service transaction: lock and correlate the
+  pending task; ignore unmatched or stale results; validate task, reservation,
+  and order IDs; lock and recheck the order. On failure, fail the task, leave
+  the order AWAITING_APPROVAL, and write OrderApprovalFailed to the outbox. On
+  success, complete the order and task, and write OrderApproved to the outbox.
+  Commit before acknowledging; publish outcomes through the event worker.
+
+  Make sure the code is neat, simple to understand, and add clear comments
+  where appropriate but don't overdo the comments either. Make sure it follows
+  the project's architecture.”
+
+- Author review: Ruff lint, format, and `git diff --check` passed. Tests were
+  not run.
+
+## 17/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Updated available-order discovery to require a deadline later than
+  the database's current time, excluding overdue open orders before the expiry
+  sweeper updates their status. Added a repository-level regression test and
+  documented F2.4/F2.4.1 in the Order Service README. No other service or the
+  API Gateway was modified.
+- Prompt(s): “Update the Order Service available-orders query to exclude
+  orders whose deadline is at or before the current database time, even if
+  their status is still `OPEN`. Preserve existing filters and sorting. Add
+  focused tests proving overdue open orders are excluded and future open
+  orders remain listed. Follow the repository architecture, update Order
+  Service documentation and the permitted AI usage log, and modify no other
+  services or the API Gateway. Make sure the code is neat, simple to understand,
+  and add clear comments where appropriate but don't overdo the comments either.
+  Make sure it follows the project's architecture.”
+- Author review: The repository regression test passed. Ruff lint and format
+  checks passed, and `git diff --check` passed.
+
+## 17/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Implemented F3.1 delivery handling in Order Service. The endpoint
+  accepts both gateway-injected `client` and `admin` roles, verifies the caller
+  is the assigned courier, locks and validates the picked-up order, transitions
+  it to `AWAITING_APPROVAL`, and records `OrderDelivered` in the existing
+  outbox transactionally. Added service and API tests and Order Service
+  documentation. No service outside `order-service/`, the API Gateway, or
+  shared code was modified.
+- Prompt(s): “Implement F3.1 in `order-service`: add
+  `POST /orders/{order_id}/deliver`. Allow both gateway-injected `client` and
+  `admin` roles; don’t restrict the endpoint to clients. Lock the order,
+  require `X-User-Id` to match its assigned courier and status to be
+  `PICKED_UP`, then transition it to `AWAITING_APPROVAL` and save an
+  `OrderDelivered` event to the outbox in the same transaction. Let the
+  existing worker publish after commit. Return the updated order; make no
+  external service calls. Add focused tests and update Order Service
+  documentation and the permitted AI usage log. Don’t modify other services,
+  the gateway, or shared code. Make sure the code is neat, simple to understand,
+  and add clear comments where appropriate but don't overdo the comments either.
+  Make sure it follows the project's architecture.”
+- Author review: Focused delivery service, API, and error-mapping tests
+  passed. Ruff lint and format checks passed, and `git diff --check` passed.
+  One pre-existing Starlette `httpx` deprecation warning remains.
+
+## 19/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Added three read-only Order Service listing endpoints for requester
+  ongoing orders, requester completed orders, and courier completed orders.
+  Queries filter by gateway-provided identity and status, return existing order
+  summaries without photo data, and publish no events. Updated Order Service
+  documentation and focused API, service, and repository tests. Changed no
+  other service.
+- Prompt(s): “Implement three Order Service listing endpoints:
+  `GET /orders/requested/ongoing` for the authenticated requester's `OPEN`,
+  `ACCEPTED`, `PICKED_UP`, or `AWAITING_APPROVAL` orders;
+  `GET /orders/requested/completed` for their `COMPLETED` orders; and
+  `GET /orders/assigned/completed` for the authenticated courier's `COMPLETED`
+  orders. Filter by gateway-provided `X-User-Id`, never a client-provided user
+  ID. Return summaries without photo bytes; retain `GET /orders/{order_id}`
+  for details and photo. Follow the route/service/repository architecture,
+  place static routes before `/{order_id}`, add meaningful tests and Order
+  Service documentation, publish no events, and modify only `order-service/`
+  and `ai/usage-log.md`. Keep code neat and comments clear but sparing.”
+- Author review: 210 Order Service tests passed; 14 optional PostgreSQL tests
+  were skipped because no test database URL was supplied. Ruff lint/format and
+  `git diff --check` passed. One pre-existing Starlette `httpx` deprecation
+  warning remains.
+
+## 19/10/2026 — Alexander Gerald
+
+- Tool: Codex (model: GPT-6)
+- Scope: Created `order/proof-of-delivery-photo` from the current Order Service
+  commit, then removed photo upload, storage, retrieval, configuration,
+  migration, documentation references, and tests from
+  `implementation/order-service`. Preserved the later order-listing work and
+  general architecture diagrams. Changed no other service.
+- Prompt(s): “Can't we branch out directly from the current commit? So from
+  the current commit, checkout to a order/proof-of-delivery-photo branch. Then
+  checkout back to implementation/order-service, then remove all the proof of
+  delivery photo feature? Because i want the implementation/order-service
+  branch to be photo proof of delivery feature free.”
+- Author review: Order Service tests and Ruff checks passed. Existing staged
+  Order Service work was preserved separately during the removal.
+
+---
+
+## 17/10/2026 — Frank Yu / Zhou Shiyao
+
+- Tool: GitHub Copilot (model: DeepSeek V4.1 Flash)
+- Scope: credit-service side of the Order Service delete/cancel/update task
+  contract (follow-up to PR #7). Generated: local copies of the interop
+  schemas (`app/schemas/interop.py`), `CreditTaskResult` model + repository
+  for `task_id` idempotency, `handle_release_requested` /
+  `handle_update_requested` service logic with definitive outcome publishing,
+  a raising `publish_credit_event`, consumer routing by routing key with an
+  `x-retry-count` retry budget and failure replies, plus tests, README,
+  `docs/event-catalog.md` and `.env.example` updates.
+  The event contract itself (event names, payload fields, reply semantics,
+  retry behaviour, and the decision to duplicate the schemas locally until
+  they move to `shared/`) was defined by the Order Service owner and
+  confirmed with the author; the tool only implemented it.
+- Prompt(s):
+  1. "第三点，你先复制一份，然后实现掉，后面他啥时候推了shared的版本我们再改。"
+     ("Copy [the schemas] first and implement it; when he pushes the shared
+     version later we will switch to it.")
+  2. (Same thread, on the confirmed contract) "OrderExpiryRequested 是死代码，
+     可以删掉；明确的业务错误和超过重试上限的临时错误都要回复
+     CreditReleaseFailed / CreditAmendRejected。"
+- Author review: Verified the local schemas field-by-field against
+  `order-service/app/schemas/{order_action_events,order_update_events,credit_events}.py`
+  on `implementation/order-service`, and checked the confirmed answers on
+  `OrderExpiryRequested`, definitive replies and schema ownership. Verified
+  with `pytest` (73 tests passing) and `ruff check`/`ruff format` (clean).
+  PR #11.
+
+## 18/10/2026 - credit-service owner (fill in name)
+
+- Tool: DeepSeek Harness (model: deepseek-flash)
+- Scope: credit-service observability N2H. Generated: `app/observability/`
+  (`context.py`, `metrics.py`, `middleware.py`, `logging.py`, `health.py`,
+  `summary.py`), the `/metrics` and `/health/ready` routes, the admin
+  `GET /credits/observability/summary` JSON view, Prometheus counters inside
+  `credit_service.py` / `publisher.py` / `consumer.py` / `errors.py`, DB pool
+  gauges in `db.py`, the `observability` compose profile (Prometheus + Grafana
+  with a provisioned dashboard and alert rules), `scripts/load-credit.sh`,
+  `scripts/observability-demo.py` (self-test that drives every metric family and
+  prints the coverage table), the summary `coverage` block, `Makefile` targets,
+  tests, `docs/observability.md`, and README/RBAC/env docs.
+  The metric set, the "metrics first, tracing later" ordering and the
+  route-template labelling decision were agreed in the team thread
+  (F. Yu / J. Gao); the tool implemented them.
+- Prompt(s):
+  1. (Team thread, F. Yu) "i need to do analytics for observability in order to
+     improve system availability" - request count / success rate / status-code
+     distribution, per-route latency and QPS, and business error-code frequency
+     including saga rejections that never reach HTTP.
+  2. (J. Gao) "we can set rabbitmq to track the traces and send to otel
+     collector ... u can do some research on the architecture" - reviewed that
+     suggestion: RabbitMQ emits broker metrics (`rabbitmq_prometheus`), traces
+     come from client-side context propagation, so tracing stays out of scope
+     for a credit-only rollout.
+  3. "你就做这些吧，然后按你的理解来，最后 Credit 暴露一个 api 做一下数据
+     展示。返回一个 json 块" - implement P0-P3 and add the JSON summary API.
+  4. "请你帮我做个测试：你新加的接口是什么？打一些请求，分别覆盖不同的 error
+     code，然后把每个功能的统计都展示一下。这个接口应该覆盖了所有 metric" -
+     added `scripts/observability-demo.py` and the `coverage` block.
+- Author review: `pytest` (96 tests passing) and `ruff check` / `ruff format`
+  clean; `compose.yaml`, the Prometheus configs and the Grafana provisioning
+  files parsed and validated as YAML, the dashboard JSON reloaded and checked
+  for unique panel ids; the sample summary block in `docs/observability.md` was
+  produced by calling the endpoint itself; the demo script exits 0 with all six
+  error codes exercised and 22/22 metric families covered. Not validated in this
+  environment: `docker compose --profile observability up` (no Docker
+  available), so the first real stack run still needs checking.
+
+## 19/10/2026 - credit-service owner (fill in name)
+
+- Tool: DeepSeek Harness (model: deepseek-flash)
+- Scope: credit-service participant side of the Order approval transfer task.
+  Generated: `OrderApprovalRequestedEvent` and `CreditTransferResult` in
+  `app/schemas/interop.py` (mirroring `order-service/app/schemas/
+order_approval_events.py` and `credit_events.py`), `TaskResultKind.TRANSFER`
+  with `transferred` / `transfer_failed` outcomes, `_transfer_reservation(
+commit=False)` so the settlement and its task result commit once,
+  `CreditService.handle_approval_requested` /
+  `report_transfer_retries_exhausted` / `_record_transfer_outcome` /
+  `_publish_transfer_outcome`, the consumer binding for
+  `OrderApprovalRequested`, `tests/test_approval_requests.py` (15 cases), the
+  event-catalog/README rows, and a hermetic-test change (the HTTP suites now
+  stub reservation publishing instead of waiting on a RabbitMQ connect).
+  The contract (event names, payload fields, reply fields, routing key) was
+  specified by the Order Service owner (Alexander) in the team thread; the tool
+  implemented it against the order-side schemas.
+- Prompt(s):
+  1. (Team thread, Alexander) "Event: OrderApprovalRequested ... Credit Service
+     actions: Find the reservation by reservation_id and verify it matches
+     order_id and requester_id. Transfer the reserved credits to the account
+     identified by courier_id. Process duplicate events idempotently; retry
+     transient errors, then report a definitive failure ... Credit Service
+     publishes CreditTransferSucceeded / CreditTransferFailed ... Set the
+     routing key to event_type."
+  2. "现在就实现（推荐）" - implement the contract.
+- Author review: `pytest` (111 tests passing, 15 new) and `ruff check` /
+  `ruff format` clean; the reply model round-trips through the strict
+  `CreditTransferResult` (extra=forbid, six fields) on both the success and
+  failure paths, and the order-side `approval_consumer` / `approval_worker` were
+  read to confirm the routing keys and field expectations. Not validated in
+  this environment: an end-to-end run against a live RabbitMQ/Order Service.
+
+---
+
+## 2026-10-19 — order-service: assigned courier can view order details (Task 2)
+
+- Task: Fix 2 on branch fix/d3-cancel-release-and-courier-view. Renamed
+  `get_order_for_requester` → `get_order_for_participant` and extended the
+  access check to also allow the currently assigned courier. A courier whose
+  `courier_id` has been reset to `None` (withdrawn) is denied access.
+  Renamed the route header parameter `requester_id` → `user_id` (alias
+  `HEADER_USER_ID` preserved). Added 5 new service tests and 3 new API tests
+  (happy-path parametrized + error-handler patch updated).
+- Files changed: `app/services/orders.py`, `app/api/routes/orders.py`,
+  `tests/test_orders_service.py`, `tests/test_orders_api.py`, `ai/usage-log.md`.
+- Prompt(s):
+  1. Task brief in `.superpowers/sdd/you-are-working-in-snug-gizmo/task-2-brief.md`.
+- Author review: TDD: 9 RED failures confirmed before implementing. After
+  implementation: `pytest` (213 passed, 15 skipped) and `ruff check` /
+  `ruff format` clean.
+
+## 2026-10-19 — frontend: ordersApi + creditsApi API layer (Task 3)
+
+- Task: Task 3 on branch fix/d3-cancel-release-and-courier-view. Extended
+  `request<T>` to accept an optional `extraHeaders` parameter. Added
+  TypeScript types (`OrderStatus`, `OrderResponse`, `OrderCreate`,
+  `OrderUpdate`, `OrderCancellationRequest`, `OrderActionResponse`,
+  `BalanceResponse`, `TransactionResponse`) and the `ordersApi` and
+  `creditsApi` objects. `withdraw` passes an `Idempotency-Key` header via
+  the new `extraHeaders` parameter. All methods use existing `request<T>`
+  and `buildQuery` helpers.
+- Files changed: `frontend/src/lib/api.ts`, `ai/usage-log.md`.
+- Prompt(s):
+  1. Task brief in `.superpowers/sdd/you-are-working-in-snug-gizmo/task-3-brief.md`.
+- Author review: `npm run build` (tsc + vite) passed with zero TypeScript
+  errors. Build output: 493.63 kB JS, 202.52 kB CSS.
+
+## 2026-10-19 — frontend: StatusPill badge + credits header widget + nav items + routes (Task 4)
+
+- Task: Task 4 on branch fix/d3-cancel-release-and-courier-view. Added
+  `OrderStatusBadge` to `StatusPill.tsx` with a color map for all 7 statuses.
+  Added 3 new nav items (Errands, My requests, My deliveries) to `AppLayout.tsx`
+  with a credits balance widget fetching from `creditsApi.getBalance` on mount.
+  Added 5 lazy-loaded routes to `App.tsx` and created stub page files for each.
+- Files changed: `frontend/src/components/StatusPill.tsx`,
+  `frontend/src/components/AppLayout.tsx`, `frontend/src/App.tsx`,
+  `frontend/src/pages/errands/BrowseErrands.tsx`,
+  `frontend/src/pages/orders/CreateOrder.tsx`,
+  `frontend/src/pages/orders/MyRequests.tsx`,
+  `frontend/src/pages/orders/OrderDetail.tsx`,
+  `frontend/src/pages/deliveries/MyDeliveries.tsx`, `ai/usage-log.md`.
+- Prompt(s):
+  1. Task brief in `.superpowers/sdd/you-are-working-in-snug-gizmo/task-4-brief.md`.
+- Author review: `npm run build` (tsc + vite) passed with zero TypeScript errors.
+
+## 2026-10-19 — credit-service: bind and handle OrderCancelled (Fix 1)
+
+- Task: PR A of fix/d3-cancel-release-and-courier-view. Bind `OrderCancelled`
+  to `_ORDER_EVENT_BINDINGS` in consumer.py and add an `ORDER_CANCELLED` branch
+  in `handle_order_event` that calls `release_for_order`. Root problem: after
+  supplier deactivation, `OrderCancelled` was published but no consumer was
+  bound, so the order outbox retried forever and credits stayed RESERVED.
+- Files changed: `app/services/consumer.py`, `app/services/credit_service.py`,
+  `tests/test_event_handling.py`, `tests/test_consumer.py`, `README.md`.
+- Prompt(s):
+  1. Task brief in `.superpowers/sdd/you-are-working-in-snug-gizmo/task-1-brief.md`.
+- Author review: `pytest` (99 tests passing, 5 new) and `ruff check` /
+  `ruff format` clean. TDD: RED confirmed (2 failures) before implementing.
+
+## 2026-10-19 — frontend: BrowseErrands page (Task 5)
+
+- Task: Task 5 on branch fix/d3-cancel-release-and-courier-view. Replaced the
+  stub `BrowseErrands.tsx` with a full implementation: filter state
+  (`minReward`, `maxReward`, `sortBy`, `sortOrder`), `useEffect` with
+  cancelled-flag calling `ordersApi.list`, and a `SimpleGrid` of Mantine
+  `Card`s showing name, reward badge, deadline, pickup→delivery route,
+  `OrderStatusBadge`, and an Accept button. Accept calls `ordersApi.accept`
+  and navigates to `/orders/mine` on success; errors surface via
+  `notifications.show`.
+- Files changed: `frontend/src/pages/errands/BrowseErrands.tsx`,
+  `ai/usage-log.md`.
+- Prompt(s):
+  1. Task brief in `.superpowers/sdd/you-are-working-in-snug-gizmo/task-5-brief.md`.
+- Author review: `npm run build` (tsc + vite) passed with zero TypeScript errors.
+  Build output: 498.77 kB JS, 202.52 kB CSS.
+
+## 2026-10-20 — frontend: Profile credits balance and transaction history (Task 10)
+
+- Task: Task 10 on branch fix/d3-cancel-release-and-courier-view. Added a Credits
+  Card below the existing profile Card in `Profile.tsx`. On mount, calls
+  `creditsApi.getBalance` and `creditsApi.getTransactions` concurrently. Shows
+  available/reserved balance and a Mantine Table with Kind, Amount (signed),
+  Order ID, and Time columns. Loader shown while fetching; errors surface via
+  `ApiError.message`.
+- Files changed: `frontend/src/pages/Profile.tsx`, `ai/usage-log.md`.
+- Prompt(s):
+  1. Task brief in `.superpowers/sdd/you-are-working-in-snug-gizmo/task-10-brief.md`.
+- Author review: `npm run build` (tsc + vite) passed with zero TypeScript errors.
+  Build output: 501.45 kB JS, 202.52 kB CSS.
+
+## 2026-10-20 — postman: D3 demo collection for order + credit workflows
+
+- Author: johngao122. Tool: Claude Code. Model: Claude Opus 4.8.
+- Task: Branch `feat/postman-d3`. Added a self-contained, re-runnable Postman
+  collection demonstrating Milestone D3 (Order + Credit services and their async
+  RabbitMQ/outbox workflows) end-to-end through the API Gateway, no UI. Twelve
+  numbered folders (00 Setup through 11 Ledger) cover allocation, synchronous
+  reservation, queries/filters, authZ and invalid transitions, the happy path
+  with a concurrent-accept race, withdraw idempotency, async update/amendment
+  (accept + reject), cancel/delete, expiry, and supplier-deactivation cascade.
+  Every request asserts status + key body fields; async terminal states are
+  reached by in-collection polling (a request re-issues itself via
+  `setNextRequest`, capped, failing loudly on timeout); OTP codes are read from
+  Mailpit; emails embed a per-run `runId` so the whole run repeats with no
+  manual steps. Auth is per-request `Bearer` only (never raw `X-User-*`).
+  Credit assertions are deltas against a snapshot taken immediately before each
+  action. Also added `scripts/d3-race.sh` (bash + curl + jq concurrent-accept
+  demo) and documented both in `postman/README.md`.
+- Files changed: `postman/FoC-D3.postman_collection.json`,
+  `postman/FoC-local.postman_environment.json`, `scripts/d3-race.sh`,
+  `postman/README.md`, `ai/usage-log.md`.
+- Prompt(s):
+  1. Executable brief from the D3 Postman plan (collection folder/assertion
+     spec, verified ground truth for order/credit/gateway/user/supplier routes,
+     re-runnability mechanics, env additions, and the verification bar).
+- Author review: against a fresh stack (`docker compose down -v && up --build`,
+  all 14 services healthy), `newman run` passed twice back-to-back with 0 failed
+  assertions (212 then 217; request/assertion counts vary with poll retries),
+  and `scripts/d3-race.sh` printed one 200 + one 409 and exited 0. The only
+  adjustment from the brief: the folder-01 allocation balance poll had to
+  tolerate an initial 404 (the credit account is created asynchronously from the
+  UserRegistered event, so `GET /balance` 404s until it exists) rather than
+  assert 200 on every poll.
+
+## 2026-11-06 — infra: proof-of-delivery photo storage + order-service schema migration
+
+- Author: johngao122. Tool: Claude Code. Model: Claude Opus 4.8.
+- Task: Branch off `feature/photo-proof`, targeting `feature/photo-proof`. Add
+  the infrastructure the PR #31 photo feature needs, and an in-cluster/compose
+  schema-migration step so the new `orders.proof_of_delivery_photo_key` column
+  reaches existing databases (the app uses `create_all`, which never adds a
+  column to a populated table). Terraform: a dedicated private photos bucket in
+  `infra/terraform/photos.tf` (random suffix, all public-access-block flags,
+  SSE-S3, BucketOwnerEnforced, a deny-non-TLS bucket policy, no versioning, an
+  optional `photo_retention_days` lifecycle rule on the `proof-of-delivery/`
+  prefix) plus an instance-role statement granting Put/Get/DeleteObject on
+  `${photos_bucket_arn}/proof-of-delivery/*` only, new variables/outputs, and
+  the tfvars example. Helm: `ORDER_PHOTO_BUCKET`/`ORDER_PHOTO_REGION` in the
+  order-service chart and the EC2 overlay, and a third photo-bucket argument for
+  `scripts/render-ec2-values.sh`. Compose: a MinIO service plus a one-shot
+  `createbuckets`, order-service pointed at MinIO via `AWS_ENDPOINT_URL_S3`
+  (no shared-code change), and the photo/MinIO vars added to the root
+  `.env.example`. Migration: a new `order-service/app/migrate.py` run from the
+  lifespan after `init_db()`; it widens the Alembic `version_num` column
+  (several revision ids exceed the default VARCHAR(32)), stamps the baseline for
+  un-adopted databases (head when the column already exists, else the penultimate
+  revision), then `alembic upgrade head`. PR #31's migration file was left
+  untouched; the architecture choices (lifespan vs one-shot migrator, MinIO
+  scope) were made by the operator.
+- Files changed: `infra/terraform/photos.tf`, `infra/terraform/iam.tf`,
+  `infra/terraform/variables.tf`, `infra/terraform/outputs.tf`,
+  `infra/terraform/terraform.tfvars.example`,
+  `infra/helm/foc/charts/order-service/values.yaml`,
+  `infra/helm/foc/values-ec2.yaml`, `scripts/render-ec2-values.sh`,
+  `compose.yaml`, `.env.example`, `order-service/app/migrate.py`,
+  `order-service/app/main.py`, `ai/usage-log.md`,
+  `order-service/ai/usage-log.md`.
+- Prompt(s):
+  1. Executable brief for the photo infrastructure and schema-migration step
+     (Terraform/Helm/compose/migration task spec), with the architecture forks
+     resolved by the operator via structured questions.
+- Author review: `terraform fmt -check` and `terraform validate`
+  (`init -backend=false`) pass; `helm lint` passes and `helm template` on the
+  EC2 overlay keeps LOG_LEVEL/SUPPLIER_SERVICE_URL/CREDIT_SERVICE_URL alongside
+  the new photo vars; kubeconform passes both overlays; `shellcheck` passes the
+  render script; `docker compose config` validates the MinIO wiring. The
+  migration was verified against a real Postgres: an existing order DB with no
+  column and no alembic stamp gains the column and is stamped to head; a fresh
+  create_all DB stamps head with no duplicate-column error; both are idempotent
+  on re-run. The full order-service pytest suite passes (including the SQLite
+  migration test). boto3 was confirmed to use path-style addressing against the
+  MinIO endpoint, so `shared/foc_shared/images.py` needed no change. Not run
+  locally: the full compose photo E2E (the sandbox cannot pull the MinIO image;
+  CI pulls it normally).
+## 06/11/2026 - John
+
+- Tool: Claude Code (model: Claude Opus 4.8)
+- Scope: notification-service implementation on branch `feat/notification-service`
+  (backlog Notification F1-F4, N1.1, N2.1). Implemented, against the team's
+  existing event contracts and the route/service/repository layering: the
+  RabbitMQ consumer (`app/services/consumer.py`) that binds a durable queue to
+  `foc.order.events`, validates each payload, checks the routing key against the
+  event type, and acks only after a committed write, with a reconnect loop and
+  message_id / derived-id idempotency; the pure `build_notifications` rules
+  (`app/services/rules.py`) mapping each order event to per-recipient drafts and
+  the supplier-deactivation branch; the pluggable `DeliveryChannel` / `InAppChannel`
+  (`app/services/channels.py`) left as the NTH2 push hook; the idempotent
+  savepoint insert plus list and mark-read queries (`app/repositories/notifications.py`);
+  the `Notification` model with the unique `(event_id, recipient_id)` constraint
+  and the recipient/created-at index (`app/models/notification.py`); the read API
+  (`app/api/routes/notifications.py`, `app/api/deps.py`) with the gateway identity
+  headers and the self-or-admin rule; the frontend notification bell, page, and
+  15-second poll (`frontend/src/components/AppLayout.tsx`,
+  `frontend/src/pages/notifications/Notifications.tsx`,
+  `frontend/src/lib/useNotifications.ts`, `frontend/src/lib/api.ts`); and the
+  gateway exposure of `/api/notifications/*`. Added the `order_name` field to
+  `OrderEvent` (`shared/foc_shared/events.py`) and `OrderApprovedEvent`
+  (`order-service/app/schemas/order_approval_events.py`) so the order name
+  travels on the event (event-carried state transfer). The requirements and the
+  event/endpoint contracts were decided by the team; the tool implemented them.
+- Prompt(s): Implement the notification-service: consume order-lifecycle events
+  idempotently from `foc.order.events`, build one notification per recipient per
+  the D1 Notification requirements, persist to a service-owned database with no
+  duplicates on redelivery, expose a gateway-fronted read API guarded by the
+  trusted identity headers, and add a frontend bell that polls it. Keep the code
+  neat and follow the project's architecture.
+- Author review: `make test-notification-service` passes (rules, consumer, and
+  route suites). `ruff check` / `ruff format` clean. Idempotency verified by the
+  duplicate-message-id consumer test. Frontend `npm run build` passes.
+
+## 06/11/2026 - John
+
+- Tool: Claude Code (model: Claude Opus 4.8)
+- Scope: notification-service documentation only; no code changes. Every table,
+  column, arrow, status code, and test name was derived from the implemented
+  source, matching the repo's existing doc house style. Added
+  `notification-service/docs/architecture.md` (purpose, F1-F4, and a C4 level-3
+  component view authored as `notification-service-architecture.dot` and exported
+  to `.svg` with Graphviz), `docs/event-flow.md` (two Mermaid sequence diagrams:
+  end-to-end order-event-to-bell and a duplicate-redelivery drop),
+  `docs/api-contract.md` (the three read endpoints, headers, self-or-admin rule,
+  and error shapes in the user-service contract style), `docs/data-model.md` (a
+  Mermaid ER diagram of the `notifications` table with the unique constraint and
+  index), and `docs/requirements-traceability.md` (one row per D1 Notification
+  requirement mapped to file/function and the exact covering test, plus the
+  OrderApproved and order_name deviations). Rewrote `notification-service/README.md`
+  (removed the scaffold status, documented the real layout, env vars, run and test
+  commands, and linked the five docs). Updated the root `docs/architecture.md`
+  container view so the `RabbitMQ -> notification-service` edge reads as an active
+  consume path, refreshed the components table row, and resolved the notification
+  part of the "TODO (other services)" L3 line. Set the notification-service owner
+  to John in the root `AGENTS.md`. No architecture or design decisions were made
+  by the tool.
+- Prompt(s): Write the notification-service docs from the implementation (source
+  of truth), matching the existing architecture/api-contract/dot+svg doc styles;
+  diagrams must render on GitHub; derive the traceability test names from the real
+  test files.
+- Author review: regenerated the SVG with
+  `dot -Tsvg notification-service/docs/notification-service-architecture.dot -o notification-service/docs/notification-service-architecture.svg`
+  and confirmed it is non-empty. Grepped every cited test name against `tests/`.
+  Re-read the Markdown for the one-sentence-per-line rule and no em dashes.
+
+## 09/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: N2H campus map. Added the `CampusMap` component (Leaflet +
+  OpenStreetMap via react-leaflet) with a red teardrop SVG pin anchored at its
+  bottom tip and a recenter control that restores the location and default
+  zoom, plus a "View on map" button after Location on the supplier detail
+  page. The supplier map opens in a `SupplierMapModal` using the same map style
+  as the order location picker, so no separate page or route is needed. Files:
+  `frontend/src/components/CampusMap.tsx`,
+  `frontend/src/components/SupplierMapModal.tsx`,
+  `frontend/src/pages/suppliers/SupplierDetail.tsx`,
+  `frontend/src/App.tsx`.
+- Prompt(s):
+  1. "I am going to use the Leaflet + OpenStreetMap approach. I have already
+     installed leaflet, react-leaflet and the related packages. Create a new
+     `CampusMap` component for map display. Then update the supplier card: add
+     a map button after the location, navigate to `CampusMap`, read the
+     supplier's longitude/latitude, and show the location on the map."
+  2. "Change the marker to red, the kind with a pointed tip at the bottom, with
+     the tip corresponding to the place."
+  3. "Move the map button from the supplier card to the supplier detail page,
+     again after Location. Also add a recenter button to the map view that
+     moves the supplier to the center and restores the default size. When done,
+     make the first commit, with the message matching the other commits."
+  4. "Change the supplier map to use the same modal form as the order create
+     screen instead of navigating to a new page."
+- Author review: `npx tsc --noEmit`, `npm run lint` (only pre-existing warnings)
+  and `npm run build` pass. Verified in Playwright that View on map opens the
+  modal in place (URL unchanged), shows the supplier pin and location text, and
+  closes with Escape.
+
+## 09/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Order creation location helpers. Auto-fill Pickup location from the
+  selected supplier's building/floor/location, and add a locate action after
+  the Delivery location title that opens a map picker modal where clicking the
+  map places a pin. On confirm the point is reverse-geocoded through the public
+  OSM Nominatim service (coordinate fallback plus a warning when it is
+  unavailable) and the address fills the delivery field. The lookup pins
+  `accept-language=en` so addresses stay English regardless of the browser
+  locale. Opening the picker first requests the browser's current position
+  with `navigator.geolocation.getCurrentPosition()` and uses it as the default
+  pin when available, falling back to the supplier location otherwise.
+  Extended `CampusMap` with a selectable mode, a responsive height
+  prop, modal-safe size invalidation, and a recenter control that does not leak
+  clicks to the map. Files: `frontend/src/pages/orders/CreateOrder.tsx`,
+  `frontend/src/components/LocationPickerModal.tsx`,
+  `frontend/src/lib/geocoding.ts`,
+  `frontend/src/components/CampusMap.tsx`.
+- Prompt(s):
+  1. "Now modify the order creation screen. Add: after a supplier is selected,
+     auto-fill the pickup location (the merchant's). For the delivery location,
+     add a locate icon after the title; clicking it opens a map to pick a point
+     and fill the address. If any part is impossible or hard to implement, pause
+     and tell me."
+  2. "No need to change order-service for now. The delivery field is filled in
+     Chinese — is that related to the system language or something? If possible,
+     change it to English."
+  3. "When picking an address, request the current position first, e.g. via
+     navigator.geolocation.getCurrentPosition(); if it succeeds use that as the
+     default and wait for confirmation and edits, otherwise keep the previous
+     picker-confirmation flow."
+- Author review: `npx tsc --noEmit`, `npm run lint` (only pre-existing warnings)
+  and `npm run build` pass. Verified in Playwright that selecting a supplier
+  fills the pickup address, the locate icon opens the picker, clicking the map
+  moves the pin, and confirming fills the geocoded address. Confirmed with a
+  direct Nominatim call that `accept-language=en` returns an English
+  display_name. Verified in Playwright that granting geolocation defaults the
+  pin to the current position and denying it falls back to the supplier
+  coordinates.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Store delivery-point coordinates on orders. Added nullable
+  `delivery_latitude`/`delivery_longitude` columns to `orders` (Alembic
+  migration `20261110_order_delivery_coordinates`), mirroring the supplier
+  fields and validating them to -90..90 / -180..180. The coordinates are
+  accepted by `OrderCreate`/`OrderUpdate`, returned by `OrderResponse`, and
+  persisted on create. The pending-update snapshot now dumps only the fields
+  the client sent, so an update without coordinates cannot null them out. The
+  create-order form submits the map picker's coordinates. Files:
+  `order-service/app/models/orders.py`, `order-service/app/schemas/orders.py`,
+  `order-service/app/repositories/orders.py`,
+  `order-service/app/services/orders.py`,
+  `order-service/migrations/versions/20261110_order_delivery_coordinates.py`,
+  `frontend/src/lib/api.ts`, `frontend/src/pages/orders/CreateOrder.tsx`, plus
+  tests.
+- Prompt(s): "Now I need to modify order-service: add storage for the delivery
+  location position, following the supplier's longitude/latitude, to prepare
+  for later work."
+- Author review: `ruff check` and `ruff format --check` pass; order-service
+  `pytest` reports 239 passed, 15 skipped (Postgres/env-gated). Frontend `tsc`,
+  `eslint` (only pre-existing warnings) and `vite build` pass. Added schema
+  range tests and a migration upgrade/downgrade test.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Replaced the OpenRouteService modal prototype with a simpler Google
+  Maps hand-off on the deliveries page. Active `ACCEPTED` and `PICKED_UP` rows
+  show a Navigate button that opens Google Maps directions in a new tab with
+  walking travel mode. The destination is the supplier's coordinates for the
+  pickup stage (falling back to the pickup address text) and the stored
+  delivery coordinates for the delivery stage (falling back to the delivery
+  address). Files: `frontend/src/pages/deliveries/MyDeliveries.tsx`.
+- Prompt(s): "Temporarily revert the other changes and implement the simpler
+  feature first: clicking the delivery navigation button should jump to Google
+  Maps for navigation."
+- Author review: `tsc`, `eslint` (only pre-existing warnings) and `vite build`
+  pass. Playwright verified both stages open Google Maps with the expected
+  destination and `travelmode=walking`, and completed rows expose no button.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Stop stale delivery coordinates after edits. The create-order form now
+  clears the picked coordinates when the user types a different delivery
+  address, and the edit-order form sends coordinates explicitly: it keeps the
+  stored pin when the address is unchanged and sends null when the text was
+  edited. Added repository tests covering explicit-null clearing and unset-field
+  preservation. Files: `frontend/src/pages/orders/CreateOrder.tsx`,
+  `frontend/src/pages/orders/MyRequests.tsx`,
+  `order-service/tests/test_orders_repository.py`.
+- Prompt(s): "Two things to fix before merge. 1) Stale delivery coordinates
+  after an edit: the edit form only sends the delivery_location text, so the old
+  lat/lng stay on the order and Navigate routes to the old pin; same in
+  CreateOrder when the user picks on the map and then types a different address.
+  Have the forms send the coordinates explicitly (null when the address
+  changed)."
+- Author review: `tsc`, `eslint` (only pre-existing warnings) and `vite build`
+  pass; order-service repository tests pass; Playwright verified both create and
+  edit payloads submit null coordinates after typing a new address.
+
+## 10/11/2026 — zhoushiyao02200059
+
+- Tool: GitHub Copilot Chat (model: DeepSeek V4.1 Flash)
+- Scope: Open Google Maps synchronously from the deliveries page. The Navigate
+  action now reads the already-loaded supplier from `useSuppliers` instead of
+  awaiting `suppliersApi.get`, so `window.open` runs inside the click handler and
+  is not blocked as a popup. Removed the per-row navigation loading state.
+  Files: `frontend/src/pages/deliveries/MyDeliveries.tsx`.
+- Prompt(s): "2) Navigate can be blocked as a popup: window.open runs after an
+  await suppliersApi.get(...). Use suppliers[order.supplier_id] from
+  useSuppliers, which is already loaded, so no fetch is needed."
+- Author review: `tsc`, `eslint` (only pre-existing warnings) and `vite build`
+  pass. Playwright verified both stages open Google Maps with the expected
+  destinations and that clicking Navigate makes no additional supplier request.
+## 19/10/2026 - credit-service owner (fill in name)
+
+- Tool: DeepSeek Harness (model: deepseek-flash)
+- Scope: credit-service participant side of the Order approval transfer task.
+  Generated: `OrderApprovalRequestedEvent` and `CreditTransferResult` in
+  `app/schemas/interop.py` (mirroring `order-service/app/schemas/
+  order_approval_events.py` and `credit_events.py`), `TaskResultKind.TRANSFER`
+  with `transferred` / `transfer_failed` outcomes, `_transfer_reservation(
+  commit=False)` so the settlement and its task result commit once,
+  `CreditService.handle_approval_requested` /
+  `report_transfer_retries_exhausted` / `_record_transfer_outcome` /
+  `_publish_transfer_outcome`, the consumer binding for
+  `OrderApprovalRequested`, `tests/test_approval_requests.py` (15 cases), the
+  event-catalog/README rows, and a hermetic-test change (the HTTP suites now
+  stub reservation publishing instead of waiting on a RabbitMQ connect).
+  The contract (event names, payload fields, reply fields, routing key) was
+  specified by the Order Service owner (Alexander) in the team thread; the tool
+  implemented it against the order-side schemas.
+- Prompt(s):
+  1. (Team thread, Alexander) "Event: OrderApprovalRequested ... Credit Service
+     actions: Find the reservation by reservation_id and verify it matches
+     order_id and requester_id. Transfer the reserved credits to the account
+     identified by courier_id. Process duplicate events idempotently; retry
+     transient errors, then report a definitive failure ... Credit Service
+     publishes CreditTransferSucceeded / CreditTransferFailed ... Set the
+     routing key to event_type."
+  2. "现在就实现（推荐）" - implement the contract.
+- Author review: `pytest` (111 tests passing, 15 new) and `ruff check` /
+  `ruff format` clean; the reply model round-trips through the strict
+  `CreditTransferResult` (extra=forbid, six fields) on both the success and
+  failure paths, and the order-side `approval_consumer` / `approval_worker` were
+  read to confirm the routing keys and field expectations. Not validated in
+  this environment: an end-to-end run against a live RabbitMQ/Order Service.
+
+## 19/10/2026 - credit-service owner (fill in name)
+
+- Tool: DeepSeek Harness (model: deepseek-flash)
+- Scope: system-wide API observability. Moved the credit-service observability
+  layer into `shared/foc_shared/observability.py` (per-service registry, HTTP
+  metrics with a `service` label, error-envelope `code` counters,
+  `/metrics` + `/health/ready` routes, `X-Request-Id` propagation, JSON logging,
+  broker state) with an `Observability(...).install(app, ...)` on-ramp.
+  credit-service now consumes the shared layer (local `middleware.py`,
+  `logging.py`, `context.py`, `health.py` and `routes/observability.py` reduced
+  to shims/removed; metric names unchanged). Onboarded user-service and
+  supplier-service (HTTP metrics + readiness; supplier also records envelope
+  codes), added Prometheus scrape targets and per-service tests, and documented
+  the onboarding steps in `docs/observability.md` / `shared/README.md`.
+  The decision to build a shared library rather than an edge-only gateway
+  audit was made by the author; the tool implemented it.
+- Prompt(s):
+  1. "我之前的 api metric 审计是只针对 credit service 的吗？我需要对整个系统的
+     所有服务的 api 都要做一个审计。请问我们可不可以做到？" - scope check and
+     feasibility analysis (shared library vs gateway-level audit).
+  2. "直接做 P2 共享库 + 逐服务接入" - implement the shared library and onboard
+     the services.
+- Author review: `pytest` 111 (credit) + 89 (supplier) + 31 (user) passing and
+  `ruff check` / `ruff format --check` clean across the four trees. Some suites
+  were run against the credit-service venv with `PYTHONPATH=shared` because
+  only credit-service has a local venv in this environment; the same dependency
+  sets are declared in each service's `requirements.txt`. Not covered: a live
+  Prometheus/Grafana run (no Docker) and the gateway/order/notification
+  onboarding.
+
+## 19/10/2026 - credit-service owner (fill in name)
+
+- Tool: DeepSeek Harness (model: deepseek-flash)
+- Scope: aligned user-service with the shared error envelope so its errors carry
+  a business `code`. Generated: `user-service/app/errors.py` (handlers for
+  `StarletteHTTPException`, `RequestValidationError` and unhandled exceptions;
+  message-prefix + status mapping to codes; `OBS.record_error_code` from each
+  handler), `register_exception_handlers(app)` in `app/main.py`, two onboarding
+  tests (`test_errors_use_the_shared_envelope_and_record_their_code`,
+  `test_validation_errors_use_the_shared_envelope`), and updated the three
+  existing assertions that read `resp.json()["detail"]`. Response shape change
+  (breaking for clients that read `detail`) requested by the author; the
+  frontend already accepts both shapes (`frontend/src/lib/api.ts` `extractError`).
+- Prompt(s):
+  1. "user service 错误码怎么了？格式不对吗？" - explained the envelope
+     inconsistency and the audit impact.
+  2. "你直接把user-service改掉，功能跑通就行，直接交到pr#18的commit里面去，
+     让他们审就行了" - implement and push to PR #18.
+- Author review: `pytest` 33 (user) + 111 (credit) + 89 (supplier) passing;
+  `ruff check` / `ruff format --check` clean. Codes asserted in tests for
+  `otp_locked`, `admin_guard`, `last_admin_guard`, `unauthorized` and
+  `validation_error`; the 422/401/400 bodies no longer contain `detail`.
+

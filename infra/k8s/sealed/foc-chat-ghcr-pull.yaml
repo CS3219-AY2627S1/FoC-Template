@@ -1,0 +1,16 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: ghcr-pull
+  namespace: foc-chat
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  encryptedData:
+    .dockerconfigjson: AgDDQ3czc7IH2I215/YymTy4wDRRWTYIDwiRKLVzK9RiugVwCFY+kDqlJfjMDqdYm/S93QbCLh6ar7NWTAK+xTHUDFb+CYThySMWnYM/qNEOQTojZSVLB39InibNfSsUsNaLAaXQd6XliVXGLxgSasAMomeF6zhQYDBEhlbwNrQQzbLSb9uAuugidPuaADSGnuG/Y0/+I4nCpTR5AjZl51PFA7m3tZpuw8rXK6awXfRidLedM75WvTiJNY44vTQaaV+OPHqEZfIDhQjiE71qJh7oRTvI86e8pLwFGpqZnXz/usUa2nECTnDkinebtZqiMJtz2Zd31/+rcxF47VC7hM+WSy0oLq1hc8NwWWF9KMfk/WVXywtKac5DiSx4pts9G7MSNtlUH03V+Pu73b8yqvbG4QV5vBxMGsy9ASqwUY6v1jn0GV9S6pRBuCZLonL6KmOKyjuJopzH0gZYodgxZuqbVyoViRym7v9g5illpXlqzC1agL+dXRPkKe1+ivW/AcVouAKI/xm/bp9JPI2CaxNdkw8gAICXXmTyC5vpXIcCUiuMqx02fTODZuAX/Wa7utmEzmaYi5CL64KqbSThQcq12qlpxxy3++qmmuN99aHUiXE8WJXUyAKTY429yjVfcc/RBzloyyOgin4StlbKLBneobTvTcaSHZWI/NSZVbyz4bbufhvhe3yIB9V+dlw1T1eXGfx20ZucWF/Gfh7D2w0sem9BrRXHhQvFWHDVmxTmc8UBXAKX9g1s/pcBTkQcnEZEi1QdT14K4hVR/1juIL0uvodOTE3ObszKlXfTmcezW0mD5kzaW9b2pXRbxCdmfZxwEw9Ee3D9dgjHcCNUcN0vdNMqFlTymrjUl+msuCTm2QxyUg9ufUPx9TLtqXo6Adb/8oKlnLL84VuMvVxLBWI2Jc6542cpawt3NS+lQiWgQat1Tg==
+  template:
+    metadata:
+      name: ghcr-pull
+      namespace: foc-chat
+    type: kubernetes.io/dockerconfigjson

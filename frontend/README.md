@@ -1,0 +1,97 @@
+# frontend
+
+Responsive **React + TypeScript + Vite** single-page app for FoC, built with
+the **Mantine** UI library. It talks only to the **API Gateway**
+(`VITE_API_BASE_URL`) and is responsive across desktop and mobile viewports
+(project M1).
+
+For D3 the SPA covers authentication, supplier browse + admin CRUD, the
+errand/order lifecycle (create, browse, accept, pickup, deliver, approve),
+courier deliveries, a credits balance widget, and in-app notifications, plus an
+admin portal.
+
+## Pages
+
+| Route | Access | Purpose |
+| ----- | ------ | ------- |
+| `/login` | public | Email + password login (JWT) |
+| `/register` | public | Create a `@u.nus.edu` account |
+| `/verify-otp` | public | Verify email with the OTP code |
+| `/forgot-password` | public | Request a password-reset OTP |
+| `/reset-password` | public | Reset password with the OTP code |
+| `/suppliers` | authenticated | Browse suppliers: search, category/zone filter, sort, pagination |
+| `/suppliers/:id` | authenticated | Supplier detail; admins get edit/manage |
+| `/profile` | authenticated | View role/email (read-only) + edit name/contact |
+| `/errands` | authenticated | Browse open errands/orders to accept as courier |
+| `/orders/new` | authenticated | Create an order against a supplier |
+| `/orders/mine` | authenticated | Requester's own orders (ongoing + completed) |
+| `/orders/:id` | authenticated | Order detail with lifecycle actions |
+| `/deliveries` | authenticated | Courier's accepted/completed deliveries |
+| `/notifications` | authenticated | Full notification list |
+| `/admin/suppliers` | admin | Supplier CRUD: table + create/edit form + deactivate |
+| `/admin/clients` | admin | Client accounts: search/filter, suspend/reinstate, create admin |
+| `/messages`, `/messages/:conversationId` | authenticated | Requester-courier chat (N2H): live messages, receipts, typing, replies, photos, location sharing |
+
+Client-side role checks are **UX only**; the gateway + services enforce
+authorization (RBAC is the server's responsibility).
+
+## Config
+
+`VITE_API_BASE_URL` (see root `.env.example`) points the app at the gateway
+(default `http://localhost:8080`). The typed client lives in `src/lib/api.ts`;
+auth state in `src/lib/auth.tsx`.
+
+## Run
+
+```bash
+# via the whole stack
+make up            # served at http://localhost:5173
+
+# or locally
+cd frontend && npm install && npm run dev
+```
+
+### Demo accounts / OTP
+
+- The first admin is created on user-service startup from the
+  `BOOTSTRAP_ADMIN_*` env vars.
+- Registration requires email OTP verification. With no SMTP configured, set
+  `OTP_DEV_MODE=true` (see root `.env.example`) — the verification code is then
+  written to the **user-service logs** (`docker compose logs user-service`)
+  instead of emailed. Never enable this in a real deployment.
+
+## Test
+
+End-to-end regression tests use **Playwright** (`playwright.config.ts`). The
+specs mock the API Gateway with Playwright routes, so **no backend, database, or
+`.env` is required** — Playwright starts the Vite dev server on
+`http://localhost:5173` for you.
+
+```bash
+cd frontend
+
+# one-time setup
+npm install && npx playwright install
+
+# run every spec, or a single suite (example: profile)
+npx playwright test
+npx playwright test tests/profile
+
+# open the last HTML report
+npx playwright show-report
+```
+
+If a dev server is already running on port 5173 it is reused; only CI always
+starts a fresh one.
+
+## Build
+
+```bash
+cd frontend && npm run build   # tsc typecheck + vite production build
+```
+
+## Docs
+
+- Architecture + data flow: [`docs/architecture.md`](docs/architecture.md)
+
+Owner: Zhou Shiyao.

@@ -1,0 +1,27 @@
+# AI-INFLUENCED: Add shared image storage dependencies with Codex.
+# Packaging metadata for the shared library.
+# (Backend service *dependencies* live in each service's requirements.txt;
+#  this file exists only so `pip install -e ../shared` works.)
+[project]
+name = "foc-shared"
+version = "0.1.0"
+description = "Shared contracts (events, auth headers, error envelope, observability) for FoC services."
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7",
+    "boto3>=1.35",
+    "Pillow>=10.4",
+    # observability module: FastAPI/Starlette middleware, SQL readiness ping,
+    # Prometheus exposition. Services already depend on these; declaring them
+    # keeps `pip install -e ../shared` self-sufficient.
+    "fastapi>=0.111",
+    "sqlalchemy>=2.0",
+    "prometheus-client>=0.20",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["foc_shared"]

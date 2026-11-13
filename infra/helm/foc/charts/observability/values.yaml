@@ -1,0 +1,43 @@
+namespace: foc-observability
+
+prometheus:
+  image: prom/prometheus:v2.54.1
+  retention: 24h
+  storage: 2Gi
+  storageClass: local-path
+  scrapeNamespaces:
+    - foc-supplier
+    - foc-user
+    - foc-credit
+    - foc-order
+    - foc-notification
+    - foc-chat
+    - foc-messaging
+    - foc-gateway
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+grafana:
+  image: grafana/grafana:11.2.0
+  adminSecret: grafana-admin
+  storage: 1Gi
+  storageClass: local-path
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  ingress:
+    enabled: false
+    host: ""
+    className: traefik
+    tls:
+      enabled: false
+      issuer: letsencrypt-prod

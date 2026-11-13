@@ -1,0 +1,22 @@
+namespace: foc-mail
+image: axllent/mailpit:v1.31.3
+smtpPort: 1025
+uiPort: 8025
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+ingress:
+  enabled: false
+  host: ""
+  className: traefik
+  serviceName: mailpit
+  servicePort: 8025
+  tls:
+    enabled: false
+    issuer: letsencrypt-prod
