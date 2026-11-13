@@ -1,0 +1,134 @@
+// AI Assistance Disclosure:
+// Tool: ChatGPT (model: GPT-6 Luna), date: 2026-11-11
+// Scope: API server entry point and its documentation.
+// Author review: I validated correctness, edited for style, and added boundary checks.
+
+package main
+
+import (
+	"context"
+	"errors"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/joho/godotenv"
+
+	"user-service/internal/auth"
+	"user-service/internal/config"
+	"user-service/internal/credit"
+	"user-service/internal/handler"
+	authmiddleware "user-service/internal/middleware"
+	"user-service/internal/repository"
+	"user-service/internal/service"
+)
+
+// main starts the API and logs a fatal error if startup or serving fails.
+func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// run loads configuration, initializes dependencies and the initial administrator,
+// and serves HTTP requests until a shutdown signal or server error occurs.
+func run() error {
+	// Production supplies environment variables directly; .env is only a
+	// local-development convenience.
+	_ = godotenv.Load()
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	startupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	pool, err := repository.Open(startupCtx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	authentication, err := authmiddleware.NewAuth0(cfg.Auth0Domain, cfg.Auth0Audience)
+	if err != nil {
+		return err
+	}
+	userInfo, err := auth.NewUserInfoClient(cfg.Auth0Domain, &http.Client{Timeout: 5 * time.Second})
+	if err != nil {
+		return err
+	}
+	users := repository.NewPostgres(pool)
+	bootstrap := config.LoadBootstrap()
+	if err := service.BootstrapSuperAdmin(startupCtx, users, repository.CreateAuth0User{
+		Subject: bootstrap.Subject, Username: bootstrap.Username, Email: bootstrap.Email,
+	}); err != nil {
+		return err
+	}
+
+	userService := service.NewUserService(users, nil)
+	provisioner := service.NewAuth0Provisioner(users, userInfo)
+	if cfg.CreditServiceURL != "" {
+		issuer, err := auth.IssuerURL(cfg.Auth0Domain)
+		if err != nil {
+			return err
+		}
+		creditClient, err := credit.NewClient(credit.Config{
+			BaseURL: cfg.CreditServiceURL, TokenURL: issuer.String() + "oauth/token",
+			ClientID: cfg.CreditM2MClientID, ClientSecret: cfg.CreditM2MClientSecret, Audience: cfg.CreditAudience,
+		}, &http.Client{Timeout: 5 * time.Second})
+		if err != nil {
+			return err
+		}
+		provisioner.WithWalletCreator(creditClient)
+	}
+	var administratorService *service.AdministratorService
+	var adminUsersService *service.AdminUsersService
+	if cfg.Auth0M2MClientID != "" {
+		management, err := auth.NewManagementClient(cfg.Auth0Domain, cfg.Auth0ManagementAPIAudience, cfg.Auth0M2MClientID, cfg.Auth0M2MClientSecret, &http.Client{Timeout: 5 * time.Second})
+		if err != nil {
+			return err
+		}
+		adminUsersService = service.NewAdminUsersService(management, cfg.Auth0UserRoleID, cfg.Auth0AdminRoleID)
+		if cfg.Auth0UserRoleID != "" && cfg.Auth0AdminRoleID != "" {
+			administratorService = service.NewAdministratorService(management, cfg.Auth0UserRoleID, cfg.Auth0AdminRoleID)
+		}
+	}
+	httpHandler := handler.New(handler.AuthConfig{
+		Domain: cfg.Auth0Domain, ClientID: cfg.Auth0ClientID, Audience: cfg.Auth0Audience,
+	}, authentication, provisioner, userService, administratorService, adminUsersService)
+	// GET /readyz says whether the database answers; GET /health only says the
+	// process does. The admin dashboard reads it.
+	handler.RegisterReadiness(httpHandler.Router, pool.Ping)
+
+	server := &http.Server{
+		Addr:              cfg.HTTPAddress,
+		Handler:           httpHandler.Router,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	serverErrors := make(chan error, 1)
+	go func() {
+		log.Printf("user-service listening on %s", cfg.HTTPAddress)
+		serverErrors <- server.ListenAndServe()
+	}()
+
+	shutdownSignal, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	select {
+	case <-shutdownSignal.Done():
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+		return server.Shutdown(shutdownCtx)
+	case err := <-serverErrors:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
+}

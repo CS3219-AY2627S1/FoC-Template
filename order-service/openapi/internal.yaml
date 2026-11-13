@@ -1,0 +1,271 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-18
+# Scope: Documentation formatting of the team-defined API specification.
+# Author review: Reviewed, validated, and tested by the authors.
+
+operations:
+  acquireFence:
+    operationId: acquireSupplierFence
+    tags: [Internal]
+    summary: Block new errands for a supplier, then check for active errands
+    description: >-
+      In one transaction: takes the exclusive advisory lock on the supplier
+      key (docs/contracts.md "Fence and creation locking"), creates the fence
+      in state open if this operation has none, then counts active errands.
+      Idempotent for the (operationId, supplierId) pair: a replay returns the
+      fence's current state and never reopens a released or committed fence.
+      The same operationId with another supplierId is INVALID_ARGUMENT
+      (supplier-service docs/contracts.md "Order-service deletion fence").
+    x-required-permissions: [orders:internal]
+    x-allowed-callers: [supplier-service]
+    security:
+      - serviceAuth: []
+    parameters:
+      - $ref: ./common.yaml#/components/parameters/OperationID
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ./common.yaml#/components/schemas/FenceAcquire
+    responses:
+      "200":
+        description: The fence.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/Fence
+      "400":
+        $ref: ./common.yaml#/components/responses/ValidationFailed
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+
+  inspectFence:
+    operationId: inspectSupplierFence
+    tags: [Internal]
+    summary: Read a fence
+    description: >-
+      Resolves an ambiguous Acquire or Commit. Same body as Acquire.
+    x-required-permissions: [orders:internal]
+    x-allowed-callers: [supplier-service]
+    security:
+      - serviceAuth: []
+    parameters:
+      - $ref: ./common.yaml#/components/parameters/OperationID
+    responses:
+      "200":
+        description: The fence.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/Fence
+      "400":
+        $ref: ./common.yaml#/components/responses/InvalidArgument
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "404":
+        $ref: ./common.yaml#/components/responses/FenceNotFound
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+
+  commitFence:
+    operationId: commitSupplierFence
+    tags: [Internal]
+    summary: Make a fence permanent
+    description: >-
+      open → committed, after supplier-service has soft-deleted the
+      supplier. Idempotent: committing a committed fence returns it
+      unchanged. A committed fence is never lifted.
+    x-required-permissions: [orders:internal]
+    x-allowed-callers: [supplier-service]
+    security:
+      - serviceAuth: []
+    parameters:
+      - $ref: ./common.yaml#/components/parameters/OperationID
+    responses:
+      "200":
+        description: The fence, now committed.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/Fence
+      "400":
+        $ref: ./common.yaml#/components/responses/InvalidArgument
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "404":
+        $ref: ./common.yaml#/components/responses/FenceNotFound
+      "409":
+        $ref: ./common.yaml#/components/responses/FenceConflict
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+
+  releaseFence:
+    operationId: releaseSupplierFence
+    tags: [Internal]
+    summary: Lift a fence
+    description: >-
+      open → released, when deletion is rejected or the supplier write
+      failed. Idempotent: releasing a released fence returns it unchanged.
+    x-required-permissions: [orders:internal]
+    x-allowed-callers: [supplier-service]
+    security:
+      - serviceAuth: []
+    parameters:
+      - $ref: ./common.yaml#/components/parameters/OperationID
+    responses:
+      "200":
+        description: The fence, now released.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/Fence
+      "400":
+        $ref: ./common.yaml#/components/responses/InvalidArgument
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "404":
+        $ref: ./common.yaml#/components/responses/FenceNotFound
+      "409":
+        $ref: ./common.yaml#/components/responses/FenceConflict
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+
+  getUserActiveErrands:
+    operationId: getUserActiveErrands
+    tags: [Internal]
+    summary: Count a user's active errands
+    description: >-
+      For user-service's account-deletion check: active errands the user
+      requested (credits reserved, F1.2.2) and active errands assigned to the
+      user as courier (F1.2.3). An unknown user has zero of both.
+    x-required-permissions: [orders:internal]
+    x-allowed-callers: [user-service]
+    security:
+      - serviceAuth: []
+    parameters:
+      - $ref: ./common.yaml#/components/parameters/UserID
+    responses:
+      "200":
+        description: Active errand counts.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/ActiveErrandCounts
+      "400":
+        $ref: ./common.yaml#/components/responses/InvalidArgument
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+
+  exportTransitions:
+    operationId: exportTransitions
+    tags: [Internal]
+    summary: Export transition events
+    description: >-
+      Pages the transition events order-service has published, oldest first,
+      so admin-service can backfill its read model. Each item's `messageId`
+      is the event's messageId on the wire (the outbox row's idempotency
+      key), so a backfilled event and the same event from the live stream
+      deduplicate. Rejection and reminder events are not included. Items
+      carry no actor, requester or free-text reason. Rows are ordered by
+      outbox ID, which can differ from commit order for rows written at the
+      same moment; run a backfill after the live queue is bound, so such a
+      row also arrives on the stream.
+    x-required-permissions: [orders:admin-read]
+    x-allowed-callers: [admin-service]
+    security:
+      - serviceAuth: []
+    parameters:
+      - name: after
+        in: query
+        description: The last `id` of the previous page; omit for the first page.
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      - $ref: ./common.yaml#/components/parameters/ExportLimit
+    responses:
+      "200":
+        description: A page of transition events.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/ExportTransitionPage
+      "400":
+        $ref: ./common.yaml#/components/responses/InvalidArgument
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+
+  exportErrands:
+    operationId: exportErrands
+    tags: [Internal]
+    summary: Export errands
+    description: >-
+      Pages errands by ID, or returns the listed errands with `ids` (for
+      enrichment of a single errand). Never returns contact details, items or
+      notes. `supplierName` is resolved from the errand's supplier version
+      through supplier-service, so it is the name at creation, also for a
+      changed or deleted supplier. If supplier-service is unavailable the
+      rows are still returned with a null `supplierName`; ask again later.
+      `ids` cannot be combined with `after` or `limit`, and unknown IDs are
+      left out.
+    x-required-permissions: [orders:admin-read]
+    x-allowed-callers: [admin-service]
+    security:
+      - serviceAuth: []
+    parameters:
+      - name: after
+        in: query
+        description: The last `errandId` of the previous page; omit for the first page.
+        schema:
+          type: string
+          format: uuid
+      - name: ids
+        in: query
+        description: Comma-separated errand IDs, at most 100.
+        schema:
+          type: string
+      - $ref: ./common.yaml#/components/parameters/ExportLimit
+    responses:
+      "200":
+        description: A page of errands.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/ExportErrandPage
+      "400":
+        $ref: ./common.yaml#/components/responses/InvalidArgument
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal

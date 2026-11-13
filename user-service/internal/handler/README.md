@@ -1,0 +1,25 @@
+<!--
+AI Assistance Disclosure:
+Tool: ChatGPT (model: GPT-6 Luna), date: 2026-11-11
+Scope: Documentation for user-service HTTP API handlers and readiness endpoints.
+Author review: I validated correctness, edited for style, and added boundary checks.
+-->
+
+# HTTP handlers — planned responsibilities
+
+The package exposes public health/browser configuration and protects provisioning, logout, profile operations, Auth0 user search, and administrator role changes with Auth0 JWT validation. The browser application lives in `user-frontend/`. Provisioning accepts identity only from validated token context and Auth0 `/userinfo`, never browser-submitted profile fields. Administrator endpoints require an active local account and the Auth0 `users:manage:roles` permission, then use server-side M2M credentials to read or update Auth0. Profile role labels are derived from this permission; roles are not stored in the local database. Logout returns `204` before the SPA clears its in-memory state and Auth0 browser session; stateless access tokens remain valid until expiry.
+
+| Requirements | Future HTTP responsibility |
+| --- | --- |
+| F1.1, F1.1.1–F1.1.5 | Redirect registration to Auth0 Universal Login and provision only a matching, verified `u.nus.edu` identity. |
+| F1.2, F1.2.1–F1.2.4 | Accept self-deletion with explicit confirmation and use the authenticated identity as the target; report blocked deletion outcomes. |
+| F1.3, F1.3.1–F1.3.2 | Use the Auth0 SPA SDK for login, logout, and session continuity; never accept credentials locally. |
+| F1.4, F1.4.1–F1.4.3 | Return permitted profile fields and credit balance supplied by the service. Accept only display name and mobile number edits; reject attempts to edit system-managed fields. |
+| F1.6.3, F1.6.6 | Expose administrator-management requests behind super-administrator access checks. |
+| F1.7, F1.7.1 | Use Auth0's password-reset flow for the registered identity. |
+| F1.9, F1.9.1–F1.9.5 | Accept super-administrator invitations and activation requests; derive the creator identity from authentication. |
+| F1.10, F1.10.1–F1.10.7 | Accept deactivation, re-authentication/confirmation, and reactivation requests; derive the acting identity from authentication. |
+
+Services remain authoritative for local uniqueness, ownership, and account state. Auth0 remains authoritative for credentials, password rules, sessions, roles, and permissions.
+
+No errand creation, courier assignment, supplier management, or dispute endpoints belong in this package (F1.5, F1.6.1–F1.6.2).

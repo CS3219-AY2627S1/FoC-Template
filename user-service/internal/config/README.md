@@ -1,0 +1,17 @@
+<!--
+AI Assistance Disclosure:
+Tool: ChatGPT (model: GPT-6 Luna), date: 2026-11-11
+Scope: Documentation for user-service application configuration and bootstrap.
+Author review: I validated correctness, edited for style, and added boundary checks.
+-->
+
+# Configuration — planned responsibilities
+
+Current implementation: `Load` reads required `DATABASE_URL`, `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, and `AUTH0_AUDIENCE`, plus optional `HTTP_ADDRESS` (default `:8080`). Administrator role management uses `AUTH0_M2M_CLIENT_ID`, `AUTH0_M2M_CLIENT_SECRET`, `AUTH0_MANAGEMENT_API_AUDIENCE`, `AUTH0_USER_ROLE_ID`, and `AUTH0_ADMIN_ROLE_ID`; the M2M values are optional while the feature is not configured, and paired credentials/role IDs must be supplied together. When M2M credentials are set, the Management API audience is also required. It is separate from the custom login domain: use the canonical tenant API identifier such as `https://your-tenant.auth0.com/api/v2/`. The M2M secret is never exposed in browser configuration or errors. Repository connection setup validates connectivity without exposing credentials.
+
+- **F1.8.2:** Read initial super-administrator credentials from the deployment environment. Use `BOOTSTRAP_AUTH0_SUBJECT`, `BOOTSTRAP_USERNAME`, and `BOOTSTRAP_EMAIL`; no password is accepted. `LoadBootstrap` loads these independently, and the service validates them only when initial creation is required.
+- **F1.8.5:** Support validation of required bootstrap values when initialization is needed. The service determines this from persisted initialization/account state; configuration alone cannot decide.
+- **F1.8.6:** Ensure configuration errors and diagnostics never expose credential values.
+- **F1.1.4–F1.1.5, F1.3.2, F1.7, F1.9.3:** Provide future email-delivery, link, session-expiration, and activation-expiration settings as needed. NUS domain eligibility remains a service rule.
+
+Session durations, token lifetimes, provider details, and other deployment settings are not specified by these requirements and remain to be decided. Do not put credentials in source files, documentation, or image defaults.

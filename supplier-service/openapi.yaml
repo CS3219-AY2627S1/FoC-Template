@@ -1,0 +1,91 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-09-29
+# Scope: Documentation formatting of the team-defined API specification.
+# Author review: Reviewed, validated, and tested by the authors.
+
+openapi: 3.1.0
+
+info:
+  title: Friend on Campus Supplier Service API
+  version: 1.0.0
+  description: >-
+    Frozen supplier catalogue and administration contract. Supplier IDs are
+    stable; version IDs identify immutable snapshots.
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: /supplier-service
+    description: API gateway route
+
+tags:
+  - name: Catalog
+    description: Authenticated current and historical supplier reads.
+  - name: Administration
+    description: Administrator-only supplier lifecycle operations.
+  - name: Lookups
+    description: >-
+      Managed building and supplier-type lists. Reads for filters and
+      pickers; administrators create and retire rows.
+  - name: Operations
+    description: Service health and operational endpoints.
+
+paths:
+  /suppliers:
+    get:
+      $ref: ./openapi/catalog.yaml#/operations/listSuppliers
+    post:
+      $ref: ./openapi/administration.yaml#/operations/createSupplier
+  /suppliers/{supplierId}:
+    get:
+      $ref: ./openapi/catalog.yaml#/operations/getSupplier
+    patch:
+      $ref: ./openapi/administration.yaml#/operations/updateSupplier
+    delete:
+      $ref: ./openapi/administration.yaml#/operations/deleteSupplier
+  /suppliers/images:
+    post:
+      $ref: ./openapi/administration.yaml#/operations/uploadSupplierImage
+  /supplier-versions/{versionId}:
+    get:
+      $ref: ./openapi/catalog.yaml#/operations/getSupplierVersion
+  /buildings:
+    get:
+      $ref: ./openapi/lookups.yaml#/operations/listBuildings
+    post:
+      $ref: ./openapi/lookups.yaml#/operations/createBuilding
+  /buildings/{buildingId}:
+    delete:
+      $ref: ./openapi/lookups.yaml#/operations/retireBuilding
+  /supplier-types:
+    get:
+      $ref: ./openapi/lookups.yaml#/operations/listSupplierTypes
+    post:
+      $ref: ./openapi/lookups.yaml#/operations/createSupplierType
+  /supplier-types/{supplierTypeId}:
+    delete:
+      $ref: ./openapi/lookups.yaml#/operations/retireSupplierType
+  /readyz:
+    get:
+      $ref: ./openapi/common.yaml#/operations/readiness
+
+components:
+  schemas:
+    Supplier:
+      $ref: ./openapi/common.yaml#/components/schemas/Supplier
+    SupplierVersion:
+      $ref: ./openapi/common.yaml#/components/schemas/SupplierVersion
+    SupplierWrite:
+      $ref: ./openapi/common.yaml#/components/schemas/SupplierWrite
+    SupplierPatch:
+      $ref: ./openapi/common.yaml#/components/schemas/SupplierPatch
+    Lookup:
+      $ref: ./openapi/common.yaml#/components/schemas/Lookup
+    LookupList:
+      $ref: ./openapi/common.yaml#/components/schemas/LookupList
+    Error:
+      $ref: ./openapi/common.yaml#/components/schemas/Error
+  securitySchemes:
+    bearerAuth:
+      $ref: ./openapi/common.yaml#/components/securitySchemes/bearerAuth

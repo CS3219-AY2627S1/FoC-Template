@@ -1,0 +1,217 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Claude Opus 5.5), date: 2026-09-29
+// Scope: Implementation of code.
+// Author review: Reviewed, validated, and tested by the authors.
+
+package supplier
+
+import (
+	"slices"
+	"time"
+)
+
+const (
+	DefaultPageSize = 25
+	MaximumPageSize = 100
+)
+
+// SupplierID is a stable, system-generated UUID. It is never accepted in a
+// create or update payload.
+type SupplierID string
+
+// VersionID is a system-generated UUID for exactly one immutable snapshot.
+type VersionID string
+
+// DeletionOperationID is a caller-generated UUID used to make a guarded
+// deletion recoverable and idempotent across HTTP and service retries.
+type DeletionOperationID string
+
+// Details are the versioned, administrator-editable supplier fields.
+// Building and Type are resolved by LookupKey to rows of the buildings and
+// supplier_types lookups; reads return the lookup's canonical name. A write
+// may only assign an existing, unretired row. BuildingID and TypeID identify
+// those rows. They are read-only outputs: writers ignore them and resolve
+// Building and Type instead.
+type Details struct {
+	Name                string
+	Type                string
+	TypeID              string
+	Building            string
+	BuildingID          string
+	Floor               string
+	LocationDescription string
+	Latitude            float64
+	Longitude           float64
+	OpeningTime         string
+	ClosingTime         string
+	ImageURL            *string
+}
+
+// Version is an immutable supplier snapshot. Available is derived: it is true
+// only when this is the current version of a supplier that has not been
+// deleted. Superseded and deleted-supplier versions remain readable by ID.
+type Version struct {
+	SupplierID SupplierID
+	VersionID  VersionID
+	Details    Details
+	Available  bool
+	CreatedAt  time.Time
+}
+
+// Supplier is the current catalogue projection. Deleted suppliers are not
+// returned by current supplier reads, so Available is always true here.
+type Supplier struct {
+	SupplierID SupplierID
+	VersionID  VersionID
+	Details    Details
+	Available  bool
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+// Create is the presence-aware input to the creation use case. Coordinates
+// are pointers because zero is a valid coordinate and must remain distinct
+// from an omitted mandatory field. IDs and timestamps are supplied by trusted
+// service components.
+type Create struct {
+	Name                string
+	Type                string
+	Building            string
+	Floor               string
+	LocationDescription string
+	Latitude            *float64
+	Longitude           *float64
+	OpeningTime         string
+	ClosingTime         string
+	ImageURL            *string
+}
+
+// Patch represents a partial update. ImageURLSet distinguishes an omitted
+// image URL from an explicit nil value, which removes the image.
+type Patch struct {
+	Name                *string
+	Type                *string
+	Building            *string
+	Floor               *string
+	LocationDescription *string
+	Latitude            *float64
+	Longitude           *float64
+	OpeningTime         *string
+	ClosingTime         *string
+	ImageURLSet         bool
+	ImageURL            *string
+}
+
+func (p Patch) Empty() bool {
+	return p.Name == nil &&
+		p.Type == nil &&
+		p.Building == nil &&
+		p.Floor == nil &&
+		p.LocationDescription == nil &&
+		p.Latitude == nil &&
+		p.Longitude == nil &&
+		p.OpeningTime == nil &&
+		p.ClosingTime == nil &&
+		!p.ImageURLSet
+}
+
+// Apply returns prospective details for validation. It does not mutate the
+// existing version. Patching Building or Type clears its ID because the new
+// value has not been resolved to a lookup row yet.
+func (p Patch) Apply(existing Details) Details {
+	updated := existing
+	if p.Name != nil {
+		updated.Name = *p.Name
+	}
+	if p.Type != nil {
+		updated.Type = *p.Type
+		updated.TypeID = ""
+	}
+	if p.Building != nil {
+		updated.Building = *p.Building
+		updated.BuildingID = ""
+	}
+	if p.Floor != nil {
+		updated.Floor = *p.Floor
+	}
+	if p.LocationDescription != nil {
+		updated.LocationDescription = *p.LocationDescription
+	}
+	if p.Latitude != nil {
+		updated.Latitude = *p.Latitude
+	}
+	if p.Longitude != nil {
+		updated.Longitude = *p.Longitude
+	}
+	if p.OpeningTime != nil {
+		updated.OpeningTime = *p.OpeningTime
+	}
+	if p.ClosingTime != nil {
+		updated.ClosingTime = *p.ClosingTime
+	}
+	if p.ImageURLSet {
+		updated.ImageURL = p.ImageURL
+	}
+	return updated
+}
+
+// ListSort selects the catalogue ordering. Every ordering ends with
+// SupplierID so keyset pagination has a total order.
+type ListSort string
+
+const (
+	// SortName orders by normalized name, then SupplierID, both ascending.
+	SortName ListSort = "name"
+	// SortNameDesc orders by normalized name, then SupplierID, both descending.
+	SortNameDesc ListSort = "-name"
+	// SortType orders by type lookup key, then normalized name, then
+	// SupplierID, all ascending.
+	SortType ListSort = "type"
+	// SortTypeDesc is SortType with every key descending.
+	SortTypeDesc ListSort = "-type"
+	// SortBuilding orders by building lookup key, then normalized name, then
+	// SupplierID, all ascending.
+	SortBuilding ListSort = "building"
+	// SortBuildingDesc is SortBuilding with every key descending.
+	SortBuildingDesc ListSort = "-building"
+)
+
+// ListSorts lists every accepted sort in contract order.
+var ListSorts = []ListSort{SortName, SortNameDesc, SortType, SortTypeDesc, SortBuilding, SortBuildingDesc}
+
+func (s ListSort) Valid() bool {
+	return slices.Contains(ListSorts, s)
+}
+
+// ListFilter is the shared query contract. Cursor is opaque to callers. Query
+// matches normalized name, building, floor, or location description. Type
+// matches the type whose LookupKey equals LookupKey(Type), and Building the
+// building whose LookupKey equals LookupKey(Building). Repositories order by
+// Sort (SortName when empty) before applying the cursor.
+type ListFilter struct {
+	Query    string
+	Type     string
+	Building string
+	Sort     ListSort
+	Limit    int
+	Cursor   string
+}
+
+func (f ListFilter) PageSize() int {
+	if f.Limit == 0 {
+		return DefaultPageSize
+	}
+	return f.Limit
+}
+
+func (f ListFilter) SortOrder() ListSort {
+	if f.Sort == "" {
+		return SortName
+	}
+	return f.Sort
+}
+
+type Page struct {
+	Items      []Supplier
+	NextCursor string
+}

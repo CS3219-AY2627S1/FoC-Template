@@ -1,0 +1,175 @@
+<!--
+AI Assistance Disclosure:
+Tool: ChatGPT (model: GPT-6 Luna), date: 2026-11-11
+Scope: Project documentation for user-service.
+Author review: I validated correctness, edited for style, and added boundary checks.
+-->
+
+# User service
+
+PostgreSQL-backed student-account service for the food-delivery platform. Auth0 owns registration, credentials, and sessions; this service validates access tokens, provisions local application accounts, and manages profile data. The browser application lives in [user-frontend](../user-frontend/README.md).
+
+Business-level deletion remains blocked until coordinated credit/errand checks and Auth0 session revocation are implemented. Auth0 RBAC protects self-service profile routes and administrator role changes. Auth0 owns authorization; the local database does not store user roles. Initial administrator bootstrap links a deployment-supplied Auth0 identity locally. The service never receives or stores passwords.
+
+## Structure
+
+```text
+cmd/api/main.go          Application entry point
+internal/config/        Environment configuration
+internal/handler/       HTTP handlers
+internal/service/       Internal student-account operations and future integrations
+internal/repository/    Persistence contracts and PostgreSQL adapter
+internal/auth/          Auth0 user-profile and Management API clients
+internal/middleware/    Auth0 JWT authentication
+migrations/             Versioned account schema SQL
+Dockerfile              Multi-stage image build
+go.mod                  Module: user-service
+```
+
+Dependencies flow from handlers to business services to repository interfaces. Persistence uses `pgx/v5`. No service database other than the user database is accessed.
+
+## Implemented internal operations
+
+Construct a pool with `repository.Open(ctx, cfg.DatabaseURL)`, close it when finished, and pass `repository.NewPostgres(pool)` to `service.NewUserService(repo, nil)`. The second argument is an optional future credit-balance adapter. These are internal Go APIs, not network endpoints.
+
+| Operation | Current behavior |
+| --- | --- |
+| `GetProfile` | Require an active account and return public account/profile fields. `credit_balance: null` means the adapter is missing or failed; it never means zero. |
+| `UpdateProfile` | Require an active account; update only display name and mobile number. Nil fields are omitted; empty strings explicitly clear fields. |
+| `DeleteAccount` | Require confirmation and an active account, then return `ErrUnavailable` without writing anything. |
+| Repository `SoftDelete` | Low-level, tested persistence primitive: mark deleted/inactive and exclude the account from normal reads and updates. Does not perform eligibility checks or revoke sessions; never call it directly from a future handler. |
+
+Profile and deletion operations take a trusted authenticated account ID. The future caller must obtain it from real authentication, never a request-supplied identity. There is no authentication substitute, account listing, or target-account override in this slice.
+
+Usernames come from the verified Auth0 profile, with the email local part as fallback. Usernames and emails are case-insensitively unique and remain reserved after soft deletion. Only the exact `u.nus.edu` domain is accepted. Password policy and password reset are configured in the Auth0 database connection.
+
+Display names are limited to 100 characters and mobile numbers to 32, with control characters rejected. Phone ownership/format validation is not implemented. Validation errors contain field names and explanations, not submitted values; conflicts, missing accounts, inactive accounts, and missing dependencies have distinguishable errors.
+
+Soft deletion retains account data and permanently reserves username/email within this slice. Retention, personal-data erasure, safe distributed deletion coordination, and account-wide session invalidation require future work.
+
+## Functional requirement allocation (F1)
+
+These documents allocate the full requirements across folders; their status notes identify the implemented foundation. A requirement can span several folders: handlers translate HTTP requests, services enforce business rules, and adapters provide persistence or external capabilities.
+
+| Folder | Planned responsibility | Requirements |
+| --- | --- | --- |
+| [cmd/api](cmd/api/README.md) | Startup orchestration and bootstrap lifecycle | F1.6.7, F1.8 |
+| [internal/config](internal/config/README.md) | Deployment settings and bootstrap configuration | F1.8.2, F1.8.5–F1.8.6; settings supporting F1.1, F1.3, F1.7, F1.9 |
+| [internal/handler](internal/handler/README.md) | HTTP inputs, outputs, and session transport | F1.1–F1.4, F1.6, F1.7, F1.9–F1.10 |
+| [internal/service](internal/service/README.md) | Business workflows and cross-service coordination | F1.1–F1.10 |
+| [internal/repository](internal/repository/README.md) | User-owned persistence, transactions, and audit records | F1.1–F1.4, F1.6–F1.10 |
+| [internal/auth](internal/auth/README.md) | Auth0 identity retrieval | F1.1–F1.3, F1.7–F1.10 |
+| [internal/middleware](internal/middleware/README.md) | Request authentication and access enforcement | F1.3, F1.6, F1.9.2, F1.10.5 |
+| [migrations](migrations/README.md) | Future schema evolution and bootstrap migration coordination | F1.1.1, F1.6.7, F1.8, F1.9–F1.10 |
+
+The service-layer document contains the detailed requirement breakdown. Frontend forms and confirmation screens belong to the consuming application; this service must still validate submitted inputs and enforce the corresponding rules. Errand, credit, supplier, and dispute behavior stays with the owning services.
+
+## Ownership boundaries
+
+The user service owns:
+
+- User identity
+- Profile information
+- Account activation and deactivation
+- Audit records related to user-management actions
+
+Auth0 owns roles and authorization policy. The `role` returned in profiles is derived from Auth0 permissions; the local accounts table stores no role column.
+
+The user service does not own:
+
+- Authentication credentials or password hashes
+- Auth0 sessions
+- Errands
+- Courier assignment
+- Order state
+- Credit reservations
+- Supplier records
+
+Access these domains through service APIs or events in the future, never by directly querying another service's database.
+
+A normal **USER** account can act as both requester and courier. Requester and courier are business activities, not separate account roles.
+
+## Development
+
+Use Go 1.26.7 or newer, matching the existing module's minimum version. The module is already initialized as `user-service` (the result of `go mod init user-service`); do not reinitialize it.
+
+Run from `user-service/`:
+
+```sh
+gofmt -w cmd internal
+go vet ./...
+go test ./...
+go build ./...
+go run ./cmd/api
+```
+
+### OpenAPI documentation
+
+Validate the API contract with:
+
+```sh
+npx --yes @redocly/cli@2.54.1 lint openapi.yaml
+```
+
+Preview the documentation locally with:
+
+```sh
+npx --yes @redocly/cli@1.34.5 preview-docs openapi.yaml
+```
+
+Open the URL printed by the command, typically `http://127.0.0.1:8080`.
+The preview watches `openapi.yaml` and refreshes when it changes. The preview
+command uses Redocly CLI v1 because it was removed from CLI v2.
+
+Copy `.env.example` to `.env`, fill in the values, and run `go run ./cmd/api`. The entry point connects to PostgreSQL and listens on `HTTP_ADDRESS` (default `:8080`). `repository.Open` parses the URL and pings PostgreSQL with the caller's context; its errors omit credentials and driver details. Do not log configuration, bearer tokens, or credential inputs.
+
+Create an Auth0 API named `FoC User Service API` with identifier `https://api.foc.local/user-service` and RS256 signing. Configure its Single Page Application for the frontend origin (locally `http://localhost:5173`), following the [frontend setup instructions](../user-frontend/README.md). Put its tenant domain and client ID in `.env`; no client secret is used by the SPA.
+
+Set the API's **Token Expiration** to `600` seconds. Logout clears the SPA's in-memory state and Auth0 browser session, but an issued stateless JWT remains valid until it expires. The service deliberately has no local session table or token denylist.
+
+The local endpoints are:
+
+- `GET /health`, `GET /readyz` and `GET /api/auth/config` — public service/configuration endpoints. `/health` only says the process answers (204). `/readyz` says whether the database answers: 200 `{"status":"ready"}`, or 503 `{"status":"not_ready"}` with no error text. The admin dashboard's readiness section reads it.
+- `POST /api/auth/provision` — requires an access token and creates an active local USER from a matching, verified NUS Auth0 profile.
+- `POST /api/auth/logout` — validates the current access token before the SPA ends its Auth0 browser session; returns `204 No Content`.
+- `GET /api/private` — requires a valid Auth0 access token and a provisioned, active local account.
+
+Automatic provisioning never links an existing local account by email. A username or email conflict requires a future explicit account-linking workflow. The Auth0 nickname becomes the username; a missing or invalid nickname falls back to the email local part.
+
+Use a dedicated user-service database on PostgreSQL 16 or newer. Set `DATABASE_URL` through your environment/secret manager, then apply migrations with Goose:
+
+```sh
+GOOSE_DRIVER=postgres GOOSE_DBSTRING="$DATABASE_URL" go run github.com/pressly/goose/v3/cmd/goose@v3.28.0 -dir migrations up
+```
+
+Apply migrations before starting the API; the service does not run DDL on startup. The existing local database needs a one-time Goose v4 baseline before the first `goose up`. See [migration instructions](migrations/README.md) for that baseline and rollback behavior.
+
+### PostgreSQL integration tests
+
+Set `TEST_DATABASE_URL` to a test database whose user may create schemas, then run:
+
+```sh
+go test -count=1 ./...
+```
+
+Without `TEST_DATABASE_URL`, PostgreSQL integration tests are skipped explicitly; unit tests still run. Each integration test creates and removes a randomly named isolated schema. Tests never fall back to `DATABASE_URL`, reset an existing schema/database, or require pre-applied migrations. Integration coverage includes concurrent uniqueness, Auth0 provisioning, CRUD, guarded profile updates, blocked business deletion, and migration rollback/reapply.
+
+Build the container with `docker build -t user-service .`. Supply all variables documented in `.env.example` when running it; the environment file itself is not copied into the image.
+
+## Initial super-administrator bootstrap
+
+Prepare an existing Auth0 identity and set `BOOTSTRAP_AUTH0_SUBJECT` to its exact user ID, plus `BOOTSTRAP_USERNAME` and `BOOTSTRAP_EMAIL`. These trusted deployment values are required only when initial account creation is needed. Any valid email domain is allowed for this administrator; ordinary student signup retains its NUS policy. Bootstrap does not verify the identity remotely, create an Auth0 account, or accept a password.
+
+Apply all Goose migrations before starting the API. From `user-service/`, you may also run `go run ./scripts/bootstrap-super-admin`. Both entrypoints load an optional `.env` without overriding supplied environment variables and run the same workflow with a 30-second deadline. The API accepts requests only after bootstrap succeeds.
+
+Bootstrap locks a durable coordination row, links an active local account to the configured Auth0 subject, and records completion in one transaction. Concurrent instances serialize; subsequent runs do not reset the account or completion timestamp. The stored bootstrap subject is an initialization marker, not an authorization role. Conflicting users are never promoted or overwritten. If completion exists but its linked local account is missing, startup fails and requires explicit recovery; do not reset the flag automatically.
+
+This creates the local account only; it does not grant an Auth0 role. Assign the Auth0 Administrator role separately. Remove bootstrap configuration after successful initialization if desired. Errors omit configured values and database diagnostics.
+
+## Administrator role changes
+
+`GET /api/admin/users?page=0&per_page=25&email=...` lists Auth0 users or finds an exact email match. Add `role=administrator` or `role=user` to list users by Auth0 role; the User list excludes anyone with the Administrator role, even when they have both roles assigned. Role-filtered lists use Auth0 checkpoint pagination: omit `cursor` on the first request, then pass back `next_cursor` on the next request. Those pages can be shorter than `per_page` when administrator members are filtered from the User role. The endpoint and role-change endpoints require an active local account and the Auth0 API permission `users:manage:roles`; define this permission on the User Service API and grant it only to the Auth0 Administrator role. The response includes Auth0 user ID, email, name, verification state, creation time, and last login for general directory or email searches; role membership results include the Auth0 role endpoint's user ID, email, and name fields. Profile role labels are derived from the caller's permission; no role is stored in the local database.
+
+`PUT /api/admin/users/{userID}/administrator` assigns the configured Auth0 Administrator role. `DELETE` on the same path assigns the configured User role first, then removes Administrator.
+
+Configure `AUTH0_M2M_CLIENT_ID`, `AUTH0_M2M_CLIENT_SECRET`, and `AUTH0_MANAGEMENT_API_AUDIENCE` in the service environment. The audience must be the canonical tenant Management API identifier (for example, `https://your-tenant.auth0.com/api/v2/`), even when `AUTH0_DOMAIN` is a custom login domain. Authorize the M2M application for the Auth0 Management API with `read:users` for directory search, `read:roles` and `read:role_members` for role-filtered listings, and `update:users` for role changes; keep its secret server-side. Configure `AUTH0_USER_ROLE_ID` and `AUTH0_ADMIN_ROLE_ID` for role-filtered listings and role changes. If the M2M credentials are absent, admin directory and role endpoints return `503`; if role IDs or required Management API scopes are absent, role-filtered listings and role changes return `503`. A demotion assigns User before removing Administrator, so a failed removal leaves the target with both roles rather than removing regular-user permissions. Role changes take effect in newly issued tokens; a target may need to renew their session before token permissions change.

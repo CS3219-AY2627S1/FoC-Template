@@ -1,0 +1,209 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Claude Opus 5.5), date: 2026-09-29
+// Scope: Implementation of test code (unit and integration tests).
+// Author review: Reviewed, validated, and tested by the authors.
+
+package tests
+
+import (
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/CS3219-AY2627S1/FoC-Template/supplier-service/internal/config"
+)
+
+func TestConfigurationUsesIsolatedTestDatabase(t *testing.T) {
+	testDatabaseURL := "postgresql://supplier_test@127.0.0.1:5433/supplier_test"
+	values := map[string]string{
+		"SUPPLIER_SEED_CSV_PATH": "../data/csv/supplier-seed-data.csv",
+		"AUTH0_ISSUER":           "https://tenant.example.com/",
+		"APP_ENV":                "test",
+		"TEST_DATABASE_URL":      testDatabaseURL,
+	}
+
+	cfg, err := config.LoadFrom(mapLookup(values))
+
+	require.NoError(t, err)
+	require.Equal(t, config.Test, cfg.Environment)
+	require.Equal(t, testDatabaseURL, cfg.Database.URL)
+	require.Equal(t, "template-v1", cfg.SeedNamespace)
+	require.Equal(t, "../data/csv/supplier-seed-data.csv", cfg.SeedCSVPath)
+	require.Equal(t, 3002, cfg.HTTP.Port)
+}
+
+func TestConfigurationAcceptsSeedDatasetNamespace(t *testing.T) {
+	values := map[string]string{
+		"SUPPLIER_SEED_CSV_PATH":          "/deployment/suppliers.csv",
+		"AUTH0_ISSUER":                    "https://tenant.example.com/",
+		"APP_ENV":                         "test",
+		"TEST_DATABASE_URL":               "postgresql://supplier_test@127.0.0.1:5433/supplier_test",
+		"SUPPLIER_SEED_DATASET_NAMESPACE": "deployment-v2",
+	}
+
+	cfg, err := config.LoadFrom(mapLookup(values))
+
+	require.NoError(t, err)
+	require.Equal(t, "deployment-v2", cfg.SeedNamespace)
+}
+
+func TestSupplierImageBaseURL(t *testing.T) {
+	values := map[string]string{
+		"APP_ENV": "test", "TEST_DATABASE_URL": "postgresql://test@localhost/test",
+		"AUTH0_ISSUER": "https://tenant.example.com/", "SUPPLIER_SEED_CSV_PATH": "/deployment/suppliers.csv",
+	}
+	values["SUPPLIER_IMAGE_BASE_URL"] = "https://images.example.com/"
+	cfg, err := config.LoadFrom(mapLookup(values))
+	require.NoError(t, err)
+	require.Equal(t, "https://images.example.com", cfg.ImageBaseURL)
+	for _, invalid := range []string{
+		"http://images.example.com", "images.example.com", "https://user:secret-password@images.example.com",
+		"https://images.example.com/path", "https://images.example.com?secret-password", "https://images.example.com#fragment",
+	} {
+		values["SUPPLIER_IMAGE_BASE_URL"] = invalid
+		_, err := config.LoadFrom(mapLookup(values))
+		require.ErrorContains(t, err, "SUPPLIER_IMAGE_BASE_URL")
+		require.NotContains(t, err.Error(), "secret-password")
+	}
+}
+
+func TestSupplierImageUploadConfiguration(t *testing.T) {
+	values := map[string]string{
+		"APP_ENV": "test", "TEST_DATABASE_URL": "postgresql://test@localhost/test",
+		"AUTH0_ISSUER": "https://tenant.example.com/", "SUPPLIER_SEED_CSV_PATH": "/deployment/suppliers.csv",
+	}
+	cfg, err := config.LoadFrom(mapLookup(values))
+	require.NoError(t, err)
+	require.Empty(t, cfg.ImageBucket)
+	values["SUPPLIER_IMAGE_BUCKET"] = "foc-supplier-images"
+	_, err = config.LoadFrom(mapLookup(values))
+	require.ErrorContains(t, err, "AWS_REGION")
+	require.ErrorContains(t, err, "SUPPLIER_IMAGE_BASE_URL")
+	values["AWS_REGION"] = "ap-southeast-1"
+	values["SUPPLIER_IMAGE_BASE_URL"] = "https://images.example.com"
+	cfg, err = config.LoadFrom(mapLookup(values))
+	require.NoError(t, err)
+	require.Equal(t, "foc-supplier-images", cfg.ImageBucket)
+	require.Equal(t, "ap-southeast-1", cfg.AWSRegion)
+	values["SUPPLIER_IMAGE_BUCKET"] = "https://secret-user:secret-password@bucket"
+	_, err = config.LoadFrom(mapLookup(values))
+	require.ErrorContains(t, err, "SUPPLIER_IMAGE_BUCKET")
+	require.NotContains(t, err.Error(), "secret-password")
+}
+
+func TestConfigurationRejectsMissingTestDatabaseWithoutLeakingValues(t *testing.T) {
+	values := map[string]string{
+		"AUTH0_ISSUER": "https://tenant.example.com/",
+		"APP_ENV":      "test",
+		"DATABASE_URL": "postgresql://secret-user:secret-password@database/supplier",
+	}
+
+	_, err := config.LoadFrom(mapLookup(values))
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "TEST_DATABASE_URL")
+	require.NotContains(t, err.Error(), "secret-password")
+}
+
+func mapLookup(values map[string]string) config.LookupEnv {
+	return func(key string) (string, bool) {
+		value, found := values[key]
+		return value, found
+	}
+}
+
+func TestAuth0Configuration_NFR3_4(t *testing.T) {
+	base := map[string]string{"APP_ENV": "test", "TEST_DATABASE_URL": "postgresql://test@localhost/test", "AUTH0_ISSUER": "https://tenant.example.com/", "SUPPLIER_SEED_CSV_PATH": "/deployment/suppliers.csv"}
+	cfg, err := config.LoadFrom(mapLookup(base))
+	require.NoError(t, err)
+	require.Equal(t, "https://api.foc.local/supplier-service", cfg.Auth.Audience)
+	for _, tt := range []struct{ key, value string }{
+		{"AUTH0_ISSUER", ""}, {"AUTH0_ISSUER", "http://tenant.example.com/"}, {"AUTH0_ISSUER", "https://tenant.example.com"},
+		{"AUTH0_ISSUER", "https://secret-user:secret-password@tenant.example.com/"},
+		{"AUTH0_ISSUER", "https://tenant.example.com/?secret-password"},
+		{"AUTH0_JWKS_CACHE_TTL", "0s"}, {"AUTH0_JWKS_CACHE_TTL", "2h"},
+		{"AUTH0_CLOCK_SKEW", "-1s"}, {"AUTH0_CLOCK_SKEW", "2m"}, {"AUTH0_CLOCK_SKEW", "bad"},
+		{"AUTH0_JWKS_FETCH_TIMEOUT", "11s"}, {"AUTH0_JWKS_REFRESH_INTERVAL", "6m"},
+		{"AUTH0_JWKS_FETCH_ATTEMPTS", "4"}, {"AUTH0_JWKS_BREAKER_THRESHOLD", "0"},
+		{"AUTH0_JWKS_BREAKER_COOLDOWN", "-1s"}, {"AUTH0_AUDIENCE", "https://api.foc.local/supplier-service,"},
+		{"SUPPLIER_SEED_CSV_PATH", ""}, {"SUPPLIER_SEED_CSV_PATH", "   "},
+		{"STARTUP_TIMEOUT", "0s"}, {"STARTUP_TIMEOUT", "invalid"},
+	} {
+		t.Run(tt.key+" "+tt.value, func(t *testing.T) {
+			values := map[string]string{}
+			for k, v := range base {
+				values[k] = v
+			}
+			values[tt.key] = tt.value
+			_, err := config.LoadFrom(mapLookup(values))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.key)
+			require.NotContains(t, err.Error(), "secret-password")
+		})
+	}
+	base["AUTH0_CLOCK_SKEW"] = "0s"
+	_, err = config.LoadFrom(mapLookup(base))
+	require.NoError(t, err)
+}
+
+func TestOrderServiceConfigurationIsOptional(t *testing.T) {
+	base := map[string]string{"APP_ENV": "test", "TEST_DATABASE_URL": "postgresql://test@localhost/test", "AUTH0_ISSUER": "https://tenant.example.com/", "SUPPLIER_SEED_CSV_PATH": "/deployment/suppliers.csv"}
+	cfg, err := config.LoadFrom(mapLookup(base))
+	require.NoError(t, err)
+	require.False(t, cfg.OrderService.Enabled())
+
+	base["ORDER_SERVICE_URL"] = "http://order-service:3003"
+	base["SUPPLIER_M2M_CLIENT_ID"] = "supplier-client"
+	base["SUPPLIER_M2M_CLIENT_SECRET"] = "secret-password"
+	cfg, err = config.LoadFrom(mapLookup(base))
+	require.NoError(t, err)
+	require.True(t, cfg.OrderService.Enabled())
+	require.Equal(t, "https://api.foc.local/order-service", cfg.OrderService.Audience)
+	require.Equal(t, 2*time.Second, cfg.OrderService.Timeout)
+	require.Equal(t, 2, cfg.OrderService.MaxAttempts)
+	require.Equal(t, 15*time.Second, cfg.OrderService.ReconcileInterval)
+	require.NotContains(t, fmt.Sprintf("%v %+v %#v", cfg, cfg, cfg), "secret-password")
+}
+
+func TestOrderServiceConfigurationRejectsInvalidValuesWithoutLeaking(t *testing.T) {
+	base := map[string]string{
+		"APP_ENV": "test", "TEST_DATABASE_URL": "postgresql://test@localhost/test", "AUTH0_ISSUER": "https://tenant.example.com/",
+		"SUPPLIER_SEED_CSV_PATH": "/deployment/suppliers.csv", "ORDER_SERVICE_URL": "http://order-service:3003",
+		"SUPPLIER_M2M_CLIENT_ID": "supplier-client", "SUPPLIER_M2M_CLIENT_SECRET": "secret-password",
+	}
+	for _, tt := range []struct{ key, value string }{
+		{"ORDER_SERVICE_URL", "http://order-service:3003/"}, {"ORDER_SERVICE_URL", "order-service:3003"},
+		{"ORDER_SERVICE_URL", "http://user:secret-password@order-service"}, {"ORDER_SERVICE_URL", "http://order-service?secret-password"},
+		{"SUPPLIER_M2M_CLIENT_ID", ""}, {"SUPPLIER_M2M_CLIENT_SECRET", ""},
+		{"ORDER_AUDIENCE", "https://a, https://b"},
+		{"ORDER_SERVICE_TIMEOUT", "0s"}, {"ORDER_SERVICE_TIMEOUT", "1m"},
+		{"ORDER_SERVICE_MAX_ATTEMPTS", "0"}, {"ORDER_SERVICE_MAX_ATTEMPTS", "6"},
+		{"DELETION_RECONCILE_INTERVAL", "-1s"},
+	} {
+		t.Run(tt.key+" "+tt.value, func(t *testing.T) {
+			values := map[string]string{}
+			for k, v := range base {
+				values[k] = v
+			}
+			values[tt.key] = tt.value
+			_, err := config.LoadFrom(mapLookup(values))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.key)
+			require.NotContains(t, err.Error(), "secret-password")
+		})
+	}
+
+	production := map[string]string{}
+	for k, v := range base {
+		production[k] = v
+	}
+	production["APP_ENV"] = "production"
+	production["DATABASE_URL"] = "postgresql://test@localhost/test"
+	_, err := config.LoadFrom(mapLookup(production))
+	require.ErrorContains(t, err, "ORDER_SERVICE_URL")
+	production["ORDER_SERVICE_URL"] = "https://order-service.example.com"
+	_, err = config.LoadFrom(mapLookup(production))
+	require.NoError(t, err)
+}

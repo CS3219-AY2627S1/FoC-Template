@@ -1,0 +1,20 @@
+services:
+  supplier-test-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: supplier_test
+      POSTGRES_USER: supplier_test
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      # Override when 5433 is taken, e.g. by the e2e stack.
+      - "127.0.0.1:${SUPPLIER_TEST_DB_PORT:-5433}:5432"
+    volumes:
+      - supplier-test-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supplier_test -d supplier_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+volumes:
+  supplier-test-data:

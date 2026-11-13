@@ -1,0 +1,17 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-09-29
+# Scope: Boilerplate generation for build/container/tooling configuration.
+# Author review: Reviewed, validated, and tested by the authors.
+
+.env
+.env.local
+.env.*.local
+node_modules/
+bin/
+/supplier-service.exe
+coverage.out
+*.test
+*.log
+references/
+/temp/
+/internal/database/generated/

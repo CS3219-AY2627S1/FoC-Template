@@ -1,0 +1,163 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Claude Opus 5.5), date: 2026-09-29
+// Scope: Implementation of code.
+// Author review: Reviewed, validated, and tested by the authors.
+
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"time"
+
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/CS3219-AY2627S1/FoC-Template/supplier-service/internal/auth"
+	"github.com/CS3219-AY2627S1/FoC-Template/supplier-service/internal/config"
+	"github.com/CS3219-AY2627S1/FoC-Template/supplier-service/internal/database"
+	"github.com/CS3219-AY2627S1/FoC-Template/supplier-service/internal/database/supplierrepo"
+	"github.com/CS3219-AY2627S1/FoC-Template/supplier-service/internal/readiness"
+	deletefeature "github.com/CS3219-AY2627S1/FoC-Template/supplier-service/internal/supplier/delete"
+	"github.com/CS3219-AY2627S1/FoC-Template/supplier-service/internal/supplier/imageupload"
+	"github.com/CS3219-AY2627S1/FoC-Template/supplier-service/internal/supplier/seed"
+)
+
+type Application struct {
+	database        *pgxpool.Pool
+	server          *http.Server
+	reconciler      *deletefeature.Reconciler
+	shutdownTimeout time.Duration
+}
+
+// New initializes seed data and composes the service. Auth options allow a
+// deployment-controlled trust store, including the TLS JWKS fixture in tests.
+func New(ctx context.Context, cfg config.Config, logger *slog.Logger, authOptions ...auth.Auth0Option) (*Application, error) {
+	verifier, err := auth.NewAuth0(cfg.Auth, logger, authOptions...)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := database.NewPool(ctx, cfg.Database)
+	if err != nil {
+		return nil, err
+	}
+
+	// Migrations are applied by deployment before starting the process. Import
+	// the entire seed dataset before exposing HTTP or reporting readiness.
+	importer, err := seed.New(seed.Config{
+		CSVPath: cfg.SeedCSVPath, DatasetNamespace: cfg.SeedNamespace,
+		ImageBaseURL: cfg.ImageBaseURL,
+	}, seed.NewPostgresStore(pool), logger)
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
+	startupCtx, cancel := context.WithTimeout(ctx, cfg.StartupTimeout)
+	defer cancel()
+	if _, err := importer.Import(startupCtx); err != nil {
+		pool.Close()
+		return nil, err
+	}
+
+	repository := supplierrepo.New(pool, logger)
+	fence, err := newDeletionFence(cfg, logger)
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
+	var images imageupload.Handler
+	if cfg.ImageBucket != "" {
+		awsCfg, err := awsconfig.LoadDefaultConfig(startupCtx, awsconfig.WithRegion(cfg.AWSRegion), awsconfig.WithRetryMaxAttempts(2))
+		if err != nil {
+			pool.Close()
+			return nil, errors.New("image upload AWS configuration could not be loaded")
+		}
+		images = imageupload.NewHandler(s3.NewFromConfig(awsCfg), cfg.ImageBucket, cfg.ImageBaseURL)
+	}
+	handler := NewHandler(logger, verifier, allReady{
+		readiness.NewPostgresChecker(pool, cfg.SeedNamespace), verifier,
+	}, repository, repository, repository, repository, fence, images)
+
+	// Without order-service every retry would fail, so pending operations
+	// wait for a configured restart instead of exhausting their attempts.
+	var reconciler *deletefeature.Reconciler
+	if cfg.OrderService.Enabled() {
+		r := deletefeature.NewReconciler(repository, fence, cfg.OrderService.ReconcileInterval, logger)
+		reconciler = &r
+	}
+
+	return &Application{
+		database: pool,
+		server: &http.Server{
+			Addr:              cfg.HTTP.Address(),
+			Handler:           handler,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       15 * time.Second,
+			WriteTimeout:      15 * time.Second,
+			IdleTimeout:       60 * time.Second,
+		},
+		reconciler:      reconciler,
+		shutdownTimeout: cfg.ShutdownTimeout,
+	}, nil
+}
+
+func (a *Application) Handler() http.Handler {
+	return a.server.Handler
+}
+
+func (a *Application) Run(ctx context.Context) error {
+	if a.reconciler != nil {
+		// Stop the reconciler and wait for its current operation before
+		// returning, so Close never shuts the pool under it.
+		reconcileCtx, stopReconciler := context.WithCancel(ctx)
+		reconcilerDone := make(chan struct{})
+		go func() {
+			defer close(reconcilerDone)
+			a.reconciler.Run(reconcileCtx)
+		}()
+		defer func() {
+			stopReconciler()
+			<-reconcilerDone
+		}()
+	}
+
+	serverResult := make(chan error, 1)
+	go func() {
+		err := a.server.ListenAndServe()
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+		serverResult <- err
+	}()
+
+	select {
+	case err := <-serverResult:
+		if err != nil {
+			return fmt.Errorf("serve HTTP: %w", err)
+		}
+		return nil
+	case <-ctx.Done():
+		shutdownContext, cancel := context.WithTimeout(
+			context.Background(),
+			a.shutdownTimeout,
+		)
+		defer cancel()
+
+		if err := a.server.Shutdown(shutdownContext); err != nil {
+			return errors.New("graceful HTTP shutdown failed")
+		}
+
+		if err := <-serverResult; err != nil {
+			return fmt.Errorf("serve HTTP: %w", err)
+		}
+		return nil
+	}
+}
+
+func (a *Application) Close() {
+	a.database.Close()
+}

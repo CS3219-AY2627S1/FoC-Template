@@ -1,0 +1,15 @@
+# AI Assistance Disclosure:
+# Tool: Claude, date: 2026-11-11
+# Scope: Docker build context exclusions for notification-service.
+# Author review: I validated correctness, edited for style, and added boundary checks.
+
+.git
+.gitignore
+.env
+.env.*
+bin
+coverage.out
+compose.yaml
+compose.test.yaml
+README.md
+*.log

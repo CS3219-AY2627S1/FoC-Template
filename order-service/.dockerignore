@@ -1,0 +1,22 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-22
+# Scope: Boilerplate generation for build/container/tooling configuration.
+# Author review: Reviewed, validated, and tested by the authors.
+
+.git
+.gitignore
+.env
+.env.*
+references
+docs
+openapi
+openapi.yaml
+openapi.html
+compose*.yaml
+README.md
+AGENTS.md
+*.log
+# sqlc output is regenerated inside the image.
+internal/database/errandgen
+internal/database/opsgen
+internal/database/msggen

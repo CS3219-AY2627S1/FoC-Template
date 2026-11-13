@@ -1,0 +1,284 @@
+<!--
+AI Assistance Disclosure:
+Tool: Claude Code (model: Claude Opus 5.5), date: 2026-09-29
+Scope: Documentation writing and formatting.
+Author review: Reviewed, validated, and tested by the authors.
+-->
+
+# Supplier domain and API contracts
+
+This document records the decisions shared by supplier, order, user, and API
+code. The machine-readable HTTP contract is [openapi.yaml](../openapi.yaml).
+
+## Identity and lifecycle
+
+- `supplierId` is a service-generated UUID that never changes and is never
+  accepted in create or patch payloads.
+- `versionId` is a service-generated UUID for one immutable snapshot. Every
+  create and successful patch produces a new `versionId`; existing versions
+  are never edited.
+- A non-deleted supplier has exactly one current version. Only that version is
+  available for new errands. A superseded version has `available: false`.
+- Delete is a soft delete of the supplier identity. It removes the supplier
+  from current reads and makes every version unavailable for new errands. It
+  does not remove immutable versions.
+- `GET /suppliers` and `GET /suppliers/{supplierId}` return only current,
+  available, non-deleted records. A deleted ID returns `SUPPLIER_NOT_FOUND`.
+- `GET /supplier-versions/{versionId}` returns the immutable snapshot even
+  after update or deletion. This is the read used to display active and past
+  errand pickup details.
+- Normalized names collapse whitespace and use lower case. They are unique
+  among non-deleted suppliers; a deleted supplier's name may be reused because
+  historical versions remain unambiguous by ID.
+
+All catalogue responses include both `supplierId` and `versionId`. An order
+stores both, with `versionId` being the authoritative pickup-details reference.
+
+## Buildings and supplier types
+
+Each version references a row of the `buildings` and `supplier_types` lookup
+tables instead of storing free text. Responses keep the `building` and `type`
+strings, which are the lookup's canonical name, and add `buildingId` and
+`typeId`. Writes still send `building` and `type` as strings; `buildingId`
+and `typeId` are read-only.
+
+- A lookup key is the name lowercased with everything except Unicode letters
+  and ASCII digits removed: `Com 2`, `Com2`, and `COM-2` are all `com2`, and
+  `Prince George's Park` matches its curly-apostrophe spelling. The SQL
+  function `normalize_lookup_key` and `supplier.LookupKey` must stay aligned.
+  A building or type with no letter or digit is invalid.
+- Lookup keys are unique among rows that are not retired. A write resolves a
+  name to the live row with the same key and responds with that row's
+  canonical name, so `com2` is returned as `Com 2`. Administrator writes may
+  only assign an existing, unretired row (see
+  [Validation and list behavior](#validation-and-list-behavior)); only the
+  seed import creates a row for a name with no live match, because it is
+  trusted bootstrap data that builds the initial lists.
+- A patch that omits `building` or `type` keeps the current row, even if it
+  has been retired since.
+- Lookup names are immutable, and rows are never deleted; the only permitted
+  change is setting `retired_at` once. A version must show the pickup details
+  of the errand it was selected for (F2.5.1) and stay addressable unchanged
+  after it is superseded (F2.5.3). If a name could change in place, every
+  historical version referencing it would change too. A rename is therefore
+  a new row, new supplier versions that reference it, and retirement of the
+  old row. Retired rows still resolve for existing versions.
+- Migration `00002` created one row per distinct key of the existing free
+  text. Its name is the most frequent spelling, then the spelling used by the
+  earliest version, so earlier versions now report that canonical spelling.
+
+### Managing the lists
+
+| Method and path | Permission | Result |
+| --- | --- | --- |
+| `GET /buildings`, `GET /supplier-types` | `suppliers:read` | `200 {items: [{id, name, retired}]}` |
+| `POST /buildings`, `POST /supplier-types` | `suppliers:manage` | `201` with the created row |
+| `DELETE /buildings/{buildingId}`, `DELETE /supplier-types/{supplierTypeId}` | `suppliers:manage` | `204`; the row is retired |
+
+- Lists return live rows ordered by lookup key, then `id`. With
+  `includeRetired=true` they also return retired rows with `retired: true`;
+  any value other than `true` or `false` is `INVALID_ARGUMENT`. Lists are
+  campus scale, so they are not paginated, but the server returns at most
+  500 rows.
+- `POST` takes `{name}`. The name is trimmed, must be at most 120 (building)
+  or 64 (type) characters after trimming, and must contain a letter or digit;
+  violations are `INVALID_ARGUMENT` with field `name`. A live row with the
+  same lookup key is `409 BUILDING_CONFLICT` or `SUPPLIER_TYPE_CONFLICT`, and
+  the message names the existing row, so `Com2` is rejected while `Com 2`
+  exists. The live-key unique index decides this, so concurrent creates of
+  one key produce exactly one row.
+- `DELETE` retires a row; rows are never deleted. It is
+  `409 BUILDING_IN_USE` or `SUPPLIER_TYPE_IN_USE` while the current version
+  of any non-deleted supplier references the row. Superseded versions and
+  deleted suppliers do not count; they keep showing the retired name. An
+  unknown ID is `404 BUILDING_NOT_FOUND` or `SUPPLIER_TYPE_NOT_FOUND`, and
+  retiring a retired row is `204` without changing it. Retirement releases
+  the lookup key, so a replacement row with the same key can be created.
+- There is no rename endpoint because names are immutable.
+- Retirement locks the row `FOR UPDATE`, checks use, and sets `retired_at`
+  in one transaction. Supplier writes resolve the row `FOR SHARE` in their
+  own transaction, so a write and a retirement of the same row serialise:
+  either the write commits first and retirement is rejected as in use, or
+  retirement commits first and the write no longer resolves the row.
+
+## Validation and list behavior
+
+Create requires `name`, `type`, `building`, `floor`, `locationDescription`,
+`latitude`, `longitude`, `openingTime`, and `closingTime`. `imageUrl` is
+optional. Patch accepts those fields but rejects an empty object; setting
+`imageUrl` to `null` removes it. IDs are never patchable.
+
+`building` and `type` must each name an existing building and supplier type
+that is not retired. Rows are created through `POST /buildings` and
+`POST /supplier-types`; a supplier write never creates one. The value is
+matched by lookup key, so `com2`, ` COM-2 `, and `Com 2` all select the row
+named `Com 2`, and the response returns that canonical name. A value with no
+live match is `INVALID_ARGUMENT` with field `building` and message
+`must be an existing building`, or field `type` and message
+`must be an existing supplier type`. These are reported together with each
+other and with every other field violation. A retired row does not match, so
+assigning it is rejected the same way. A patch that omits `building` or
+`type` keeps the current row even if it has been retired since, so the
+supplier's other fields remain editable. The resolved rows are locked
+`FOR SHARE` in the write's transaction, so a concurrent retirement either
+waits and then finds the row in use, or commits first and the write is
+rejected.
+
+Coordinates use latitude `[-90, 90]` and longitude `[-180, 180]`. Times use
+24-hour `HH:MM` and must differ. Image URLs must be absolute HTTP(S) URLs. The
+length bounds in the common OpenAPI fragment are the shared bounds used by Go
+validation. Create inputs preserve coordinate presence separately from their
+numeric value so an omitted coordinate cannot be mistaken for valid zero.
+
+`GET /suppliers` accepts:
+
+- `q`: normalized, case-insensitive match against name, building, floor, or
+  location description;
+- `type`: type match by lookup key (see
+  [Buildings and supplier types](#buildings-and-supplier-types));
+- `building`: building match by lookup key, at most 120 characters, so
+  `com2`, `COM-2` and `Com 2` select the same building. A building that does
+  not exist or is retired yields an empty page rather than an error, as for
+  `type`. It combines with every other parameter;
+- `sort`: `name` (default), `-name`, `type`, `-type`, `building`, or
+  `-building`;
+- `limit`: 1-100, default 25;
+- `cursor`: an opaque continuation value returned as `nextCursor`.
+
+Ordering is applied on the server before the cursor, so clients must not
+re-sort a partially loaded list:
+
+| `sort` | Order |
+| --- | --- |
+| `name` | normalized name, then `supplierId`, both ascending |
+| `-name` | normalized name, then `supplierId`, both descending |
+| `type` | type lookup key, then normalized name, then `supplierId`, all ascending |
+| `-type` | the `type` order with every key descending |
+| `building` | building lookup key, then normalized name, then `supplierId`, all ascending |
+| `-building` | the `building` order with every key descending |
+
+A `-` prefix reverses every key, so a descending list is exactly the
+ascending list read backwards; for example, `-type` also lists names Z-A within
+each type.
+
+Any other `sort` value, including an empty one, is rejected with
+`INVALID_ARGUMENT` and field `sort`. Clients must not parse or construct
+cursors. A cursor is bound to the normalized `q`, the `type` and `building`
+lookup keys, and the `sort` that produced it; reusing it with different values is rejected as
+`cursor is invalid`.
+`nextCursor` is omitted on the last page.
+
+## Authorization and errors
+
+All supplier, version, building, and supplier-type endpoints require a
+verified Auth0 access token for `https://api.foc.local/supplier-service` and
+explicit `suppliers:read`. Create, patch, and delete of suppliers, and create
+and retire of buildings and supplier types, additionally require
+`suppliers:manage`. Auth0 administrator
+assignments must grant both permissions. `/readyz` is unauthenticated.
+Supplier use cases consume the trusted `auth.Principal`: Subject is Auth0
+`sub`, Permissions comes from the validated token, and Roles grants no access.
+The `auth.Port` adapter performs local RS256/issuer/audience/time validation
+using cached Auth0 public keys; see [Auth0 setup](auth0.md), including the
+account-lifecycle freshness gate. Middleware stores verified principals with
+`auth.WithPrincipal`; handlers retrieve them with `auth.PrincipalFromContext`.
+These helpers are transport-neutral, and payload identity and role values are
+ignored.
+
+The authentication port returns stable failure kinds. Missing, invalid, or
+expired credentials are `invalid_credential` and map to `401`. An
+authoritatively disabled account is `account_disabled` and maps to `403`. An
+identity-provider outage is `verifier_unavailable` and maps to `503`. Unknown
+authentication failures map to `500`; credential contents and provider error
+details must not cross this boundary.
+
+Stable error codes are defined in `internal/apperror` and the common OpenAPI
+fragment. Field validation uses `INVALID_ARGUMENT` plus a `fields` array.
+Not-found current and historical reads intentionally have distinct codes.
+
+| HTTP status | Stable code |
+| --- | --- |
+| 400 | `INVALID_ARGUMENT` |
+| 401 | `UNAUTHENTICATED` |
+| 403 | `FORBIDDEN` |
+| 404 | `SUPPLIER_NOT_FOUND`, `SUPPLIER_VERSION_NOT_FOUND`, `BUILDING_NOT_FOUND`, or `SUPPLIER_TYPE_NOT_FOUND` |
+| 409 | `SUPPLIER_NAME_CONFLICT`, `SUPPLIER_HAS_ACTIVE_ERRANDS`, `BUILDING_CONFLICT`, `BUILDING_IN_USE`, `SUPPLIER_TYPE_CONFLICT`, or `SUPPLIER_TYPE_IN_USE` |
+| 500 | `INTERNAL` |
+| 503 | `DELETION_FENCE_UNAVAILABLE` or `DEPENDENCY_UNAVAILABLE` |
+
+## Order-service deletion fence
+
+Deletion uses `deletefeature.OrderDeletionFence` with this fail-closed
+protocol:
+
+1. The client supplies a UUID `Idempotency-Key`, which becomes the deletion
+   operation ID and must be reused for retries of the same logical deletion.
+2. Before calling order-service, supplier-service durably creates a
+   `requested` operation that binds the operation ID to the supplier ID and a
+   bounded maximum-attempt count. Reusing the operation ID for the same
+   supplier loads that operation without resetting its state or retry count;
+   reusing it for another supplier returns `400 INVALID_ARGUMENT`.
+3. A worker must hold the operation's claim lease before calling the fence or
+   changing deletion state. Claims are atomic, have a unique claim ID and an
+   expiry, and increment the attempt count. An unexpired claim excludes other
+   workers; after a crash its expiry makes the operation claimable again.
+4. `Acquire(operationId, supplierId)` is idempotent for that pair. It
+   atomically blocks creation of new errands for the supplier, then checks
+   whether an active errand exists.
+5. If `Acquire` has an ambiguous result, supplier-service calls
+   `Inspect(operationId)`; it never starts a different operation to guess the
+   outcome.
+6. If active errands exist, supplier-service records `release_pending`, calls
+   `Release(operationId)`, then records `rejected_active_errands` and returns
+   `SUPPLIER_HAS_ACTIVE_ERRANDS` without deleting.
+7. If none exist, supplier-service atomically soft-deletes its current record
+   and changes the operation to `commit_pending`, then calls
+   `Commit(operationId)`. Commit makes the order-side block permanent; after
+   confirmation the local operation becomes `completed`.
+8. If the supplier write fails, supplier-service calls `Release`. If acquire
+   is unavailable or ambiguous, deletion returns
+   `DELETION_FENCE_UNAVAILABLE`. It never assumes deletion is safe.
+
+The durable state machine is:
+
+| State | Meaning | Allowed next state |
+| --- | --- | --- |
+| `requested` | Recorded before the first fence call; no local deletion is established | `release_pending`, `commit_pending` |
+| `release_pending` | Active errands were found and fence release must be confirmed | `rejected_active_errands` |
+| `commit_pending` | The supplier is soft-deleted and fence commit must be confirmed | `completed` |
+| `rejected_active_errands` | Terminal rejection after release confirmation | none |
+| `completed` | Terminal success after commit confirmation | none |
+
+Each operation retains `attemptCount`, `maxAttempts`, `nextAttemptAt`, lease
+metadata, and a bounded failure code such as `acquire_unavailable` or
+`commit_unavailable`. Raw dependency errors, headers, tokens, and credentials
+are never stored. Claimable-operation queries are bounded, return only due
+non-terminal operations with attempts remaining, and use stable operation-ID
+ordering. An expired claim may be replaced; every later mutation checks the
+current claim ID so the stale worker cannot update the operation.
+
+`Inspect`, `Commit`, and `Release` are idempotent. A commit failure after the
+local soft delete leaves the fence closed (safe for new-order creation) and
+returns `202 Accepted` with `{operationId, state: "commit_pending"}`. Pending
+operations are durably listed after restart and reconciled using the same
+operation ID. They are marked complete locally only after order-service
+confirms `committed`; a post-delete failure must never release the fence or be
+treated as permission to create an errand.
+
+Replays observe or continue the original operation. `completed` returns the
+completed `204` result, `commit_pending` returns `202`, and
+`rejected_active_errands` returns `409 SUPPLIER_HAS_ACTIVE_ERRANDS`. A replay
+in `requested` or `release_pending` returns `503 DELETION_FENCE_UNAVAILABLE`
+unless the caller safely resolves and advances it; these pre-delete states
+never grant permission to delete.
+
+Order-service must run every errand creation through the same supplier gate and
+reject creation while a fence is open or committed. On success it stores both
+the selected `supplierId` and `versionId`; later display reads use `versionId`.
+
+## Route ownership
+
+HTTP features implement `httpapi.RouteRegistrar`. The application composition
+passes registrars to `httpapi.NewRouter`; feature packages register their own
+paths without modifying the central router. The readiness feature is the first
+concrete registrar.

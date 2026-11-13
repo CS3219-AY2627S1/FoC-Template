@@ -1,0 +1,113 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-09-29
+# Scope: Documentation formatting of the team-defined API specification.
+# Author review: Reviewed, validated, and tested by the authors.
+
+operations:
+  listSuppliers:
+    operationId: listSuppliers
+    tags: [Catalog]
+    summary: List current available suppliers
+    description: >-
+      Returns only the newest version of non-deleted suppliers. q performs a
+      case-insensitive normalized search over name, building, floor, and
+      location description. type filters by type lookup key (case, spaces,
+      and punctuation ignored). sort selects the order: name (default) is
+      normalized name then supplierId; type is the type lookup key, then
+      normalized name, then supplierId; building is the building lookup key,
+      then normalized name, then supplierId.
+      Each is ascending, and its "-" prefixed form (-name, -type, -building)
+      reverses every key. Every order ends with supplierId, so pages are stable slices of one
+      sequence. Cursor values are opaque and bound to the filters and sort
+      that produced them; any other sort value is rejected as an invalid
+      sort field.
+    x-required-permissions: [suppliers:read]
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: ./common.yaml#/components/parameters/Query
+      - $ref: ./common.yaml#/components/parameters/Type
+      - $ref: ./common.yaml#/components/parameters/Building
+      - $ref: ./common.yaml#/components/parameters/Sort
+      - $ref: ./common.yaml#/components/parameters/Limit
+      - $ref: ./common.yaml#/components/parameters/Cursor
+    responses:
+      "200":
+        description: A bounded page of available suppliers.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/SupplierPage
+      "400":
+        $ref: ./common.yaml#/components/responses/InvalidArgument
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+
+  getSupplier:
+    operationId: getSupplier
+    tags: [Catalog]
+    summary: Get the current available supplier version
+    description: A deleted supplier is treated as not found by this endpoint.
+    x-required-permissions: [suppliers:read]
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: ./common.yaml#/components/parameters/SupplierID
+    responses:
+      "200":
+        description: The current available supplier version.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/Supplier
+      "400":
+        $ref: ./common.yaml#/components/responses/InvalidArgument
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "404":
+        $ref: ./common.yaml#/components/responses/SupplierNotFound
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+
+  getSupplierVersion:
+    operationId: getSupplierVersion
+    tags: [Catalog]
+    summary: Get an immutable supplier version
+    description: >-
+      Historical versions remain readable after they are superseded or their
+      supplier is deleted. available is true only for the current version of a
+      non-deleted supplier.
+    x-required-permissions: [suppliers:read]
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: ./common.yaml#/components/parameters/VersionID
+    responses:
+      "200":
+        description: The immutable supplier snapshot.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/SupplierVersion
+      "400":
+        $ref: ./common.yaml#/components/responses/InvalidArgument
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "404":
+        $ref: ./common.yaml#/components/responses/SupplierVersionNotFound
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable

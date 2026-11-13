@@ -1,0 +1,398 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Claude Opus 5.5), date: 2026-10-18
+# Scope: Documentation formatting of the team-defined API specification.
+# Author review: Reviewed, validated, and tested by the authors.
+
+operations:
+  listReviews:
+    operationId: listReviews
+    tags: [Administration]
+    summary: List errands awaiting review
+    description: >-
+      Every REVIEW_REQUIRED errand with its open review, whatever the reason
+      (F6.1, F6.1.1), oldest review first.
+    x-required-permissions: [errands:review]
+    security:
+      - bearerAuth: []
+    parameters:
+      - name: reason
+        in: query
+        description: Only reviews with this reason.
+        schema:
+          $ref: ./common.yaml#/components/schemas/ReviewReason
+      - $ref: ./common.yaml#/components/parameters/Limit
+      - $ref: ./common.yaml#/components/parameters/Cursor
+    responses:
+      "200":
+        description: A page of errands awaiting review.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/AdminReviewPage
+      "400":
+        $ref: ./common.yaml#/components/responses/InvalidArgument
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+
+  resolveReview:
+    operationId: resolveReview
+    tags: [Administration]
+    summary: Resolve a review
+    description: >-
+      REVIEW_REQUIRED → COMPLETED (reward transferred to the courier) or
+      → REFUNDED (reservation released to the requester) (F6.1.2, F6.1.3).
+      The reason is required (F6.1.4). The review row records the resolver,
+      outcome and reason, and an audit row is written (F6.5). A second
+      resolution of the same errand is ERRAND_UNAVAILABLE and has no effect.
+    x-required-permissions: [errands:review]
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: ./common.yaml#/components/parameters/ErrandID
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ./common.yaml#/components/schemas/ReviewResolution
+    responses:
+      "200":
+        description: Resolved; review carries the resolution.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/AdminErrandView
+      "400":
+        $ref: ./common.yaml#/components/responses/ValidationFailed
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "404":
+        $ref: ./common.yaml#/components/responses/ErrandNotFound
+      "409":
+        $ref: ./common.yaml#/components/responses/ErrandConflict
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+
+  getSettings:
+    operationId: getSettings
+    tags: [Administration]
+    summary: Read deadlines and thresholds
+    x-required-permissions: [errands:review]
+    security:
+      - bearerAuth: []
+    responses:
+      "200":
+        description: Current settings; unset keys have their defaults.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/Settings
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+
+  putSettings:
+    operationId: putSettings
+    tags: [Administration]
+    summary: Replace deadlines and thresholds
+    description: >-
+      Replaces every setting (F6.3.5). Every value is validated and one audit
+      row records the change (F6.5). New deadlines apply to transitions after
+      the change; deadlines already set on errands are not recomputed.
+    x-required-permissions: [errands:review]
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ./common.yaml#/components/schemas/Settings
+    responses:
+      "200":
+        description: The stored settings.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/Settings
+      "400":
+        $ref: ./common.yaml#/components/responses/ValidationFailed
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+
+  listErrandEvents:
+    operationId: listErrandEvents
+    tags: [Administration]
+    summary: List errand state transitions
+    description: >-
+      The transition log, newest first (F6.2.1, F6.2.2). Filters combine with
+      AND.
+    x-required-permissions: [errands:review]
+    security:
+      - bearerAuth: []
+    parameters:
+      - name: userId
+        in: query
+        description: >-
+          Transitions of errands this user requested or was courier of at the
+          time of the transition, or that this user caused.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 255
+      - name: errandId
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: type
+        in: query
+        description: Only transitions into this state.
+        schema:
+          $ref: ./common.yaml#/components/schemas/ErrandStatus
+      - name: from
+        in: query
+        description: Inclusive lower bound on the transition time.
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        description: Exclusive upper bound on the transition time.
+        schema:
+          type: string
+          format: date-time
+      - $ref: ./common.yaml#/components/parameters/Limit
+      - $ref: ./common.yaml#/components/parameters/Cursor
+    responses:
+      "200":
+        description: A page of transitions.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/TransitionPage
+      "400":
+        $ref: ./common.yaml#/components/responses/InvalidArgument
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+
+  listFlags:
+    operationId: listFlags
+    tags: [Administration]
+    summary: List suspicious-activity flags
+    description: >-
+      Couriers whose withdrawals (voluntary and forced) reached the
+      withdrawal-restriction count within its window (F6.3.1), and requesters
+      whose cancellations exceeded the cancellation-flag count within its
+      window (F6.3.2, F3.5.3), evaluated now against the current settings,
+      each with a trigger summary (F6.3.4).
+    x-required-permissions: [errands:review]
+    security:
+      - bearerAuth: []
+    responses:
+      "200":
+        description: Current flags.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/FlagList
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+
+  getOverview:
+    operationId: getOverview
+    tags: [Administration]
+    summary: Live operational overview
+    description: >-
+      Current counts for the admin Overview tab, read live when requested.
+      `ongoing` counts ASSIGNED, PICKED_UP and DELIVERED errands;
+      `waitingForCourier` counts OPEN errands. `openReviews` counts open
+      reviews (`errand_reviews.resolution IS NULL`) whose errand is
+      REVIEW_REQUIRED; `oldestCreatedAt` is the earliest of their creation
+      times and `oldestAgeSeconds` is its age at `asOf`. Both are null when
+      there are no open reviews. The counts are not one database snapshot.
+    x-required-permissions: [errands:review]
+    security:
+      - bearerAuth: []
+    responses:
+      "200":
+        description: The current overview.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/AdminOverview
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+
+  listFailedOutboxRows:
+    operationId: listFailedOutboxRows
+    tags: [Administration]
+    summary: List failed outbox rows
+    description: >-
+      Rows that can never succeed by retrying: an unpublishable message, or a
+      credit command answered with credit.operation_failed (NFR7.4.1), oldest
+      first. Payloads are never returned.
+    x-required-permissions: [errands:review]
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: ./common.yaml#/components/parameters/Limit
+      - $ref: ./common.yaml#/components/parameters/Cursor
+    responses:
+      "200":
+        description: A page of FAILED rows.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/OutboxRowPage
+      "400":
+        $ref: ./common.yaml#/components/responses/InvalidArgument
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+
+  listOverdueOutboxRows:
+    operationId: listOverdueOutboxRows
+    tags: [Administration]
+    summary: List overdue outbox rows
+    description: >-
+      SENT credit commands that have had no result, and PENDING rows the
+      dispatcher has not managed to publish, for longer than olderThan
+      (default the outboxConfirmTimeout setting). Nothing resends these by
+      itself: the broker holds a SENT command until credit-service consumes
+      it, and the dispatcher keeps retrying a PENDING row. A SENT command that
+      stays overdue may have been dead-lettered; requeue it. A PENDING row
+      usually means the broker is unreachable, which a requeue does not fix.
+      Event rows end at SENT by design and are never listed. Oldest first;
+      payloads are never returned.
+    x-required-permissions: [errands:review]
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: ./common.yaml#/components/parameters/Limit
+      - $ref: ./common.yaml#/components/parameters/Cursor
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum: [SENT, PENDING]
+        description: Only rows in this status. Omit for both.
+      - name: olderThan
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+        description: Minimum age in seconds. Defaults to the outboxConfirmTimeout setting.
+    responses:
+      "200":
+        description: A page of overdue rows.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/OverdueOutboxRowPage
+      "400":
+        $ref: ./common.yaml#/components/responses/InvalidArgument
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable
+
+  requeueOutboxRow:
+    operationId: requeueOutboxRow
+    tags: [Administration]
+    summary: Requeue a failed or overdue outbox row
+    description: >-
+      Resets a FAILED row, or a SENT credit command, to PENDING with its
+      attempts cleared and its idempotency key unchanged, so the replayed
+      message has the same messageId and cannot apply its effect twice
+      (NFR7.4.2). A PENDING row, a CONFIRMED row and a SENT event are refused.
+      Every requeue, accepted or refused, writes an audit row with the reason
+      (F6.5).
+    x-required-permissions: [errands:review]
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: ./common.yaml#/components/parameters/OutboxRowID
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ./common.yaml#/components/schemas/Requeue
+    responses:
+      "200":
+        description: The row, now PENDING.
+        content:
+          application/json:
+            schema:
+              $ref: ./common.yaml#/components/schemas/OutboxRow
+      "400":
+        $ref: ./common.yaml#/components/responses/ValidationFailed
+      "401":
+        $ref: ./common.yaml#/components/responses/Unauthenticated
+      "403":
+        $ref: ./common.yaml#/components/responses/Forbidden
+      "404":
+        $ref: ./common.yaml#/components/responses/OutboxRowNotFound
+      "409":
+        description: The row is neither FAILED nor a SENT credit command.
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: ./common.yaml#/components/schemas/Error
+                - properties:
+                    code:
+                      const: INVALID_TRANSITION
+      "500":
+        $ref: ./common.yaml#/components/responses/Internal
+      "503":
+        $ref: ./common.yaml#/components/responses/DependencyUnavailable

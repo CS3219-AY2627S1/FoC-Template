@@ -1,0 +1,569 @@
+# AI Assistance Disclosure:
+# Tool: ChatGPT (model: GPT-6 Luna), date: 2026-11-11
+# Scope: OpenAPI contract for the user-service API.
+# Author review: I validated correctness, edited for style, and added boundary checks.
+
+openapi: 3.1.0
+info:
+  title: FoC User Service API
+  version: 1.0.0
+  description: User accounts, profiles, provisioning, and Auth0-backed authentication.
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Health
+  - name: Authentication
+  - name: Profile
+  - name: Administrator management
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Check service health
+      security: []
+      responses:
+        '204':
+          description: Service is running.
+
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Check service readiness
+      description: >-
+        Unlike /health, which only says the process answers, this says whether
+        the service can reach its database. It never contains connection
+        strings or error text.
+      security: []
+      responses:
+        '200':
+          description: The database is reachable.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ready]
+                additionalProperties: false
+        '503':
+          description: The database is not reachable.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [not_ready]
+                additionalProperties: false
+
+  /api/auth/config:
+    get:
+      tags: [Authentication]
+      summary: Get browser authentication configuration
+      security: []
+      responses:
+        '200':
+          description: Public Auth0 configuration for the frontend.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthConfig'
+
+  /api/auth/provision:
+    post:
+      tags: [Authentication]
+      summary: Provision the authenticated Auth0 identity
+      description: >-
+        Creates or retrieves the local account linked to the authenticated Auth0
+        subject. This endpoint requires a valid access token but does not require
+        users:create because ordinary users provision themselves.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Existing local account returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '201':
+          description: Local account created and returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: Auth0 identity is unverified, ineligible, or inactive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Local account identity conflicts with an existing account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: Auth0 profile could not be retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Acknowledge logout for the authenticated identity
+      description: >-
+        Validates the access token before the frontend clears its Auth0 session.
+        The service does not revoke already-issued stateless access tokens.
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Logout request accepted.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /api/private:
+    get:
+      tags: [Authentication]
+      summary: Test an authenticated active-account request
+      description: Development endpoint that returns the validated Auth0 subject.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Authenticated request succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/AccountForbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/me:
+    get:
+      tags: [Profile]
+      summary: Get the authenticated user profile
+      description: Requires the Auth0 permission users:read:self.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Authenticated active-user profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: Missing users:read:self permission or account is unavailable to the user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    patch:
+      tags: [Profile]
+      summary: Update the authenticated user profile
+      description: Requires the Auth0 permission users:update:self.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdate'
+      responses:
+        '200':
+          description: Updated authenticated user profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '400':
+          description: Invalid JSON, unsupported fields, or invalid profile values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: Missing users:update:self permission or account is unavailable to the user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Request body exceeds 4096 bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    delete:
+      tags: [Profile]
+      summary: Delete the authenticated user account
+      description: Requires the Auth0 permission users:delete:self.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteAccountRequest'
+      responses:
+        '200':
+          description: Account deleted.
+          content:
+            application/json:
+              schema:
+                type: 'null'
+        '400':
+          description: Invalid JSON or deletion confirmation was not provided.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: Missing users:delete:self permission or account is unavailable to the user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Request body exceeds 4096 bytes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/admin/users/{userID}/administrator:
+    put:
+      tags: [Administrator management]
+      summary: Grant the Auth0 Administrator role to a user
+      description: Requires the Auth0 permission users:manage:roles. The role change is written to Auth0; user roles are not stored in the local database.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userID
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Auth0 user ID, such as auth0|abc123.
+      responses:
+        '204':
+          description: Administrator role assigned.
+        '400':
+          description: Invalid Auth0 user ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: Caller lacks users:manage:roles or has no active local account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Auth0 user not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    delete:
+      tags: [Administrator management]
+      summary: Demote an administrator to a regular user
+      description: Requires the Auth0 permission users:manage:roles. The regular User role is assigned before the Administrator role is removed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userID
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Auth0 user ID, such as auth0|abc123.
+      responses:
+        '204':
+          description: User role assigned and Administrator role removed.
+        '400':
+          description: Invalid Auth0 user ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: Caller lacks users:manage:roles or has no active local account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Auth0 user not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/admin/users:
+    get:
+      tags: [Administrator management]
+      summary: List or search Auth0 users
+      description: >-
+        Requires an active local account and the Auth0 permission users:manage:roles.
+        Use role=administrator or role=user for role membership lists. The User list
+        excludes users who also have the Administrator role. Role lists use cursor
+        pagination: pass next_cursor as cursor on the next request. Role lists can
+        return fewer than per_page users when filtering the overlapping roles.
+        Without role, the endpoint lists or searches the general Auth0 user directory
+        using offset pagination, limited to 1,000 search results by Auth0.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 25
+        - name: email
+          in: query
+          description: Optional exact email search.
+          schema:
+            type: string
+            maxLength: 254
+        - name: role
+          in: query
+          description: Optional Auth0 role filter. Use cursor pagination for role lists; email search is exact.
+          schema:
+            type: string
+            enum: [administrator, user]
+        - name: cursor
+          in: query
+          description: next_cursor from the preceding role-filtered response. Do not combine with email.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: One page of Auth0 users; total is omitted for role-filtered results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Auth0UsersPage'
+        '400':
+          description: Invalid pagination or email query.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: Caller lacks users:manage:roles or has no active local account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Auth0 access token issued for the FoC User Service API.
+
+  responses:
+    Unauthenticated:
+      description: A valid Auth0 access token is required.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    AccountForbidden:
+      description: The Auth0 identity is not linked to an active local account.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServiceUnavailable:
+      description: A required account or provisioning dependency is unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    AuthConfig:
+      type: object
+      required: [domain, clientId, audience]
+      properties:
+        domain:
+          type: string
+          description: Auth0 tenant domain without a scheme or path.
+        clientId:
+          type: string
+        audience:
+          type: string
+
+    Profile:
+      type: object
+      required:
+        - id
+        - username
+        - email
+        - role
+        - active
+        - display_name
+        - mobile_number
+        - credit_balance
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [USER, ADMIN]
+          description: Derived from the Auth0 users:manage:roles permission; the local account role is ignored.
+        active:
+          type: boolean
+        display_name:
+          type: string
+          maxLength: 100
+        mobile_number:
+          type: string
+          maxLength: 32
+        credit_balance:
+          type: [string, 'null']
+          description: Credit balance when the optional credit integration is available; otherwise null.
+
+    Auth0UsersPage:
+      type: object
+      required: [users, page, per_page]
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/Auth0User'
+        total:
+          type: integer
+          description: Total count for unfiltered or email-search results; omitted for role-filtered requests.
+        page:
+          type: integer
+        per_page:
+          type: integer
+        role:
+          type: string
+          enum: [administrator, user]
+        next_cursor:
+          type: string
+          description: Auth0 checkpoint for the next role-filtered page; omitted when no more results are available.
+    Auth0User:
+      type: object
+      required: [user_id, email]
+      properties:
+        user_id:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+        email_verified:
+          type: boolean
+        created_at:
+          type: string
+        last_login:
+          type: string
+
+    ProfileUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      maxProperties: 2
+      properties:
+        display_name:
+          type: string
+          maxLength: 100
+        mobile_number:
+          type: string
+          maxLength: 32
+
+    DeleteAccountRequest:
+      type: object
+      additionalProperties: false
+      required: [delete_confirmation]
+      properties:
+        delete_confirmation:
+          type: boolean
+          const: true
+
+    PrivateResponse:
+      type: object
+      required: [message, subject]
+      properties:
+        message:
+          type: string
+        subject:
+          type: string
+
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
