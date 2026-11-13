@@ -1,0 +1,141 @@
+asyncapi: 3.0.0
+info:
+  title: FoC domain events
+  version: 1.0.0
+  description: Canonical v1 contracts for the FoC Kafka domain-event topics.
+defaultContentType: application/json
+servers:
+  local:
+    host: kafka:9092
+    protocol: kafka
+channels:
+  orderEvents:
+    address: order.events
+    description: Order lifecycle events keyed by payload.order_id.
+    messages:
+      orderLifecycle:
+        $ref: '#/components/messages/OrderEvent'
+  creditEvents:
+    address: credit.events
+    description: Credit outcomes keyed by payload.order_id.
+    messages:
+      creditOutcome:
+        $ref: '#/components/messages/CreditEvent'
+components:
+  messages:
+    OrderEvent:
+      name: order.lifecycle
+      headers:
+        $ref: '#/components/schemas/KafkaHeaders'
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              event_type:
+                enum:
+                  - order.created
+                  - order.opened
+                  - order.rejected
+                  - order.accepted
+                  - order.picked_up
+                  - order.completed
+                  - order.cancelled
+                  - order.expired
+              payload:
+                $ref: '#/components/schemas/OrderPayload'
+    CreditEvent:
+      name: credit.outcome
+      headers:
+        $ref: '#/components/schemas/KafkaHeaders'
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            properties:
+              event_type:
+                enum:
+                  - credit.reserved
+                  - credit.reservation_failed
+              payload:
+                $ref: '#/components/schemas/CreditPayload'
+  schemas:
+    KafkaHeaders:
+      type: object
+      required: [event_type, event_id]
+      properties:
+        event_type:
+          type: string
+          description: Must match the JSON envelope event_type.
+        event_id:
+          type: string
+          format: uuid
+          description: Must match the JSON envelope event_id.
+    Envelope:
+      type: object
+      additionalProperties: false
+      required:
+        - event_id
+        - event_type
+        - schema_version
+        - occurred_at
+        - correlation_id
+        - payload
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+        schema_version:
+          const: 1
+        occurred_at:
+          type: string
+          format: date-time
+        correlation_id:
+          type: string
+          format: uuid
+        payload:
+          type: object
+    OrderPayload:
+      type: object
+      required: [order_id, requester_id, credit_amount]
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        requester_id:
+          type: string
+          format: uuid
+        courier_id:
+          type: string
+          format: uuid
+          description: Required for order.completed and for order.cancelled when previous_status is PICKED_UP.
+        credit_amount:
+          type: integer
+          minimum: 1
+        previous_status:
+          type: string
+          description: Determines whether cancellation releases credit or compensates a courier.
+        reason:
+          type: string
+          description: Present on order.rejected; the credit rejection reason.
+        expires_at:
+          type: string
+          format: date-time
+    CreditPayload:
+      type: object
+      required: [order_id]
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          description: Present when a credit reservation is rejected.
+        requester_id:
+          type: string
+          format: uuid
+        credit_amount:
+          type: integer
+          minimum: 1

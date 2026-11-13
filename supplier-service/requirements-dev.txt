@@ -1,0 +1,9 @@
+# AI Assistance Disclosure:
+# Tool: Codex (model: GPT-6), date: 2026-09-30
+# Scope: Boilerplate generation — remove the duplicate development HTTPX pin while retaining runtime requirements inclusion.
+# Author review: Original implementation approved by Keith.
+# Details: ai/usage-log.md; ai-20260930-019
+
+-r requirements-collector.txt
+-e ../packages/foc-observability
+pytest==8.3.4

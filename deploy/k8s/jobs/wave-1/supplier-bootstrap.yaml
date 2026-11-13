@@ -1,0 +1,62 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: supplier-bootstrap
+  labels:
+    app: supplier-bootstrap
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: supplier-bootstrap
+        foc.io/db: supplier
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: bootstrap
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - psql
+            - --no-password
+            - --set=ON_ERROR_STOP=1
+            - --file=/bootstrap.sql
+          env:
+            - name: PGHOST
+              value: supplier-db
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: SUPPLIER_POSTGRES_DB
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: SUPPLIER_POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: SUPPLIER_POSTGRES_PASSWORD
+            - name: SUPPLIER_MIGRATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: SUPPLIER_MIGRATION_PASSWORD
+            - name: SUPPLIER_RUNTIME_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: SUPPLIER_RUNTIME_PASSWORD
+          volumeMounts:
+            - name: sql
+              mountPath: /bootstrap.sql
+              subPath: bootstrap.sql
+              readOnly: true
+      volumes:
+        - name: sql
+          configMap:
+            name: foc-supplier-bootstrap

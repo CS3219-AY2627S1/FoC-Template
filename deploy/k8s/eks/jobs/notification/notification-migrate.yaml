@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: notification-migrate
+  labels:
+    app: notification-migrate
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: notification-migrate
+        foc.io/db: notification
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: foc-notification-service:local
+          imagePullPolicy: Never
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: NOTIFICATION_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: NOTIFICATION_DB_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: NOTIFICATION_DB_PASSWORD
+            - name: DATABASE_URL
+              value: postgresql+psycopg://$(NOTIFICATION_DB_USER)@notification-db:5432/foc_notifications
+            - name: LOG_LEVEL
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: LOG_LEVEL

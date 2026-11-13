@@ -1,0 +1,9 @@
+# Ensure all files are checked into the repo with LF line endings
+* text=auto eol=lf
+
+# Windows bat files
+*.bat text eol=crlf
+
+# Leave images as binary
+*.png binary
+*.jpg binary

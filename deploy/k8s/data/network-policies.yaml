@@ -1,0 +1,78 @@
+# Replaces the Compose internal networks. Each database accepts connections
+# only from Pods labelled for that service. Kafka stays open inside the
+# namespace, matching the Compose default network.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: user-db
+spec:
+  podSelector:
+    matchLabels:
+      app: user-db
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              foc.io/db: user
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: supplier-db
+spec:
+  podSelector:
+    matchLabels:
+      app: supplier-db
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              foc.io/db: supplier
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: order-db
+spec:
+  podSelector:
+    matchLabels:
+      app: order-db
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              foc.io/db: order
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: credit-db
+spec:
+  podSelector:
+    matchLabels:
+      app: credit-db
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              foc.io/db: credit
+      ports:
+        - protocol: TCP
+          port: 5432

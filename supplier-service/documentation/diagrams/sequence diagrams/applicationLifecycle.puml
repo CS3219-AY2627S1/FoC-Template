@@ -1,0 +1,52 @@
+@startuml
+title Supplier Service - Application Lifecycle
+
+autonumber
+hide footbox
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+
+actor "Container Orchestrator" as Orchestrator
+control "Application Lifespan\napp/main.py" as App
+control "Settings\napp/config.py" as Settings
+control "Database Setup\napp/db.py" as Database
+
+Orchestrator -> App: Start Supplier Service
+activate App
+
+App -> Settings: Load and validate configuration
+activate Settings
+
+alt Configuration is missing or invalid
+  Settings --> App: Validation error
+  deactivate Settings
+  App --> Orchestrator: Startup fails
+else Configuration is valid
+  Settings --> App: Validated settings
+  deactivate Settings
+
+  App -> Database: create_db_engine(settings)
+  activate Database
+  note right of Database
+    Create a pooled engine with connection
+    pre-ping. Startup does not connect to
+    the database or create schema objects.
+  end note
+  Database --> App: Engine
+
+  App -> Database: create_session_factory(engine)
+  Database --> App: Session factory
+  deactivate Database
+
+  App --> Orchestrator: Application started
+
+  Orchestrator -> App: Stop Supplier Service
+  App -> Database: engine.dispose()
+  activate Database
+  Database --> App: Pooled connections released
+  deactivate Database
+  App --> Orchestrator: Application stopped
+end
+
+deactivate App
+@enduml

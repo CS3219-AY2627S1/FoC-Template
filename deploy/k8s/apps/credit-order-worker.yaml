@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credit-order-worker
+  labels:
+    app: credit-order-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: credit-order-worker
+  template:
+    metadata:
+      labels:
+        app: credit-order-worker
+        foc.io/db: credit
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: credit-order-worker
+          image: foc-credit-service:local
+          imagePullPolicy: Never
+          command: ["python", "-m", "app.worker"]
+          env:
+            - name: CREDIT_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: CREDIT_DB_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: CREDIT_DB_PASSWORD
+            - name: DATABASE_URL
+              value: postgresql+psycopg://$(CREDIT_DB_USER)@credit-db:5432/foc_credits
+            - name: USER_SERVICE_URL
+              value: https://user-service:8080
+            - name: USER_SERVICE_CA_FILE
+              value: /run/tls/ca.crt
+            - name: INITIAL_CREDIT_ALLOCATION
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: INITIAL_CREDIT_ALLOCATION
+            - name: CREDIT_RETRY_BACKOFF_SECONDS
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: CREDIT_RETRY_BACKOFF_SECONDS
+            - name: CREDIT_EVENT_STREAM
+              value: order
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+            - name: LOG_LEVEL
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: LOG_LEVEL
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          volumeMounts:
+            - name: tls
+              mountPath: /run/tls/ca.crt
+              subPath: ca.crt
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: foc-tls
+            items:
+              - key: ca.crt
+                path: ca.crt

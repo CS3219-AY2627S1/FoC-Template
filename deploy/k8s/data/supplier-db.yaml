@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: supplier-db
+  labels:
+    app: supplier-db
+spec:
+  clusterIP: None
+  selector:
+    app: supplier-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: supplier-db
+  labels:
+    app: supplier-db
+spec:
+  serviceName: supplier-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: supplier-db
+  template:
+    metadata:
+      labels:
+        app: supplier-db
+    spec:
+      containers:
+        - name: postgres
+          image: foc-supplier-db:local
+          imagePullPolicy: Never
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: SUPPLIER_POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: SUPPLIER_POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: SUPPLIER_POSTGRES_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 12
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

@@ -1,0 +1,31 @@
+@startuml
+title User Service - Health and Readiness Checks
+
+autonumber
+hide footbox
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+
+actor "Container Orchestrator" as Orchestrator
+boundary "Application\napp/main.py" as App
+
+== Liveness ==
+
+Orchestrator -> App: GET /health
+activate App
+App --> Orchestrator: 200 OK + healthy
+deactivate App
+
+== Readiness ==
+
+Orchestrator -> App: GET /ready
+activate App
+
+alt Required dependency is available
+  App --> Orchestrator: 200 OK + ready
+else Required dependency is unavailable
+  App --> Orchestrator: 503 Service Unavailable
+end
+
+deactivate App
+@enduml

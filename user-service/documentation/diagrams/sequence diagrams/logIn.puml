@@ -1,0 +1,41 @@
+@startuml
+title User Service - Log In
+
+autonumber
+hide footbox
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+
+actor Client
+boundary "Users Router\napp/routes/users.py" as API
+control "User Operations\napp/services/users.py" as Users
+
+Client -> API: POST /login\nStudent number + password
+activate API
+
+alt Invalid request format
+  API --> Client: 422 Validation error
+else Valid request format
+  API -> Users: login_user(credentials)
+  activate Users
+
+  alt Unknown user, wrong password, or inactive account
+    Users --> API: Authentication rejected
+    API --> Client: 401 Invalid credentials
+  else Credentials accepted
+    note right of Users
+      Create a session bounded by 30 minutes
+      of inactivity and 24 hours in total.
+      Only a hash of the token is retained.
+    end note
+    Users --> API: Bearer token + user profile
+    API --> Client: 200 OK + login response
+  else Service unavailable
+    Users --> API: Authentication unavailable
+    API --> Client: 503 Service Unavailable
+  end
+  deactivate Users
+end
+
+deactivate API
+@enduml

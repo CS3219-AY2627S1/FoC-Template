@@ -1,0 +1,39 @@
+@startuml
+title User Service - Get Own Profile
+
+autonumber
+hide footbox
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+
+actor Client
+boundary "Users Router\napp/routes/users.py" as API
+control "Authentication\napp/auth.py" as Auth
+control "Profile Response Builder\napp/services/profiles.py" as Profiles
+
+Client -> API: GET /users/me\nBearer token
+activate API
+
+ref over API, Auth
+  Authenticate request
+  See authorizeProtectedRequest.puml
+end ref
+
+alt Authentication fails
+  API --> Client: 401 Unauthorized
+else Request is authenticated
+  API -> Profiles: own_profile_response(user)
+  activate Profiles
+  Profiles --> API: Permitted owner profile
+  deactivate Profiles
+  note right of API
+    Password and session information
+    are never included.
+  end note
+  API --> Client: 200 OK + own profile
+else Service unavailable
+  API --> Client: 503 Service Unavailable
+end
+
+deactivate API
+@enduml

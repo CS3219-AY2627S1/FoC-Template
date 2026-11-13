@@ -1,0 +1,102 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: credit-service
+  labels:
+    app: credit-service
+spec:
+  type: NodePort
+  selector:
+    app: credit-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30083
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credit-service
+  labels:
+    app: credit-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: credit-service
+  template:
+    metadata:
+      labels:
+        app: credit-service
+        foc.io/db: credit
+    spec:
+      containers:
+        - name: credit-service
+          image: foc-credit-service:local
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: CREDIT_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: CREDIT_DB_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: CREDIT_DB_PASSWORD
+            - name: DATABASE_URL
+              value: postgresql+psycopg://$(CREDIT_DB_USER)@credit-db:5432/foc_credits
+            - name: USER_SERVICE_URL
+              value: https://user-service:8080
+            - name: USER_SERVICE_CA_FILE
+              value: /run/tls/ca.crt
+            - name: INITIAL_CREDIT_ALLOCATION
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: INITIAL_CREDIT_ALLOCATION
+            - name: CREDIT_RETRY_BACKOFF_SECONDS
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: CREDIT_RETRY_BACKOFF_SECONDS
+            - name: LOG_LEVEL
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: LOG_LEVEL
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/ready', timeout=3)
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/ready', timeout=3)
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 12
+          volumeMounts:
+            - name: tls
+              mountPath: /run/tls/ca.crt
+              subPath: ca.crt
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: foc-tls
+            items:
+              - key: ca.crt
+                path: ca.crt

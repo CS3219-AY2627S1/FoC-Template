@@ -1,0 +1,4 @@
+Name,Type,Building,Floor,Location Description,Latitude,Longitude,StartingTime,ClosingTime,ImageURL
+" Quoted, Cafe ",Food, Prince George’s Park ,01,"Near ""A"", entrance
+second line",not parsed yet,103.77,0900hrs,1800hrs,
+Printer @ Com 2,Printing,Com2,02,By the lift,1.3,103.77,0000hrs,2359hrs,

@@ -1,0 +1,100 @@
+
+name: FoC publish seven images to ECR
+
+# Releases are initiated manually, after CI on the selected commit has passed.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Immutable image tag, e.g. release-20261111-01; must be NEW in ECR'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: foc-ecr-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    name: Build and push ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    environment: foc-publish
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - name: user-service
+            context: .
+            dockerfile: ./user-service/Dockerfile
+          - name: supplier-service
+            context: .
+            dockerfile: ./supplier-service/Dockerfile
+          - name: supplier-db
+            context: ./supplier-service/database
+            dockerfile: ./supplier-service/database/Dockerfile
+          - name: order-service
+            context: .
+            dockerfile: ./order-service/Dockerfile
+          - name: credit-service
+            context: .
+            dockerfile: ./credit-service/Dockerfile
+          - name: frontend-service
+            context: ./frontend-service
+            dockerfile: ./frontend-service/Dockerfile
+          - name: notification-service
+            context: .
+            dockerfile: ./notification-service/Dockerfile
+
+    env:
+      AWS_REGION: ap-southeast-1
+      AWS_ACCOUNT_ID: '816435462502'
+      RELEASE_TAG: ${{ inputs.release_tag }}
+
+    steps:
+      - name: Checkout requested commit
+        uses: actions/checkout@v4
+
+      - name: Validate image tag and OIDC role
+        env:
+          PUBLISH_ROLE: ${{ vars.FOC_ECR_ROLE_ARN }}
+        shell: bash
+        run: |
+          [[ "$RELEASE_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$ ]] || { echo 'Invalid release tag'; exit 1; }
+          [[ -n "$PUBLISH_ROLE" ]] || { echo 'Set GitHub Actions variable FOC_ECR_ROLE_ARN'; exit 1; }
+          echo "SOURCE_COMMIT=${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      - name: Configure short-lived AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.FOC_ECR_ROLE_ARN }}
+          aws-region: ap-southeast-1
+          role-session-name: foc-ecr-${{ github.run_id }}
+
+      - name: Confirm AWS account and tag is unused
+        run: |
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          if aws ecr describe-images --region "$AWS_REGION" --repository-name "foc/${{ matrix.name }}" --image-ids "imageTag=$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'Refusing to overwrite existing image tag' >&2
+            exit 1
+          fi
+          aws ecr describe-repositories --region "$AWS_REGION" --repository-names "foc/${{ matrix.name }}" >/dev/null
+
+      - uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Publish service image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: 816435462502.dkr.ecr.ap-southeast-1.amazonaws.com/foc/${{ matrix.name }}:${{ env.RELEASE_TAG }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}

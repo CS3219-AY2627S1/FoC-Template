@@ -1,0 +1,497 @@
+[
+  {
+    "seed_key": "nus-kent-ridge-1d5c33b2235a05b7",
+    "supplier_id": "54df65ef-29ed-4502-aac5-8ca9ac7ec75a",
+    "source_match": {
+      "Name": "Bistro Box",
+      "Building": "College of Design and Engineering"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-13b76823cb069d8c",
+    "supplier_id": "943816e9-2cc0-4a9e-93a3-bbf06a00b3a6",
+    "source_match": {
+      "Name": "Burnt Cones",
+      "Building": "Medicine Block MD11"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-c38dcf6f40bb5f11",
+    "supplier_id": "71e74ec3-e9e6-45a0-b727-31a42571b408",
+    "source_match": {
+      "Name": "Burnt Cones",
+      "Building": "University Hall"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-3de05c8eac1b1700",
+    "supplier_id": "ce560156-7096-4e30-a555-7ddb72838fcc",
+    "source_match": {
+      "Name": "Cafe Delight",
+      "Building": "Ventus"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-eb63e2b0bd66a58e",
+    "supplier_id": "8d2af894-f289-4483-ae0a-c0bb69b149c0",
+    "source_match": {
+      "Name": "Chong Pang Tai Zhi Wei",
+      "Building": "The Deck"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-016647919b6a5a26",
+    "supplier_id": "05467313-6659-4263-886a-227f087919d1",
+    "source_match": {
+      "Name": "CHAGEE",
+      "Building": "Yusof Ishak House"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-3b6b3d1c3d0aadc0",
+    "supplier_id": "2c7fb421-dd52-46ac-b105-7e177dbed233",
+    "source_match": {
+      "Name": "Eureka Taste",
+      "Building": "Medicine Block MD6"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-d35b928b5b30d399",
+    "supplier_id": "6ae3dccf-eee6-48f9-b8c3-b49f8760bd7b",
+    "source_match": {
+      "Name": "Fong Seng Nasi Lemak",
+      "Building": "The Deck"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-2ada0227e674541b",
+    "supplier_id": "a03f5de5-05f8-46fa-aba4-b64af76db095",
+    "source_match": {
+      "Name": "Frontier",
+      "Building": "Frontier"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-0c81531a12453cd4",
+    "supplier_id": "28803c11-ad6b-4aec-b030-7eb671e14188",
+    "source_match": {
+      "Name": "Li Ji Coffeehouse",
+      "Building": "Frontier"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-73c6fdfbc22dcb6a",
+    "supplier_id": "4e2ca226-6852-4588-a2da-8bdc98042f8f",
+    "source_match": {
+      "Name": "Liang Ban Kung Fu",
+      "Building": "The Deck"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-5725189e135fd588",
+    "supplier_id": "13e22cad-1a35-4883-8c9d-3259d09d3af8",
+    "source_match": {
+      "Name": "Makan Boleh",
+      "Building": "COM3"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-6a98086f7682baf4",
+    "supplier_id": "fefb5bfb-8949-4416-b995-cbcdf7832714",
+    "source_match": {
+      "Name": "Mini Wok & Dim Sum",
+      "Building": "Yusof Ishak House"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-6b6c7fb3b70b5560",
+    "supplier_id": "4f7dec5a-51a1-49cd-a642-aa2dc70c4d12",
+    "source_match": {
+      "Name": "Mixue",
+      "Building": "Frontier"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-40f35253b84f6fac",
+    "supplier_id": "a0dbc9d9-9957-4097-b96f-e881290a3962",
+    "source_match": {
+      "Name": "Nine Fresh",
+      "Building": "Frontier"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-a943ba6a448e14b8",
+    "supplier_id": "3dc67f31-41ae-42a5-8e26-c9a861d43527",
+    "source_match": {
+      "Name": "Potato Corner",
+      "Building": "Yusof Ishak House"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-7783f5ae0921ef7a",
+    "supplier_id": "87e0b6c6-9dbd-4f45-9a42-42bebef5fe61",
+    "source_match": {
+      "Name": "PGP Aircon Canteen",
+      "Building": "Prince George's Park"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-75378a383a829aeb",
+    "supplier_id": "8559a834-a1d2-4a27-8853-5c3881b75441",
+    "source_match": {
+      "Name": "QQ Rice",
+      "Building": "Science Block S16"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-d62790bcd7e1c578",
+    "supplier_id": "ed45aa46-e36c-45a1-950a-870069f64287",
+    "source_match": {
+      "Name": "Sloppy B",
+      "Building": "University Sports Centre"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-68d99763eb5253ac",
+    "supplier_id": "d3351a17-f42d-44aa-a870-753d6505a1b2",
+    "source_match": {
+      "Name": "South & East",
+      "Building": "Shaw Foundation Alumni House"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-031bb1208c3c6074",
+    "supplier_id": "f5b47fb3-8116-4163-bc1f-ccb2e4a5ffb1",
+    "source_match": {
+      "Name": "Starbucks",
+      "Building": "Science Block S9"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-4e9f56c021605f79",
+    "supplier_id": "0182e9c9-dbbf-47a1-a0b1-c0d318315ead",
+    "source_match": {
+      "Name": "Starbucks",
+      "Building": "College of Design and Engineering"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-2885a55c1840d843",
+    "supplier_id": "76f555b6-ac6e-4be7-b203-5e0b91a37267",
+    "source_match": {
+      "Name": "Taiwan Ichiban",
+      "Building": "Frontier"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-746fbc85d272aae4",
+    "supplier_id": "7425c24e-8e64-41eb-9bb0-b52d5fbb90dc",
+    "source_match": {
+      "Name": "Techno Edge",
+      "Building": "College of Design and Engineering"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-c8b60d25007dca3a",
+    "supplier_id": "5e5b3270-0a6f-4dad-9f23-f359189e1b4f",
+    "source_match": {
+      "Name": "TempuRamen",
+      "Building": "Yusof Ishak House"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-eb6d86679331952a",
+    "supplier_id": "1cbe660e-12a5-4425-8cfa-801a0a01d601",
+    "source_match": {
+      "Name": "The Acai Truck",
+      "Building": "Prince George's Park"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-e13b5bdb77476fb2",
+    "supplier_id": "6902c133-9718-43c8-9e6b-ea2676d90507",
+    "source_match": {
+      "Name": "The Coffee Bean and Tea Leaf",
+      "Building": "COM3"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-9d2c4c9aafdcb107",
+    "supplier_id": "0ec47e9b-6da8-4e57-bb2f-0b3ae3c0e43e",
+    "source_match": {
+      "Name": "The Deck",
+      "Building": "Faculty of Arts & Social Sciences"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-75d2a7b0255073e1",
+    "supplier_id": "65b05b9a-b9d7-44ea-9f30-ae2c591e67cd",
+    "source_match": {
+      "Name": "The Spread",
+      "Building": "Mochtar Riady Building"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-fc42601db4f49e31",
+    "supplier_id": "d1cf8603-b418-4816-80f2-5628c8c5ec0d",
+    "source_match": {
+      "Name": "The Terrace",
+      "Building": "COM3"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-cec7df29ff41ee3b",
+    "supplier_id": "de43b732-bc55-4d20-bc86-c7c6895907a2",
+    "source_match": {
+      "Name": "Uncle Penyet Fusion",
+      "Building": "Frontier"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-cc152737661002c8",
+    "supplier_id": "02af5a2a-d867-4032-8bbc-9dd821bf6713",
+    "source_match": {
+      "Name": "Wild Skew",
+      "Building": "Yusof Ishak House"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-2376f86c41c67ee0",
+    "supplier_id": "fb924ab3-349f-4994-bf23-b75d01b1b633",
+    "source_match": {
+      "Name": "Wok Express",
+      "Building": "Yusof Ishak House"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-2872ac47c2381f1d",
+    "supplier_id": "54b26459-6c8c-4328-9a67-b70dab640613",
+    "source_match": {
+      "Name": "Wonderful Cafe",
+      "Building": "Techno Edge"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-kent-ridge-70292e14006331ca",
+    "supplier_id": "d9bbe528-ae6e-4c56-9436-2b76495f4b19",
+    "source_match": {
+      "Name": "Wonderful Cafe",
+      "Building": "Science Block S16"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-2d935ca02f12f8c3",
+    "supplier_id": "5dde819a-628f-4e4b-9541-7f58596c40a6",
+    "source_match": {
+      "Name": "Bismillah Biryani",
+      "Building": "Stephen Riady Centre"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-ae33ad92de3ee69c",
+    "supplier_id": "313b3d03-3547-43a7-a800-04d0bf293619",
+    "source_match": {
+      "Name": "Fine Food",
+      "Building": "Town Plaza"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-b162f86aa9a0d1d9",
+    "supplier_id": "a5df1a50-dc6d-4efa-ad19-0eae6ee34d35",
+    "source_match": {
+      "Name": "Flavours @ UTown",
+      "Building": "Stephen Riady Centre"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-3275cab226446d9c",
+    "supplier_id": "c807495d-2976-490e-a3aa-5deffd99a3c6",
+    "source_match": {
+      "Name": "Hwang’s Korean Restaurant",
+      "Building": "Town Plaza"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-e331bf40e6ccb170",
+    "supplier_id": "d62bf1e5-6a72-4a8d-88dc-468229392ac1",
+    "source_match": {
+      "Name": "Jollibee",
+      "Building": "Town Plaza"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-71e66206220d82c7",
+    "supplier_id": "5c5303f6-85d2-4b6f-b2d4-37c40b7a15e6",
+    "source_match": {
+      "Name": "Mr Bean / Do Qoo",
+      "Building": "Town Plaza"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-7badb7929b61731d",
+    "supplier_id": "90ce21fb-8cee-447d-9ceb-6404baf445e5",
+    "source_match": {
+      "Name": "Makan Malah!",
+      "Building": "Town Plaza"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-ed4493cef658f529",
+    "supplier_id": "a7853f06-6e98-4927-a7d3-6ed8cd4f399d",
+    "source_match": {
+      "Name": "Starbucks",
+      "Building": "Education Resource Centre"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-32d332fae10c393a",
+    "supplier_id": "8a9a18f3-6b1a-43c0-852d-b4b8e28fc68f",
+    "source_match": {
+      "Name": "Subway",
+      "Building": "Stephen Riady Centre"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-5e010e0739076c88",
+    "supplier_id": "e2747c1d-5511-495d-af9d-155782ce041e",
+    "source_match": {
+      "Name": "Supersnacks",
+      "Building": "Stephen Riady Centre"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-70f14ee154d9d41c",
+    "supplier_id": "ab234387-a6e9-4bad-8ee3-1840f433a300",
+    "source_match": {
+      "Name": "The Royals Bistro",
+      "Building": "Town Plaza"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-84f5826baa2022e5",
+    "supplier_id": "24db8861-2fcc-4792-aed6-f0e6c219fa54",
+    "source_match": {
+      "Name": "Sapore",
+      "Building": "Stephen Riady Centre"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-fe78623db17f33b6",
+    "supplier_id": "fcba7091-ceae-46cf-beaa-e699d722da1a",
+    "source_match": {
+      "Name": "Tomoro Coffee",
+      "Building": "NUS College"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-f2603683baeab3fd",
+    "supplier_id": "fa174270-b29a-4ae8-8b85-bb70e8d1c7e1",
+    "source_match": {
+      "Name": "Triplets",
+      "Building": "Stephen Riady Centre"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-a64784e33d78d4dd",
+    "supplier_id": "38d09616-776d-4723-aca0-af06ffae06af",
+    "source_match": {
+      "Name": "Udon Don Bar",
+      "Building": "Town Plaza"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-utown-1517feb850500088",
+    "supplier_id": "344202f4-2af2-408c-8fc1-7366c1a218f3",
+    "source_match": {
+      "Name": "Waa Cow / Bueno Bueno",
+      "Building": "Stephen Riady Centre"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-retail-67877f5d8e2947c5",
+    "supplier_id": "866bbd51-cacc-42d9-a93c-732f65377916",
+    "source_match": {
+      "Name": "Cheers Unmanned Convenience Store",
+      "Building": "Yusof Ishak House"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-retail-790c76b2402b57cb",
+    "supplier_id": "58dece73-12ac-491b-8ec0-aa529ee39f5f",
+    "source_match": {
+      "Name": "FairPricexpress",
+      "Building": "Stephen Riady Centre"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-retail-03a39688b1ebc83d",
+    "supplier_id": "ab3cf507-9104-4bb8-a2f4-d75892921352",
+    "source_match": {
+      "Name": "NUS CO-OP",
+      "Building": "Science LT27"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "nus-retail-b6de28d00489be29",
+    "supplier_id": "798f036f-7de8-4ac3-af1e-6d6468321b7c",
+    "source_match": {
+      "Name": "Octobox",
+      "Building": "Stephen Riady Centre"
+    },
+    "correct_24_hours": false
+  }
+]

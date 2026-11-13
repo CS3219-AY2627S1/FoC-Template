@@ -1,0 +1,2 @@
+Publish FoC release-20261110-01 to AWS ECR.
+Attempt 2

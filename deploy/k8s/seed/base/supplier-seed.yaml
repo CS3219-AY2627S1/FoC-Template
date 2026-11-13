@@ -1,0 +1,64 @@
+# The seed CSV is CP1252. ConfigMaps must be UTF-8, so scripts/k8s-up.sh
+# stores the file in the foc-supplier-seed Secret and this Job mounts it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: supplier-seed
+  labels:
+    app: supplier-seed
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: supplier-seed
+        foc.io/db: supplier
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: seed
+          image: foc-supplier-service:local
+          imagePullPolicy: Never
+          command:
+            - python
+            - -m
+            - app.commands.seed_suppliers
+            - --file
+            - /seed/supplier-seed-data.csv
+          env:
+            - name: SUPPLIER_RUNTIME_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: SUPPLIER_RUNTIME_PASSWORD
+            - name: SUPPLIER_POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: SUPPLIER_POSTGRES_DB
+            - name: DATABASE_URL
+              value: postgresql+psycopg://supplier_runtime:$(SUPPLIER_RUNTIME_PASSWORD)@supplier-db:5432/$(SUPPLIER_POSTGRES_DB)
+            - name: APP_ENV
+              value: development
+            - name: USER_SERVICE_URL
+              value: https://user-service:8080
+            - name: AUTH_TIMEOUT_SECONDS
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: AUTH_TIMEOUT_SECONDS
+            - name: LOG_LEVEL
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: LOG_LEVEL
+          volumeMounts:
+            - name: seed
+              mountPath: /seed/supplier-seed-data.csv
+              subPath: supplier-seed-data.csv
+              readOnly: true
+      volumes:
+        - name: seed
+          secret:
+            secretName: foc-supplier-seed

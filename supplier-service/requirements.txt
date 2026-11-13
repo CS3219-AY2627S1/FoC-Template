@@ -1,0 +1,22 @@
+# AI Assistance Disclosure:
+# Tool: Codex (model: GPT-6), date: 2026-09-30
+# Scope: Boilerplate generation — configure HTTPX 0.28.1 as a runtime dependency.
+# Author review: Original implementation approved by Keith.
+# Details: ai/usage-log.md; ai-20260930-019
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.6
+pydantic-settings==2.7.1
+httpx==0.28.1
+# Database models, SQL queries, and sessions
+SQLAlchemy==2.0.54
+
+# PostgreSQL driver, including precompiled client dependencies
+psycopg[binary]==3.3.6
+
+# PostgreSQL/PostGIS spatial types
+GeoAlchemy2==0.20.0
+
+# Versioned database schema changes
+alembic==1.20.0

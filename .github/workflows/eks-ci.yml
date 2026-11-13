@@ -1,0 +1,191 @@
+
+name: FoC EKS CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/eks-*.yml'
+      - 'deploy/k8s/**'
+      - 'scripts/eks-deploy.sh'
+      - 'scripts/test-eks-render.sh'
+      - 'docs/eks-cicd.md'
+      - 'user-service/**'
+      - 'supplier-service/**'
+      - 'order-service/**'
+      - 'credit-service/**'
+      - 'frontend-service/**'
+      - 'notification-service/**'
+      - 'packages/foc-observability/**'
+  pull_request:
+    paths:
+      - '.github/workflows/eks-*.yml'
+      - 'deploy/k8s/**'
+      - 'scripts/eks-deploy.sh'
+      - 'scripts/test-eks-render.sh'
+      - 'docs/eks-cicd.md'
+      - 'user-service/**'
+      - 'supplier-service/**'
+      - 'order-service/**'
+      - 'credit-service/**'
+      - 'frontend-service/**'
+      - 'notification-service/**'
+      - 'packages/foc-observability/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eks-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  manifests:
+    name: Validate Kustomize and deployment script
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.31.0'
+      - name: Shell syntax
+        run: bash -n scripts/eks-deploy.sh scripts/test-eks-render.sh
+      - name: Render and check EKS overlay and kind compatibility
+        run: bash scripts/test-eks-render.sh
+
+  backend-tests:
+    name: Backend tests (${{ matrix.component }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: user-service
+            requirements: user-service/requirements-dev.txt
+            command: python -m pytest -q
+          - component: supplier-service
+            requirements: supplier-service/requirements-dev.txt
+            command: python -m pytest tests/unit tests/api -q
+          - component: credit-service
+            requirements: credit-service/requirements-dev.txt
+            command: python -m pytest -q
+          - component: notification-service
+            requirements: notification-service/requirements-dev.txt
+            command: python -m pytest -q
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: ${{ matrix.requirements }}
+      - name: Install dependencies
+        working-directory: ${{ matrix.component }}
+        run: python -m pip install -r requirements-dev.txt
+      - name: Run service tests
+        working-directory: ${{ matrix.component }}
+        env:
+          POSTGRES_USER: foc_ci
+          POSTGRES_PASSWORD: 'foc_ci:p@ss#with$special/slash?'
+        run: ${{ matrix.command }}
+
+  order-tests:
+    name: Order migration validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: foc
+          POSTGRES_PASSWORD: foc_ci
+          POSTGRES_DB: foc_orders_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U foc -d foc_orders_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: order-service/requirements.txt
+      - name: Install requirements
+        working-directory: order-service
+        run: python -m pip install -r requirements.txt
+      - name: Verify migrations
+        working-directory: order-service
+        env:
+          DATABASE_URL: postgresql+psycopg://foc@localhost:5432/foc_orders_test
+          PGPASSWORD: foc_ci
+          USER_SERVICE_URL: http://user-service:8080
+          SUPPLIER_SERVICE_URL: http://supplier-service:8080
+        run: |
+          alembic upgrade head
+          alembic check
+
+  frontend-tests:
+    name: Frontend lint, test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: yarn
+          cache-dependency-path: frontend-service/yarn.lock
+      - name: Install, lint, test and build
+        working-directory: frontend-service
+        run: |
+          yarn install --frozen-lockfile
+          yarn lint
+          yarn test
+          yarn build
+
+  docker-images:
+    name: Docker build (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - name: user-service
+            context: .
+            dockerfile: ./user-service/Dockerfile
+          - name: supplier-service
+            context: .
+            dockerfile: ./supplier-service/Dockerfile
+          - name: supplier-db
+            context: ./supplier-service/database
+            dockerfile: ./supplier-service/database/Dockerfile
+          - name: order-service
+            context: .
+            dockerfile: ./order-service/Dockerfile
+          - name: credit-service
+            context: .
+            dockerfile: ./credit-service/Dockerfile
+          - name: frontend-service
+            context: ./frontend-service
+            dockerfile: ./frontend-service/Dockerfile
+          - name: notification-service
+            context: .
+            dockerfile: ./notification-service/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          platforms: linux/amd64
+          tags: foc-${{ matrix.name }}:ci

@@ -1,0 +1,87 @@
+name: Compose CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "compose.yaml"
+      - "event-broker/**"
+      - "data/nginx/**"
+      - ".env.example"
+      - ".github/workflows/compose.yml"
+      - "observability/**"
+      - "scripts/verify-observability.sh"
+      - "supplier-service/**"
+      - "packages/foc-observability/**"
+      - "data/csv/supplier-seed-data.csv"
+  pull_request:
+    paths:
+      - "compose.yaml"
+      - "event-broker/**"
+      - "data/nginx/**"
+      - ".env.example"
+      - ".github/workflows/compose.yml"
+      - "observability/**"
+      - "scripts/verify-observability.sh"
+      - "supplier-service/**"
+      - "packages/foc-observability/**"
+      - "data/csv/supplier-seed-data.csv"
+
+permissions:
+  contents: read
+
+jobs:
+  compose-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      COMPOSE_PROJECT_NAME: foc-compose-ci
+      POSTGRES_USER: foc_ci
+      POSTGRES_PASSWORD: focCiPassword123
+      USER_SERVICE_INTERNAL_TOKEN: foc_ci_internal_service_token
+      SUPPLIER_POSTGRES_DB: supplier_ci
+      SUPPLIER_POSTGRES_USER: supplier_ci
+      SUPPLIER_POSTGRES_PASSWORD: supplierCiPassword123
+      SUPPLIER_MIGRATION_PASSWORD: supplierMigrationCiPassword123
+      SUPPLIER_RUNTIME_PASSWORD: supplierRuntimeCiPassword123
+      CREDIT_DB_USER: credit_ci
+      CREDIT_DB_PASSWORD: creditCiPassword123
+      ORDER_DB_USER: foc_orders
+      ORDER_DB_PASSWORD: focOrdersCiPassword123
+      GRAFANA_ADMIN_PASSWORD: focCiGrafanaPassword123
+      NOTIFICATION_DB_USER: foc_notifications
+      NOTIFICATION_DB_PASSWORD: notificationCiPassword123
+      NOTIFICATIONS_START_AT: "2026-11-04T00:00:00+08:00"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+
+      - name: Start Supplier from an empty database
+        run: |
+          docker compose up -d --build --wait --wait-timeout 180 supplier-service loki grafana vector
+          curl --fail --max-time 5 http://127.0.0.1:8081/ready
+          curl --fail --max-time 5 http://127.0.0.1:8081/suppliers
+
+      - name: Verify centralized backend logging
+        run: ./scripts/verify-observability.sh
+
+      - name: Verify seed tool dependencies
+        run: docker compose --profile tools run --rm supplier-seed --dry-run
+
+      - name: Restart Supplier with the existing database volume
+        run: |
+          docker compose down
+          docker compose up -d --wait --wait-timeout 180 supplier-service
+          curl --fail --max-time 5 http://127.0.0.1:8081/ready
+
+      - name: Show startup logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=100 loki grafana vector supplier-db supplier-bootstrap supplier-migrate supplier-grants supplier-service
+
+      - name: Remove CI containers and volumes
+        if: always()
+        run: docker compose --profile tools down --volumes --remove-orphans

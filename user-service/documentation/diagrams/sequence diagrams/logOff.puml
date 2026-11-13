@@ -1,0 +1,34 @@
+@startuml
+title User Service - Log Out
+
+autonumber
+hide footbox
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+
+actor Client
+boundary "Users Router\napp/routes/users.py" as API
+control "Authentication\napp/auth.py" as Auth
+
+Client -> API: POST /logout\nBearer token
+activate API
+
+ref over API, Auth
+  Authenticate request
+  See authorizeProtectedRequest.puml
+end ref
+
+alt Authentication fails
+  API --> Client: 401 Unauthorized
+else Request is authenticated
+  API -> Auth: revoke_session(context)
+  activate Auth
+  Auth --> API: Session invalidated
+  deactivate Auth
+  API --> Client: 204 No Content
+else Service unavailable
+  API --> Client: 503 Service Unavailable
+end
+
+deactivate API
+@enduml

@@ -1,0 +1,60 @@
+@startuml
+title Supplier Service - Apply Database Migrations
+
+autonumber
+hide footbox
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+
+actor Operator
+control "Migration Job\nsupplier-migrate" as Job
+control "Alembic Environment\nmigrations/env.py" as Alembic
+database "Supplier Database" as Database
+
+Operator -> Job: Run alembic upgrade head
+activate Job
+Job -> Alembic: Start online migration
+activate Alembic
+
+Alembic -> Alembic: Validate settings and load model metadata
+
+alt Configuration is invalid
+  Alembic --> Job: Migration error
+  Job --> Operator: Nonzero exit
+else Configuration is valid
+  Alembic -> Database: Open short-lived migration connection
+  activate Database
+
+  alt Database is unavailable or a revision fails
+    Database --> Alembic: Migration error
+    Alembic -> Database: Roll back transaction and close connection
+    Database --> Alembic: Connection closed
+    deactivate Database
+    Alembic --> Job: Migration failed
+    Job --> Operator: Nonzero exit
+  else Migration succeeds
+    Alembic -> Database: Apply 0001 initial schema
+    note right of Database
+      Create the PostGIS-backed supplier,
+      category, and assignment tables with
+      constraints and indexes.
+    end note
+    Alembic -> Database: Apply 0002 controlled categories
+    Database --> Alembic: Head revision recorded
+    Alembic -> Database: Commit and close connection
+    Database --> Alembic: Connection closed
+    deactivate Database
+    Alembic --> Job: Migration complete
+    Job --> Operator: Exit 0
+  end
+end
+
+deactivate Alembic
+deactivate Job
+
+note over Operator,Database
+  Migration startup uses a NullPool and always
+  disposes its engine when the process finishes.
+end note
+
+@enduml

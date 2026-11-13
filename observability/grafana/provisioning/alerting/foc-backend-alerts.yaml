@@ -1,0 +1,543 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: FoC backend operational alerts
+    folder: FoC Alerts
+    interval: 30s
+    rules:
+      - uid: foc-order-worker-heartbeat
+        title: Order worker heartbeat missing
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: foc-loki
+            model:
+              datasource:
+                type: loki
+                uid: foc-loki
+              editorMode: code
+              expr: 'sum(count_over_time({source="foc-backend", service="order-worker"} | json | event="worker_heartbeat" [2m])) or on() vector(0)'
+              intervalMs: 1000
+              maxDataPoints: 43200
+              queryType: range
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: Order worker heartbeat missing
+          description: No order-worker worker_heartbeat event has arrived in the last two minutes.
+        labels:
+          source: foc-backend
+          team: backend
+          severity: critical
+
+      - uid: foc-credit-worker-heartbeat
+        title: Credit worker heartbeat missing
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: foc-loki
+            model:
+              datasource:
+                type: loki
+                uid: foc-loki
+              editorMode: code
+              expr: 'sum(count_over_time({source="foc-backend", service="credit-order-worker"} | json | event="worker_heartbeat" [2m])) or on() vector(0)'
+              intervalMs: 1000
+              maxDataPoints: 43200
+              queryType: range
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: Credit worker heartbeat missing
+          description: No credit-order-worker worker_heartbeat event has arrived in the last two minutes.
+        labels:
+          source: foc-backend
+          team: backend
+          severity: critical
+
+      - uid: foc-notification-worker-heartbeat
+        title: Notification worker heartbeat missing
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: foc-loki
+            model:
+              datasource:
+                type: loki
+                uid: foc-loki
+              editorMode: code
+              expr: 'sum(count_over_time({source="foc-backend", service="notification-worker"} | json | event="worker_heartbeat" [2m])) or on() vector(0)'
+              intervalMs: 1000
+              maxDataPoints: 43200
+              queryType: range
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: Notification worker heartbeat missing
+          description: No notification-worker worker_heartbeat event has arrived in the last two minutes.
+        labels:
+          source: foc-backend
+          team: backend
+          severity: critical
+
+      - uid: foc-backend-delivery-failure
+        title: Backend delivery failure event
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: foc-loki
+            model:
+              datasource:
+                type: loki
+                uid: foc-loki
+              editorMode: code
+              expr: 'sum(count_over_time({source="foc-backend"} | json | event=~".*(retry_exhausted|dead_lettered|sent_to_dlq|parked_for_dlq).*" [5m])) or on() vector(0)'
+              intervalMs: 1000
+              maxDataPoints: 43200
+              queryType: range
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: Backend retry or dead-letter event detected
+          description: A retry-exhausted, dead-lettered, sent-to-DLQ, or parked-for-DLQ event occurred in the last five minutes.
+        labels:
+          source: foc-backend
+          team: backend
+          severity: critical
+
+      - uid: foc-backend-readiness-failure
+        title: Repeated backend readiness check failures
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: foc-loki
+            model:
+              datasource:
+                type: loki
+                uid: foc-loki
+              editorMode: code
+              expr: 'sum(count_over_time({source="foc-backend"} | json | event="readiness_check_failed" [2m])) or on() vector(0)'
+              intervalMs: 1000
+              maxDataPoints: 43200
+              queryType: range
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 2
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: Repeated backend readiness check failures
+          description: At least three readiness_check_failed events occurred in the last two minutes.
+        labels:
+          source: foc-backend
+          team: backend
+          severity: critical
+
+      - uid: foc-backend-relay-failure
+        title: Backend relay failure
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: foc-loki
+            model:
+              datasource:
+                type: loki
+                uid: foc-loki
+              editorMode: code
+              expr: 'sum(count_over_time({source="foc-backend"} | json | event=~".*_relay_failed" [5m])) or on() vector(0)'
+              intervalMs: 1000
+              maxDataPoints: 43200
+              queryType: range
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: Backend relay failure detected
+          description: A relay_failed event occurred in the last five minutes.
+        labels:
+          source: foc-backend
+          team: backend
+          severity: warning
+
+      - uid: foc-backend-api-server-error
+        title: Backend API server error
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: foc-loki
+            model:
+              datasource:
+                type: loki
+                uid: foc-loki
+              editorMode: code
+              expr: 'sum(count_over_time({source="foc-backend"} | json | event="http_request_completed" | status_code >= 500 [5m])) or on() vector(0)'
+              intervalMs: 1000
+              maxDataPoints: 43200
+              queryType: range
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: Backend API server error detected
+          description: At least one HTTP request completed with a 5xx status in the last five minutes.
+        labels:
+          source: foc-backend
+          team: backend
+          severity: critical
+
+      - uid: foc-collector-delivery-failure
+        title: Collector delivery failure
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: foc-loki
+            model:
+              datasource:
+                type: loki
+                uid: foc-loki
+              editorMode: code
+              expr: 'sum(count_over_time({source="foc-collector"} | json | level=~"(?i)error|critical" | message=~"(?i).*(sink|loki|buffer|delivery|send|failed).*" [5m])) or on() vector(0)'
+              intervalMs: 1000
+              maxDataPoints: 43200
+              queryType: range
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: Vector collector delivery failure detected
+          description: Vector emitted an error related to sink delivery, Loki, buffering, or sending in the last five minutes.
+        labels:
+          source: foc-collector
+          team: backend
+          severity: critical

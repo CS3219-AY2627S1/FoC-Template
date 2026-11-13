@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: supplier-service
+  labels:
+    app: supplier-service
+spec:
+  type: NodePort
+  selector:
+    app: supplier-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30081
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: supplier-service
+  labels:
+    app: supplier-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: supplier-service
+  template:
+    metadata:
+      labels:
+        app: supplier-service
+        foc.io/db: supplier
+    spec:
+      containers:
+        - name: supplier-service
+          image: foc-supplier-service:local
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SUPPLIER_RUNTIME_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: SUPPLIER_RUNTIME_PASSWORD
+            - name: SUPPLIER_POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: SUPPLIER_POSTGRES_DB
+            - name: DATABASE_URL
+              value: postgresql+psycopg://supplier_runtime:$(SUPPLIER_RUNTIME_PASSWORD)@supplier-db:5432/$(SUPPLIER_POSTGRES_DB)
+            - name: APP_ENV
+              value: development
+            - name: USER_SERVICE_URL
+              value: https://user-service:8080
+            - name: AUTH_TIMEOUT_SECONDS
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: AUTH_TIMEOUT_SECONDS
+            - name: LOG_LEVEL
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: LOG_LEVEL
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/ready', timeout=3)
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/ready', timeout=3)
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 12

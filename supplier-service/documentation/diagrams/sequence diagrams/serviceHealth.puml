@@ -1,0 +1,65 @@
+@startuml
+title Supplier Service - Health and Readiness Checks
+
+autonumber
+hide footbox
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+
+actor "Container Orchestrator" as Orchestrator
+boundary "Health Router\napp/routes/health.py" as API
+control "Alembic Scripts\nmigrations/" as Migrations
+database "Supplier Database" as Database
+
+== Liveness ==
+
+Orchestrator -> API: GET /health
+activate API
+note right of API
+  Liveness does not connect to the
+  database or inspect migrations.
+end note
+API --> Orchestrator: 200 OK + healthy
+deactivate API
+
+== Readiness ==
+
+Orchestrator -> API: GET /ready
+activate API
+API -> Migrations: Load packaged migration heads
+activate Migrations
+
+alt Migration configuration or scripts are invalid
+  Migrations --> API: Inspection fails
+  deactivate Migrations
+  API --> Orchestrator: 503 Service Unavailable + not_ready
+else Packaged heads are valid and nonempty
+  Migrations --> API: Packaged heads
+  deactivate Migrations
+  API -> Database: Connect and SELECT 1
+  activate Database
+
+  alt Connection or query fails
+    Database --> API: Database unavailable
+    API --> Orchestrator: 503 Service Unavailable + not_ready
+  else Database responds
+    API -> Database: Read installed Alembic heads
+    alt Installed heads exactly match packaged heads
+      Database --> API: Matching installed heads
+      API --> Orchestrator: 200 OK + ready
+    else Schema is missing, older, or unexpected
+      Database --> API: Nonmatching installed heads
+      API --> Orchestrator: 503 Service Unavailable + not_ready
+    end
+  end
+  deactivate Database
+end
+
+deactivate API
+
+note over Orchestrator,Database
+  Failure responses and logs omit database
+  credentials and connection details.
+end note
+
+@enduml

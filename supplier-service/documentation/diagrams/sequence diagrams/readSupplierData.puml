@@ -1,0 +1,83 @@
+@startuml
+title Supplier Service - Authenticated Supplier Read
+
+autonumber
+hide footbox
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+
+actor Client
+boundary "Supplier Read Router\napp/routes/suppliers.py\napp/routes/reference_data.py" as API
+control "Supplier Authentication\nplanned integration" as Auth
+participant "User Service\nGET /users/me" as Users
+control "Supplier Read Service\napp/services/suppliers.py" as Service
+control "Supplier Repository\napp/repositories/suppliers.py" as Repository
+database "Supplier Database" as Database
+
+Client -> API: GET /suppliers, /suppliers/{id},\n/categories, or /areas\nBearer token
+activate API
+
+API -> Auth: authenticate(bearer token)
+alt Bearer token is missing
+  Auth --> API: Authentication rejected
+  API --> Client: 401 Unauthorized
+else Bearer token is present
+  Auth -> Users: GET /users/me\nForward bearer token
+
+  alt Token is invalid or account is inactive
+    Users --> Auth: 401 Unauthorized
+    Auth --> API: Authentication rejected
+    API --> Client: 401 Unauthorized
+  else User Service is unavailable or times out
+    Users --> Auth: Authentication unavailable
+    Auth --> API: Dependency unavailable
+    API --> Client: 503 Service Unavailable
+  else User is authenticated
+    Users --> Auth: 200 OK + user profile
+    Auth --> API: Authenticated user
+
+    API -> Service: execute requested read
+    activate Service
+
+    alt GET /areas
+      Service --> API: Approved areas
+      API --> Client: 200 OK + areas
+    else Database-backed read
+      Service -> Repository: Query active suppliers or categories
+      activate Repository
+      Repository -> Database: SELECT requested data
+      activate Database
+
+      alt Database is unavailable
+        Database --> Repository: Connection or query error
+        Repository --> Service: Database error
+        Service --> API: SupplierReadUnavailable
+        API --> Client: 503 Service Unavailable
+      else Supplier detail is not found
+        Database --> Repository: No active supplier row
+        Repository --> Service: No result
+        Service --> API: Supplier not found
+        API --> Client: 404 Supplier Not Found
+      else Data is available
+        Database --> Repository: Supplier or category rows
+        Repository --> Service: Read model or page
+        Service --> API: Supplier response data
+        API --> Client: 200 OK + response body
+      end
+
+      deactivate Database
+      deactivate Repository
+    end
+
+    deactivate Service
+  end
+end
+
+deactivate API
+
+note over API,Auth
+  Authentication is planned but not implemented.
+  The read routers remain unregistered until this gate exists.
+end note
+
+@enduml

@@ -1,0 +1,52 @@
+name: User Service CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "user-service/**"
+      - "contracts/**"
+      - "event-broker/**"
+      - "compose.yaml"
+      - "packages/foc-observability/**"
+      - ".github/workflows/user-service.yml"
+  pull_request:
+    paths:
+      - "user-service/**"
+      - "contracts/**"
+      - "event-broker/**"
+      - "compose.yaml"
+      - "packages/foc-observability/**"
+      - ".github/workflows/user-service.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  user-service:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_USER: foc_ci
+      POSTGRES_PASSWORD: "foc_ci:p@ss#with$special/slash?"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: user-service/requirements-dev.txt
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+        working-directory: user-service
+
+      - name: Run tests
+        run: python -m pytest -q
+        working-directory: user-service
+
+      - name: Build user-service image
+        run: docker build --tag foc-user-service:ci --file user-service/Dockerfile .

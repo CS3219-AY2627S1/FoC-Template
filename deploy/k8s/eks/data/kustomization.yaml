@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: foc
+resources:
+  - ../../data
+  - notification-db.yaml
+images:
+  - name: foc-supplier-db
+    newName: 816435462502.dkr.ecr.ap-southeast-1.amazonaws.com/foc/supplier-db
+    newTag: 9a6415d
+patches:
+  - target:
+      kind: StatefulSet
+    patch: |-
+      - op: add
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: foc-gp3
+  - target:
+      kind: StatefulSet
+      name: supplier-db
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent

@@ -1,0 +1,51 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: foc
+resources:
+  - ../../apps
+  - notification-service.yaml
+  - notification-worker.yaml
+images:
+  - name: foc-user-service
+    newName: 816435462502.dkr.ecr.ap-southeast-1.amazonaws.com/foc/user-service
+    newTag: 9a6415d
+  - name: foc-supplier-service
+    newName: 816435462502.dkr.ecr.ap-southeast-1.amazonaws.com/foc/supplier-service
+    newTag: 9a6415d
+  - name: foc-order-service
+    newName: 816435462502.dkr.ecr.ap-southeast-1.amazonaws.com/foc/order-service
+    newTag: 9a6415d
+  - name: foc-credit-service
+    newName: 816435462502.dkr.ecr.ap-southeast-1.amazonaws.com/foc/credit-service
+    newTag: 9a6415d
+  - name: foc-frontend-service
+    newName: 816435462502.dkr.ecr.ap-southeast-1.amazonaws.com/foc/frontend-service
+    newTag: 9a6415d
+  - name: foc-notification-service
+    newName: 816435462502.dkr.ecr.ap-southeast-1.amazonaws.com/foc/notification-service
+    newTag: 9a6415d
+patches:
+  - target:
+      kind: Deployment
+      name: frontend-service
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: NOTIFICATION_SERVICE_URL
+          value: http://notification-service:8080
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  - target:
+      kind: Service
+      name: (frontend|supplier|order|credit)-service
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: ClusterIP
+      - op: remove
+        path: /spec/ports/0/nodePort

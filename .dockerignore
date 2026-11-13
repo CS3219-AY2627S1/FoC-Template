@@ -1,0 +1,33 @@
+# Repository metadata and local configuration
+.git/
+.gitignore
+.env
+.env.*
+certs/
+
+# Credentials and private keys
+**/*.pem
+**/*.key
+**/*secret*
+
+# Python local/build output
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.venv/
+**/venv/
+**/tests/
+
+# Frontend local/build output
+**/node_modules/
+**/.next/
+**/dist/
+**/build/
+
+# Repository-only documentation and datasets not copied into service images
+data/
+**/docs/
+**/documentation/
+supplier-service/ai/
+**/*.pdf
+**/*.pptx

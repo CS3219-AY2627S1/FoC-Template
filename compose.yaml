@@ -1,0 +1,667 @@
+# AI Assistance Disclosure:
+# Tool: Codex (model: GPT-6), date: 2026-09-28 to 2026-09-30
+# Scope: Boilerplate generation — configure the Supplier API connection to use its restricted runtime database role. Configure the shared Supplier image, migration job settings and dependencies, and successful-migration gating for API startup (2026-09-29).
+# Scope: Boilerplate generation — configure the Supplier tools service with the Python module entrypoint, empty command, read-only CSV mount, runtime settings, private network, migration/health dependencies, disabled healthcheck, and no restart or published ports. (ai-20260930-012)
+# Author review: Keith confirmed review of all affected changes. Keith confirmed review of the packaging changes (ai-20260930-012).
+# Details: supplier-service/ai/usage-log.md; ai-20260929-001; ai-20260929-003; ai-20260930-012
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-11-03
+# Scope: Boilerplate generation — add notification-db, notification-migrate, notification-service, and notification-worker on the shared foc-notification-service:local image, with .env-required credentials, health and migration gating, loopback-only port 127.0.0.1:8084, the internal notification-private network, and the notification-db-data volume (ai-20261103-001).
+# Author review: Keith confirmed review of all affected changes (ai-20261103-001).
+# Details: notification-service/ai/usage-log.md; ai-20261103-001
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-11-04
+# Scope: Boilerplate generation — give notification-worker KAFKA_BOOTSTRAP_SERVERS and a required NOTIFICATIONS_START_AT, and start it after kafka-topics (ai-20261104-003).
+# Author review: Keith confirmed verification, with 551 tests passed on the Pytest suite (ai-20261104-003).
+# Details: notification-service/ai/usage-log.md; ai-20261104-003
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-11-05
+# Scope: Boilerplate generation — pass NOTIFICATION_RETRY_BACKOFF_SECONDS to notification-worker, keeping an empty value empty (ai-20261105-001).
+# Author review: Keith confirmed on 2026-11-08: full pytest suite with PostgreSQL 16 and Kafka 4.1.2, 645 passed; code manually read and verified; manual checks in an isolated Compose run (ai-20261105-001).
+# Details: notification-service/ai/usage-log.md; ai-20261105-001
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-11-08
+# Scope: Boilerplate generation — give notification-service USER_SERVICE_URL, USER_SERVICE_CA_FILE, and the internal CA mount, matching credit-service (ai-20261108-001).
+# Author review: Keith confirmed on 2026-11-08: full pytest suite with PostgreSQL 16, 790 passed and 5 real-broker tests skipped; code read and verified; manual checks against the full Compose stack with the real User Service (ai-20261108-001).
+# Details: notification-service/ai/usage-log.md; ai-20261108-001
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-11-08
+# Scope: Boilerplate generation — pass SSE_HEARTBEAT_SECONDS and SSE_MAX_LIFETIME_SECONDS to notification-service, defaulting to 20 and 600 (ai-20261108-002).
+# Author review: Keith confirmed on 2026-11-09: full pytest suite (.venv/bin/python -m pytest -rs), 918 passed and 5 skipped; manual SSE checks against the local Compose stack (ai-20261108-002).
+# Details: notification-service/ai/usage-log.md; ai-20261108-002
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-11-11
+# Scope: Boilerplate generation — give frontend-service NOTIFICATION_SERVICE_URL for the notification relay (ai-20261111-001).
+# Author review: Not confirmed (pending).
+# Details: frontend-service/ai/usage-log.md; ai-20261111-001
+
+include:
+  - event-broker/compose.yaml
+
+services:
+  loki:
+    image: grafana/loki:3.7.0
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./observability/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "127.0.0.1:${LOKI_PORT:-3100}:3100"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.3.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - loki
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+    restart: unless-stopped
+
+  vector:
+    image: timberio/vector:0.61.0-debian
+    command: ["--config", "/etc/vector/vector.yaml"]
+    volumes:
+      - ${VECTOR_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
+      - ./observability/vector.yaml:/etc/vector/vector.yaml:ro
+      - vector-data:/var/lib/vector
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  user-db:
+    image: postgres:16-alpine
+    container_name: user-db
+    environment:
+      POSTGRES_DB: foc_users
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d foc_users"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  user-service:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --ssl-certfile
+      - /run/tls/user-service.crt
+      - --ssl-keyfile
+      - /run/tls/user-service.key
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?Set POSTGRES_USER in .env}@user-db:5432/foc_users
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      USER_SERVICE_INTERNAL_TOKEN: ${USER_SERVICE_INTERNAL_TOKEN:?Set USER_SERVICE_INTERNAL_TOKEN in .env}
+      APP_ENV: ${APP_ENV:-development}
+      APP_VERSION: ${APP_VERSION:-unknown}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ${USER_SERVICE_TLS_CERT_FILE:-./certs/user-service.crt}:/run/tls/user-service.crt:ro
+      - ${USER_SERVICE_TLS_KEY_FILE:-./certs/user-service.key}:/run/tls/user-service.key:ro
+      - ${INTERNAL_CA_CERT_FILE:-./certs/ca.crt}:/run/tls/ca.crt:ro
+    depends_on:
+      user-db:
+        condition: service_healthy
+      user-migrate:
+        condition: service_completed_successfully
+      user-bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import ssl, urllib.request; context = ssl.create_default_context(cafile='/run/tls/ca.crt'); urllib.request.urlopen('https://localhost:8080/ready', context=context)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    # Loopback only, so `yarn dev` on the host can reach it.
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  user-migrate:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?Set POSTGRES_USER in .env}@user-db:5432/foc_users
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      APP_VERSION: ${APP_VERSION:-unknown}
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      user-db:
+        condition: service_healthy
+    restart: "no"
+
+  user-bootstrap:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    command: ["python", "-m", "scripts.bootstrap_admin"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?Set POSTGRES_USER in .env}@user-db:5432/foc_users
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      BOOTSTRAP_ADMIN_NUS_STUDENT_NUMBER: ${BOOTSTRAP_ADMIN_NUS_STUDENT_NUMBER:-}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_DISPLAY_NAME: ${BOOTSTRAP_ADMIN_DISPLAY_NAME:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      APP_ENV: ${APP_ENV:-development}
+      APP_VERSION: ${APP_VERSION:-unknown}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      user-db:
+        condition: service_healthy
+      user-migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  frontend-service:
+    build:
+      context: ./frontend-service
+      args:
+        NEXT_PUBLIC_SUPPLIER_IMAGE_BASE_URL: ${NEXT_PUBLIC_SUPPLIER_IMAGE_BASE_URL:-http://localhost:8090}
+    environment:
+      USER_SERVICE_URL: https://user-service:8080
+      # Node trusts only public CAs; add the internal CA for User Service.
+      NODE_EXTRA_CA_CERTS: /run/tls/ca.crt
+      # Compose serves plain http, where browsers may drop a Secure cookie.
+      COOKIE_SECURE: "false"
+      # Not in depends_on: supplier pages show an error until it is reachable.
+      SUPPLIER_SERVICE_URL: http://supplier-service:8080
+      ORDER_SERVICE_URL: http://order-service:8080
+      CREDIT_SERVICE_URL: http://credit-service:8080
+      # Not in depends_on: notifications show as unavailable until it is up.
+      NOTIFICATION_SERVICE_URL: http://notification-service:8080
+      # Must match Credit Service so the request form caps a new user's offer.
+      INITIAL_CREDIT_ALLOCATION: ${INITIAL_CREDIT_ALLOCATION:-100}
+    volumes:
+      - ${INTERNAL_CA_CERT_FILE:-./certs/ca.crt}:/run/tls/ca.crt:ro
+    depends_on:
+      user-service:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
+  supplier-images:
+    image: nginx:stable-alpine
+    ports:
+      - "${SUPPLIER_IMAGE_PORT:-8090}:80"
+    volumes:
+      - ./data/images:/usr/share/nginx/html:ro
+      - ./data/nginx/supplier-images.conf:/etc/nginx/conf.d/default.conf:ro
+
+  supplier-service:
+    image: foc-supplier-service:local
+    build:
+      context: .
+      dockerfile: supplier-service/Dockerfile
+    environment:
+      DATABASE_URL: "postgresql+psycopg://supplier_runtime:${SUPPLIER_RUNTIME_PASSWORD:?Set runtime database password}@supplier-db:5432/${SUPPLIER_POSTGRES_DB:?Set database name}"
+      APP_ENV: ${APP_ENV:-development}
+      USER_SERVICE_URL: https://user-service:8080
+      AUTH_TIMEOUT_SECONDS: ${AUTH_TIMEOUT_SECONDS:-3}
+      APP_VERSION: ${APP_VERSION:-unknown}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+      supplier-migrate:
+        condition: service_completed_successfully
+      supplier-grants:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - supplier-private
+    ports:
+      - "127.0.0.1:8081:8080"
+
+  supplier-bootstrap:
+    image: postgres:16-alpine
+    entrypoint: ["psql"]
+    command: ["--no-password", "--set=ON_ERROR_STOP=1", "--file=/bootstrap.sql"]
+    restart: "no"
+    environment:
+      PGHOST: supplier-db
+      PGDATABASE: ${SUPPLIER_POSTGRES_DB:?Set database name}
+      PGUSER: ${SUPPLIER_POSTGRES_USER:?Set database user}
+      PGPASSWORD: ${SUPPLIER_POSTGRES_PASSWORD:?Set database password}
+      SUPPLIER_MIGRATION_PASSWORD: ${SUPPLIER_MIGRATION_PASSWORD:?Set migration database password}
+      SUPPLIER_RUNTIME_PASSWORD: ${SUPPLIER_RUNTIME_PASSWORD:?Set runtime database password}
+    volumes:
+      - ./supplier-service/database/bootstrap.sql:/bootstrap.sql:ro
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+    networks:
+      - supplier-private
+    healthcheck:
+      disable: true
+
+  supplier-migrate:
+    image: foc-supplier-service:local
+    build:
+      context: .
+      dockerfile: supplier-service/Dockerfile
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    restart: "no"
+    environment:
+      DATABASE_URL: "postgresql+psycopg://supplier_migrator:${SUPPLIER_MIGRATION_PASSWORD:?Set migration database password}@supplier-db:5432/${SUPPLIER_POSTGRES_DB:?Set database name}"
+      APP_VERSION: ${APP_VERSION:-unknown}
+      APP_ENV: ${APP_ENV:-development}
+      USER_SERVICE_URL: https://user-service:8080
+      AUTH_TIMEOUT_SECONDS: ${AUTH_TIMEOUT_SECONDS:-3}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+      supplier-bootstrap:
+        condition: service_completed_successfully
+    networks:
+      - supplier-private
+    healthcheck:
+      disable: true
+
+  supplier-grants:
+    image: postgres:16-alpine
+    entrypoint: ["psql"]
+    command: ["--no-password", "--set=ON_ERROR_STOP=1", "--file=/runtime-grants.sql"]
+    restart: "no"
+    environment:
+      PGHOST: supplier-db
+      PGDATABASE: ${SUPPLIER_POSTGRES_DB:?Set database name}
+      PGUSER: supplier_migrator
+      PGPASSWORD: ${SUPPLIER_MIGRATION_PASSWORD:?Set migration database password}
+    volumes:
+      - ./supplier-service/database/runtime-grants.sql:/runtime-grants.sql:ro
+    depends_on:
+      supplier-migrate:
+        condition: service_completed_successfully
+    networks:
+      - supplier-private
+    healthcheck:
+      disable: true
+
+  supplier-seed:
+    profiles: [tools]
+    image: foc-supplier-service:local
+    build:
+      context: .
+      dockerfile: supplier-service/Dockerfile
+    entrypoint: ["python", "-m", "app.commands.seed_suppliers", "--file", "/seed/supplier-seed-data.csv"]
+    command: []
+    restart: "no"
+    environment:
+      DATABASE_URL: "postgresql+psycopg://supplier_runtime:${SUPPLIER_RUNTIME_PASSWORD:?Set runtime database password}@supplier-db:5432/${SUPPLIER_POSTGRES_DB:?Set database name}"
+      APP_ENV: ${APP_ENV:-development}
+      USER_SERVICE_URL: https://user-service:8080
+      AUTH_TIMEOUT_SECONDS: ${AUTH_TIMEOUT_SECONDS:-3}
+      APP_VERSION: ${APP_VERSION:-unknown}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data/csv/supplier-seed-data.csv:/seed/supplier-seed-data.csv:ro
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+      supplier-migrate:
+        condition: service_completed_successfully
+      supplier-grants:
+        condition: service_completed_successfully
+    networks:
+      - supplier-private
+    healthcheck:
+      disable: true
+
+  supplier-seed-nus:
+    extends:
+      service: supplier-seed
+    entrypoint: ["python", "-m", "app.commands.seed_suppliers", "--file", "/seed/nus/bundle/suppliers.csv", "--manifest", "/seed/nus/bundle/manifest.json", "--area-mapping", "/seed/nus/bundle/area_mapping.json"]
+    volumes:
+      - ./data/seeds/nus:/seed/nus:ro
+
+  supplier-db:
+    build:
+      context: ./supplier-service/database
+    environment:
+      POSTGRES_DB: ${SUPPLIER_POSTGRES_DB:?Set database name}
+      POSTGRES_USER: ${SUPPLIER_POSTGRES_USER:?Set database user}
+      POSTGRES_PASSWORD: ${SUPPLIER_POSTGRES_PASSWORD:?Set database password}
+    volumes:
+      - supplier-db-data:/var/lib/postgresql/data
+    networks:
+      - supplier-private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  credit-db:
+    image: postgres:16-alpine
+    container_name: credit-db
+    environment:
+      POSTGRES_DB: foc_credits
+      POSTGRES_USER: ${CREDIT_DB_USER:?Set CREDIT_DB_USER in .env}
+      POSTGRES_PASSWORD: ${CREDIT_DB_PASSWORD:?Set CREDIT_DB_PASSWORD in .env}
+    volumes:
+      - credit-db-data:/var/lib/postgresql/data
+    networks:
+      - credit-private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d foc_credits"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  credit-migrate:
+    image: foc-credit-service:local
+    build:
+      context: .
+      dockerfile: credit-service/Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql+psycopg://${CREDIT_DB_USER:?Set CREDIT_DB_USER in .env}@credit-db:5432/foc_credits
+      PGPASSWORD: ${CREDIT_DB_PASSWORD:?Set CREDIT_DB_PASSWORD in .env}
+      APP_VERSION: ${APP_VERSION:-unknown}
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      credit-db:
+        condition: service_healthy
+    networks:
+      - credit-private
+    healthcheck:
+      disable: true
+
+  credit-service:
+    image: foc-credit-service:local
+    build:
+      context: .
+      dockerfile: credit-service/Dockerfile
+    container_name: credit-service
+    environment:
+      DATABASE_URL: postgresql+psycopg://${CREDIT_DB_USER:?Set CREDIT_DB_USER in .env}@credit-db:5432/foc_credits
+      PGPASSWORD: ${CREDIT_DB_PASSWORD:?Set CREDIT_DB_PASSWORD in .env}
+      USER_SERVICE_URL: https://user-service:8080
+      USER_SERVICE_CA_FILE: /run/tls/ca.crt
+      APP_ENV: ${APP_ENV:-development}
+      APP_VERSION: ${APP_VERSION:-unknown}
+      INITIAL_CREDIT_ALLOCATION: ${INITIAL_CREDIT_ALLOCATION:-100}
+      CREDIT_RETRY_BACKOFF_SECONDS: ${CREDIT_RETRY_BACKOFF_SECONDS:-0.5,1,2,4}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      credit-db:
+        condition: service_healthy
+      credit-migrate:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - credit-private
+    volumes:
+      - ${INTERNAL_CA_CERT_FILE:-./certs/ca.crt}:/run/tls/ca.crt:ro
+    ports:
+      - "127.0.0.1:8083:8080"
+
+  credit-order-worker:
+    image: foc-credit-service:local
+    build:
+      context: .
+      dockerfile: credit-service/Dockerfile
+    container_name: credit-order-worker
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${CREDIT_DB_USER:?Set CREDIT_DB_USER in .env}@credit-db:5432/foc_credits
+      PGPASSWORD: ${CREDIT_DB_PASSWORD:?Set CREDIT_DB_PASSWORD in .env}
+      USER_SERVICE_URL: https://user-service:8080
+      USER_SERVICE_CA_FILE: /run/tls/ca.crt
+      APP_ENV: ${APP_ENV:-development}
+      APP_VERSION: ${APP_VERSION:-unknown}
+      INITIAL_CREDIT_ALLOCATION: ${INITIAL_CREDIT_ALLOCATION:-100}
+      CREDIT_RETRY_BACKOFF_SECONDS: ${CREDIT_RETRY_BACKOFF_SECONDS:-0.5,1,2,4}
+      CREDIT_EVENT_STREAM: order
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      credit-db:
+        condition: service_healthy
+      credit-migrate:
+        condition: service_completed_successfully
+      kafka-topics:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - credit-private
+    volumes:
+      - ${INTERNAL_CA_CERT_FILE:-./certs/ca.crt}:/run/tls/ca.crt:ro
+    healthcheck:
+      disable: true
+
+  order-db:
+    image: postgres:16-alpine
+    container_name: order-db
+    environment:
+      POSTGRES_DB: foc_orders
+      POSTGRES_USER: ${ORDER_DB_USER:?Set ORDER_DB_USER in .env}
+      POSTGRES_PASSWORD: ${ORDER_DB_PASSWORD:?Set ORDER_DB_PASSWORD in .env}
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+    networks:
+      - order-private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d foc_orders"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  order-migrate:
+    image: foc-order-service:local
+    build:
+      context: .
+      dockerfile: order-service/Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql+psycopg://${ORDER_DB_USER:?Set ORDER_DB_USER in .env}@order-db:5432/foc_orders
+      PGPASSWORD: ${ORDER_DB_PASSWORD:?Set ORDER_DB_PASSWORD in .env}
+      APP_VERSION: ${APP_VERSION:-unknown}
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      order-db:
+        condition: service_healthy
+    networks:
+      - order-private
+    healthcheck:
+      disable: true
+
+  order-service:
+    image: foc-order-service:local
+    build:
+      context: .
+      dockerfile: order-service/Dockerfile
+    container_name: order-service
+    environment:
+      DATABASE_URL: postgresql+psycopg://${ORDER_DB_USER:?Set ORDER_DB_USER in .env}@order-db:5432/foc_orders
+      PGPASSWORD: ${ORDER_DB_PASSWORD:?Set ORDER_DB_PASSWORD in .env}
+      USER_SERVICE_URL: https://user-service:8080
+      USER_SERVICE_CA_FILE: /run/tls/ca.crt
+      SUPPLIER_SERVICE_URL: http://supplier-service:8080
+      APP_ENV: ${APP_ENV:-development}
+      APP_VERSION: ${APP_VERSION:-unknown}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      order-db:
+        condition: service_healthy
+      order-migrate:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - order-private
+    volumes:
+      - ${INTERNAL_CA_CERT_FILE:-./certs/ca.crt}:/run/tls/ca.crt:ro
+    ports:
+      - "127.0.0.1:8082:8080"
+
+  order-worker:
+    image: foc-order-service:local
+    build:
+      context: .
+      dockerfile: order-service/Dockerfile
+    container_name: order-worker
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${ORDER_DB_USER:?Set ORDER_DB_USER in .env}@order-db:5432/foc_orders
+      PGPASSWORD: ${ORDER_DB_PASSWORD:?Set ORDER_DB_PASSWORD in .env}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      APP_ENV: ${APP_ENV:-development}
+      APP_VERSION: ${APP_VERSION:-unknown}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      order-db:
+        condition: service_healthy
+      order-migrate:
+        condition: service_completed_successfully
+      kafka-topics:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - order-private
+    healthcheck:
+      disable: true
+
+  notification-db:
+    image: postgres:16-alpine
+    container_name: notification-db
+    environment:
+      POSTGRES_DB: foc_notifications
+      POSTGRES_USER: ${NOTIFICATION_DB_USER:?Set NOTIFICATION_DB_USER in .env}
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?Set NOTIFICATION_DB_PASSWORD in .env}
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+    networks:
+      - notification-private
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d foc_notifications"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  notification-migrate:
+    image: foc-notification-service:local
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql+psycopg://${NOTIFICATION_DB_USER:?Set NOTIFICATION_DB_USER in .env}@notification-db:5432/foc_notifications
+      PGPASSWORD: ${NOTIFICATION_DB_PASSWORD:?Set NOTIFICATION_DB_PASSWORD in .env}
+      APP_VERSION: ${APP_VERSION:-unknown}
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      notification-db:
+        condition: service_healthy
+    networks:
+      - notification-private
+    healthcheck:
+      disable: true
+
+  notification-service:
+    image: foc-notification-service:local
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    container_name: notification-service
+    environment:
+      DATABASE_URL: postgresql+psycopg://${NOTIFICATION_DB_USER:?Set NOTIFICATION_DB_USER in .env}@notification-db:5432/foc_notifications
+      PGPASSWORD: ${NOTIFICATION_DB_PASSWORD:?Set NOTIFICATION_DB_PASSWORD in .env}
+      USER_SERVICE_URL: https://user-service:8080
+      USER_SERVICE_CA_FILE: /run/tls/ca.crt
+      SSE_HEARTBEAT_SECONDS: ${SSE_HEARTBEAT_SECONDS:-20}
+      SSE_MAX_LIFETIME_SECONDS: ${SSE_MAX_LIFETIME_SECONDS:-600}
+      APP_VERSION: ${APP_VERSION:-unknown}
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      notification-migrate:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - notification-private
+    volumes:
+      - ${INTERNAL_CA_CERT_FILE:-./certs/ca.crt}:/run/tls/ca.crt:ro
+    ports:
+      - "127.0.0.1:8084:8080"
+
+  notification-worker:
+    image: foc-notification-service:local
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    container_name: notification-worker
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${NOTIFICATION_DB_USER:?Set NOTIFICATION_DB_USER in .env}@notification-db:5432/foc_notifications
+      PGPASSWORD: ${NOTIFICATION_DB_PASSWORD:?Set NOTIFICATION_DB_PASSWORD in .env}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      NOTIFICATIONS_START_AT: ${NOTIFICATIONS_START_AT:?Set NOTIFICATIONS_START_AT in .env}
+      # "-", not ":-": an empty value is valid and means no retries.
+      NOTIFICATION_RETRY_BACKOFF_SECONDS: ${NOTIFICATION_RETRY_BACKOFF_SECONDS-0.5,1,2,4}
+      APP_VERSION: ${APP_VERSION:-unknown}
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      notification-migrate:
+        condition: service_completed_successfully
+      kafka-topics:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - notification-private
+    healthcheck:
+      disable: true
+
+networks:
+  default: {}
+  supplier-private:
+    internal: true
+  credit-private:
+    internal: true
+  order-private:
+    internal: true
+  notification-private:
+    internal: true
+
+volumes:
+  supplier-db-data:
+  user-db-data:
+  credit-db-data:
+  order-db-data:
+  vector-data:
+  loki-data:
+  grafana-data:
+  notification-db-data:

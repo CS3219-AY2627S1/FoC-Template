@@ -1,0 +1,33 @@
+# Local Python environments
+.venv/
+venv/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+
+# Environment files and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Tests and development dependencies
+tests/
+requirements-dev.txt
+
+# Local planning and documentation
+docs/
+reference/
+PLAN.md
+REFERENCE.md
+README.md
+
+# Repository and operating-system metadata
+.git/
+.DS_Store

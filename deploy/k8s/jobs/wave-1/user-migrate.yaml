@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: user-migrate
+  labels:
+    app: user-migrate
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: user-migrate
+        foc.io/db: user
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: foc-user-service:local
+          imagePullPolicy: Never
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: postgresql+psycopg://$(POSTGRES_USER)@user-db:5432/foc_users

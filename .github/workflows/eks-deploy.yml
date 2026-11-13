@@ -1,0 +1,87 @@
+name: FoC deploy existing ECR release to EKS
+
+# Deliberate, gated deployment; no automatic changes to the running cluster on push.
+# workflow_dispatch must be present on the default branch to appear as a manual Action.
+on:
+  push:
+    branches: [feat/cloud-deployment]
+    paths:
+      - 'deploy/k8s/eks/cd-test-trigger.txt'
+
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Tag already available in all six FoC ECR repositories'
+        required: true
+        default: '9a6415d'
+        type: string
+      rerun_jobs:
+        description: 'Rerun initialization/migration Jobs (requires database review)'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: foc-eks-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: foc-deploy
+    timeout-minutes: 90
+    env:
+      AWS_ACCOUNT_ID: '816435462502'
+      AWS_REGION: ap-southeast-1
+      EKS_CLUSTER_NAME: foc-eks
+      NAMESPACE: foc
+      IMAGE_TAG: ${{ inputs.image_tag || 'release-20261110-01' }}
+      FRONTEND_COOKIE_SECURE: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require deployment role
+        env:
+          DEPLOY_ROLE: ${{ vars.FOC_EKS_ROLE_ARN }}
+        run: |
+          [[ -n "$DEPLOY_ROLE" ]] || { echo 'Set GitHub Actions variable FOC_EKS_ROLE_ARN'; exit 1; }
+          [[ "$IMAGE_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$ ]] || { echo 'Invalid image tag'; exit 1; }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.FOC_EKS_ROLE_ARN }}
+          aws-region: ap-southeast-1
+          role-session-name: foc-eks-${{ github.run_id }}
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.31.0'
+      - name: Prepare kubeconfig
+        run: |
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
+          kubectl config current-context
+          kubectl get namespace foc
+      - name: Check that required Secrets already exist
+        run: |
+          for secret in foc-env foc-tls; do
+            kubectl -n foc get secret "$secret" >/dev/null || {
+              echo "Missing Kubernetes Secret $secret. Install it once with your approved secret source before deployment." >&2
+              exit 1
+            }
+          done
+      - name: Validate full EKS deployment prerequisites
+        run: bash scripts/eks-deploy.sh --validate
+      - name: Deploy release to existing cluster
+        env:
+          RERUN_JOBS: ${{ inputs.rerun_jobs || 'false' }}
+        run: |
+          args=()
+          if [[ "$RERUN_JOBS" == true ]]; then args+=(--rerun-jobs); fi
+          bash scripts/eks-deploy.sh "${args[@]}"
+      - name: Record final workload status
+        if: always()
+        run: |
+          kubectl -n foc get pods,jobs,services,pvc -o wide || true
+          kubectl -n foc get events --sort-by=.lastTimestamp | tail -n 45 || true

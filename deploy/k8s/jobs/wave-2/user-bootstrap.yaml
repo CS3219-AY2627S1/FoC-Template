@@ -1,0 +1,59 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: user-bootstrap
+  labels:
+    app: user-bootstrap
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: user-bootstrap
+        foc.io/db: user
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: bootstrap
+          image: foc-user-service:local
+          imagePullPolicy: Never
+          command: ["python", "-m", "scripts.bootstrap_admin"]
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: postgresql+psycopg://$(POSTGRES_USER)@user-db:5432/foc_users
+            - name: LOG_LEVEL
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: LOG_LEVEL
+            - name: BOOTSTRAP_ADMIN_NUS_STUDENT_NUMBER
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: BOOTSTRAP_ADMIN_NUS_STUDENT_NUMBER
+            - name: BOOTSTRAP_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: BOOTSTRAP_ADMIN_EMAIL
+            - name: BOOTSTRAP_ADMIN_DISPLAY_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: BOOTSTRAP_ADMIN_DISPLAY_NAME
+            - name: BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: BOOTSTRAP_ADMIN_PASSWORD

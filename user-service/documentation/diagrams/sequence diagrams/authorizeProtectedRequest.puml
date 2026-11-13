@@ -1,0 +1,43 @@
+@startuml
+title User Service - Authorize a Protected Request
+
+autonumber
+hide footbox
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+
+actor Client
+boundary "Users Router\napp/routes/users.py" as API
+control "Authentication\napp/auth.py" as Auth
+
+Client -> API: Protected request + bearer token
+activate API
+API -> Auth: get_current_session(token)
+activate Auth
+
+note right of Auth
+  Validate the token, session lifetime,
+  and active account status. A valid request
+  refreshes only the inactivity deadline.
+end note
+
+alt Token or account is not valid
+  Auth --> API: Authentication rejected
+  API --> Client: 401 Unauthorized
+else Session is valid
+  Auth --> API: AuthContext
+  API --> Client: Protected operation response
+else Authentication service unavailable
+  Auth --> API: Authentication unavailable
+  API --> Client: 503 Service Unavailable
+end
+
+deactivate Auth
+deactivate API
+
+note over Client,Auth
+  Refreshing activity never extends the
+  session's 24-hour absolute lifetime.
+end note
+
+@enduml

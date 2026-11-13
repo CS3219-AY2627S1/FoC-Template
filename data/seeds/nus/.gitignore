@@ -1,0 +1,5 @@
+# Local snapshots and generated review artifacts. Commit curated exports deliberately.
+raw/
+report.html
+validation.json
+.bundle-next

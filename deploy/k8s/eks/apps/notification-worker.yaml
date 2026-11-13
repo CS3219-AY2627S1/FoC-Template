@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-worker
+  labels:
+    app: notification-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification-worker
+  template:
+    metadata:
+      labels:
+        app: notification-worker
+        foc.io/db: notification
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: notification-worker
+          image: foc-notification-service:local
+          imagePullPolicy: Never
+          command: ["python", "-m", "app.worker"]
+          env:
+            - name: NOTIFICATION_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: NOTIFICATION_DB_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: NOTIFICATION_DB_PASSWORD
+            - name: DATABASE_URL
+              value: postgresql+psycopg://$(NOTIFICATION_DB_USER)@notification-db:5432/foc_notifications
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+            - name: NOTIFICATIONS_START_AT
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: NOTIFICATIONS_START_AT
+            - name: NOTIFICATION_RETRY_BACKOFF_SECONDS
+              value: "0.5,1,2,4"
+            - name: LOG_LEVEL
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: LOG_LEVEL
+            - name: PYTHONUNBUFFERED
+              value: "1"

@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: order-migrate
+  labels:
+    app: order-migrate
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: order-migrate
+        foc.io/db: order
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: foc-order-service:local
+          imagePullPolicy: Never
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: ORDER_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: ORDER_DB_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: ORDER_DB_PASSWORD
+            - name: DATABASE_URL
+              value: postgresql+psycopg://$(ORDER_DB_USER)@order-db:5432/foc_orders

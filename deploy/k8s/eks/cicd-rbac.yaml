@@ -1,0 +1,33 @@
+# ONE-TIME admin-applied RBAC for the EKS OIDC deployment role.
+# The IAM role must also have a STANDARD EKS access entry with
+# kubernetesGroups=[foc-cd] and an AmazonEKSAdminPolicy association scoped
+# to the EXISTING foc namespace. Apply as the existing SSO administrator,
+# never from an untrusted pull request.
+# Cluster-scoped permissions required by scripts/eks-deploy.sh are limited
+# to its namespace reconciliation and StorageClass preflight.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: foc-cd-cluster-read-and-namespace-patch
+rules:
+  - apiGroups: ['']
+    resources: ['namespaces']
+    resourceNames: ['foc']
+    verbs: ['get', 'patch']
+  - apiGroups: ['storage.k8s.io']
+    resources: ['storageclasses']
+    resourceNames: ['foc-gp3']
+    verbs: ['get']
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: foc-cd-cluster-read-and-namespace-patch
+roleRef:
+  kind: ClusterRole
+  name: foc-cd-cluster-read-and-namespace-patch
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+  - kind: Group
+    name: foc-cd
+    apiGroup: rbac.authorization.k8s.io

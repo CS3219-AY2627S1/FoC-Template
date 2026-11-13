@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topics
+  labels:
+    app: kafka-topics
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: kafka-topics
+    spec:
+      restartPolicy: Never
+      enableServiceLinks: false
+      containers:
+        - name: topics
+          image: apache/kafka:4.1.2
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "/create-topics.sh"]
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+          volumeMounts:
+            - name: script
+              mountPath: /create-topics.sh
+              subPath: create-topics.sh
+              readOnly: true
+      volumes:
+        - name: script
+          configMap:
+            name: foc-kafka-topics

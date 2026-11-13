@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  ONE-TIME administrator-approved GitHub Actions OIDC roles and namespace-scoped
+  EKS access for the existing FoC infrastructure. Does not create a cluster.
+
+Parameters:
+  ClusterName:
+    Type: String
+    Default: foc-eks
+  GitHubRepository:
+    Type: String
+    Default: AY2627S1-CS3219-P8/FoC
+  Namespace:
+    Type: String
+    Default: foc
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+
+  EcrPublishRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: FoCGitHubEcrPublisher
+      Description: FoC image publisher, GitHub protected foc-publish environment
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: 'repo:AY2627S1-CS3219-P8@324816053/FoC@1356845993:environment:foc-publish'
+      Policies:
+        - PolicyName: FoCEcrPush
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: GetRegistryLoginToken
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Sid: PushImagesToFoCRepositories
+                Effect: Allow
+                Action:
+                  - ecr:DescribeRepositories
+                  - ecr:DescribeImages
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:BatchGetImage
+                Resource: !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/foc/*'
+
+  EksDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: FoCGitHubEksDeployer
+      Description: FoC namespace deployer, GitHub protected foc-deploy environment
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: 'repo:AY2627S1-CS3219-P8@324816053/FoC@1356845993:environment:foc-deploy'
+      Policies:
+        - PolicyName: FoCReadDeploymentPrerequisites
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DescribeExistingCluster
+                Effect: Allow
+                Action:
+                  - eks:DescribeCluster
+                Resource: !Sub 'arn:${AWS::Partition}:eks:${AWS::Region}:${AWS::AccountId}:cluster/${ClusterName}'
+              - Sid: VerifyEcrImages
+                Effect: Allow
+                Action: ecr:DescribeImages
+                Resource: !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/foc/*'
+
+  EksDeployAccessEntry:
+    Type: AWS::EKS::AccessEntry
+    Properties:
+      ClusterName: !Ref ClusterName
+      PrincipalArn: !GetAtt EksDeployRole.Arn
+      Type: STANDARD
+      KubernetesGroups:
+        - foc-cd
+      AccessPolicies:
+        - PolicyArn: arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminPolicy
+          AccessScope:
+            Type: namespace
+            Namespaces:
+              - !Ref Namespace
+
+Outputs:
+  EcrPublisherRoleArn:
+    Description: GitHub Actions variable FOC_ECR_ROLE_ARN
+    Value: !GetAtt EcrPublishRole.Arn
+  EksDeployerRoleArn:
+    Description: GitHub Actions variable FOC_EKS_ROLE_ARN
+    Value: !GetAtt EksDeployRole.Arn
+  GithubOidcProviderArn:
+    Value: !Ref GitHubOidcProvider

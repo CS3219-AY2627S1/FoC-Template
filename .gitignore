@@ -3,13 +3,28 @@ dist/
 build/
 out/
 
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
 # Environment / secrets
 .env
 .env.local
 .env.*.local
 *.pem
 *.key
+/certs/
+/deploy/k8s/eks/secrets.env
+/deploy/k8s/eks/tls/
+.venv/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Frontend Service
+node_modules/
+.next/
+*.tsbuildinfo
+next-env.d.ts

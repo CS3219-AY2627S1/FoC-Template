@@ -1,0 +1,115 @@
+data_dir: /var/lib/vector
+
+sources:
+  backend_docker:
+    type: docker_logs
+    docker_host: /var/run/docker.sock
+    auto_partial_merge: true
+
+  vector_internal:
+    type: internal_logs
+
+transforms:
+  select_backend:
+    type: filter
+    inputs:
+      - backend_docker
+    condition: |
+      .label."com.docker.compose.service" == "user-service" ||
+      .label."com.docker.compose.service" == "user-migrate" ||
+      .label."com.docker.compose.service" == "user-bootstrap" ||
+      .label."com.docker.compose.service" == "supplier-service" ||
+      .label."com.docker.compose.service" == "supplier-migrate" ||
+      .label."com.docker.compose.service" == "supplier-seed" ||
+      .label."com.docker.compose.service" == "credit-service" ||
+      .label."com.docker.compose.service" == "credit-migrate" ||
+      .label."com.docker.compose.service" == "credit-order-worker" ||
+      .label."com.docker.compose.service" == "order-service" ||
+      .label."com.docker.compose.service" == "order-migrate" ||
+      .label."com.docker.compose.service" == "order-worker" ||
+      .label."com.docker.compose.service" == "notification-service" ||
+      .label."com.docker.compose.service" == "notification-migrate" ||
+      .label."com.docker.compose.service" == "notification-worker"
+
+  normalize_backend_logs:
+    type: remap
+    inputs:
+      - select_backend
+    source: |
+      parsed, parse_error = parse_json(.message)
+      if parse_error == null && is_object(parsed) {
+        . = merge!(., parsed)
+        del(.message)
+      } else {
+        .structured_log_parse_error = true
+      }
+
+      .compose_service = .label."com.docker.compose.service"
+      del(.label)
+      if !is_string(.level) {
+        .level = "UNKNOWN"
+      }
+      if !is_string(.component) {
+        .component = "unknown"
+      }
+      if !is_string(.environment) {
+        .environment = "unknown"
+      }
+      .collector = "vector"
+      .source_type = "docker"
+
+  normalize_collector_logs:
+    type: remap
+    inputs:
+      - vector_internal
+    source: |
+      .service = "vector"
+      .component = "collector"
+      .environment = "unknown"
+      .collector = "vector"
+      .source_type = "vector_internal"
+      if !is_string(.level) {
+        if is_object(.metadata) && is_string(.metadata.level) {
+          .level = .metadata.level
+        } else {
+          .level = "UNKNOWN"
+        }
+      }
+
+sinks:
+  backend_loki:
+    type: loki
+    inputs:
+      - normalize_backend_logs
+    endpoint: http://loki:3100
+    path: /loki/api/v1/push
+    encoding:
+      codec: json
+    labels:
+      source: foc-backend
+      service: "{{ compose_service }}"
+      component: "{{ component }}"
+      environment: "{{ environment }}"
+      level: "{{ level }}"
+    buffer:
+      type: disk
+      max_size: 1073741824
+      when_full: block
+
+  collector_loki:
+    type: loki
+    inputs:
+      - normalize_collector_logs
+    endpoint: http://loki:3100
+    path: /loki/api/v1/push
+    encoding:
+      codec: json
+    labels:
+      source: foc-collector
+      service: vector
+      component: collector
+      environment: unknown
+    buffer:
+      type: disk
+      max_size: 536870912
+      when_full: block

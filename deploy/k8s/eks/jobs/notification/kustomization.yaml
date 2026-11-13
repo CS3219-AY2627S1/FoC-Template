@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: foc
+resources:
+  - notification-migrate.yaml
+images:
+  - name: foc-notification-service
+    newName: 816435462502.dkr.ecr.ap-southeast-1.amazonaws.com/foc/notification-service
+    newTag: 9a6415d
+patches:
+  - target:
+      kind: Job
+      name: notification-migrate
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent

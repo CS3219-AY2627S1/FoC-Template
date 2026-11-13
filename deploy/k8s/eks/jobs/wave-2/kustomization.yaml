@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: foc
+resources:
+  - ../../../jobs/wave-2
+images:
+  - name: foc-user-service
+    newName: 816435462502.dkr.ecr.ap-southeast-1.amazonaws.com/foc/user-service
+    newTag: 9a6415d
+  - name: foc-supplier-service
+    newName: 816435462502.dkr.ecr.ap-southeast-1.amazonaws.com/foc/supplier-service
+    newTag: 9a6415d
+patches:
+  - target:
+      kind: Job
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent

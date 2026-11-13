@@ -1,0 +1,67 @@
+@startuml
+title Supplier Service - Migration-Gated Deployment
+
+autonumber
+hide footbox
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+
+actor Operator
+control "Docker Compose" as Compose
+database "Supplier Database\nsupplier-db" as Database
+control "Migration Job\nsupplier-migrate" as Migration
+control "Supplier API\nsupplier-service" as API
+
+Operator -> Compose: Start supplier deployment
+activate Compose
+Compose -> Database: Start database container
+activate Database
+
+alt Database does not become healthy
+  Database --> Compose: Health check fails
+  Compose --> Operator: Deployment blocked
+else Database becomes healthy
+  Database --> Compose: Healthy
+  Compose -> Migration: Run alembic upgrade head
+  activate Migration
+  Migration -> Database: Apply pending revisions
+
+  alt Migration fails
+    Database --> Migration: Migration error
+    Migration --> Compose: Nonzero exit
+    deactivate Migration
+    Compose --> Operator: API startup blocked
+  else Migration succeeds
+    Database --> Migration: Schema at packaged head
+    Migration --> Compose: Exit 0
+    deactivate Migration
+    Compose -> API: Start API container
+    activate API
+
+    loop Container health checks
+      Compose -> API: GET /ready
+      API -> Database: Check connectivity and revision heads
+      alt Database and schema are ready
+        Database --> API: Matching migration heads
+        API --> Compose: 200 OK + ready
+      else Database, grants, or schema are not ready
+        Database --> API: Readiness check fails
+        API --> Compose: 503 Service Unavailable + not_ready
+      end
+    end
+
+    deactivate API
+    Compose --> Operator: Deployment state reported
+  end
+end
+
+deactivate Database
+deactivate Compose
+
+note over Operator,API
+  A previously completed migration job does not
+  migrate a newly built image automatically; run
+  the migration job explicitly on each deployment.
+end note
+
+@enduml

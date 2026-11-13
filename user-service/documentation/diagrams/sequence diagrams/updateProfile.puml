@@ -1,0 +1,57 @@
+@startuml
+title User Service - Update Profile
+
+autonumber
+hide footbox
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+
+actor Client
+boundary "Users Router\napp/routes/users.py" as API
+control "Authentication\napp/auth.py" as Auth
+control "User Operations\napp/services/users.py" as Users
+
+Client -> API: PATCH or PUT user profile\nMutable fields + bearer token
+activate API
+
+alt Invalid fields or protected fields supplied
+  API --> Client: 422 Validation error
+else Valid update request
+  ref over API, Auth
+    Authenticate request
+    See authorizeProtectedRequest.puml
+  end ref
+
+  alt Authentication fails or account is no longer active
+    API --> Client: 401 Unauthorized
+  else Request targets another user's profile
+    API --> Client: 403 Forbidden
+  else Request is authorized
+    API -> Users: update_user_profile(user, changes)
+    activate Users
+
+    opt Password changed
+      Users -> Auth: revoke_user_sessions(user id)
+      activate Auth
+      Auth --> Users: Sessions revoked
+      deactivate Auth
+    end
+
+    alt Email conflicts with another account
+      Users --> API: Update rejected
+      API --> Client: 409 Unable to update profile
+    else Update succeeds
+      Users --> API: Updated user
+      API --> Client: 200 OK + updated profile
+    else Service unavailable
+      Users --> API: Operation unavailable
+      API --> Client: 503 Service Unavailable
+    end
+    deactivate Users
+  else Authentication service unavailable
+    API --> Client: 503 Service Unavailable
+  end
+end
+
+deactivate API
+@enduml

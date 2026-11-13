@@ -1,0 +1,37 @@
+@startuml
+title User Service - Background Session Cleanup
+
+autonumber
+hide footbox
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+
+control "Application Lifespan\napp/main.py" as App
+control "Authentication\napp/auth.py" as Auth
+
+App -> Auth: cleanup_sessions() at service startup
+activate Auth
+Auth --> App: Number of unusable sessions removed
+deactivate Auth
+
+loop Once per hour
+  App -> Auth: cleanup_sessions()
+  activate Auth
+  alt Cleanup succeeds
+    Auth --> App: Number of sessions removed
+  else Cleanup fails
+    Auth --> App: Cleanup error
+    note right of App
+      Record the failure and keep the
+      service running until the next pass.
+    end note
+  end
+  deactivate Auth
+end
+
+note over App,Auth
+  Authentication rejects expired or revoked sessions
+  immediately. Cleanup only removes obsolete records.
+end note
+
+@enduml

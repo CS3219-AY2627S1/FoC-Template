@@ -1,0 +1,6 @@
+interface:
+  display_name: "FoC Disclosure"
+  short_description: "Maintain FoC AI attribution and exact prompt logs"
+  default_prompt: "Use $disclosure to update AI disclosures for the current FoC task."
+policy:
+  allow_implicit_invocation: false

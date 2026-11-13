@@ -1,0 +1,20 @@
+{
+  "buildings": {
+    "Central Library": "FASS",
+    "COM2": "SoC",
+    "Terrace": "SoC",
+    "Prince George's Park": "PGP",
+    "Engineering Block E4": "Engineering",
+    "The Ridge": "SoC",
+    "Yusof Ishak House": "YIH",
+    "Frontier": "Science",
+    "Hon Sui Sen Memorial Library": "BIZ",
+    "COM3": "SoC",
+    "Engineering Block E3": "Engineering",
+    "innovation4.0": "BIZ",
+    "Medicine+Science Library": "Science",
+    "Blk AS8": "FASS",
+    "Engineering Block EA": "Engineering"
+  },
+  "seed_overrides": {}
+}

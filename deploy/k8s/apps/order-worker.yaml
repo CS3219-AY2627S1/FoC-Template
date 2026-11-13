@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-worker
+  labels:
+    app: order-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-worker
+  template:
+    metadata:
+      labels:
+        app: order-worker
+        foc.io/db: order
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: order-worker
+          image: foc-order-service:local
+          imagePullPolicy: Never
+          command: ["python", "-m", "app.worker"]
+          env:
+            - name: ORDER_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: ORDER_DB_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: ORDER_DB_PASSWORD
+            - name: DATABASE_URL
+              value: postgresql+psycopg://$(ORDER_DB_USER)@order-db:5432/foc_orders
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+            - name: LOG_LEVEL
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: LOG_LEVEL
+            - name: PYTHONUNBUFFERED
+              value: "1"

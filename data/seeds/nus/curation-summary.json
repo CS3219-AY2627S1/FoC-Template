@@ -1,0 +1,1025 @@
+{
+  "updated_at": "2026-11-10T13:59:53.374579+00:00",
+  "hours_rule": "Earliest published opening and latest published closing across saved weekday, holiday and term/vacation schedules. Ignore closed days and gaps. Treat midnight/02:00 closings as next-day times. A published 24-hour schedule makes the bound 24 hours. This is an approximation, not a claim of daily availability.",
+  "hours_source": "Saved NUS directory snapshots recorded in collection.json; new floor sources do not silently replace the saved schedules.",
+  "records": [
+    {
+      "candidate_id": "kent-ridge-073c7ab00f70ab39",
+      "Name": "A Hot Hideout",
+      "Building": "Prince George's Park",
+      "raw_hours": "Term Time & Vacation Operating Hours:\n11 am – 9.30 pm daily",
+      "StartingTime": "1100hrs",
+      "ClosingTime": "2130hrs",
+      "hours_policy": "daily"
+    },
+    {
+      "candidate_id": "kent-ridge-1cf3cb733b6199ae",
+      "Name": "Anna's x Soup Union",
+      "Building": "Central Library",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri: 8.30am — 6.00pm\nSat/Sun/PH: Closed",
+      "StartingTime": "0830hrs",
+      "ClosingTime": "1800hrs",
+      "hours_policy": "approximation",
+      "ImageURL": "https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/ANNA.jpeg"
+    },
+    {
+      "candidate_id": "kent-ridge-d6cbe3ec5752e8be",
+      "Name": "Arise and Shine",
+      "Building": "Engineering Block E4",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri, 8.00am-6.00pm\nSat, 8.30am-3.30pm\nSun/PH Closed\nVacation Operating Hours:\nMon-Fri, 8.00pm-6.00pm\nSat, 8.00am-4.00pm\nSun/PH Closed",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "1800hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-127330640f1a974e",
+      "Name": "Bakehaus / Aurea",
+      "Building": "The Ridge",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Sun/PH, 8.00am-9.00pm\n(Last order 9.00pm)",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "2100hrs",
+      "hours_policy": "daily"
+    },
+    {
+      "candidate_id": "kent-ridge-1d5c33b2235a05b7",
+      "Name": "Bistro Box",
+      "Building": "College of Design and Engineering",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri, 7.30am-8.00pm\nSat/Sun/PH closed\nVacation Operating Hours:\nMon-Fri, 8.00pm-7.00pm\nSat/Sun/PH closed",
+      "StartingTime": "0730hrs",
+      "ClosingTime": "2000hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://halalmak.com/places/asian-delights-bistro-box-nus-eehn21080012608/",
+        "reason": "Bistro Box stall address explicitly identifies Faculty of Engineering Level 1."
+      }
+    },
+    {
+      "candidate_id": "kent-ridge-13b76823cb069d8c",
+      "Name": "Burnt Cones",
+      "Building": "Medicine Block MD11",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri: 7.30am-9.30pm\nSat: 10.00am-9.30pm\n(Last order 9.30pm)",
+      "StartingTime": "0730hrs",
+      "ClosingTime": "2130hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://t.me/s/nusfoodies/533",
+        "reason": "NUS Foodies gives MD11 unit #01-40."
+      }
+    },
+    {
+      "candidate_id": "kent-ridge-c38dcf6f40bb5f11",
+      "Name": "Burnt Cones",
+      "Building": "University Hall",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri, 8.00am-7.30pm\nSat/Sun/PH, Closed",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "1930hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://sg.openrice.com/en/singapore/restaurants?chainId=10001564&chainName=Burnt+Cones+Gelato+%28All+Branches%29",
+        "reason": "University Hall branch address is #01-05."
+      }
+    },
+    {
+      "candidate_id": "kent-ridge-3de05c8eac1b1700",
+      "Name": "Cafe Delight",
+      "Building": "Ventus",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri, 8.00am-5.00pm\nSat/Sun/PH closed",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "1700hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-eb63e2b0bd66a58e",
+      "Name": "Chong Pang Tai Zhi Wei",
+      "Building": "The Deck",
+      "raw_hours": "Term Time Operating Hours:\nMon – Fri: 7.30 am-4 pm\nSat: 7.30 am-3 pm\nVacation Operating Hours:\nMon – Fri: 7.30 am-6 pm\nSat: 7.30 am-2.30 pm",
+      "StartingTime": "0730hrs",
+      "ClosingTime": "1800hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-c71a4fc600a874a8",
+      "Name": "Central Square @ YIH",
+      "Building": "Yusof Ishak House",
+      "raw_hours": "Operating Hours^:\nMon-Fri, 8.00am-8.00pm\nSat, 8.30am-2.30pm",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "2000hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-016647919b6a5a26",
+      "Name": "CHAGEE",
+      "Building": "Yusof Ishak House",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nDaily 10.30am–8.30pm",
+      "StartingTime": "1030hrs",
+      "ClosingTime": "2030hrs",
+      "hours_policy": "daily"
+    },
+    {
+      "candidate_id": "kent-ridge-dddf89336455ed31",
+      "Name": "Cool Spot",
+      "Building": "COM2",
+      "raw_hours": "Term Time Operating Hours:\nOpen Daily 7.30am-7.30pm\nVacation Operating Hours:\nOpen Daily 7.30am-6.00pm",
+      "StartingTime": "0730hrs",
+      "ClosingTime": "1930hrs",
+      "hours_policy": "approximation",
+      "ImageURL": "https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/COOL_SPOT.jpeg"
+    },
+    {
+      "candidate_id": "kent-ridge-3b6b3d1c3d0aadc0",
+      "Name": "Eureka Taste",
+      "Building": "Medicine Block MD6",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri, 7.00am-7.00pm\nSat/Sun/PH, Closed",
+      "StartingTime": "0700hrs",
+      "ClosingTime": "1900hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://www.eurekatastes.com/contact",
+        "reason": "Operator lists MD6 unit #01-03."
+      }
+    },
+    {
+      "candidate_id": "kent-ridge-d35b928b5b30d399",
+      "Name": "Fong Seng Nasi Lemak",
+      "Building": "The Deck",
+      "raw_hours": "Term Time Vacation Operating Hours:\nMon – Fri: 8 am-5 pm\nSat: 8 am-2 pm\nVacation Operating Hours:\nClosed",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "1700hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-2ada0227e674541b",
+      "Name": "Frontier",
+      "Building": "Frontier",
+      "raw_hours": "Term Time Operating Hours^:\nMon-Fri, 7.30am-4.00pm/8.00pm*\nSat, 7.30am-3.00pm\nSun/PH closed\nVacation Operating Hours^:\nMon-Fri, 7.00am to 7.00pm\nSat, 7.00am-2.00pm\n*Some stalls, during term time only\n^Stalls’ operating hours vary",
+      "StartingTime": "0700hrs",
+      "ClosingTime": "2000hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-91e6ae2520b3c521",
+      "Name": "Good Day Cafe",
+      "Building": "Medicine+Science Library",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon to Fri, 7.30am-6.30pm\nSat/Sun/PH: Closed",
+      "StartingTime": "0730hrs",
+      "ClosingTime": "1830hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-7965a1656364929c",
+      "Name": "he by He Brews",
+      "Building": "Engineering Block EA",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri, 8.00am-5.00pm\nSat/Sun/PH: Closed",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "1700hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-0c81531a12453cd4",
+      "Name": "Li Ji Coffeehouse",
+      "Building": "Frontier",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri, 7.00am-7.30pm\nSat, 7.00am-3.00pm\nSun/PH closed",
+      "StartingTime": "0700hrs",
+      "ClosingTime": "1930hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-73c6fdfbc22dcb6a",
+      "Name": "Liang Ban Kung Fu",
+      "Building": "The Deck",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon – Fri: 8.00 am- 8.00 pm\nSat/Sun/PH Closed",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "2000hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-5725189e135fd588",
+      "Name": "Makan Boleh",
+      "Building": "COM3",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon — Fri: 8.00am — 7.00pm\nSat, Sun/PH closed",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "1900hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://stampede.sg/makan-boleh/about",
+        "reason": "COM3 branch address is #01-03."
+      }
+    },
+    {
+      "candidate_id": "kent-ridge-6a98086f7682baf4",
+      "Name": "Mini Wok & Dim Sum",
+      "Building": "Yusof Ishak House",
+      "raw_hours": "Operating Hours:\nMon-Sun, 10.00am-9.00pm (last order)",
+      "StartingTime": "1000hrs",
+      "ClosingTime": "2100hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-6b6c7fb3b70b5560",
+      "Name": "Mixue",
+      "Building": "Frontier",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri, 10.00am-7.00pm\nSat/Sun/PH closed",
+      "StartingTime": "1000hrs",
+      "ClosingTime": "1900hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-a36fc01d589460d8",
+      "Name": "Nami",
+      "Building": "innovation4.0",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri, 8.00am-5.30pm\nSat/Sun/PH closed\nVacation Operating Hours:\nMon-Fri, 8.30am-5.00pm\nSat/Sun/PH closed",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "1730hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-40f35253b84f6fac",
+      "Name": "Nine Fresh",
+      "Building": "Frontier",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri, 11.00am — 6.30pm\nSat, 11.00am — 3.00pm\nSun/PH closed\nVacation Operating Hours:\nMon-Fri, 11.00am — 6.30pm\nSat, 11.00am — 3.00pm\nSun/PH closed",
+      "StartingTime": "1100hrs",
+      "ClosingTime": "1830hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-b8f0769a71b81464",
+      "Name": "Pasta Express",
+      "Building": "Frontier",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri, 9.30am-7.30pm\nSat, 9.30am-1.30pm\nSun/PH closed\nVacation Operating Hours:\nMon-Fri, 10.00am-7.30pm\nSat/Sun/PH closed",
+      "StartingTime": "0930hrs",
+      "ClosingTime": "1930hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-a943ba6a448e14b8",
+      "Name": "Potato Corner",
+      "Building": "Yusof Ishak House",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri: 11.00am–8.00pm\nSat/PH: 10.00am–8.00pm\nSun: Closed\nVacation Operating Hours:\nClosed",
+      "StartingTime": "1000hrs",
+      "ClosingTime": "2000hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://t.me/s/nusfoodies/531",
+        "reason": "NUS Foodies groups Potato Corner with YIH Level 1 outlets."
+      }
+    },
+    {
+      "candidate_id": "kent-ridge-7783f5ae0921ef7a",
+      "Name": "PGP Aircon Canteen",
+      "Building": "Prince George's Park",
+      "raw_hours": "Term Time & Vacation Operating Hours^:\nMon-Fri, 7.30am-8.00pm\nSat-Sun, 8.00am-8.00pm\n^Stalls’ operating hours vary",
+      "StartingTime": "0730hrs",
+      "ClosingTime": "2000hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "2",
+        "source_url": "https://sgpgrid.com/company-details/the-acai-truck",
+        "reason": "PGP Aircon Canteen Level 2 stated in the Acai Truck location; shared venue floor, not a separate canteen survey."
+      }
+    },
+    {
+      "candidate_id": "kent-ridge-75378a383a829aeb",
+      "Name": "QQ Rice",
+      "Building": "Science Block S16",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nweekdays 7.30 am – 7 pm\nSat 7.30 am – 2 pm\nSun/PH closed",
+      "StartingTime": "0730hrs",
+      "ClosingTime": "1900hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-d62790bcd7e1c578",
+      "Name": "Sloppy B",
+      "Building": "University Sports Centre",
+      "raw_hours": "Term Time Operating Hours:\nMon-Thur, 10.00am-10.00pm\nFri, 10.00am-8.00pm\nSat, 10.00am-2.30pm\nSun/PH closed\nVacation Operating Hours:\nMon-Fri, 10.00am-8.00pm\nSat, 10.00am-2.00pm\nSun/PH closed",
+      "StartingTime": "1000hrs",
+      "ClosingTime": "2200hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-c9a239e8fa36adeb",
+      "Name": "Smooy",
+      "Building": "COM3",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri 11.00am to 9.00pm\nSat/Sun/PH: Closed\nVacation Operating Hours: Closed",
+      "StartingTime": "1100hrs",
+      "ClosingTime": "2100hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-68d99763eb5253ac",
+      "Name": "South & East",
+      "Building": "Shaw Foundation Alumni House",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri: 11.30 am – 3.00 pm (last order 2.30 pm), 6.00 pm to 10.00 pm (last order 9.00 pm)\nSat & Sun: 6.00 pm – 10.00 pm (last order 9.00pm)",
+      "StartingTime": "1130hrs",
+      "ClosingTime": "2200hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-031bb1208c3c6074",
+      "Name": "Starbucks",
+      "Building": "Science Block S9",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri/PH eve, 7.30am to 7.00pm\nSat/Sun/PH Closed\nVacation Operating Hours:\nMon-Fri, 7.30am-5.00pm\nSat/Sun/PH Closed",
+      "StartingTime": "0730hrs",
+      "ClosingTime": "1900hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-4e9f56c021605f79",
+      "Name": "Starbucks",
+      "Building": "College of Design and Engineering",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri, 8.00am to 4.30pm\nSat/Sun/PH Closed\nVacation Operating Hours: Closed",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "1630hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "3",
+        "source_url": "https://www.starbucks.com.sg/stores",
+        "reason": "Operator explicitly says Techno Edge Level 3, unit C1-01-01. Used the physical level instead of inferring it from the unit code."
+      }
+    },
+    {
+      "candidate_id": "kent-ridge-a7b936abe2dfc143",
+      "Name": "Supersnacks",
+      "Building": "Prince George's Park",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri, 11.00am-2.00am\nSat/Sun/PH, 6.00pm-2.00am",
+      "StartingTime": "1100hrs",
+      "ClosingTime": "0200hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-2885a55c1840d843",
+      "Name": "Taiwan Ichiban",
+      "Building": "Frontier",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri, 8.30am-7.30pm\nSat, 8.30am-3.00pm\nSun/PH closed\nVacation Operating Hours:\nMon-Fri, 9.00am-7.00pm\nSat/Sun/PH, Closed\nSun/PH closed",
+      "StartingTime": "0830hrs",
+      "ClosingTime": "1930hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-746fbc85d272aae4",
+      "Name": "Techno Edge",
+      "Building": "College of Design and Engineering",
+      "raw_hours": "Term Time & Vacation Operating Hours^:\nMon-Fri, 7.00am-8.00pm*\nSat, 7.30am-2.00pm\nSun/PH, Closed\n*Some stalls, during term time only\n^Stalls’ operating hours vary",
+      "StartingTime": "0700hrs",
+      "ClosingTime": "2000hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-c8b60d25007dca3a",
+      "Name": "TempuRamen",
+      "Building": "Yusof Ishak House",
+      "raw_hours": "Term Time Operating Hours:\nDaily, 09.30am-8.30pm\nVacation Operating Hours:\nDaily, 10.00am-8.00pm",
+      "StartingTime": "0930hrs",
+      "ClosingTime": "2030hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-eb6d86679331952a",
+      "Name": "The Acai Truck",
+      "Building": "Prince George's Park",
+      "raw_hours": "Term Time and Vacation Operating Hours:\nMon to Thur, 11.00am–12.00am daily\nFri: 11.00am-7.30pm\nSat/Sun/PH, Closed",
+      "StartingTime": "1100hrs",
+      "ClosingTime": "0000hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-e13b5bdb77476fb2",
+      "Name": "The Coffee Bean and Tea Leaf",
+      "Building": "COM3",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri: 9.00am to 6.00pm\nSat/Sun/PH: Closed\nVacation Operating Hours:\nClosed",
+      "StartingTime": "0900hrs",
+      "ClosingTime": "1800hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://t.me/s/nusfoodies/531",
+        "reason": "NUS Foodies explicitly identifies Coffee Bean at COM3 Level 1."
+      }
+    },
+    {
+      "candidate_id": "kent-ridge-82c88529741105a9",
+      "Name": "The Coffee Roaster",
+      "Building": "Blk AS8",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri, 8.00am-5.30pm\nSat/Sun/PH closed\nVacation Operating Hours:\nMon-Fri, 8.30am-5.00pm\nSat/Sun/PH closed",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "1730hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-9d2c4c9aafdcb107",
+      "Name": "The Deck",
+      "Building": "Faculty of Arts & Social Sciences",
+      "raw_hours": "Term Time Operating Hours^:\nMon-Fri, 7.30am-4.00pm/8.00pm*\nSat,7.30am-3.00pm\nSun/PH closed\nVacation Operating Hours^:\nMon-Fri, 7.00am-6.00pm\n*Some stalls, during term time only\n^Stalls’ operating hours vary",
+      "StartingTime": "0700hrs",
+      "ClosingTime": "2000hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-75d2a7b0255073e1",
+      "Name": "The Spread",
+      "Building": "Mochtar Riady Building",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri, 8.00am-8.00pm\nSat, 8.00am-3.00pm\nSun/PH closed\nVacation Operating Hours:\nMon-Fri, 8.00am-5.00pm\nSat, 8.00am-2.00pm\nSun/PH, Closed",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "2000hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://thespread.sg/",
+        "reason": "Operator lists Mochtar Riady Building unit #01-03."
+      }
+    },
+    {
+      "candidate_id": "kent-ridge-fc42601db4f49e31",
+      "Name": "The Terrace",
+      "Building": "COM3",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Sat, 7.30am-7.00pm\nSun, Closed",
+      "StartingTime": "0730hrs",
+      "ClosingTime": "1900hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://qcg-media.s3.amazonaws.com/media/uploads/000/2023/12/20231219_533074_NUSFintechSummit2024EBookletcompressed.pdf",
+        "reason": "NUS Computing event directory explicitly labels The Terrace @ COM3 Level 1."
+      }
+    },
+    {
+      "candidate_id": "kent-ridge-1039a3df8f5dec6f",
+      "Name": "TOMORO COFFEE",
+      "Building": "Hon Sui Sen Memorial Library",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri, 8.15am—6.00pm,\nSat/Sun/PH: Closed\nVacation Operating Hours:\nMon-Fri, 8.00am—5.00pm,\nSat/Sun/PH: Closed",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "1800hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-cec7df29ff41ee3b",
+      "Name": "Uncle Penyet Fusion",
+      "Building": "Frontier",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri, 7.00am-7.30pm\nSat, 7.00am-3.00pm\nSun/PH: Closed",
+      "StartingTime": "0700hrs",
+      "ClosingTime": "1930hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-cc152737661002c8",
+      "Name": "Wild Skew",
+      "Building": "Yusof Ishak House",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nWeekdays, 11.30 am-8.30 pm\nWeekend/PH, 12.00 pm-8.30 pm",
+      "StartingTime": "1130hrs",
+      "ClosingTime": "2030hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-2376f86c41c67ee0",
+      "Name": "Wok Express",
+      "Building": "Yusof Ishak House",
+      "raw_hours": "Operating Hours:\nMon-Sun, 10.00am-9.00pm (last order)\nPH: Closed",
+      "StartingTime": "1000hrs",
+      "ClosingTime": "2100hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-2872ac47c2381f1d",
+      "Name": "Wonderful Cafe",
+      "Building": "Techno Edge",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri, 7.00am — 8.00pm\nSat, 7.00am – 3.00pm\nSun, Closed\nPH, 7.00am – 8.00pm",
+      "StartingTime": "0700hrs",
+      "ClosingTime": "2000hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "kent-ridge-70292e14006331ca",
+      "Name": "Wonderful Cafe",
+      "Building": "Science Block S16",
+      "raw_hours": "Term Time Operating Hours:\nWeekdays, 7.30am–8.00pm\nSat, 8.00am–2.30pm\nSun/PH closed\nVacation Operating Hours:\nMon-Fri, 8.30am-7.30pm\nSat, 8.30am-2.00pm\nSun/PH Closed",
+      "StartingTime": "0730hrs",
+      "ClosingTime": "2000hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "utown-2d935ca02f12f8c3",
+      "Name": "Bismillah Biryani",
+      "Building": "Stephen Riady Centre",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri: 11.30am — 7.30pm\nSat: 11.30am — 5.00pm",
+      "StartingTime": "1130hrs",
+      "ClosingTime": "1930hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "utown-ae33ad92de3ee69c",
+      "Name": "Fine Food",
+      "Building": "Town Plaza",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Sun, 8.00am-8.30pm",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "2030hrs",
+      "hours_policy": "daily",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://www.burpple.com/fine-food-at-utown",
+        "reason": "Fine Food address is #01-04 NUS UTown."
+      }
+    },
+    {
+      "candidate_id": "utown-b162f86aa9a0d1d9",
+      "Name": "Flavours @ UTown",
+      "Building": "Stephen Riady Centre",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Sun: 7.30am to 8.30pm",
+      "StartingTime": "0730hrs",
+      "ClosingTime": "2030hrs",
+      "hours_policy": "daily",
+      "floor_added": {
+        "value": "2",
+        "source_url": "https://t.me/s/nusfoodies/533",
+        "reason": "NUS Foodies explicitly identifies Flavours@UTown as Stephen Riady Centre Level 2."
+      }
+    },
+    {
+      "candidate_id": "utown-3275cab226446d9c",
+      "Name": "Hwang’s Korean Restaurant",
+      "Building": "Town Plaza",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Sat, 10.30am-9.00pm\nSun closed",
+      "StartingTime": "1030hrs",
+      "ClosingTime": "2100hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://aus-summer.nus.edu.sg/wp-content/uploads/sites/2/2025/07/NUS-AUS-2025-Programme-Booklet.pdf",
+        "reason": "NUS programme directory identifies Hwang's at Town Plaza Level 1; historical directory reference."
+      }
+    },
+    {
+      "candidate_id": "utown-e331bf40e6ccb170",
+      "Name": "Jollibee",
+      "Building": "Town Plaza",
+      "raw_hours": "Term Time & Vacation Operating Hours: 9 am to 9 pm daily",
+      "StartingTime": "0900hrs",
+      "ClosingTime": "2100hrs",
+      "hours_policy": "daily",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://alvinology.com/2025/01/27/jollibee-nus-grand-opening-exciting-deals-you-dont-want-to-miss/",
+        "reason": "UTown opening announcement gives unit #01-06 Town Plaza."
+      }
+    },
+    {
+      "candidate_id": "utown-71e66206220d82c7",
+      "Name": "Mr Bean / Do Qoo",
+      "Building": "Town Plaza",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri 7.30am — 9.00pm\nSat-Sat & PH 8.30am — 7.30pm\nVacation Operating Hours:\nMon-Fri, 8.30am — 7.30pm\nSat/Sun/PH closed",
+      "StartingTime": "0730hrs",
+      "ClosingTime": "2100hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "utown-7badb7929b61731d",
+      "Name": "Makan Malah!",
+      "Building": "Town Plaza",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nDaily, 11.00am-10.30pm",
+      "StartingTime": "1100hrs",
+      "ClosingTime": "2230hrs",
+      "hours_policy": "daily",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://makanmalah.com/",
+        "reason": "Operator gives NUS UTown unit #01-02."
+      }
+    },
+    {
+      "candidate_id": "utown-ed4493cef658f529",
+      "Name": "Starbucks",
+      "Building": "Education Resource Centre",
+      "raw_hours": "Term Time Operating Hours:\nDaily 24/7\nVacation Operating Hours:\nDaily 7.30am to 9.00pm",
+      "StartingTime": "0000hrs",
+      "ClosingTime": "0000hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "B1",
+        "source_url": "https://www.starbucks.com.sg/stores",
+        "reason": "Operator lists Education Resource Centre unit #B1-01."
+      }
+    },
+    {
+      "candidate_id": "utown-32d332fae10c393a",
+      "Name": "Subway",
+      "Building": "Stephen Riady Centre",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Sun, 8.30am to 9.30pm",
+      "StartingTime": "0830hrs",
+      "ClosingTime": "2130hrs",
+      "hours_policy": "daily",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://t.me/s/nusfoodies/533",
+        "reason": "NUS Foodies explicitly lists Subway at Stephen Riady Centre Level 1."
+      }
+    },
+    {
+      "candidate_id": "utown-5e010e0739076c88",
+      "Name": "Supersnacks",
+      "Building": "Stephen Riady Centre",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri, 11.00am-2.00am\nSat/Sun/PH, 6.00pm-2.00am",
+      "StartingTime": "1100hrs",
+      "ClosingTime": "0200hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://www.nus.edu.sg/docs/default-source/corporate-files/about/welcome-to-nus.pdf",
+        "reason": "NUS campus directory identifies SRC Supersnacks at Level 1; historical directory reference."
+      }
+    },
+    {
+      "candidate_id": "utown-70f14ee154d9d41c",
+      "Name": "The Royals Bistro",
+      "Building": "Town Plaza",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Sat, 11.00am-8.00pm\nSun/PH closed",
+      "StartingTime": "1100hrs",
+      "ClosingTime": "2000hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://nus.royalcakes.com/",
+        "reason": "Operator gives CREATE Tower unit #01-03."
+      }
+    },
+    {
+      "candidate_id": "utown-84f5826baa2022e5",
+      "Name": "Sapore",
+      "Building": "Stephen Riady Centre",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri: 11.30am to 9.00pm\nSat/Sun/PH: 11.30am to 8.00pm\nVacation Operating Hours:\nMon-Fri: 11.30am to 8.00pm\nSat/Sun/PH: Closed",
+      "StartingTime": "1130hrs",
+      "ClosingTime": "2100hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "utown-fe78623db17f33b6",
+      "Name": "Tomoro Coffee",
+      "Building": "NUS College",
+      "raw_hours": "Operating Hours:\nMon-Fri: 8.00am—6.00pm,\nSat: 8.00am—1.00pm,\nSun/PH: Closed",
+      "StartingTime": "0800hrs",
+      "ClosingTime": "1800hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "utown-f2603683baeab3fd",
+      "Name": "Triplets",
+      "Building": "Stephen Riady Centre",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri: 9.00am to 9.00pm\nVacation Operating Hours:\nClosed",
+      "StartingTime": "0900hrs",
+      "ClosingTime": "2100hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://bakerycuisine.com.sg/our-brand/",
+        "reason": "TripletS operator gives Stephen Riady Centre unit #01-08."
+      }
+    },
+    {
+      "candidate_id": "utown-a64784e33d78d4dd",
+      "Name": "Udon Don Bar",
+      "Building": "Town Plaza",
+      "raw_hours": "Term Time Operating Hours:\nMon-Sun: 11.00am-9.30pm\nVacation Operating Hours:\nMon-Sun: 11.00am-9.00pm",
+      "StartingTime": "1100hrs",
+      "ClosingTime": "2130hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://wherecrowded.sg/at/foodplace/udon-don-bar",
+        "reason": "Town Plaza address is #01-12."
+      }
+    },
+    {
+      "candidate_id": "utown-1517feb850500088",
+      "Name": "Waa Cow / Bueno Bueno",
+      "Building": "Stephen Riady Centre",
+      "raw_hours": "Term Time Operating Hours:\nMon-Fri, 11.30am-8.30pm\nSat/Sun/PH, 12.00pm-8.30pm\nVacation Operating Hours:\nMon-Fri, 11.30am-8.30pm\nSat/Sun/PH, 12.00pm-8.30pm",
+      "StartingTime": "1130hrs",
+      "ClosingTime": "2030hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://www.nus.edu.sg/docs/default-source/corporate-files/about/welcome-to-nus.pdf",
+        "reason": "NUS directory gives Waa Cow at SRC Level 1; Bueno Bueno counter is not separately verified."
+      }
+    },
+    {
+      "candidate_id": "retail-67877f5d8e2947c5",
+      "Name": "Cheers Unmanned Convenience Store",
+      "Building": "Yusof Ishak House",
+      "raw_hours": "Term Time & Vacation Operating Hours:\n24/7",
+      "StartingTime": "0000hrs",
+      "ClosingTime": "0000hrs",
+      "hours_policy": "daily"
+    },
+    {
+      "candidate_id": "retail-8d3189c00d76f23f",
+      "Name": "Cheers Unmanned Convenience Store",
+      "Building": "Engineering Block E3",
+      "raw_hours": "Term Time & Vacation Operating Hours:\n24/7",
+      "StartingTime": "0000hrs",
+      "ClosingTime": "0000hrs",
+      "hours_policy": "daily"
+    },
+    {
+      "candidate_id": "retail-a53592a900741ee8",
+      "Name": "FairPricexpress",
+      "Building": "Kent Vale",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nDaily, 7.00am-11.00pm",
+      "StartingTime": "0700hrs",
+      "ClosingTime": "2300hrs",
+      "hours_policy": "daily"
+    },
+    {
+      "candidate_id": "retail-790c76b2402b57cb",
+      "Name": "FairPricexpress",
+      "Building": "Stephen Riady Centre",
+      "raw_hours": "Term Time:\n24/7\nVacation Operating Hours:\n24 May to 25 July 2025 – Daily, 7.00am to 11.00pm",
+      "StartingTime": "0000hrs",
+      "ClosingTime": "0000hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://www.nus.edu.sg/docs/default-source/corporate-files/about/welcome-to-nus.pdf",
+        "reason": "NUS directory gives SRC FairPricexpress at Level 1; historical directory reference."
+      }
+    },
+    {
+      "candidate_id": "retail-4446d2a9ca1f7b87",
+      "Name": "OCBC @ NUS",
+      "Building": "Stephen Riady Centre",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon to Fri: 11am to 7pm\nSat, Sun & PH: Closed",
+      "StartingTime": "1100hrs",
+      "ClosingTime": "1900hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://www.nus.edu.sg/docs/default-source/corporate-files/about/welcome-to-nus.pdf",
+        "reason": "NUS directory gives SRC OCBC at Level 1; excluded from supplier categories."
+      }
+    },
+    {
+      "candidate_id": "retail-f09919a96eb2bbce",
+      "Name": "Goh Bros E-Print Pte Ltd",
+      "Building": "Yusof Ishak House",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon to Fri 9am to 6pm",
+      "StartingTime": "0900hrs",
+      "ClosingTime": "1800hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "retail-2d748e4af2fe67b0",
+      "Name": "Hair Destination (Temporarily closed for upgrading works)",
+      "Building": "Stephen Riady Centre",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri, 10.30am-7.00pm\nSat: 10.30am to 6.00pm\nSun/PH: Closed",
+      "StartingTime": "1030hrs",
+      "ClosingTime": "1900hrs",
+      "hours_policy": "approximation",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://www.nus.edu.sg/docs/default-source/corporate-files/about/welcome-to-nus.pdf",
+        "reason": "NUS directory gives SRC Hair Destination at Level 1; remains excluded/temporarily closed."
+      }
+    },
+    {
+      "candidate_id": "retail-b27925d13f88f92d",
+      "Name": "NUS Co-op",
+      "Building": "Central Library",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri, 10.00am-5.30pm\nSat/Sun/PH: Closed",
+      "StartingTime": "1000hrs",
+      "ClosingTime": "1730hrs",
+      "hours_policy": "approximation",
+      "ImageURL": "https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/NUS_COOP.jpeg"
+    },
+    {
+      "candidate_id": "retail-03a39688b1ebc83d",
+      "Name": "NUS CO-OP",
+      "Building": "Science LT27",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri, 10.00am-5.30pm\nSat/Sun/PH, closed",
+      "StartingTime": "1000hrs",
+      "ClosingTime": "1730hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "retail-b6de28d00489be29",
+      "Name": "Octobox",
+      "Building": "Stephen Riady Centre",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Sun: 24 hours",
+      "StartingTime": "0000hrs",
+      "ClosingTime": "0000hrs",
+      "hours_policy": "daily",
+      "floor_added": {
+        "value": "1",
+        "source_url": "https://www.nus.edu.sg/docs/default-source/corporate-files/about/welcome-to-nus.pdf",
+        "reason": "NUS directory gives SRC Octobox at Level 1; historical directory reference."
+      }
+    },
+    {
+      "candidate_id": "retail-fb68722a7d3db4c1",
+      "Name": "Octobox",
+      "Building": "Prince George's Park",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Sun: 24 Hours",
+      "StartingTime": "0000hrs",
+      "ClosingTime": "0000hrs",
+      "hours_policy": "daily"
+    },
+    {
+      "candidate_id": "retail-7e3e1643443271da",
+      "Name": "Skosk Beautique",
+      "Building": "Stephen Riady Centre",
+      "raw_hours": "Term Time & Vacation Operating Hours:\nMon-Fri 10am-8pm\nSat: 10am-7pm\nSun/PH closed",
+      "StartingTime": "1000hrs",
+      "ClosingTime": "2000hrs",
+      "hours_policy": "approximation"
+    },
+    {
+      "candidate_id": "seed-supplier-f831fe42fbb2",
+      "Name": "Printer @ Com 2",
+      "Building": "COM2",
+      "raw_hours": "0000hrs–2359hrs",
+      "StartingTime": "0000hrs",
+      "ClosingTime": "0000hrs",
+      "hours_policy": "daily",
+      "source_path": "data/csv/supplier-seed-data.csv",
+      "ImageURL": "https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/PRINTER_COM2.jpeg"
+    },
+    {
+      "candidate_id": "seed-supplier-c93b7f1e1324",
+      "Name": "InstaChef",
+      "Building": "Terrace",
+      "raw_hours": "0000hrs–2359hrs",
+      "StartingTime": "0000hrs",
+      "ClosingTime": "0000hrs",
+      "hours_policy": "daily",
+      "source_path": "data/csv/supplier-seed-data.csv",
+      "ImageURL": "https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/INSTACHEF.jpeg"
+    },
+    {
+      "candidate_id": "seed-supplier-ddd78c84131d",
+      "Name": "Cafe+ Robot Cafe",
+      "Building": "Central Library",
+      "raw_hours": "0000hrs–2359hrs",
+      "StartingTime": "0000hrs",
+      "ClosingTime": "0000hrs",
+      "hours_policy": "daily",
+      "source_path": "data/csv/supplier-seed-data.csv",
+      "ImageURL": "https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/ROBOT_CAFE.jpeg"
+    }
+  ],
+  "source_anomalies": [
+    {
+      "candidate_id": "kent-ridge-d6cbe3ec5752e8be",
+      "message": "Arise and Shine vacation weekday source says 8.00pm–6.00pm, inconsistent with the other daytime schedules. Kept the defensible 0800–1800 bound from term/weekend hours; did not infer a 22-hour overnight session or silently correct pm to am."
+    },
+    {
+      "candidate_id": "kent-ridge-1d5c33b2235a05b7",
+      "message": "Bistro Box vacation source says 8.00pm–7.00pm. Used 0730–2000 from the valid term schedule; did not infer a 23-hour overnight session or silently correct pm to am."
+    }
+  ],
+  "original_seed_not_in_review": [],
+  "unverified_floors": [
+    {
+      "candidate_id": "kent-ridge-3de05c8eac1b1700",
+      "Name": "Cafe Delight",
+      "Building": "Ventus"
+    },
+    {
+      "candidate_id": "kent-ridge-2ada0227e674541b",
+      "Name": "Frontier",
+      "Building": "Frontier"
+    },
+    {
+      "candidate_id": "kent-ridge-0c81531a12453cd4",
+      "Name": "Li Ji Coffeehouse",
+      "Building": "Frontier"
+    },
+    {
+      "candidate_id": "kent-ridge-6b6c7fb3b70b5560",
+      "Name": "Mixue",
+      "Building": "Frontier"
+    },
+    {
+      "candidate_id": "kent-ridge-40f35253b84f6fac",
+      "Name": "Nine Fresh",
+      "Building": "Frontier"
+    },
+    {
+      "candidate_id": "kent-ridge-75378a383a829aeb",
+      "Name": "QQ Rice",
+      "Building": "Science Block S16"
+    },
+    {
+      "candidate_id": "kent-ridge-031bb1208c3c6074",
+      "Name": "Starbucks",
+      "Building": "Science Block S9"
+    },
+    {
+      "candidate_id": "kent-ridge-2885a55c1840d843",
+      "Name": "Taiwan Ichiban",
+      "Building": "Frontier"
+    },
+    {
+      "candidate_id": "kent-ridge-746fbc85d272aae4",
+      "Name": "Techno Edge",
+      "Building": "College of Design and Engineering"
+    },
+    {
+      "candidate_id": "kent-ridge-9d2c4c9aafdcb107",
+      "Name": "The Deck",
+      "Building": "Faculty of Arts & Social Sciences"
+    },
+    {
+      "candidate_id": "kent-ridge-cec7df29ff41ee3b",
+      "Name": "Uncle Penyet Fusion",
+      "Building": "Frontier"
+    },
+    {
+      "candidate_id": "kent-ridge-70292e14006331ca",
+      "Name": "Wonderful Cafe",
+      "Building": "Science Block S16"
+    },
+    {
+      "candidate_id": "utown-2d935ca02f12f8c3",
+      "Name": "Bismillah Biryani",
+      "Building": "Stephen Riady Centre"
+    },
+    {
+      "candidate_id": "utown-71e66206220d82c7",
+      "Name": "Mr Bean / Do Qoo",
+      "Building": "Town Plaza"
+    },
+    {
+      "candidate_id": "utown-84f5826baa2022e5",
+      "Name": "Sapore",
+      "Building": "Stephen Riady Centre"
+    },
+    {
+      "candidate_id": "utown-fe78623db17f33b6",
+      "Name": "Tomoro Coffee",
+      "Building": "NUS College"
+    },
+    {
+      "candidate_id": "retail-a53592a900741ee8",
+      "Name": "FairPricexpress",
+      "Building": "Kent Vale"
+    },
+    {
+      "candidate_id": "retail-03a39688b1ebc83d",
+      "Name": "NUS CO-OP",
+      "Building": "Science LT27"
+    },
+    {
+      "candidate_id": "retail-7e3e1643443271da",
+      "Name": "Skosk Beautique",
+      "Building": "Stephen Riady Centre"
+    }
+  ],
+  "counts": {
+    "rows": 80,
+    "hours_populated": 80,
+    "floors_added": 27,
+    "floors_unverified": 19,
+    "original_seed_not_in_review": 0,
+    "original_seed_in_review": 21,
+    "original_seed_images_in_review": 6
+  },
+  "original_seed_added_to_review": [
+    "Printer @ Com 2",
+    "InstaChef",
+    "Cafe+ Robot Cafe"
+  ],
+  "image_references": [
+    {
+      "candidate_id": "kent-ridge-1cf3cb733b6199ae",
+      "Name": "Anna's x Soup Union",
+      "ImageURL": "https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/ANNA.jpeg"
+    },
+    {
+      "candidate_id": "kent-ridge-dddf89336455ed31",
+      "Name": "Cool Spot",
+      "ImageURL": "https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/COOL_SPOT.jpeg"
+    },
+    {
+      "candidate_id": "retail-b27925d13f88f92d",
+      "Name": "NUS Co-op",
+      "ImageURL": "https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/NUS_COOP.jpeg"
+    },
+    {
+      "candidate_id": "seed-supplier-f831fe42fbb2",
+      "Name": "Printer @ Com 2",
+      "ImageURL": "https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/PRINTER_COM2.jpeg"
+    },
+    {
+      "candidate_id": "seed-supplier-c93b7f1e1324",
+      "Name": "InstaChef",
+      "ImageURL": "https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/INSTACHEF.jpeg"
+    },
+    {
+      "candidate_id": "seed-supplier-ddd78c84131d",
+      "Name": "Cafe+ Robot Cafe",
+      "ImageURL": "https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/ROBOT_CAFE.jpeg"
+    }
+  ]
+}

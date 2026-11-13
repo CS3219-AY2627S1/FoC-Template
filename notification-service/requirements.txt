@@ -1,0 +1,21 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-11-03
+# Scope: Boilerplate generation — pin FastAPI, uvicorn, SQLAlchemy, Alembic, and psycopg runtime dependencies.
+# Author review: Keith confirmed review of all affected changes.
+# Details: notification-service/ai/usage-log.md; ai-20261103-001
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-11-04
+# Scope: Boilerplate generation — pin confluent-kafka to the version other services use (ai-20261104-003).
+# Author review: Keith confirmed verification, with 551 tests passed on the Pytest suite (ai-20261104-003).
+# Details: notification-service/ai/usage-log.md; ai-20261104-003
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-11-08
+# Scope: Boilerplate generation — pin httpx for the User Service client, matching the dev pin and credit-service (ai-20261108-001).
+# Author review: Keith confirmed on 2026-11-08: full pytest suite with PostgreSQL 16, 790 passed and 5 real-broker tests skipped; code read and verified; manual checks against the full Compose stack with the real User Service (ai-20261108-001).
+# Details: notification-service/ai/usage-log.md; ai-20261108-001
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+SQLAlchemy==2.0.36
+alembic==1.14.1
+psycopg[binary]==3.2.3
+confluent-kafka==2.16.0
+httpx==0.28.1

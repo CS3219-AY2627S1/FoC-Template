@@ -1,0 +1,41 @@
+@startuml
+title User Service - Create User
+
+autonumber
+hide footbox
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+
+actor Client
+boundary "Users Router\napp/routes/users.py" as API
+control "User Operations\napp/services/users.py" as Users
+
+Client -> API: POST /users\nRegistration details
+activate API
+
+alt Invalid registration details
+  API --> Client: 422 Validation error
+else Valid registration details
+  API -> Users: register_user(payload)
+  activate Users
+
+  alt Account already exists
+    Users --> API: Registration rejected
+    API --> Client: 409 Unable to create account
+  else Registration succeeds
+    note right of Users
+      Credentials are stored securely.
+      The account starts with the user
+      role and active status.
+    end note
+    Users --> API: New user
+    API --> Client: 201 Created + user profile
+  else Service unavailable
+    Users --> API: Operation unavailable
+    API --> Client: 503 Service Unavailable
+  end
+  deactivate Users
+end
+
+deactivate API
+@enduml

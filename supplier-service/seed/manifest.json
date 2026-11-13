@@ -1,0 +1,191 @@
+[
+  {
+    "seed_key": "supplier-b650b4ae039b",
+    "supplier_id": "61773e85-5246-4bdd-8e8b-8bbd9801f6f3",
+    "source_match": {
+      "Name": "Anna's x Soup Union",
+      "Building": "Central Library"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "supplier-d6f17af0d91d",
+    "supplier_id": "d959a46f-0276-428c-bcbd-56df3979e1d2",
+    "source_match": {
+      "Name": "NUS Co-op",
+      "Building": "Central Library"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "supplier-f831fe42fbb2",
+    "supplier_id": "974cba12-3951-4fd7-aa15-be2e51ae0830",
+    "source_match": {
+      "Name": "Printer @ Com 2",
+      "Building": "COM2"
+    },
+    "correct_24_hours": true
+  },
+  {
+    "seed_key": "supplier-afaccf934b98",
+    "supplier_id": "d5a529fc-fb6e-4904-8a71-43b782a4aab5",
+    "source_match": {
+      "Name": "Cool Spot",
+      "Building": "COM2"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "supplier-c93b7f1e1324",
+    "supplier_id": "90088e73-c28a-4278-a5e0-fe91884ec292",
+    "source_match": {
+      "Name": "InstaChef",
+      "Building": "Terrace"
+    },
+    "correct_24_hours": true
+  },
+  {
+    "seed_key": "supplier-ddd78c84131d",
+    "supplier_id": "a9a305fe-bbdd-4d51-99e0-67deb806db82",
+    "source_match": {
+      "Name": "Cafe+ Robot Cafe",
+      "Building": "Central Library"
+    },
+    "correct_24_hours": true
+  },
+  {
+    "seed_key": "supplier-0c5c62d7b0a6",
+    "supplier_id": "7be5a572-62a7-444c-b470-7c8f860ca508",
+    "source_match": {
+      "Name": "A Hot Hideout",
+      "Building": "Prince George's Park"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "supplier-d363cb576a6b",
+    "supplier_id": "59627e34-0502-487a-beb6-263cfacf987e",
+    "source_match": {
+      "Name": "Arise and Shine",
+      "Building": "Engineering Block E4"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "supplier-2603651227da",
+    "supplier_id": "918b3d04-1b83-4a34-b9ec-74de0bc559bb",
+    "source_match": {
+      "Name": "Bakehaus / Aurea",
+      "Building": "The Ridge"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "supplier-c089160bcd11",
+    "supplier_id": "97d3b158-1e85-4e12-9849-6e77cf1b0f1f",
+    "source_match": {
+      "Name": "Central Square @ YIH",
+      "Building": "Yusof Ishak House"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "supplier-b7a3616dbfd6",
+    "supplier_id": "a2ca0b0a-e5e7-4cf4-8c10-828657017516",
+    "source_match": {
+      "Name": "Pasta Express",
+      "Building": "Frontier"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "supplier-2cbae378b13f",
+    "supplier_id": "c69a3058-086a-48da-9ca1-c8e524fba433",
+    "source_match": {
+      "Name": "TOMORO COFFEE",
+      "Building": "Hon Sui Sen Memorial Library"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "supplier-d1a4e7824b40",
+    "supplier_id": "61a7a8c0-033a-4478-864a-158978286c79",
+    "source_match": {
+      "Name": "Octobox",
+      "Building": "Prince George's Park"
+    },
+    "correct_24_hours": true
+  },
+  {
+    "seed_key": "supplier-8faeb6cf4a03",
+    "supplier_id": "b0e36376-9bf2-4ce2-8d87-d23d4a10a7cb",
+    "source_match": {
+      "Name": "Smooy",
+      "Building": "COM3"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "supplier-f4ff56eb7fed",
+    "supplier_id": "6104ace1-4666-438d-a47d-d255c777a1a5",
+    "source_match": {
+      "Name": "Goh Bros E-Print Pte Ltd",
+      "Building": "Yusof Ishak House"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "supplier-cb3e341405e3",
+    "supplier_id": "280a5123-9cac-4074-a8c0-01d8e870ff7b",
+    "source_match": {
+      "Name": "Cheers Unmanned Convenience Store",
+      "Building": "Engineering Block E3"
+    },
+    "correct_24_hours": true
+  },
+  {
+    "seed_key": "supplier-8291abf8a139",
+    "supplier_id": "52e1f7df-6890-43fa-8ab2-9d272f4ac22a",
+    "source_match": {
+      "Name": "Nami",
+      "Building": "innovation4.0"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "supplier-dfd5d9aaf483",
+    "supplier_id": "b61ea81f-dec6-45a3-b042-2088ecfb7bf3",
+    "source_match": {
+      "Name": "Supersnacks",
+      "Building": "Prince George's Park"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "supplier-bc55ea43898d",
+    "supplier_id": "3e7bbe2d-745f-4519-9f02-56e2c2f2a1fc",
+    "source_match": {
+      "Name": "Good Day Cafe",
+      "Building": "Medicine+Science Library"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "supplier-4746226a519f",
+    "supplier_id": "59a15305-5136-4054-aff1-4ee52c911722",
+    "source_match": {
+      "Name": "The Coffee Roaster",
+      "Building": "Blk AS8"
+    },
+    "correct_24_hours": false
+  },
+  {
+    "seed_key": "supplier-ec230f2c9bf5",
+    "supplier_id": "99332e4d-c727-4eed-bb5e-394fef468d81",
+    "source_match": {
+      "Name": "he by He Brews",
+      "Building": "Engineering Block EA"
+    },
+    "correct_24_hours": false
+  }
+]

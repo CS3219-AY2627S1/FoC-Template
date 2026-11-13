@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: supplier-grants
+  labels:
+    app: supplier-grants
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: supplier-grants
+        foc.io/db: supplier
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: grants
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - psql
+            - --no-password
+            - --set=ON_ERROR_STOP=1
+            - --file=/runtime-grants.sql
+          env:
+            - name: PGHOST
+              value: supplier-db
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: SUPPLIER_POSTGRES_DB
+            - name: PGUSER
+              value: supplier_migrator
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: SUPPLIER_MIGRATION_PASSWORD
+          volumeMounts:
+            - name: sql
+              mountPath: /runtime-grants.sql
+              subPath: runtime-grants.sql
+              readOnly: true
+      volumes:
+        - name: sql
+          configMap:
+            name: foc-supplier-grants

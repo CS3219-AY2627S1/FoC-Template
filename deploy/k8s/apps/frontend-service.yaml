@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  labels:
+    app: frontend-service
+spec:
+  type: NodePort
+  selector:
+    app: frontend-service
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      nodePort: 30000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-service
+  labels:
+    app: frontend-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend-service
+  template:
+    metadata:
+      labels:
+        app: frontend-service
+    spec:
+      containers:
+        - name: frontend-service
+          image: foc-frontend-service:local
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: USER_SERVICE_URL
+              value: https://user-service:8080
+            - name: SUPPLIER_SERVICE_URL
+              value: http://supplier-service:8080
+            - name: NODE_EXTRA_CA_CERTS
+              value: /run/tls/ca.crt
+            - name: ORDER_SERVICE_URL
+              value: http://order-service:8080
+            - name: CREDIT_SERVICE_URL
+              value: http://credit-service:8080
+            # Local kind and the initial EKS port-forward workflow use HTTP.
+            # Set this to "true" when the public endpoint terminates HTTPS.
+            - name: COOKIE_SECURE
+              value: "false"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 24
+          volumeMounts:
+            - name: tls
+              mountPath: /run/tls/ca.crt
+              subPath: ca.crt
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: foc-tls
+            items:
+              - key: ca.crt
+                path: ca.crt

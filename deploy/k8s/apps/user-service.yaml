@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service
+  labels:
+    app: user-service
+spec:
+  type: ClusterIP
+  selector:
+    app: user-service
+  ports:
+    - name: https
+      port: 8080
+      targetPort: https
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+  labels:
+    app: user-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-service
+  template:
+    metadata:
+      labels:
+        app: user-service
+        foc.io/db: user
+    spec:
+      containers:
+        - name: user-service
+          image: foc-user-service:local
+          imagePullPolicy: Never
+          command:
+            - uvicorn
+            - app.main:app
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8080"
+            - --ssl-certfile
+            - /run/tls/user-service.crt
+            - --ssl-keyfile
+            - /run/tls/user-service.key
+          ports:
+            - name: https
+              containerPort: 8080
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: postgresql+psycopg://$(POSTGRES_USER)@user-db:5432/foc_users
+            - name: USER_SERVICE_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: USER_SERVICE_INTERNAL_TOKEN
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import ssl, urllib.request; context = ssl.create_default_context(cafile='/run/tls/ca.crt'); urllib.request.urlopen('https://localhost:8080/ready', context=context)
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - import ssl, urllib.request; context = ssl.create_default_context(cafile='/run/tls/ca.crt'); urllib.request.urlopen('https://localhost:8080/ready', context=context)
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 12
+          volumeMounts:
+            - name: tls
+              mountPath: /run/tls/user-service.crt
+              subPath: user-service.crt
+              readOnly: true
+            - name: tls
+              mountPath: /run/tls/user-service.key
+              subPath: user-service.key
+              readOnly: true
+            - name: tls
+              mountPath: /run/tls/ca.crt
+              subPath: ca.crt
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: foc-tls

@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: credit-migrate
+  labels:
+    app: credit-migrate
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: credit-migrate
+        foc.io/db: credit
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: foc-credit-service:local
+          imagePullPolicy: Never
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: CREDIT_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: CREDIT_DB_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: foc-env
+                  key: CREDIT_DB_PASSWORD
+            - name: DATABASE_URL
+              value: postgresql+psycopg://$(CREDIT_DB_USER)@credit-db:5432/foc_credits
