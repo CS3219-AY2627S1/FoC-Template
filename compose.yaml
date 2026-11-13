@@ -1,0 +1,502 @@
+services:
+  gateway:
+    build:
+      context: ./gateway-service
+      dockerfile: Dockerfile
+    environment:
+      USER_SERVICE_URL: http://user-service:8081
+      SUPPLIER_SERVICE_URL: http://supplier-service:8080
+      CREDIT_SERVICE_URL: http://credit-service:8083
+      ORDER_SERVICE_URL: http://order-service:8082
+      ADMIN_SERVICE_URL: http://admin-service:8084
+      CHAT_SERVICE_URL: http://chat-service:8085
+      NOTIFICATION_SERVICE_URL: http://notification-service:8086
+    depends_on:
+      user-service:
+        condition: service_healthy
+      supplier-service:
+        condition: service_started
+      credit-service:
+        condition: service_healthy
+      order-service:
+        condition: service_started
+      chat-service:
+        condition: service_healthy
+    ports:
+      - "${GATEWAY_HOST_PORT:-8088}:8088"
+
+  admin-service:
+    build:
+      context: ./admin-service
+      dockerfile: Dockerfile
+    environment:
+      ADMIN_DB_HOST: admin-db
+      ADMIN_DB_PORT: 5432
+      ADMIN_DB_NAME: ${ADMIN_DB_NAME:?ADMIN_DB_NAME must be set}
+      ADMIN_DB_USER: ${ADMIN_DB_USER:?ADMIN_DB_USER must be set}
+      ADMIN_DB_PASSWORD: ${ADMIN_DB_PASSWORD:?ADMIN_DB_PASSWORD must be set}
+      ADMIN_USER_URL: http://user-service:8081
+      ADMIN_USER_JWKS: http://user-service:8081/.well-known/jwks.json
+      ADMIN_CHAT_URL: ${ADMIN_CHAT_URL:-http://chat-service:8085}
+      ADMIN_SERVICE_KEY_ID: ${ADMIN_SERVICE_KEY_ID:-admin-service-1}
+      ADMIN_SERVICE_PRIVATE_KEY: ${ADMIN_SERVICE_PRIVATE_KEY:?ADMIN_SERVICE_PRIVATE_KEY must be set}
+      ADMIN_SERVICE_TRUSTED_KEYS: ${ADMIN_SERVICE_TRUSTED_KEYS:-{}}
+      ADMIN_KAFKA_ENABLED: "true"
+      ADMIN_CASE_EVENTS_ENABLED: "true"
+      ADMIN_CASE_EVENTS_TRANSACTION_ID: admin-case-events-v1
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      SPRING_KAFKA_PROPERTIES_SASL_MECHANISM: PLAIN
+      SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG: >-
+        org.apache.kafka.common.security.plain.PlainLoginModule required
+        username="admin_service" password="${KAFKA_ADMIN_SERVICE_PASSWORD:?KAFKA_ADMIN_SERVICE_PASSWORD must be set}";
+    depends_on:
+      admin-db:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${ADMIN_HOST_PORT:-8084}:8084"
+    networks:
+      - default
+      - admin-data
+
+  admin-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${ADMIN_DB_NAME:?ADMIN_DB_NAME must be set}
+      POSTGRES_USER: ${ADMIN_DB_USER:?ADMIN_DB_USER must be set}
+      POSTGRES_PASSWORD: ${ADMIN_DB_PASSWORD:?ADMIN_DB_PASSWORD must be set}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ADMIN_DB_USER} -d ${ADMIN_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "127.0.0.1:${ADMIN_DB_HOST_PORT:-5544}:5432"
+    volumes:
+      - admin-db-data:/var/lib/postgresql/data
+    networks:
+      - admin-data
+      - admin-db-host
+
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: user-db
+      DB_PORT: 5432
+      DB_NAME: ${USER_DB_NAME:?USER_DB_NAME must be set}
+      DB_USER: ${USER_DB_USER:?USER_DB_USER must be set}
+      DB_PASSWORD: ${USER_DB_PASSWORD:?USER_DB_PASSWORD must be set}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?JWT_PRIVATE_KEY must be set}
+      USER_SERVICE_TRUSTED_KEYS: ${USER_SERVICE_TRUSTED_KEYS:?USER_SERVICE_TRUSTED_KEYS must include Admin public key}
+      MAIL_PROVIDER: ${MAIL_PROVIDER:-noop}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-}
+      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
+      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_USERNAME: user_service
+      USER_EVENTS_PUBLISHER_ENABLED: "true"
+      USER_ADMIN_COMMANDS_ENABLED: ${USER_ADMIN_COMMANDS_ENABLED:-true}
+      KAFKA_PASSWORD: ${KAFKA_USER_SERVICE_PASSWORD:?KAFKA_USER_SERVICE_PASSWORD must be set}
+    depends_on:
+      user-db:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:8081:8081"
+
+  user-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${USER_DB_NAME:?USER_DB_NAME must be set}
+      POSTGRES_USER: ${USER_DB_USER:?USER_DB_USER must be set}
+      POSTGRES_PASSWORD: ${USER_DB_PASSWORD:?USER_DB_PASSWORD must be set}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USER_DB_USER} -d ${USER_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+
+  supplier-service:
+    build:
+      context: ./supplier-service
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: supplier-db
+      DB_PORT: 5432
+      DB_NAME: ${SUPPLIER_DB_NAME:?SUPPLIER_DB_NAME must be set}
+      DB_USER: ${SUPPLIER_DB_USER:?SUPPLIER_DB_USER must be set}
+      DB_PASSWORD: ${SUPPLIER_DB_PASSWORD:?SUPPLIER_DB_PASSWORD must be set}
+      SUPPLIER_USER_URL: http://user-service:8081
+      SUPPLIER_SERVICE_KEY_ID: ${SUPPLIER_SERVICE_KEY_ID:-supplier-service-1}
+      SUPPLIER_SERVICE_PRIVATE_KEY: ${SUPPLIER_SERVICE_PRIVATE_KEY:-}
+      SUPPLIER_JWT_JWK_SET_URI: http://user-service:8081/.well-known/jwks.json
+      SUPPLIER_JWT_ISSUER: friend-on-campus-user-service
+      SUPPLIER_JWT_AUDIENCE: friend-on-campus-api
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  supplier-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${SUPPLIER_DB_NAME:?SUPPLIER_DB_NAME must be set}
+      POSTGRES_USER: ${SUPPLIER_DB_USER:?SUPPLIER_DB_USER must be set}
+      POSTGRES_PASSWORD: ${SUPPLIER_DB_PASSWORD:?SUPPLIER_DB_PASSWORD must be set}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SUPPLIER_DB_USER} -d ${SUPPLIER_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - supplier-db-data:/var/lib/postgresql/data
+
+  credit-service:
+    build:
+      context: ./credit-service
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: credit-db
+      DB_PORT: 5432
+      DB_NAME: ${CREDIT_DB_NAME:?CREDIT_DB_NAME must be set}
+      DB_USER: ${CREDIT_DB_USER:?CREDIT_DB_USER must be set}
+      DB_PASSWORD: ${CREDIT_DB_PASSWORD:?CREDIT_DB_PASSWORD must be set}
+      CREDIT_JWT_JWK_SET_URI: http://user-service:8081/.well-known/jwks.json
+      CREDIT_JWT_ISSUER: friend-on-campus-user-service
+      CREDIT_JWT_AUDIENCE: friend-on-campus-api
+      CREDIT_SERVICE_TRUSTED_KEYS: ${CREDIT_SERVICE_TRUSTED_KEYS:-{}}
+      CREDIT_SERVICE_KEY_ID: ${CREDIT_SERVICE_KEY_ID:-credit-service-1}
+      CREDIT_SERVICE_PRIVATE_KEY: ${CREDIT_SERVICE_PRIVATE_KEY:-}
+      CREDIT_USER_URL: http://user-service:8081
+      CREDIT_ADMIN_COMMANDS_ENABLED: ${CREDIT_ADMIN_COMMANDS_ENABLED:-false}
+      SPRING_PROFILES_ACTIVE: ${CREDIT_SPRING_PROFILES_ACTIVE:-}
+      CREDIT_DEMO_USER_ID: ${CREDIT_DEMO_USER_ID:-}
+      KAFKA_ENABLED: "true"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_USERNAME: credit_service
+      KAFKA_PASSWORD: ${KAFKA_CREDIT_SERVICE_PASSWORD:?KAFKA_CREDIT_SERVICE_PASSWORD must be set}
+    depends_on:
+      credit-db:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "8083:8083"
+
+  credit-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${CREDIT_DB_NAME:?CREDIT_DB_NAME must be set}
+      POSTGRES_USER: ${CREDIT_DB_USER:?CREDIT_DB_USER must be set}
+      POSTGRES_PASSWORD: ${CREDIT_DB_PASSWORD:?CREDIT_DB_PASSWORD must be set}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CREDIT_DB_USER} -d ${CREDIT_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:5435:5432"
+    volumes:
+      - credit-db-data:/var/lib/postgresql/data
+
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: order-db
+      DB_PORT: 5432
+      DB_NAME: ${ORDER_DB_NAME:?ORDER_DB_NAME must be set}
+      DB_USER: ${ORDER_DB_USER:?ORDER_DB_USER must be set}
+      DB_PASSWORD: ${ORDER_DB_PASSWORD:?ORDER_DB_PASSWORD must be set}
+      ORDER_USER_URL: http://user-service:8081
+      ORDER_SERVICE_KEY_ID: ${ORDER_SERVICE_KEY_ID:-order-service-1}
+      ORDER_SERVICE_PRIVATE_KEY: ${ORDER_SERVICE_PRIVATE_KEY:-}
+      ORDER_JWT_JWK_SET_URI: http://user-service:8081/.well-known/jwks.json
+      ORDER_JWT_ISSUER: friend-on-campus-user-service
+      ORDER_JWT_AUDIENCE: friend-on-campus-api
+      ORDER_SERVICE_TRUSTED_KEYS: ${ORDER_SERVICE_TRUSTED_KEYS:-{}}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_USERNAME: order_service
+      KAFKA_PASSWORD: ${KAFKA_ORDER_SERVICE_PASSWORD:?KAFKA_ORDER_SERVICE_PASSWORD must be set}
+      # kafka-init creates order.lifecycle.events and order_service's Write ACL.
+      ORDER_LIFECYCLE_EVENTS_ENABLED: "true"
+    depends_on:
+      order-db:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "8082:8082"
+
+  order-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${ORDER_DB_NAME:?ORDER_DB_NAME must be set}
+      POSTGRES_USER: ${ORDER_DB_USER:?ORDER_DB_USER must be set}
+      POSTGRES_PASSWORD: ${ORDER_DB_PASSWORD:?ORDER_DB_PASSWORD must be set}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ORDER_DB_USER} -d ${ORDER_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:5436:5432"
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+
+  chat-service:
+    build:
+      context: ./chat-service
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: chat-db
+      DB_PORT: 5432
+      DB_NAME: ${CHAT_DB_NAME:-chat_db}
+      DB_USER: ${CHAT_DB_USER:-chat_user}
+      DB_PASSWORD: ${CHAT_DB_PASSWORD:-change-me-chat-db}
+      CHAT_JWT_JWK_SET_URI: http://user-service:8081/.well-known/jwks.json
+      CHAT_ADMIN_URL: http://admin-service:8084
+      CHAT_USER_URL: http://user-service:8081
+      CHAT_ORDER_URL: http://order-service:8082
+      CHAT_CREDIT_URL: http://credit-service:8083
+      CHAT_SERVICE_KEY_ID: ${CHAT_SERVICE_KEY_ID:-chat-service-1}
+      CHAT_SERVICE_PRIVATE_KEY: ${CHAT_SERVICE_PRIVATE_KEY:-}
+      CHAT_SERVICE_TRUSTED_KEYS: ${CHAT_SERVICE_TRUSTED_KEYS:-{}}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_USERNAME: chat_service
+      KAFKA_PASSWORD: ${KAFKA_CHAT_SERVICE_PASSWORD:-change-me-kafka-chat}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_CHAT_USER:-chat_service}
+      RABBITMQ_PASSWORD: ${RABBITMQ_CHAT_PASSWORD:-change-me-rabbit-chat}
+      CHAT_ATTACHMENT_STORAGE: ${CHAT_ATTACHMENT_STORAGE:-database}
+      CHAT_S3_BUCKET: ${CHAT_S3_BUCKET:-}
+      CHAT_S3_REGION: ${CHAT_S3_REGION:-ap-southeast-1}
+      CHAT_S3_KEY_PREFIX: ${CHAT_S3_KEY_PREFIX:-attachments}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      CHAT_TRANSLATION_PROVIDER: ${CHAT_TRANSLATION_PROVIDER:-disabled}
+      CHAT_GEMINI_MODEL: ${CHAT_GEMINI_MODEL:-gemini-3.5-flash-lite}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      CHAT_TRANSLATION_MAX_ATTEMPTS: ${CHAT_TRANSLATION_MAX_ATTEMPTS:-3}
+    depends_on:
+      chat-db:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${CHAT_HOST_PORT:-8085}:8085"
+
+  chat-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${CHAT_DB_NAME:-chat_db}
+      POSTGRES_USER: ${CHAT_DB_USER:-chat_user}
+      POSTGRES_PASSWORD: ${CHAT_DB_PASSWORD:-change-me-chat-db}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CHAT_DB_USER:-chat_user} -d ${CHAT_DB_NAME:-chat_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "127.0.0.1:${CHAT_DB_HOST_PORT:-5438}:5432"
+    volumes:
+      - chat-db-data:/var/lib/postgresql/data
+
+  rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_CHAT_USER:-chat_service}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_CHAT_PASSWORD:-change-me-rabbit-chat}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+    ports:
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_HOST_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: notification-db
+      DB_PORT: 5432
+      DB_NAME: ${NOTIFICATION_DB_NAME:?NOTIFICATION_DB_NAME must be set}
+      DB_USER: ${NOTIFICATION_DB_USER:?NOTIFICATION_DB_USER must be set}
+      DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?NOTIFICATION_DB_PASSWORD must be set}
+      NOTIFICATION_JWT_JWK_SET_URI: http://user-service:8081/.well-known/jwks.json
+      NOTIFICATION_JWT_ISSUER: friend-on-campus-user-service
+      NOTIFICATION_JWT_AUDIENCE: friend-on-campus-api
+      NOTIFICATION_KAFKA_ENABLED: "true"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_USERNAME: notification_service
+      KAFKA_PASSWORD: ${KAFKA_NOTIFICATION_SERVICE_PASSWORD:?KAFKA_NOTIFICATION_SERVICE_PASSWORD must be set}
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${NOTIFICATION_HOST_PORT:-8086}:8086"
+
+  notification-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${NOTIFICATION_DB_NAME:?NOTIFICATION_DB_NAME must be set}
+      POSTGRES_USER: ${NOTIFICATION_DB_USER:?NOTIFICATION_DB_USER must be set}
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?NOTIFICATION_DB_PASSWORD must be set}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NOTIFICATION_DB_USER} -d ${NOTIFICATION_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:${NOTIFICATION_DB_HOST_PORT:-5437}:5432"
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+
+  kafka:
+    image: apache/kafka:4.3.1
+    hostname: kafka
+    entrypoint: ["/bin/bash", "/opt/foc-kafka/broker-entrypoint.sh"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:SASL_PLAINTEXT,SASL_PLAINTEXT:SASL_PLAINTEXT,SASL_PLAINTEXT_HOST:SASL_PLAINTEXT
+      KAFKA_LISTENERS: CONTROLLER://:9093,SASL_PLAINTEXT://:9092,SASL_PLAINTEXT_HOST://:29092
+      KAFKA_ADVERTISED_LISTENERS: SASL_PLAINTEXT://kafka:9092,SASL_PLAINTEXT_HOST://localhost:${KAFKA_HOST_PORT:-29092}
+      KAFKA_INTER_BROKER_LISTENER_NAME: SASL_PLAINTEXT
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_SASL_MECHANISM_CONTROLLER_PROTOCOL: PLAIN
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
+      KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
+      KAFKA_SUPER_USERS: User:foc_admin;User:foc_broker
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_ADMIN_PASSWORD: ${KAFKA_ADMIN_PASSWORD:?KAFKA_ADMIN_PASSWORD must be set}
+      KAFKA_BROKER_PASSWORD: ${KAFKA_BROKER_PASSWORD:?KAFKA_BROKER_PASSWORD must be set}
+      KAFKA_USER_SERVICE_PASSWORD: ${KAFKA_USER_SERVICE_PASSWORD:?KAFKA_USER_SERVICE_PASSWORD must be set}
+      KAFKA_ORDER_SERVICE_PASSWORD: ${KAFKA_ORDER_SERVICE_PASSWORD:?KAFKA_ORDER_SERVICE_PASSWORD must be set}
+      KAFKA_CREDIT_SERVICE_PASSWORD: ${KAFKA_CREDIT_SERVICE_PASSWORD:?KAFKA_CREDIT_SERVICE_PASSWORD must be set}
+      KAFKA_NOTIFICATION_SERVICE_PASSWORD: ${KAFKA_NOTIFICATION_SERVICE_PASSWORD:?KAFKA_NOTIFICATION_SERVICE_PASSWORD must be set}
+      KAFKA_ADMIN_SERVICE_PASSWORD: ${KAFKA_ADMIN_SERVICE_PASSWORD:?KAFKA_ADMIN_SERVICE_PASSWORD must be set}
+      KAFKA_CHAT_SERVICE_PASSWORD: ${KAFKA_CHAT_SERVICE_PASSWORD:-change-me-kafka-chat}
+      KAFKA_UI_BROKER_PASSWORD: ${KAFKA_UI_BROKER_PASSWORD:?KAFKA_UI_BROKER_PASSWORD must be set}
+    healthcheck:
+      test: ["CMD", "/bin/bash", "/opt/foc-kafka/healthcheck.sh"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+    ports:
+      - "127.0.0.1:${KAFKA_HOST_PORT:-29092}:29092"
+    volumes:
+      - ./deploy/kafka:/opt/foc-kafka:ro
+      - kafka-data:/var/lib/kafka
+
+  kafka-init:
+    image: apache/kafka:4.3.1
+    entrypoint: ["/bin/bash", "/opt/foc-kafka/initialize.sh"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_ADMIN_PASSWORD: ${KAFKA_ADMIN_PASSWORD:?KAFKA_ADMIN_PASSWORD must be set}
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+    volumes:
+      - ./deploy/kafka:/opt/foc-kafka:ro
+
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:v1.5.0
+    environment:
+      KAFKA_CLUSTERS_0_NAME: foc-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_READONLY: "true"
+      KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_CLUSTERS_0_PROPERTIES_SASL_MECHANISM: PLAIN
+      KAFKA_CLUSTERS_0_PROPERTIES_SASL_JAAS_CONFIG: >-
+        org.apache.kafka.common.security.plain.PlainLoginModule required
+        username="kafka_ui" password="${KAFKA_UI_BROKER_PASSWORD:?KAFKA_UI_BROKER_PASSWORD must be set}";
+      KAFKA_CLUSTERS_0_CONSUMERPROPERTIES_GROUP_ID: kafka-ui-browser
+      DYNAMIC_CONFIG_ENABLED: "false"
+      AUTH_TYPE: LOGIN_FORM
+      SPRING_SECURITY_USER_NAME: ${KAFKA_UI_LOGIN_USERNAME:?KAFKA_UI_LOGIN_USERNAME must be set}
+      SPRING_SECURITY_USER_PASSWORD: ${KAFKA_UI_LOGIN_PASSWORD:?KAFKA_UI_LOGIN_PASSWORD must be set}
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --output-document=- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    ports:
+      - "127.0.0.1:${KAFKA_UI_HOST_PORT:-8090}:8080"
+
+networks:
+  admin-db-host:
+  admin-data:
+    internal: true
+
+volumes:
+  admin-db-data:
+  user-db-data:
+  supplier-db-data:
+  credit-db-data:
+  order-db-data:
+  chat-db-data:
+  rabbitmq-data:
+  notification-db-data:
+  kafka-data:

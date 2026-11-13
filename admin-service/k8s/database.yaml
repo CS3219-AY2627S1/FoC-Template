@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-db
+  namespace: foc-local
+spec:
+  clusterIP: None
+  selector:
+    app: admin-db
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: admin-db
+  namespace: foc-local
+spec:
+  serviceName: admin-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: admin-db
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  template:
+    metadata:
+      labels:
+        app: admin-db
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: admin_db
+            - name: POSTGRES_USER
+              value: admin_user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: admin-service-secrets
+                  key: ADMIN_DB_PASSWORD
+          startupProbe:
+            exec:
+              command: [pg_isready, -U, admin_user, -d, admin_db]
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, admin_user, -d, admin_db]
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 5Gi

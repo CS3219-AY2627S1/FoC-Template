@@ -1,0 +1,112 @@
+.page {
+  display: grid;
+  justify-items: start;
+  gap: var(--foc-space-12);
+  width: min(100%, 42rem);
+  margin: clamp(2rem, 8vw, 6rem) auto;
+  padding: clamp(1.5rem, 6vw, 3rem);
+  overflow: hidden;
+  border: 1px solid var(--foc-line);
+  border-radius: 1.5rem;
+  background: var(--foc-surface);
+  box-shadow: var(--foc-shadow);
+}
+
+.page::before {
+  width: 5rem;
+  height: 0.4rem;
+  margin: 0 0 var(--foc-space-16);
+  border-radius: 999px;
+  background: var(--foc-coral);
+  content: '';
+}
+
+.page h1,
+.page h2,
+.page p {
+  margin: 0;
+}
+
+.page h1 {
+  color: var(--foc-ink);
+  font-size: clamp(var(--foc-text-mobile-title), 5vw, var(--foc-text-title));
+  font-family: 'Manrope', 'DM Sans', sans-serif;
+  font-size: clamp(2rem, 7vw, 3rem);
+  letter-spacing: -0.05em;
+  line-height: 1.08;
+}
+
+.page h2 {
+  color: var(--foc-ink);
+  font-size: var(--foc-text-heading);
+  line-height: 1.4;
+}
+
+.eyebrow {
+  color: var(--foc-blue);
+  font-size: var(--foc-text-caption);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.icon {
+  display: grid;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 1rem;
+  background: #fbecea;
+  color: #a05f59;
+  place-items: center;
+}
+
+.icon svg {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--foc-space-8);
+  min-height: 2.75rem;
+  margin-top: var(--foc-space-8);
+  padding: 0 var(--foc-space-16);
+  border: 1px solid var(--foc-action);
+  border-radius: 0.75rem;
+  background: var(--foc-action);
+  color: white;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.action:hover {
+  border-color: var(--foc-blue);
+  background: var(--foc-blue);
+}
+
+.action svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.intro,
+.statusCard p {
+  color: var(--foc-muted);
+  font-size: var(--foc-text-body);
+  line-height: 1.5;
+}
+
+.statusCard {
+  display: grid;
+  gap: var(--foc-space-12);
+  margin-top: var(--foc-space-8);
+  padding: var(--foc-space-24);
+  border: 1px solid var(--foc-line);
+  border-radius: var(--foc-radius-12);
+  background: var(--foc-surface);
+}
+
+.error {
+  color: var(--foc-danger) !important;
+}

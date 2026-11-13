@@ -1,0 +1,382 @@
+.app {
+  min-height: 100vh;
+  background: var(--foc-canvas);
+}
+
+.header {
+  min-height: 4.5rem;
+  border-bottom: 1px solid var(--foc-line);
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 1px 0 rgb(32 51 45 / 2%);
+}
+
+.headerContent {
+  display: flex;
+  align-items: center;
+  gap: var(--foc-space-16);
+  width: min(100%, 80rem);
+  min-height: 4.5rem;
+  margin: 0 auto;
+  padding: 0 var(--foc-space-32);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--foc-space-8);
+  min-height: 2.75rem;
+  color: var(--foc-ink);
+  font-size: var(--foc-text-label);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sectionName {
+  color: var(--foc-muted);
+  font-size: var(--foc-text-small);
+  font-weight: 600;
+}
+
+.serviceNav {
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  gap: var(--foc-space-4);
+  margin-right: auto;
+}
+
+.serviceNav a {
+  position: relative;
+  display: inline-flex;
+  align-self: stretch;
+  align-items: center;
+  gap: 0.42rem;
+  min-height: 2.75rem;
+  padding: 0 var(--foc-space-12);
+  color: var(--foc-muted);
+  font-size: var(--foc-text-small);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.actions > a:not(.notificationBell) svg {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  stroke-width: 1.8;
+}
+
+.serviceNav a:hover,
+.serviceNav a:focus-visible,
+.serviceNav a[aria-current='page'] {
+  color: var(--foc-action);
+}
+
+.serviceNav a[aria-current='page']::after {
+  position: absolute;
+  right: var(--foc-space-12);
+  bottom: 0;
+  left: var(--foc-space-12);
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--foc-action);
+  content: '';
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--foc-space-16);
+}
+
+.workspaceSelector {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--foc-space-8);
+  color: var(--foc-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.workspaceSelectorOptions {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1875rem;
+  border: 1px solid var(--foc-line);
+  border-radius: var(--foc-radius-8);
+  background: var(--foc-surface);
+}
+
+.actions .workspaceSelectorOptions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  height: 2rem;
+  min-height: 2rem;
+  margin: 0;
+  padding: 0 var(--foc-space-8);
+  border: 0;
+  border-radius: calc(var(--foc-radius-8) - 0.125rem);
+  background: transparent;
+  box-shadow: none;
+  color: var(--foc-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.actions .workspaceSelectorOptions button:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--foc-action-soft);
+  box-shadow: none;
+  color: var(--foc-action);
+}
+
+.actions .workspaceSelectorOptions button[aria-pressed='true'],
+.actions .workspaceSelectorOptions button[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--foc-action);
+  color: var(--foc-surface);
+  box-shadow: 0 1px 2px rgb(23 32 51 / 18%);
+}
+
+.actions .workspaceSelectorOptions button:disabled {
+  cursor: wait;
+}
+
+.actions a:not(.notificationBell),
+.actions button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  color: var(--foc-action);
+  font-size: var(--foc-text-small);
+  font-weight: 600;
+}
+
+.actions button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.userMenu {
+  position: relative;
+  min-width: 0;
+  max-width: 12rem;
+}
+
+.userMenu summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.75rem;
+  max-width: 12rem;
+  color: var(--foc-action);
+  cursor: pointer;
+  font-size: var(--foc-text-small);
+  font-weight: 600;
+  list-style: none;
+}
+
+.accountAvatar {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 1.625rem;
+  height: 1.625rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--foc-action-soft);
+  color: var(--foc-action);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.accountName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.userMenu summary::-webkit-details-marker {
+  display: none;
+}
+
+.menuChevron {
+  width: 0.45rem;
+  height: 0.45rem;
+  margin: -0.2rem 0 0;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 150ms ease;
+}
+
+.userMenu[open] .menuChevron {
+  margin-top: 0.2rem;
+  transform: rotate(225deg);
+}
+
+.userMenuItems {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% - var(--foc-space-4));
+  right: 0;
+  display: grid;
+  min-width: 12rem;
+  padding: var(--foc-space-8);
+  border: 1px solid var(--foc-line);
+  border-radius: var(--foc-radius-8);
+  background: var(--foc-surface);
+  box-shadow: var(--foc-shadow);
+}
+
+.menuDivider {
+  height: 1px;
+  margin: var(--foc-space-4) 0;
+  background: var(--foc-line);
+}
+
+.userMenuItems .menuSignOut {
+  color: var(--foc-ink);
+}
+
+.userMenuItems a,
+.userMenuItems button {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0 var(--foc-space-8);
+  color: var(--foc-action);
+  text-decoration: none;
+}
+
+.userMenuItems button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.userMenuItems a:hover,
+.userMenuItems a:focus-visible,
+.userMenuItems button:hover,
+.userMenuItems button:focus-visible {
+  background: var(--foc-action-soft);
+  text-decoration: none;
+}
+
+.workspaceError {
+  width: min(100% - 2rem, 80rem);
+  margin: var(--foc-space-8) auto 0;
+  color: var(--foc-danger, #b42318);
+  font-size: var(--foc-text-small);
+}
+
+@media (max-width: 50rem) {
+  .headerContent {
+    flex-wrap: wrap;
+    gap: var(--foc-space-8);
+    min-height: auto;
+    padding: 0.65rem var(--foc-space-16) 0;
+  }
+
+  .brand span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .serviceNav {
+    order: 3;
+    width: calc(100% + 2rem);
+    max-width: calc(100% + 2rem);
+    min-width: 0;
+    min-height: 3rem;
+    margin: 0 -1rem;
+    overflow-x: auto;
+    border-top: 1px solid var(--foc-line);
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+  .serviceNav::-webkit-scrollbar {
+    display: none;
+  }
+  .serviceNav a {
+    flex: 0 0 auto;
+    padding: 0 var(--foc-space-12);
+    font-size: 0.82rem;
+  }
+  .serviceNav a[aria-current='page']::after {
+    right: var(--foc-space-16);
+    left: var(--foc-space-16);
+  }
+  .accountName {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .actions {
+    margin-left: auto;
+    gap: var(--foc-space-8);
+  }
+}
+
+@media (max-width: 31rem) {
+  .actions .workspaceSelectorOptions button {
+    padding-inline: 0.4rem;
+    font-size: 0.74rem;
+  }
+}
+
+.main {
+  width: min(100%, 80rem);
+  margin: 0 auto;
+  padding: var(--foc-space-24) var(--foc-space-16) var(--foc-space-56);
+}
+
+@media (min-width: 48rem) {
+  .main {
+    padding: 2.25rem var(--foc-space-32) var(--foc-space-56);
+  }
+}
+
+/* Notification bell: shared across every frontend's header; keep in step with notification-service. */
+.notificationBell { position: relative; display: inline-grid; flex: 0 0 auto; width: 2.75rem; height: 2.75rem; border-radius: 0.625rem; color: var(--foc-muted); place-items: center; text-decoration: none; transition: background 150ms ease, color 150ms ease; }
+.notificationBell svg { width: 1.25rem; height: 1.25rem; stroke-width: 1.8; }
+.notificationBell:hover, .notificationBell:focus-visible, .notificationBell[aria-current='page'] { background: var(--foc-action-soft); color: var(--foc-action); }
+.notificationBadge { position: absolute; top: 0.3rem; right: 0.2rem; min-width: 1.15rem; height: 1.15rem; padding: 0 0.3rem; border: 2px solid var(--foc-surface); border-radius: 0.6rem; background: var(--foc-danger); color: white; font-size: 0.68rem; font-weight: 700; line-height: 0.85rem; text-align: center; }
+
+/* Sophisticated App Design Upgrade. */
+.header { min-height: 4.875rem; border-bottom-color: rgb(23 38 65 / 8%); background: rgb(255 255 255 / 90%); backdrop-filter: blur(16px); }
+.headerContent { width: min(100%, 90rem); min-height: 4.875rem; }
+.brand { font-family: 'Manrope', 'DM Sans', sans-serif; font-weight: 800; }
+.brand img { width: 3rem; height: 3rem; }
+.serviceNav a:hover, .serviceNav a:focus-visible, .serviceNav a[aria-current='page'] { color: var(--foc-blue); }
+.serviceNav a[aria-current='page']::after { background: var(--foc-blue); }
+.actions .workspaceSelectorOptions button:hover:not(:disabled) { background: var(--foc-action-soft); color: var(--foc-blue); }
+.actions .workspaceSelectorOptions button[aria-pressed='true'], .actions .workspaceSelectorOptions button[aria-pressed='true']:hover:not(:disabled) { background: #172641; }
+.accountAvatar { background: var(--foc-gold); color: #172641; }
+.notificationBell:hover, .notificationBell:focus-visible, .notificationBell[aria-current='page'] { background: var(--foc-action-soft); color: var(--foc-blue); }
+.notificationBadge { background: var(--foc-coral); color: #172641; }
+.main { width: min(calc(100% - 4rem), 82rem); padding-top: 3rem; }
+
+@media (max-width: 48rem) {
+  .brand img { width: 2.6rem; height: 2.6rem; }
+  .main { width: min(calc(100% - 2rem), 82rem); }
+}
+
+/* Shared shell layering and unread badge contract. */
+.header { position: relative; z-index: 100; overflow: visible; }
+.userMenu { z-index: 110; }
+.userMenuItems { z-index: 120; pointer-events: auto; }
+.notificationBadge { background: #df9b93; color: #172641; }

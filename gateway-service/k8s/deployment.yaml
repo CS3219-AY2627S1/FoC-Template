@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: foc-local
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: gateway
+          image: foc-gateway-service:local-8a986a27-kafka-20261110-v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8088
+          env:
+            - name: USER_SERVICE_URL
+              value: http://user-service:8081
+            - name: SUPPLIER_SERVICE_URL
+              value: http://supplier-service:8080
+            - name: CREDIT_SERVICE_URL
+              value: http://credit-service:8083
+            - name: ORDER_SERVICE_URL
+              value: http://order-service:8082
+            - name: NOTIFICATION_SERVICE_URL
+              value: http://notification-service:8086
+            - name: ADMIN_SERVICE_URL
+              value: http://admin-service.foc-local.svc.cluster.local.:8084
+            - name: CHAT_SERVICE_URL
+              value: http://chat-service.foc-local.svc.cluster.local.:8085
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=70.0 -XX:ActiveProcessorCount=2 -XX:TieredStopAtLevel=1"
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8088
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8088
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]

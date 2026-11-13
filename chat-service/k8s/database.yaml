@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat-db
+  namespace: foc-local
+spec:
+  clusterIP: None
+  selector:
+    app: chat-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: chat-db
+  namespace: foc-local
+spec:
+  serviceName: chat-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chat-db
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  template:
+    metadata:
+      labels:
+        app: chat-db
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: chat_db
+            - name: POSTGRES_USER
+              value: chat_user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: chat-service-secrets
+                  key: DB_PASSWORD
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, chat_user, -d, chat_db]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 5Gi

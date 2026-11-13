@@ -1,0 +1,1015 @@
+{
+  "info": {
+    "_postman_id": "2ee0e2a8-4f5f-4f5b-b1d0-a12f80e5f8f1",
+    "name": "Friend on Campus — Supplier API",
+    "description": "Presentation-ready collection for the complete Supplier API. It uses the shared API Gateway by default and proves that Supplier Service works independently of the React UI.\n\nBefore running protected requests, start the Compose stack, set adminEmail/adminPassword in the collection variables, run `Login — saves REQUESTER token`, then run `Switch session to ADMIN — saves accessToken`. User Service deliberately starts every new login in REQUESTER mode, even for an account assigned ADMIN.\n\nRun the numbered folders in order. The CRUD demo creates its own temporary supplier, captures its UUID and optimistic-lock version, updates it, demonstrates a stale-version conflict, changes its status, and deletes it. It never deletes a seeded supplier.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "00 — Setup, health and authentication",
+      "description": "Start here. Public health and documentation requests need no token. Login saves the returned JWT into a collection variable for all protected Supplier requests.",
+      "item": [
+        {
+          "name": "Gateway health",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/actuator/health",
+            "description": "Checks the gateway entry point used by the presentation flow."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Gateway is healthy', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('UP');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Supplier health (direct debugging port)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{supplierDirectBaseUrl}}/actuator/health",
+            "description": "Checks Supplier Service directly on port 8080. Normal presentation traffic should use the gateway on port 8088."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Supplier Service is healthy', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('UP');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Supplier OpenAPI contract",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/docs/supplier/openapi.json",
+            "description": "Shows the machine-readable Supplier API contract routed through the gateway."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('OpenAPI document is available', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.openapi).to.be.a('string');",
+                  "  pm.expect(body.paths).to.have.property('/api/suppliers');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login — saves REQUESTER token",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            },
+            "url": "{{gatewayBaseUrl}}/api/users/login",
+            "description": "Logs an ADMIN-assigned account in through User Service via the gateway. Every new login intentionally starts with the effective REQUESTER role. The script stores this token for the 403 demonstration and the following ADMIN session switch."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Login succeeds', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('requesterAccessToken', body.accessToken);",
+                  "  pm.test('Initial REQUESTER token received', function () {",
+                  "    pm.expect(body.tokenType).to.eql('Bearer');",
+                  "    pm.expect(body.role).to.eql('REQUESTER');",
+                  "    pm.expect(body.availableRoles).to.include('ADMIN');",
+                  "    pm.expect(body.accessToken).to.be.a('string').and.not.empty;",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Switch session to ADMIN — saves accessToken",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{requesterAccessToken}}", "type": "string" }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"ADMIN\"\n}"
+            },
+            "url": "{{gatewayBaseUrl}}/api/users/me/session-role",
+            "description": "Exchanges the initial REQUESTER token for an ADMIN-scoped token. The account must already have ADMIN in availableRoles. The script stores the replacement as the collection-level accessToken."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Role switch succeeds', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "  pm.test('ADMIN token received', function () {",
+                  "    pm.expect(body.role).to.eql('ADMIN');",
+                  "    pm.expect(body.availableRoles).to.include('ADMIN');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01 — Public Supplier reads",
+      "description": "All requests in this folder explicitly use no authentication. They demonstrate the active-only public API, querying, metadata, pagination, detail lookup and standard errors.",
+      "item": [
+        {
+          "name": "List active suppliers — defaults",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/suppliers",
+            "description": "Default page=0, size=20 and sort=name,asc. Only ACTIVE suppliers are returned."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Active Supplier page returned', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.items).to.be.an('array');",
+                  "  pm.expect(body.page).to.eql(0);",
+                  "  pm.expect(body.size).to.eql(20);",
+                  "  body.items.forEach(function (supplier) { pm.expect(supplier.status).to.eql('ACTIVE'); });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search name, building or directions",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/suppliers?search=central&page=0&size=20&sort=name,asc",
+            "description": "Case-insensitive partial search across name, building and locationDescription."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Search succeeds', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().items).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter by exact type",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/suppliers?type=Food%2FCoffee&page=0&size=20&sort=name,asc",
+            "description": "Type is an exact case-insensitive filter. This example requests Food/Coffee."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Only Food/Coffee suppliers are returned', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.response.json().items.forEach(function (supplier) {",
+                  "    pm.expect(supplier.type.toLowerCase()).to.eql('food/coffee');",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter by exact building",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/suppliers?building=Central%20Library&page=0&size=20&sort=name,asc",
+            "description": "Building is an exact case-insensitive filter."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Only Central Library suppliers are returned', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.response.json().items.forEach(function (supplier) {",
+                  "    pm.expect(supplier.building.toLowerCase()).to.eql('central library');",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Combined search + filters + sort + pagination",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/suppliers?search=central&type=Food&building=Central%20Library&page=0&size=12&sort=openingTime,desc",
+            "description": "Filters combine with AND. Search checks three fields with OR internally. Demonstrates a safe allowed sort and custom page size."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Combined query returns a page', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.page).to.eql(0);",
+                  "  pm.expect(body.size).to.eql(12);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Second page",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/suppliers?page=1&size=12&sort=name,asc",
+            "description": "The API uses zero-based page numbers. This is the second human-visible page."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Second page returned', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().page).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Page beyond final page",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/suppliers?page=999&size=20&sort=name,asc",
+            "description": "Out-of-range pages are valid and return 200 with an empty items array."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Empty page returned successfully', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().items).to.eql([]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Public filter metadata",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/suppliers/metadata",
+            "description": "Distinct types and buildings belonging to ACTIVE suppliers only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Metadata returned', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.types).to.be.an('array');",
+                  "  pm.expect(body.buildings).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get seeded supplier by UUID",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/suppliers/{{seedSupplierId}}",
+            "description": "Direct lookup returns active or inactive suppliers. The default UUID is the stable seed for Anna's x Soup Union."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Seeded supplier returned', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.id).to.eql(pm.collectionVariables.get('seedSupplierId'));",
+                  "  pm.expect(body.name).to.eql(\"Anna's x Soup Union\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 — Administrative reads and authorization",
+      "description": "Administrative reads include ACTIVE and INACTIVE suppliers and require a valid ADMIN bearer token.",
+      "item": [
+        {
+          "name": "List all suppliers for ADMIN",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/admin/suppliers?page=0&size=20&sort=name,asc",
+            "description": "Returns both statuses when status is omitted. Uses the collection-level ADMIN token."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Admin page returned', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().items).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filter admin list by INACTIVE status",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/admin/suppliers?status=INACTIVE&page=0&size=20&sort=updatedAt,desc",
+            "description": "Status is an admin-only, case-insensitive exact filter."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Only inactive suppliers are returned', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.response.json().items.forEach(function (supplier) { pm.expect(supplier.status).to.eql('INACTIVE'); });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin search, filters and status sort",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/admin/suppliers?search=central&building=Central%20Library&page=0&size=20&sort=status,asc",
+            "description": "Admin queries share public search/filter behavior and additionally allow sorting by status."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Admin combined query succeeds', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin filter metadata",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/admin/suppliers/metadata",
+            "description": "Distinct types and buildings across ACTIVE and INACTIVE suppliers."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Admin metadata returned', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().types).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Missing token → 401",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/admin/suppliers",
+            "description": "Demonstrates authentication: no bearer token means 401 Unauthorized."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Missing token is unauthorized', function () {",
+                  "  pm.response.to.have.status(401);",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Malformed token → 401",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "this-is-not-a-jwt", "type": "string" }
+              ]
+            },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/admin/suppliers",
+            "description": "Demonstrates signature/token validation: a malformed bearer token is rejected."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Malformed token is unauthorized', function () { pm.response.to.have.status(401); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Valid REQUESTER token → 403",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{requesterAccessToken}}", "type": "string" }
+              ]
+            },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/admin/suppliers",
+            "description": "Uses the initial REQUESTER token captured before switching to ADMIN. It is valid authentication but lacks ADMIN authority, so the result is 403 Forbidden."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('REQUESTER session is forbidden', function () {",
+                  "  pm.response.to.have.status(403);",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 — Complete CRUD and optimistic-locking demo",
+      "description": "Run these requests in order after ADMIN login. They operate only on a temporary record created by the first request. Scripts carry the generated UUID and newest version into later requests.",
+      "item": [
+        {
+          "name": "1. Create presentation supplier",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Presentation Cafe\",\n  \"type\": \"Food/Coffee\",\n  \"building\": \"COM3\",\n  \"floor\": \"1\",\n  \"locationDescription\": \"Created live during the API presentation\",\n  \"latitude\": 1.2948,\n  \"longitude\": 103.7716,\n  \"openingTime\": \"08:00\",\n  \"closingTime\": \"18:00\",\n  \"imageUrl\": \"https://example.com/presentation-cafe.jpg\",\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": "{{gatewayBaseUrl}}/api/suppliers",
+            "description": "Creates a dedicated demo record. The test stores its generated UUID and version for every later request."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Supplier created', function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('demoSupplierId', body.id);",
+                  "  pm.collectionVariables.set('demoSupplierVersion', String(body.version));",
+                  "  pm.collectionVariables.set('staleSupplierVersion', String(body.version));",
+                  "  pm.test('Generated fields and Location are returned', function () {",
+                  "    pm.expect(body.id).to.be.a('string');",
+                  "    pm.expect(body.version).to.eql(0);",
+                  "    pm.expect(body.createdAt).to.be.a('string');",
+                  "    pm.expect(pm.response.headers.get('Location')).to.eql('/api/suppliers/' + body.id);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Retrieve created supplier",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/suppliers/{{demoSupplierId}}",
+            "description": "Direct lookup is public and proves that POST persisted the new record."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Created supplier can be retrieved', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('demoSupplierId'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Update complete supplier details",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Presentation Cafe — Updated\",\n  \"type\": \"Food/Coffee\",\n  \"building\": \"COM3\",\n  \"floor\": \"2\",\n  \"locationDescription\": \"Updated live through PUT\",\n  \"latitude\": 1.2948,\n  \"longitude\": 103.7716,\n  \"openingTime\": \"09:00\",\n  \"closingTime\": \"20:00\",\n  \"imageUrl\": null,\n  \"version\": {{demoSupplierVersion}}\n}"
+            },
+            "url": "{{gatewayBaseUrl}}/api/suppliers/{{demoSupplierId}}",
+            "description": "PUT is a full replacement of editable details. The latest captured version prevents overwriting unseen changes."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Supplier updated', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('demoSupplierVersion', String(body.version));",
+                  "  pm.test('Version incremented and optional image cleared', function () {",
+                  "    pm.expect(body.version).to.be.above(Number(pm.collectionVariables.get('staleSupplierVersion')));",
+                  "    pm.expect(body.imageUrl).to.eql(null);",
+                  "    pm.expect(body.status).to.eql('ACTIVE');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Repeat old version → 409 conflict",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"This stale update must not win\",\n  \"type\": \"Food/Coffee\",\n  \"building\": \"COM3\",\n  \"floor\": \"2\",\n  \"locationDescription\": \"Stale request\",\n  \"latitude\": 1.2948,\n  \"longitude\": 103.7716,\n  \"openingTime\": \"09:00\",\n  \"closingTime\": \"20:00\",\n  \"imageUrl\": null,\n  \"version\": {{staleSupplierVersion}}\n}"
+            },
+            "url": "{{gatewayBaseUrl}}/api/suppliers/{{demoSupplierId}}",
+            "description": "Reuses the version from creation after the record has already changed. The API rejects it instead of losing the newer update."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Stale update is rejected', function () {",
+                  "  pm.response.to.have.status(409);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.title).to.eql('Supplier update conflict');",
+                  "  pm.expect(String(body.requestedVersion)).to.eql(pm.collectionVariables.get('staleSupplierVersion'));",
+                  "  pm.expect(String(body.currentVersion)).to.eql(pm.collectionVariables.get('demoSupplierVersion'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Deactivate supplier",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"INACTIVE\",\n  \"version\": {{demoSupplierVersion}}\n}"
+            },
+            "url": "{{gatewayBaseUrl}}/api/suppliers/{{demoSupplierId}}/status",
+            "description": "Status has its own PATCH route so full supplier details do not need to be resent."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Supplier deactivated', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('demoSupplierVersion', String(body.version));",
+                  "  pm.test('Status is INACTIVE', function () { pm.expect(body.status).to.eql('INACTIVE'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Public list excludes inactive supplier",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/suppliers?search=Postman%20Presentation&page=0&size=20&sort=name,asc",
+            "description": "The record still exists, but active-only public listings must hide it."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Inactive supplier is hidden publicly', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const id = pm.collectionVariables.get('demoSupplierId');",
+                  "  const ids = pm.response.json().items.map(function (supplier) { return supplier.id; });",
+                  "  pm.expect(ids).not.to.include(id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Admin list still finds inactive supplier",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/admin/suppliers?search=Postman%20Presentation&status=INACTIVE&page=0&size=20&sort=name,asc",
+            "description": "Administrative reads include inactive records."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Inactive supplier remains administratively visible', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const id = pm.collectionVariables.get('demoSupplierId');",
+                  "  const match = pm.response.json().items.find(function (supplier) { return supplier.id === id; });",
+                  "  pm.expect(match).to.exist;",
+                  "  pm.expect(match.status).to.eql('INACTIVE');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8. Reactivate supplier",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ACTIVE\",\n  \"version\": {{demoSupplierVersion}}\n}"
+            },
+            "url": "{{gatewayBaseUrl}}/api/suppliers/{{demoSupplierId}}/status",
+            "description": "Reactivates the same record using its latest version."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Supplier reactivated', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('demoSupplierVersion', String(body.version));",
+                  "  pm.test('Status is ACTIVE', function () { pm.expect(body.status).to.eql('ACTIVE'); });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9. Permanently delete supplier",
+          "request": {
+            "method": "DELETE",
+            "url": "{{gatewayBaseUrl}}/api/suppliers/{{demoSupplierId}}?version={{demoSupplierVersion}}",
+            "description": "Hard deletion requires the latest version and returns 204 with no response body."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Supplier permanently deleted', function () {",
+                  "  pm.response.to.have.status(204);",
+                  "  pm.expect(pm.response.text()).to.eql('');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10. Confirm deleted supplier is gone",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/suppliers/{{demoSupplierId}}",
+            "description": "A repeated lookup after hard deletion returns 404 Not Found."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Deleted supplier returns 404', function () {",
+                  "  pm.response.to.have.status(404);",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 — Validation and Problem Details examples",
+      "description": "Safe failure examples. These requests either read only or submit data that is rejected before persistence.",
+      "item": [
+        {
+          "name": "Malformed supplier UUID → 400",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/suppliers/not-a-uuid",
+            "description": "Path conversion failure is returned as RFC Problem Details."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Malformed UUID returns 400 Problem Details', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown supplier UUID → 404",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/suppliers/00000000-0000-0000-0000-000000000000",
+            "description": "A syntactically valid UUID with no matching record returns 404 Problem Details."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Unknown supplier returns 404', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid pagination and sort → 400",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/suppliers?page=-1&size=101&sort=secretField,sideways",
+            "description": "Page, size, sort field and direction are validated instead of being passed blindly to JPA."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Invalid query returns 400', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid admin status → 400",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayBaseUrl}}/api/admin/suppliers?status=ARCHIVED",
+            "description": "Only ACTIVE and INACTIVE are accepted. Requires ADMIN because authorization happens before query validation."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Unsupported status returns 400', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid create body → 400 with field errors",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"   \",\n  \"type\": \"Food\",\n  \"building\": \"COM3\",\n  \"latitude\": 91,\n  \"longitude\": 181,\n  \"imageUrl\": \"ftp://invalid.example.com/photo.jpg\",\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": "{{gatewayBaseUrl}}/api/suppliers",
+            "description": "Demonstrates bean validation and field-specific Problem Details. The request is rejected and creates no row."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Invalid supplier is rejected', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.title).to.eql('Invalid supplier request');",
+                  "  pm.expect(body.errors).to.be.an('object');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete without required version → 400",
+          "request": {
+            "method": "DELETE",
+            "url": "{{gatewayBaseUrl}}/api/suppliers/{{seedSupplierId}}",
+            "description": "Safe demonstration that DELETE requires an explicit optimistic-lock version. No supplier is removed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Missing delete version is rejected', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "gatewayBaseUrl",
+      "value": "http://localhost:8088",
+      "type": "string"
+    },
+    {
+      "key": "supplierDirectBaseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "adminEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminPassword",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "requesterAccessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "seedSupplierId",
+      "value": "ca9bd61f-93da-4500-9e9d-48de1bea52fa",
+      "type": "string"
+    },
+    {
+      "key": "demoSupplierId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "demoSupplierVersion",
+      "value": "0",
+      "type": "string"
+    },
+    {
+      "key": "staleSupplierVersion",
+      "value": "0",
+      "type": "string"
+    }
+  ]
+}

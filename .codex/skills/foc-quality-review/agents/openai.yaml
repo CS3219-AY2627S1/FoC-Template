@@ -1,0 +1,6 @@
+interface:
+  display_name: "FoC Quality Review"
+  short_description: "Review FoC feature changes"
+  default_prompt: "Use $foc-quality-review to review a completed Friend on Campus feature change."
+policy:
+  allow_implicit_invocation: false

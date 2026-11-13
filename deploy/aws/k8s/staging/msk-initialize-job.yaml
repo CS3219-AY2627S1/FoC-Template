@@ -1,0 +1,56 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: msk-init
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 1200
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: msk-init
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: initialize
+          image: apache/kafka:4.3.1
+          imagePullPolicy: IfNotPresent
+          command: [/bin/bash, /opt/foc-kafka/initialize.sh]
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: cloud-runtime
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - { name: KAFKA_SECURITY_PROTOCOL, value: SASL_SSL }
+            - { name: KAFKA_SASL_MECHANISM, value: SCRAM-SHA-512 }
+            - { name: KAFKA_REPLICATION_FACTOR, value: "3" }
+            - { name: KAFKA_MIN_INSYNC_REPLICAS, value: "2" }
+            - { name: KAFKA_INIT_PARALLELISM, value: "1" }
+            - { name: KAFKA_BIN_DIR, value: /opt/foc-kafka-cli }
+            - { name: KAFKA_HEAP_OPTS, value: -Xms64m -Xmx256m }
+            - { name: KAFKA_JMX_OPTS, value: -Djava.awt.headless=true }
+            - name: KAFKA_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-admin-client
+                  key: KAFKA_ADMIN_PASSWORD
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: scripts, mountPath: /opt/foc-kafka, readOnly: true }
+            - { name: cli, mountPath: /opt/foc-kafka-cli, readOnly: true }
+      volumes:
+        - { name: scripts, configMap: { name: kafka-scripts } }
+        - { name: cli, configMap: { name: kafka-cli, defaultMode: 0555 } }

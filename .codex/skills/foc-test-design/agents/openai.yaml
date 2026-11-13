@@ -1,0 +1,6 @@
+interface:
+  display_name: "FoC Test Design"
+  short_description: "Design focused FoC feature tests"
+  default_prompt: "Use $foc-test-design to design tests for an approved Friend on Campus feature."
+policy:
+  allow_implicit_invocation: false

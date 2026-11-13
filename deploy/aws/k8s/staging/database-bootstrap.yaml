@@ -1,0 +1,126 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: database-bootstrap
+  namespace: foc-staging
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels: { app: database-bootstrap }
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      containers:
+        - name: bootstrap
+          image: postgres:17-alpine
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              export PGPASSWORD="$MASTER_PASSWORD"
+              psql -v ON_ERROR_STOP=1 -h "$RDS_HOST" -U "$MASTER_USERNAME" -d postgres \
+                -v user_name="$user_name" -v user_db="$user_db" -v user_password="$user_password" \
+                -v supplier_name="$supplier_name" -v supplier_db="$supplier_db" -v supplier_password="$supplier_password" \
+                -v order_name="$order_name" -v order_db="$order_db" -v order_password="$order_password" \
+                -v credit_name="$credit_name" -v credit_db="$credit_db" -v credit_password="$credit_password" \
+                -v admin_name="$admin_name" -v admin_db="$admin_db" -v admin_password="$admin_password" \
+                -v chat_name="$chat_name" -v chat_db="$chat_db" -v chat_password="$chat_password" \
+                -v notification_name="$notification_name" -v notification_db="$notification_db" \
+                -v notification_password="$notification_password" <<'SQL'
+              SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'user_name', :'user_password')
+              WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'user_name') \gexec
+              SELECT format('ALTER ROLE %I PASSWORD %L', :'user_name', :'user_password') \gexec
+              SELECT format('GRANT %I TO %I', :'user_name', current_user) \gexec
+              SELECT format('CREATE DATABASE %I OWNER %I', :'user_db', :'user_name')
+              WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'user_db') \gexec
+              SELECT format('ALTER DATABASE %I OWNER TO %I', :'user_db', :'user_name') \gexec
+              SELECT format('REVOKE %I FROM %I', :'user_name', current_user) \gexec
+
+              SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'supplier_name', :'supplier_password')
+              WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'supplier_name') \gexec
+              SELECT format('ALTER ROLE %I PASSWORD %L', :'supplier_name', :'supplier_password') \gexec
+              SELECT format('GRANT %I TO %I', :'supplier_name', current_user) \gexec
+              SELECT format('CREATE DATABASE %I OWNER %I', :'supplier_db', :'supplier_name')
+              WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'supplier_db') \gexec
+              SELECT format('ALTER DATABASE %I OWNER TO %I', :'supplier_db', :'supplier_name') \gexec
+              SELECT format('REVOKE %I FROM %I', :'supplier_name', current_user) \gexec
+
+              SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'order_name', :'order_password')
+              WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'order_name') \gexec
+              SELECT format('ALTER ROLE %I PASSWORD %L', :'order_name', :'order_password') \gexec
+              SELECT format('GRANT %I TO %I', :'order_name', current_user) \gexec
+              SELECT format('CREATE DATABASE %I OWNER %I', :'order_db', :'order_name')
+              WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'order_db') \gexec
+              SELECT format('ALTER DATABASE %I OWNER TO %I', :'order_db', :'order_name') \gexec
+              SELECT format('REVOKE %I FROM %I', :'order_name', current_user) \gexec
+
+              SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'credit_name', :'credit_password')
+              WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'credit_name') \gexec
+              SELECT format('ALTER ROLE %I PASSWORD %L', :'credit_name', :'credit_password') \gexec
+              SELECT format('GRANT %I TO %I', :'credit_name', current_user) \gexec
+              SELECT format('CREATE DATABASE %I OWNER %I', :'credit_db', :'credit_name')
+              WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'credit_db') \gexec
+              SELECT format('ALTER DATABASE %I OWNER TO %I', :'credit_db', :'credit_name') \gexec
+              SELECT format('REVOKE %I FROM %I', :'credit_name', current_user) \gexec
+
+              SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'admin_name', :'admin_password')
+              WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'admin_name') \gexec
+              SELECT format('ALTER ROLE %I PASSWORD %L', :'admin_name', :'admin_password') \gexec
+              SELECT format('GRANT %I TO %I', :'admin_name', current_user) \gexec
+              SELECT format('CREATE DATABASE %I OWNER %I', :'admin_db', :'admin_name')
+              WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'admin_db') \gexec
+              SELECT format('ALTER DATABASE %I OWNER TO %I', :'admin_db', :'admin_name') \gexec
+              SELECT format('REVOKE %I FROM %I', :'admin_name', current_user) \gexec
+
+              SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'chat_name', :'chat_password')
+              WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'chat_name') \gexec
+              SELECT format('ALTER ROLE %I PASSWORD %L', :'chat_name', :'chat_password') \gexec
+              SELECT format('GRANT %I TO %I', :'chat_name', current_user) \gexec
+              SELECT format('CREATE DATABASE %I OWNER %I', :'chat_db', :'chat_name')
+              WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'chat_db') \gexec
+              SELECT format('ALTER DATABASE %I OWNER TO %I', :'chat_db', :'chat_name') \gexec
+              SELECT format('REVOKE %I FROM %I', :'chat_name', current_user) \gexec
+
+              SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'notification_name', :'notification_password')
+              WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'notification_name') \gexec
+              SELECT format('ALTER ROLE %I PASSWORD %L', :'notification_name', :'notification_password') \gexec
+              SELECT format('GRANT %I TO %I', :'notification_name', current_user) \gexec
+              SELECT format('CREATE DATABASE %I OWNER %I', :'notification_db', :'notification_name')
+              WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'notification_db') \gexec
+              SELECT format('ALTER DATABASE %I OWNER TO %I', :'notification_db', :'notification_name') \gexec
+              SELECT format('REVOKE %I FROM %I', :'notification_name', current_user) \gexec
+              SQL
+          env:
+            - { name: RDS_HOST, valueFrom: { configMapKeyRef: { name: cloud-runtime, key: RDS_HOST } } }
+            - { name: MASTER_USERNAME, valueFrom: { secretKeyRef: { name: rds-master, key: username } } }
+            - { name: MASTER_PASSWORD, valueFrom: { secretKeyRef: { name: rds-master, key: password } } }
+            - { name: PGOPTIONS, value: "-c client_min_messages=warning" }
+            - { name: user_name, value: user_user }
+            - { name: user_db, value: user_db }
+            - { name: user_password, valueFrom: { secretKeyRef: { name: user-service-secrets, key: DB_PASSWORD } } }
+            - { name: supplier_name, value: supplier_user }
+            - { name: supplier_db, value: supplier_db }
+            - { name: supplier_password, valueFrom: { secretKeyRef: { name: supplier-service-secrets, key: DB_PASSWORD } } }
+            - { name: order_name, value: order_user }
+            - { name: order_db, value: order_db }
+            - { name: order_password, valueFrom: { secretKeyRef: { name: order-service-secrets, key: DB_PASSWORD } } }
+            - { name: credit_name, value: credit_user }
+            - { name: credit_db, value: credit_db }
+            - { name: credit_password, valueFrom: { secretKeyRef: { name: credit-service-secrets, key: DB_PASSWORD } } }
+            - { name: admin_name, value: admin_user }
+            - { name: admin_db, value: admin_db }
+            - { name: admin_password, valueFrom: { secretKeyRef: { name: admin-service-secrets, key: ADMIN_DB_PASSWORD } } }
+            - { name: chat_name, value: chat_user }
+            - { name: chat_db, value: chat_db }
+            - { name: chat_password, valueFrom: { secretKeyRef: { name: chat-service-secrets, key: DB_PASSWORD } } }
+            - { name: notification_name, value: notification_user }
+            - { name: notification_db, value: notification_db }
+            - { name: notification_password, valueFrom: { secretKeyRef: { name: notification-service-secrets, key: DB_PASSWORD } } }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }

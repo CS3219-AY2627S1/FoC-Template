@@ -1,0 +1,2342 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Chat WebSocket frames - review draft",
+  "$defs": {
+    "Problem": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "status": {
+          "type": "integer"
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "instance": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "title",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "Checkpoint": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "stream": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "committedSequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "checkedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "source",
+        "stream",
+        "aggregateId",
+        "committedSequence",
+        "checkedAt"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectionCheckpoint": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "stream": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "committedSequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "checkedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "projectedSequence": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "source",
+        "stream",
+        "aggregateId",
+        "committedSequence",
+        "checkedAt",
+        "projectedSequence"
+      ],
+      "additionalProperties": false
+    },
+    "Gap": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "stream": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "fromSequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "toSequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "MISSING_SEQUENCE",
+            "BACKFILL_PENDING",
+            "SOURCE_UNAVAILABLE",
+            "FAILED_INGESTION"
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "stream",
+        "aggregateId",
+        "fromSequence",
+        "toSequence",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "Coverage": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "COMPLETE",
+            "INCOMPLETE",
+            "UNKNOWN"
+          ]
+        },
+        "asOf": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "checkpoints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectionCheckpoint"
+          }
+        },
+        "blockingGaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Gap"
+          }
+        }
+      },
+      "required": [
+        "status",
+        "asOf",
+        "checkpoints",
+        "blockingGaps"
+      ],
+      "additionalProperties": false
+    },
+    "Participant": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "relationship": {
+          "type": "string",
+          "enum": [
+            "REQUESTER",
+            "HISTORICAL_COURIER"
+          ]
+        },
+        "assignedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unassignedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "userId",
+        "relationship",
+        "assignedAt",
+        "unassignedAt"
+      ],
+      "additionalProperties": false
+    },
+    "OrderSnapshot": {
+      "type": "object",
+      "properties": {
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "requesterId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "courierId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING_CREDIT",
+            "OPEN",
+            "ACCEPTED",
+            "PICKED_UP",
+            "DELIVERED",
+            "COMPLETED",
+            "CANCELLED",
+            "EXPIRED",
+            "RESERVATION_FAILED"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "creditReward": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pickupDeadline": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "pickupLocationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "dropoffLocationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "pickupLocationName": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dropoffLocationName": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reviewCaseId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reviewResolved": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "orderId",
+        "requesterId",
+        "courierId",
+        "status",
+        "title",
+        "description",
+        "creditReward",
+        "pickupDeadline",
+        "pickupLocationId",
+        "dropoffLocationId",
+        "pickupLocationName",
+        "dropoffLocationName"
+      ],
+      "additionalProperties": false
+    },
+    "EvidenceData": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "ORDER"
+            },
+            "fromState": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "toState": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "requesterId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "courierId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "previousCourierId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "snapshot": {
+              "$ref": "#/$defs/OrderSnapshot"
+            }
+          },
+          "required": [
+            "kind",
+            "fromState",
+            "toState",
+            "requesterId",
+            "courierId",
+            "previousCourierId",
+            "snapshot"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "CREDIT"
+            },
+            "operationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "ledgerEntries": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "ledgerEntryId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "userId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "availableDelta": {
+                    "type": "integer"
+                  },
+                  "reservedDelta": {
+                    "type": "integer"
+                  },
+                  "availableBalance": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "reservedBalance": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "ledgerEntryId",
+                  "userId",
+                  "availableDelta",
+                  "reservedDelta",
+                  "availableBalance",
+                  "reservedBalance"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "reasonCode": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "result": {
+              "type": "string",
+              "enum": [
+                "APPLIED",
+                "REJECTED",
+                "NO_CHANGE"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "operationId",
+            "ledgerEntries",
+            "reasonCode",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "ADMIN"
+            },
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "operationId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "targetUserId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "APPLIED",
+                    "REJECTED",
+                    "NO_CHANGE"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ownerEventId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "ownerService": {
+              "type": "string",
+              "enum": [
+                "user-service",
+                "credit-service"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "caseId",
+            "operationId",
+            "targetUserId",
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "CHAT"
+            },
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "conversationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "conversationType": {
+              "type": "string",
+              "enum": [
+                "ERRAND",
+                "CASE"
+              ]
+            },
+            "participantUserId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "messageId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "messageType": {
+              "type": "string",
+              "enum": [
+                "TEXT",
+                "QUICK_REPLY",
+                "IMAGE"
+              ]
+            },
+            "text": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "attachment": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "contentType": {
+                      "type": "string",
+                      "enum": [
+                        "image/png",
+                        "image/jpeg",
+                        "image/webp"
+                      ]
+                    },
+                    "filename": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2000
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 5242880
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "contentType",
+                    "filename",
+                    "size"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "caseId",
+            "conversationId",
+            "conversationType",
+            "participantUserId",
+            "messageId",
+            "messageType",
+            "text",
+            "attachment"
+          ],
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "messageType": {
+                    "const": "IMAGE"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "text": {
+                    "type": "null"
+                  },
+                  "attachment": {
+                    "type": "object"
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "attachment": {
+                    "type": "null"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "conversationType": {
+                    "const": "CASE"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "participantUserId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "participantUserId": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "EvidenceRecord": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "stream": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "sourceSequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "actorUserId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ingestedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data": {
+          "$ref": "#/$defs/EvidenceData"
+        }
+      },
+      "required": [
+        "eventId",
+        "source",
+        "stream",
+        "sourceSequence",
+        "orderId",
+        "action",
+        "actorUserId",
+        "occurredAt",
+        "ingestedAt",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    "Eligibility": {
+      "type": "object",
+      "properties": {
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "userId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eligible": {
+          "type": "boolean"
+        },
+        "evidenceRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        }
+      },
+      "required": [
+        "orderId",
+        "userId",
+        "eligible",
+        "evidenceRevision",
+        "coverage"
+      ],
+      "additionalProperties": false
+    },
+    "Timeline": {
+      "type": "object",
+      "properties": {
+        "caseId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "evidenceRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "order": {
+          "$ref": "#/$defs/OrderSnapshot"
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Participant"
+          }
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidenceRecord"
+          }
+        },
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "caseId",
+        "orderId",
+        "evidenceRevision",
+        "order",
+        "participants",
+        "records",
+        "coverage",
+        "nextCursor"
+      ],
+      "additionalProperties": false
+    },
+    "EvidenceExport": {
+      "type": "object",
+      "properties": {
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "snapshotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "checkpoint": {
+          "$ref": "#/$defs/Checkpoint"
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidenceRecord"
+          }
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "orderId",
+        "snapshotId",
+        "checkpoint",
+        "records",
+        "nextCursor"
+      ],
+      "additionalProperties": false
+    },
+    "CurrentAuthorization": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "REQUESTER",
+              "COURIER",
+              "ADMIN"
+            ]
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "userId",
+        "active",
+        "roles"
+      ],
+      "additionalProperties": false
+    },
+    "AdminEligibility": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "administrator": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "userId",
+        "active",
+        "administrator"
+      ],
+      "additionalProperties": false
+    },
+    "CaseAccess": {
+      "type": "object",
+      "properties": {
+        "caseId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "OPEN",
+            "UNDER_REVIEW",
+            "RESOLVED"
+          ]
+        },
+        "reviewerId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "allowedParticipantIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "canReadEvidence": {
+          "type": "boolean"
+        },
+        "canReadConversation": {
+          "type": "boolean"
+        },
+        "canWriteConversation": {
+          "type": "boolean"
+        },
+        "closureOperationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "caseId",
+        "orderId",
+        "state",
+        "reviewerId",
+        "allowedParticipantIds",
+        "canReadEvidence",
+        "canReadConversation",
+        "canWriteConversation"
+      ],
+      "additionalProperties": false
+    },
+    "Conversation": {
+      "type": "object",
+      "properties": {
+        "conversationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "caseId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "participantUserId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "readOnly": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "conversationId",
+        "caseId",
+        "orderId",
+        "participantUserId",
+        "readOnly"
+      ],
+      "additionalProperties": false
+    },
+    "Attachment": {
+      "type": "object",
+      "properties": {
+        "attachmentId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "mediaType": {
+          "type": "string",
+          "enum": [
+            "image/jpeg",
+            "image/png",
+            "image/webp"
+          ]
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5242880
+        }
+      },
+      "required": [
+        "attachmentId",
+        "mediaType",
+        "sizeBytes"
+      ],
+      "additionalProperties": false
+    },
+    "Message": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "conversationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "senderUserId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "messageType": {
+          "type": "string",
+          "enum": [
+            "TEXT",
+            "QUICK_REPLY",
+            "IMAGE"
+          ]
+        },
+        "originalLanguage": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "en",
+                "zh",
+                "ms",
+                "ta"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quickReplyKey": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "ON_MY_WAY",
+                "ARRIVED",
+                "RUNNING_LATE_5",
+                "WHERE_MEET",
+                "THANK_YOU"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attachment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Attachment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "conversationId",
+        "senderUserId",
+        "sequence",
+        "createdAt",
+        "messageType",
+        "originalLanguage",
+        "quickReplyKey",
+        "text",
+        "attachment"
+      ],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "messageType": {
+              "const": "TEXT"
+            },
+            "text": {
+              "type": "string"
+            },
+            "quickReplyKey": {
+              "type": "null"
+            },
+            "attachment": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "messageType": {
+              "const": "QUICK_REPLY"
+            },
+            "text": {
+              "type": "string"
+            },
+            "quickReplyKey": {
+              "type": "string",
+              "enum": [
+                "ON_MY_WAY",
+                "ARRIVED",
+                "RUNNING_LATE_5",
+                "WHERE_MEET",
+                "THANK_YOU"
+              ]
+            },
+            "attachment": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "messageType": {
+              "const": "IMAGE"
+            },
+            "text": {
+              "type": "null"
+            },
+            "quickReplyKey": {
+              "type": "null"
+            },
+            "attachment": {
+              "type": "object"
+            }
+          }
+        }
+      ]
+    },
+    "MessagePage": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Message"
+          }
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "content",
+        "nextCursor"
+      ],
+      "additionalProperties": false
+    },
+    "MessageRequest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "clientMessageId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            }
+          },
+          "required": [
+            "clientMessageId",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "clientMessageId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "quickReplyKey": {
+              "type": "string",
+              "enum": [
+                "ON_MY_WAY",
+                "ARRIVED",
+                "RUNNING_LATE_5",
+                "WHERE_MEET",
+                "THANK_YOU"
+              ]
+            }
+          },
+          "required": [
+            "clientMessageId",
+            "quickReplyKey"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "clientMessageId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "attachmentId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "clientMessageId",
+            "attachmentId"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ChatPreferences": {
+      "type": "object",
+      "properties": {
+        "preferredLanguage": {
+          "type": "string",
+          "enum": [
+            "en",
+            "zh",
+            "ms",
+            "ta"
+          ]
+        }
+      },
+      "required": [
+        "preferredLanguage"
+      ],
+      "additionalProperties": false
+    },
+    "QuickReply": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "enum": [
+            "ON_MY_WAY",
+            "ARRIVED",
+            "RUNNING_LATE_5",
+            "WHERE_MEET",
+            "THANK_YOU"
+          ]
+        },
+        "language": {
+          "type": "string",
+          "enum": [
+            "en",
+            "zh",
+            "ms",
+            "ta"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "key",
+        "language",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "QuickReplyList": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/QuickReply"
+          }
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "Translation": {
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sourceLanguage": {
+          "type": "string",
+          "enum": [
+            "en",
+            "zh",
+            "ms",
+            "ta"
+          ]
+        },
+        "targetLanguage": {
+          "type": "string",
+          "enum": [
+            "en",
+            "zh",
+            "ms",
+            "ta"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING",
+            "READY",
+            "FAILED"
+          ]
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "messageId",
+        "sourceLanguage",
+        "targetLanguage",
+        "status",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "Notification": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "ORDER_OPENED",
+            "ORDER_RESERVATION_FAILED",
+            "ORDER_ACCEPTED",
+            "ORDER_COURIER_WITHDREW",
+            "ORDER_EXPIRED",
+            "ORDER_CANCELLED",
+            "ORDER_PICKED_UP",
+            "ORDER_DELIVERED",
+            "ORDER_COMPLETED",
+            "ORDER_STILL_OPEN",
+            "PICKUP_DUE_SOON",
+            "PICKUP_OVERDUE",
+            "CREDITS_WELCOME",
+            "CREDITS_RECEIVED",
+            "CREDITS_COMPENSATED",
+            "CHAT_MESSAGE_RECEIVED"
+          ]
+        },
+        "orderId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "readAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "orderId",
+        "message",
+        "occurredAt",
+        "readAt"
+      ],
+      "additionalProperties": false
+    },
+    "NotificationPage": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Notification"
+          }
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "totalElements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalPages": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "content",
+        "page",
+        "size",
+        "totalElements",
+        "totalPages"
+      ],
+      "additionalProperties": false
+    },
+    "UnreadCount": {
+      "type": "object",
+      "properties": {
+        "unreadCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "unreadCount"
+      ],
+      "additionalProperties": false
+    },
+    "WebSocketTicket": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ticket",
+        "expiresAt"
+      ],
+      "additionalProperties": false
+    },
+    "Upload": {
+      "type": "object",
+      "properties": {
+        "attachmentId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "uploadUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "requiredHeaders": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "attachmentId",
+        "uploadUrl",
+        "expiresAt",
+        "requiredHeaders"
+      ],
+      "additionalProperties": false
+    },
+    "Download": {
+      "type": "object",
+      "properties": {
+        "downloadUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "downloadUrl",
+        "expiresAt"
+      ],
+      "additionalProperties": false
+    },
+    "CaseSummary": {
+      "type": "object",
+      "properties": {
+        "caseId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "OPEN",
+            "UNDER_REVIEW",
+            "RESOLVED"
+          ]
+        },
+        "reviewerId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reviewStatus": {
+          "type": "string",
+          "enum": [
+            "LEGACY",
+            "PREPARING",
+            "READY",
+            "REJECTED"
+          ]
+        }
+      },
+      "required": [
+        "caseId",
+        "orderId",
+        "state",
+        "reviewerId",
+        "revision",
+        "createdAt",
+        "reviewStatus"
+      ],
+      "additionalProperties": false
+    },
+    "Statement": {
+      "type": "object",
+      "properties": {
+        "reporterId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "submittedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "reporterId",
+        "description",
+        "submittedAt"
+      ],
+      "additionalProperties": false
+    },
+    "Action": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "caseId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "targetUserId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "CREDIT_ADJUSTMENT",
+            "BAN"
+          ]
+        },
+        "amount": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING",
+            "UNKNOWN",
+            "SUCCEEDED",
+            "REJECTED"
+          ]
+        },
+        "reasonCode": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "operationId",
+        "caseId",
+        "targetUserId",
+        "type",
+        "amount",
+        "reason",
+        "status",
+        "reasonCode",
+        "createdAt",
+        "completedAt"
+      ],
+      "additionalProperties": false
+    },
+    "CaseDetail": {
+      "type": "object",
+      "properties": {
+        "case": {
+          "$ref": "#/$defs/CaseSummary"
+        },
+        "statements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Statement"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Action"
+          }
+        },
+        "resolution": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClosurePreparation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "case",
+        "statements",
+        "actions",
+        "resolution"
+      ],
+      "additionalProperties": false
+    },
+    "ClosurePreparation": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "resolution": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "explanations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "operationId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "explanation": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "operationId",
+              "explanation"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "creditDisposition": {
+          "type": "string",
+          "enum": [
+            "RETURN_TO_REQUESTER",
+            "PAY_COURIER",
+            "KEEP_EXISTING"
+          ]
+        }
+      },
+      "required": [
+        "operationId",
+        "resolution",
+        "revision",
+        "explanations"
+      ],
+      "additionalProperties": false
+    },
+    "ReportPreparation": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING",
+            "READY",
+            "REJECTED"
+          ]
+        },
+        "failureCode": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "operationId",
+        "status",
+        "failureCode"
+      ],
+      "additionalProperties": false
+    },
+    "ParticipantReport": {
+      "type": "object",
+      "properties": {
+        "case": {
+          "$ref": "#/$defs/CaseSummary"
+        },
+        "ownStatement": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Statement"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "preparation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReportPreparation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "case",
+        "ownStatement",
+        "preparation"
+      ],
+      "additionalProperties": false
+    },
+    "CasePage": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CaseSummary"
+          }
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalElements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalPages": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "content",
+        "page",
+        "size",
+        "totalElements",
+        "totalPages"
+      ],
+      "additionalProperties": false
+    },
+    "OrderReview": {
+      "type": "object",
+      "properties": {
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "caseId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "requesterId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "courierId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "PENDING_CREDIT",
+            "OPEN",
+            "ACCEPTED",
+            "PICKED_UP",
+            "DELIVERED",
+            "COMPLETED",
+            "CANCELLED",
+            "EXPIRED",
+            "RESERVATION_FAILED"
+          ]
+        },
+        "creditStatus": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "RESERVED",
+                "RELEASED",
+                "SETTLED",
+                "COMPENSATED"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolved": {
+          "type": "boolean"
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "required": [
+        "orderId",
+        "caseId",
+        "requesterId",
+        "courierId",
+        "state",
+        "creditStatus",
+        "resolved",
+        "participants"
+      ],
+      "additionalProperties": false
+    },
+    "DisputeCreditReceipt": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "caseId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "disposition": {
+          "type": "string",
+          "enum": [
+            "RETURN_TO_REQUESTER",
+            "PAY_COURIER",
+            "KEEP_EXISTING"
+          ]
+        },
+        "reservationStatus": {
+          "type": "string",
+          "enum": [
+            "ABSENT",
+            "RELEASED",
+            "SETTLED",
+            "COMPENSATED"
+          ]
+        },
+        "complete": {
+          "const": true
+        }
+      },
+      "required": [
+        "operationId",
+        "caseId",
+        "orderId",
+        "disposition",
+        "reservationStatus",
+        "complete"
+      ],
+      "additionalProperties": false
+    },
+    "ErrandReviewAcknowledgement": {
+      "type": "object",
+      "properties": {
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "caseId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "readOnly": {
+          "const": true
+        }
+      },
+      "required": [
+        "orderId",
+        "caseId",
+        "readOnly"
+      ],
+      "additionalProperties": false
+    },
+    "ImageBytes": {
+      "type": "string",
+      "format": "binary"
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "AUTHENTICATE"
+        },
+        "ticket": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "type",
+        "ticket"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "SUBSCRIBE"
+        },
+        "conversationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "afterSequence": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "type",
+        "conversationId",
+        "afterSequence"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "AUTHENTICATED"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "type",
+        "expiresAt"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "MESSAGE_CREATED"
+        },
+        "message": {
+          "$ref": "#/$defs/Message"
+        }
+      },
+      "required": [
+        "type",
+        "message"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "TRANSLATION_UPDATED"
+        },
+        "conversationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "translation": {
+          "$ref": "#/$defs/Translation"
+        }
+      },
+      "required": [
+        "type",
+        "conversationId",
+        "translation"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "ERROR"
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "INVALID_TICKET",
+            "FORBIDDEN",
+            "SESSION_EXPIRED",
+            "UNAVAILABLE"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "code"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

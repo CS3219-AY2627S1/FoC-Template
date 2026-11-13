@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: foc-staging
+  labels:
+    app.kubernetes.io/part-of: friend-on-campus
+    environment: staging
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: foc-encrypted-gp3
+provisioner: ebs.csi.eks.amazonaws.com
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+parameters:
+  type: gp3
+  encrypted: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloud-runtime
+  namespace: foc-staging
+data:
+  RDS_HOST: RDS_HOST_REPLACED_BY_DEPLOY_SCRIPT
+  RDS_PORT: "5432"
+  JWT_ISSUER: friend-on-campus-user-service
+  JWT_AUDIENCE: friend-on-campus-api
+  KAFKA_BOOTSTRAP_SERVERS: MSK_BOOTSTRAP_SERVERS_REPLACED_BY_DEPLOY_SCRIPT

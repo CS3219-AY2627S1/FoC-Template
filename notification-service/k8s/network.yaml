@@ -1,0 +1,86 @@
+# Both ends of new connections must be allowed under the shared default deny. The User JWKS and
+# Kafka ingress ends are in deploy/k8s/network/policies.yaml.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-notification
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: notification-service
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - protocol: TCP
+          port: 8086
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: notification-db
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: user-service
+      ports:
+        - protocol: TCP
+          port: 8081
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-notification-db
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: notification-db
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: notification-service
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-gateway-notification
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: gateway
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: notification-service
+      ports:
+        - protocol: TCP
+          port: 8086

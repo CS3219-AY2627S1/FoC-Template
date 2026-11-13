@@ -1,0 +1,104 @@
+.page {
+  display: grid;
+  gap: var(--foc-space-24);
+}
+
+.pageHeading {
+  width: 100%;
+  text-align: left;
+}
+
+.pageHeading h1,
+.pageHeading p,
+.resultsHeading p {
+  margin: 0;
+}
+
+.pageHeading h1 {
+  color: var(--foc-ink);
+  font-size: clamp(var(--foc-text-mobile-title), 7vw, var(--foc-text-title));
+  line-height: 1.25;
+}
+
+.eyebrow {
+  color: var(--foc-action);
+  font-size: var(--foc-text-small);
+  font-weight: 600;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--foc-space-16);
+  padding: var(--foc-space-16);
+  border: 1px solid var(--foc-line);
+  border-radius: var(--foc-radius-12);
+  background: var(--foc-surface);
+}
+
+.searchField {
+  min-width: 0;
+}
+
+.clearRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: calc(var(--foc-space-8) * -1);
+}
+
+.resultsHeading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--foc-space-8);
+  color: var(--foc-muted);
+  font-size: var(--foc-text-small);
+}
+
+.resultsHeading p {
+  color: var(--foc-ink);
+  font-weight: 600;
+}
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--foc-space-16);
+}
+
+@media (min-width: 42rem) {
+  .filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: var(--foc-space-24);
+  }
+
+  .searchField {
+    grid-column: 1 / -1;
+  }
+
+  .cardGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 68rem) {
+  .filters {
+    grid-template-columns: minmax(17rem, 2fr) repeat(3, minmax(0, 1fr));
+  }
+
+  .searchField {
+    grid-column: auto;
+  }
+
+  .cardGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.eyebrow { color: var(--foc-blue); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.pageHeading h1 { font-family: 'Manrope', 'DM Sans', sans-serif; font-size: clamp(2.15rem, 6vw, 3.75rem); font-weight: 700; letter-spacing: -0.05em; line-height: 1.05; }
+.filters { border-radius: 1.1rem; box-shadow: var(--foc-shadow-soft); }
+.cardGrid > :nth-child(4n + 2)::before { background: var(--foc-coral); }
+.cardGrid > :nth-child(4n + 3)::before { background: var(--foc-gold); }
+.cardGrid > :nth-child(4n)::before { background: var(--foc-mauve); }

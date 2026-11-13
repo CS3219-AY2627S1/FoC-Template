@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: supplier-db
+  namespace: foc-local
+spec:
+  clusterIP: None
+  selector:
+    app: supplier-db
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: supplier-db
+  namespace: foc-local
+spec:
+  serviceName: supplier-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: supplier-db
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  template:
+    metadata:
+      labels:
+        app: supplier-db
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: supplier_db
+            - name: POSTGRES_USER
+              value: supplier_user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: supplier-service-secrets
+                  key: DB_PASSWORD
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, supplier_user, -d, supplier_db]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 5Gi

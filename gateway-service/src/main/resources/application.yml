@@ -1,0 +1,175 @@
+spring:
+  application:
+    name: gateway-service
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          routes:
+            - id: user-ui-root
+              uri: ${USER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/
+                - Method=GET
+            - id: user-ui-assets
+              uri: ${USER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/user-assets/**
+                - Method=GET
+            - id: supplier-ui
+              uri: ${SUPPLIER_SERVICE_URL:http://localhost:8080}
+              predicates:
+                - Path=/suppliers,/suppliers/**,/admin/suppliers,/admin/suppliers/**,/supplier-assets/**
+                - Method=GET
+            - id: admin-ui
+              uri: ${ADMIN_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/admin,/admin/**,/admin-assets/**
+                - Method=GET
+            - id: credit-ui
+              uri: ${CREDIT_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/credits,/credits/**,/credit-assets/**
+                - Method=GET
+            - id: order-ui
+              uri: ${ORDER_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/errands,/errands/**,/order-assets/**
+                - Method=GET
+            - id: notification-ui
+              uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
+              predicates:
+                - Path=/notifications,/notifications/**,/notification-assets/**
+                - Method=GET
+            - id: user-api
+              uri: ${USER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/users,/api/users/**
+            - id: supplier-admin-api
+              uri: ${SUPPLIER_SERVICE_URL:http://localhost:8080}
+              predicates:
+                - Path=/api/admin/suppliers,/api/admin/suppliers/**
+            - id: admin-api
+              uri: ${ADMIN_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/api/admin,/api/admin/**
+            - id: supplier-api
+              uri: ${SUPPLIER_SERVICE_URL:http://localhost:8080}
+              predicates:
+                - Path=/api/suppliers,/api/suppliers/**
+            - id: credit-api
+              uri: ${CREDIT_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/credits,/api/credits/**
+            - id: order-api
+              uri: ${ORDER_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/orders,/api/orders/**
+            - id: chat-api
+              uri: ${CHAT_SERVICE_URL:http://localhost:8085}
+              predicates:
+                - Path=/api/chat,/api/chat/**
+            - id: chat-websocket
+              uri: ${CHAT_SERVICE_URL:http://localhost:8085}
+              predicates:
+                - Path=/ws/chat,/ws/chat/**
+            - id: notification-api
+              uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
+              predicates:
+                - Path=/api/notifications,/api/notifications/**
+            - id: user-jwks
+              uri: ${USER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/.well-known/jwks.json
+                - Method=GET
+            - id: admin-openapi-json
+              uri: ${ADMIN_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/docs/admin/openapi.json
+                - Method=GET
+              filters:
+                - SetPath=/v3/api-docs
+            - id: user-openapi-json
+              uri: ${USER_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/docs/user/openapi.json
+                - Method=GET
+              filters:
+                - SetPath=/v3/api-docs
+            - id: supplier-openapi-json
+              uri: ${SUPPLIER_SERVICE_URL:http://localhost:8080}
+              predicates:
+                - Path=/docs/supplier/openapi.json
+                - Method=GET
+              filters:
+                - SetPath=/v3/api-docs
+            - id: supplier-openapi-yaml
+              uri: ${SUPPLIER_SERVICE_URL:http://localhost:8080}
+              predicates:
+                - Path=/docs/supplier/openapi.yaml
+                - Method=GET
+              filters:
+                - SetPath=/v3/api-docs.yaml
+            - id: credit-openapi-json
+              uri: ${CREDIT_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/docs/credit/openapi.json
+                - Method=GET
+              filters:
+                - SetPath=/v3/api-docs
+            - id: order-openapi-json
+              uri: ${ORDER_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/docs/order/openapi.json
+                - Method=GET
+              filters:
+                - SetPath=/v3/api-docs
+            - id: chat-openapi-json
+              uri: ${CHAT_SERVICE_URL:http://localhost:8085}
+              predicates:
+                - Path=/docs/chat/openapi.json
+                - Method=GET
+              filters:
+                - SetPath=/v3/api-docs
+            - id: notification-openapi-json
+              uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
+              predicates:
+                - Path=/docs/notification/openapi.json
+                - Method=GET
+              filters:
+                - SetPath=/v3/api-docs
+            - id: credit-openapi-yaml
+              uri: ${CREDIT_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/docs/credit/openapi.yaml
+                - Method=GET
+              filters:
+                - SetPath=/v3/api-docs.yaml
+
+server:
+  port: 8088
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+springdoc:
+  swagger-ui:
+    urls:
+      - name: Admin Service
+        url: /docs/admin/openapi.json
+      - name: User Service
+        url: /docs/user/openapi.json
+      - name: Supplier Service
+        url: /docs/supplier/openapi.json
+      - name: Credit Service
+        url: /docs/credit/openapi.json
+      - name: Order Service
+        url: /docs/order/openapi.json
+      - name: Chat Service
+        url: /docs/chat/openapi.json
+      - name: Notification Service
+        url: /docs/notification/openapi.json
+    urls-primary-name: Credit Service

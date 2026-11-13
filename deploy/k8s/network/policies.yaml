@@ -1,0 +1,415 @@
+# Kubernetes NetworkPolicies are additive. Review any additional allow policies.
+# Namespace is explicit; the disposable test re-scopes these same documents.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-default-deny
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-dns
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-gateway
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: gateway
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Public entry, intentionally accepts browser/node/other sources on this port.
+    - ports:
+        - protocol: TCP
+          port: 8088
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: user-service
+      ports:
+        - protocol: TCP
+          port: 8081
+    - to:
+        - podSelector:
+            matchLabels:
+              app: supplier-service
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              app: credit-service
+      ports:
+        - protocol: TCP
+          port: 8083
+    - to:
+        - podSelector:
+            matchLabels:
+              app: order-service
+      ports:
+        - protocol: TCP
+          port: 8082
+    - to:
+        - podSelector:
+            matchLabels:
+              app: chat-service
+      ports:
+        - protocol: TCP
+          port: 8085
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-user
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: user-service
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [gateway, supplier-service, order-service, credit-service, admin-service, chat-service, notification-service]
+      ports:
+        # L4 policy cannot restrict the other services to just the JWKS HTTP path.
+        - protocol: TCP
+          port: 8081
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: user-db
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+    - to:
+        # SendGrid uses dynamic public endpoints. This permits public IPv4 HTTPS,
+        # not a hostname allowlist. Private/node/pod destinations are excluded.
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 169.254.0.0/16]
+      ports:
+        - protocol: TCP
+          port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-supplier
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: supplier-service
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: supplier-db
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: user-service
+      ports:
+        - protocol: TCP
+          port: 8081
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-order
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: order-service
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+        - podSelector:
+            matchLabels:
+              app: chat-service
+      ports:
+        - protocol: TCP
+          port: 8082
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: order-db
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: user-service
+      ports:
+        - protocol: TCP
+          port: 8081
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-credit
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: credit-service
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+        - podSelector:
+            matchLabels:
+              app: chat-service
+      ports:
+        - protocol: TCP
+          port: 8083
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: credit-db
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: user-service
+      ports:
+        - protocol: TCP
+          port: 8081
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-user-db
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: user-db
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: user-service
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-supplier-db
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: supplier-db
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: supplier-service
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-order-db
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: order-db
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: order-service
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-credit-db
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: credit-db
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: credit-service
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-kafka
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: kafka
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [user-service, order-service, credit-service, admin-service, chat-service, notification-service, kafka, kafka-ui, kafka-init]
+      ports:
+        - protocol: TCP
+          port: 9092
+    - from:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9093
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9093
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-kafka-clients
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [kafka-ui, kafka-init]
+  policyTypes: [Ingress, Egress]
+  # UI ingress remains denied from application pods. Authorized localhost
+  # kubectl port-forward is administrative access, outside this pod boundary.
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092

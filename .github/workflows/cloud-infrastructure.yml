@@ -1,0 +1,265 @@
+name: AWS staging infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Infrastructure operation
+        required: true
+        type: choice
+        options: [plan-core, apply-core, provision-runtime, apply-edge, destroy-staging]
+      confirmation:
+        description: Type DESTROY foc-staging only for destroy-staging
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-staging-mutating-operations
+  cancel-in-progress: false
+
+jobs:
+  infrastructure:
+    runs-on: ubuntu-24.04
+    environment: aws-staging-infra
+    env:
+      AWS_REGION: ap-southeast-1
+      EKS_CLUSTER_NAME: foc-staging
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      TF_VAR_github_deploy_role_arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      TF_VAR_budget_email: ${{ vars.AWS_BUDGET_EMAIL }}
+      TF_VAR_kafbat_viewer_role_arn: ${{ vars.AWS_KAFBAT_VIEWER_ROLE_ARN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.14.6"
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Prepare remote backend
+        id: backend
+        run: |
+          account_id=$(aws sts get-caller-identity --query Account --output text)
+          bucket="foc-team-12-terraform-state-${account_id}-${AWS_REGION}"
+          printf 'bucket = "%s"\nkey = "staging-core/terraform.tfstate"\nregion = "%s"\n' \
+            "$bucket" "$AWS_REGION" > "$RUNNER_TEMP/core.hcl"
+          printf 'bucket = "%s"\nkey = "staging-edge/terraform.tfstate"\nregion = "%s"\n' \
+            "$bucket" "$AWS_REGION" > "$RUNNER_TEMP/edge.hcl"
+          echo "account_id=$account_id" >> "$GITHUB_OUTPUT"
+      - name: Initialize core stack
+        run: terraform -chdir=deploy/aws/terraform/staging-core init -backend-config="$RUNNER_TEMP/core.hcl"
+      - name: Adopt the existing private Chat attachment bucket
+        if: inputs.operation == 'apply-core'
+        run: |
+          bucket="foc-team-12-chat-attachments-${{ steps.backend.outputs.account_id }}-${AWS_REGION}"
+          if aws s3api head-bucket --bucket "$bucket" 2>/dev/null && \
+             ! terraform -chdir=deploy/aws/terraform/staging-core state list | grep -qx 'aws_s3_bucket.chat_attachments'; then
+            terraform -chdir=deploy/aws/terraform/staging-core import aws_s3_bucket.chat_attachments "$bucket"
+          fi
+      - name: Adopt existing staging operator access
+        if: inputs.operation == 'apply-core'
+        run: |
+          aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+          if kubectl get namespace foc-staging >/dev/null 2>&1 && \
+             ! terraform -chdir=deploy/aws/terraform/staging-core state list | grep -qx 'kubernetes_namespace_v1.runtime'; then
+            terraform -chdir=deploy/aws/terraform/staging-core import kubernetes_namespace_v1.runtime foc-staging
+          fi
+          if test -n "$TF_VAR_kafbat_viewer_role_arn" && \
+             aws eks describe-access-entry --cluster-name "$EKS_CLUSTER_NAME" \
+               --principal-arn "$TF_VAR_kafbat_viewer_role_arn" >/dev/null 2>&1 && \
+             ! terraform -chdir=deploy/aws/terraform/staging-core state list | \
+               grep -Fqx 'aws_eks_access_entry.kafbat_viewer[0]'; then
+            terraform -chdir=deploy/aws/terraform/staging-core import \
+              'aws_eks_access_entry.kafbat_viewer[0]' \
+              "$EKS_CLUSTER_NAME:$TF_VAR_kafbat_viewer_role_arn"
+          fi
+      - name: Plan core infrastructure
+        if: inputs.operation == 'plan-core'
+        run: terraform -chdir=deploy/aws/terraform/staging-core plan -out="$RUNNER_TEMP/core.tfplan"
+      - name: Apply core infrastructure
+        if: inputs.operation == 'apply-core'
+        run: terraform -chdir=deploy/aws/terraform/staging-core apply -auto-approve
+      - name: Maintain static multi-AZ worker capacity
+        if: inputs.operation == 'apply-core'
+        run: |
+          aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+          deploy/aws/scripts/apply-static-node-pools.sh
+      - name: Verify runtime provisioning preconditions
+        if: inputs.operation == 'provision-runtime'
+        run: |
+          test -n "$TF_VAR_budget_email"
+          for name in user-service-secrets user-mail-secrets supplier-service-secrets order-service-secrets \
+            credit-service-secrets admin-service-secrets chat-service-secrets notification-service-secrets \
+            kafka-broker-secrets kafka-ui-secrets; do
+            aws secretsmanager get-secret-value --secret-id "foc/staging/$name" --query VersionId --output text >/dev/null
+          done
+          for principal in foc_admin user_service order_service credit_service admin_service chat_service \
+            notification_service kafka_ui; do
+            secret=$(aws secretsmanager get-secret-value \
+              --secret-id "AmazonMSK_foc-staging_$principal" --query SecretString --output text)
+            if ! jq -e '
+                (.username | type == "string" and length > 0) and
+                (.password | type == "string" and length > 0)
+              ' <<< "$secret" >/dev/null; then
+              echo "::error::MSK SCRAM identity $principal is missing. Re-run deploy/aws/scripts/configure-secrets.sh after apply-core."
+              exit 1
+            fi
+          done
+          user_secret=$(aws secretsmanager get-secret-value \
+            --secret-id foc/staging/user-service-secrets --query SecretString --output text)
+          if jq -e 'has("ADMIN_BOOTSTRAP_EMAIL") or has("ADMIN_BOOTSTRAP_USERNAME") or has("ADMIN_BOOTSTRAP_PASSWORD")' \
+            <<< "$user_secret" >/dev/null; then
+            if ! jq -e '
+                ((.ADMIN_BOOTSTRAP_EMAIL // "") | test("@u\\.(nus\\.edu|duke\\.nus\\.edu|yale-nus\\.edu\\.sg)$"; "i")) and
+                ((.ADMIN_BOOTSTRAP_USERNAME // "") | length >= 1 and length <= 20) and
+                ((.ADMIN_BOOTSTRAP_PASSWORD // "") | length >= 15 and length <= 64)
+              ' <<< "$user_secret" >/dev/null; then
+              echo "::error::User bootstrap identity is incomplete or invalid. Re-run deploy/aws/scripts/configure-secrets.sh with all three ADMIN_BOOTSTRAP_* variables and an eligible NUS student email."
+              exit 1
+            fi
+          fi
+          kafka_secret=$(aws secretsmanager get-secret-value \
+            --secret-id foc/staging/kafka-broker-secrets --query SecretString --output text)
+          for key in KAFKA_CHAT_SERVICE_PASSWORD KAFKA_NOTIFICATION_SERVICE_PASSWORD; do
+            if ! jq -e --arg key "$key" 'has($key) and (.[$key] | type == "string" and length > 0)' \
+              <<< "$kafka_secret" >/dev/null; then
+              echo "::error::Kafka broker secret is missing $key. Run deploy/aws/scripts/configure-secrets.sh from a trusted workstation."
+              exit 1
+            fi
+          done
+      - name: Associate Amazon MSK SCRAM identities
+        if: inputs.operation == 'provision-runtime'
+        run: deploy/aws/scripts/prepare-msk.sh associate
+      - name: Validate CloudFront edge prerequisites
+        if: inputs.operation == 'provision-runtime' || inputs.operation == 'apply-edge'
+        run: |
+          terraform -chdir=deploy/aws/terraform/staging-edge init -backend-config="$RUNNER_TEMP/edge.hcl"
+          terraform -chdir=deploy/aws/terraform/staging-edge validate
+          managed_policies=$(aws cloudfront list-cache-policies --type managed --output json)
+          for name in Managed-CachingDisabled Managed-CachingOptimized; do
+            if ! jq -e --arg name "$name" '
+                any(.CachePolicyList.Items[]?; .CachePolicy.CachePolicyConfig.Name == $name)
+              ' <<< "$managed_policies" >/dev/null; then
+              echo "::error::Required CloudFront managed cache policy $name is unavailable."
+              exit 1
+            fi
+          done
+      - uses: docker/setup-buildx-action@v4
+        if: inputs.operation == 'provision-runtime'
+      - uses: aws-actions/amazon-ecr-login@v2
+        if: inputs.operation == 'provision-runtime'
+      - name: Build initial immutable images
+        if: inputs.operation == 'provision-runtime'
+        id: images
+        run: |
+          registry="${{ steps.backend.outputs.account_id }}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          tag="bootstrap-${GITHUB_SHA}-r${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          for service in gateway-service user-service supplier-service order-service credit-service admin-service chat-service notification-service; do
+            docker buildx build --platform linux/amd64 --push \
+              -t "$registry/foc-$service:$tag" "$service"
+          done
+          echo "registry=$registry" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: azure/setup-helm@v4
+        if: inputs.operation == 'provision-runtime' || inputs.operation == 'destroy-staging'
+        with:
+          version: v3.19.0
+      - name: Deploy initial Kubernetes runtime
+        if: inputs.operation == 'provision-runtime'
+        env:
+          GATEWAY_IMAGE: ${{ steps.images.outputs.registry }}/foc-gateway-service:${{ steps.images.outputs.tag }}
+          USER_IMAGE: ${{ steps.images.outputs.registry }}/foc-user-service:${{ steps.images.outputs.tag }}
+          SUPPLIER_IMAGE: ${{ steps.images.outputs.registry }}/foc-supplier-service:${{ steps.images.outputs.tag }}
+          ORDER_IMAGE: ${{ steps.images.outputs.registry }}/foc-order-service:${{ steps.images.outputs.tag }}
+          CREDIT_IMAGE: ${{ steps.images.outputs.registry }}/foc-credit-service:${{ steps.images.outputs.tag }}
+          ADMIN_IMAGE: ${{ steps.images.outputs.registry }}/foc-admin-service:${{ steps.images.outputs.tag }}
+          CHAT_IMAGE: ${{ steps.images.outputs.registry }}/foc-chat-service:${{ steps.images.outputs.tag }}
+          NOTIFICATION_IMAGE: ${{ steps.images.outputs.registry }}/foc-notification-service:${{ steps.images.outputs.tag }}
+          CHAT_S3_BUCKET: foc-team-12-chat-attachments-${{ steps.backend.outputs.account_id }}-ap-southeast-1
+          SUPPLIER_S3_BUCKET: foc-team-12-supplier-images-${{ steps.backend.outputs.account_id }}-ap-southeast-1
+        run: |
+          RDS_HOST=$(aws ssm get-parameter --name /foc/staging/rds-host --query Parameter.Value --output text)
+          RDS_MASTER_SECRET_ARN=$(aws ssm get-parameter --name /foc/staging/rds-master-secret-arn --query Parameter.Value --output text)
+          ALB_SECURITY_GROUP_ID=$(aws ssm get-parameter --name /foc/staging/alb-security-group-id --query Parameter.Value --output text)
+          EXTERNAL_SECRETS_ROLE_ARN=$(aws ssm get-parameter --name /foc/staging/external-secrets-role-arn --query Parameter.Value --output text)
+          CHAT_SERVICE_ROLE_ARN=$(aws ssm get-parameter --name /foc/staging/chat-service-role-arn --query Parameter.Value --output text)
+          SUPPLIER_SERVICE_ROLE_ARN=$(aws ssm get-parameter --name /foc/staging/supplier-service-role-arn --query Parameter.Value --output text)
+          MSK_BOOTSTRAP_SERVERS=$(aws ssm get-parameter --name /foc/staging/msk-bootstrap-brokers --query Parameter.Value --output text)
+          export RDS_HOST RDS_MASTER_SECRET_ARN ALB_SECURITY_GROUP_ID EXTERNAL_SECRETS_ROLE_ARN CHAT_SERVICE_ROLE_ARN SUPPLIER_SERVICE_ROLE_ARN MSK_BOOTSTRAP_SERVERS
+          deploy/aws/scripts/deploy-platform.sh
+      - name: Lock down and verify Amazon MSK
+        if: inputs.operation == 'provision-runtime'
+        run: |
+          deploy/aws/scripts/prepare-msk.sh lockdown
+          deploy/aws/scripts/prepare-msk.sh mark-ready
+      - name: Resolve private ALB
+        if: inputs.operation == 'provision-runtime' || inputs.operation == 'apply-edge'
+        id: alb
+        run: |
+          aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+          deploy/aws/scripts/resolve-alb.sh
+      - name: Create CloudFront edge
+        if: inputs.operation == 'provision-runtime' || inputs.operation == 'apply-edge'
+        env:
+          TF_VAR_alb_arn: ${{ steps.alb.outputs.alb_arn }}
+          TF_VAR_alb_dns_name: ${{ steps.alb.outputs.alb_dns_name }}
+        run: |
+          TF_VAR_alb_security_group_id=$(aws ssm get-parameter \
+            --name /foc/staging/alb-security-group-id --query Parameter.Value --output text)
+          export TF_VAR_alb_security_group_id
+          terraform -chdir=deploy/aws/terraform/staging-edge apply -auto-approve
+      - name: Smoke-test initial deployment
+        if: inputs.operation == 'provision-runtime' || inputs.operation == 'apply-edge'
+        run: |
+          PUBLIC_URL=$(aws ssm get-parameter --name /foc/staging/public-url --query Parameter.Value --output text)
+          export PUBLIC_URL
+          deploy/aws/scripts/smoke-test.sh
+      - name: Validate destructive confirmation
+        if: inputs.operation == 'destroy-staging'
+        run: test "${{ inputs.confirmation }}" = 'DESTROY foc-staging'
+      - name: Destroy CloudFront edge before its private origin
+        if: inputs.operation == 'destroy-staging'
+        run: |
+          aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+          terraform -chdir=deploy/aws/terraform/staging-edge init -backend-config="$RUNNER_TEMP/edge.hcl"
+          edge_resources=$(terraform -chdir=deploy/aws/terraform/staging-edge state list)
+          if test -n "$edge_resources"; then
+            alb_json=$(aws elbv2 describe-load-balancers --names foc-staging-gateway)
+            TF_VAR_alb_arn=$(jq -r '.LoadBalancers[0].LoadBalancerArn' <<< "$alb_json")
+            TF_VAR_alb_dns_name=$(jq -r '.LoadBalancers[0].DNSName' <<< "$alb_json")
+            TF_VAR_alb_security_group_id=$(aws ssm get-parameter \
+              --name /foc/staging/alb-security-group-id --query Parameter.Value --output text)
+            export TF_VAR_alb_arn TF_VAR_alb_dns_name TF_VAR_alb_security_group_id
+            terraform -chdir=deploy/aws/terraform/staging-edge destroy -auto-approve
+          else
+            echo 'Edge stack is already empty.'
+          fi
+      - name: Remove Kubernetes-owned load balancers and volumes
+        if: inputs.operation == 'destroy-staging'
+        run: |
+          kubectl -n foc-staging delete ingress gateway --ignore-not-found
+          kubectl delete namespace foc-staging --ignore-not-found --wait=true --timeout=20m
+          kubectl delete -f deploy/aws/k8s/staging/static-node-pools.yaml \
+            --ignore-not-found --wait=true --timeout=20m
+      - name: Disassociate Amazon MSK SCRAM identities
+        if: inputs.operation == 'destroy-staging'
+        run: |
+          cluster_arn=$(aws ssm get-parameter --name /foc/staging/msk-cluster-arn \
+            --query Parameter.Value --output text 2>/dev/null || true)
+          if test -n "$cluster_arn" && \
+             aws kafka describe-cluster-v2 --cluster-arn "$cluster_arn" >/dev/null 2>&1; then
+            deploy/aws/scripts/prepare-msk.sh disassociate
+          else
+            echo 'No live MSK cluster was found; skipping SCRAM disassociation.'
+          fi
+      - name: Destroy core staging infrastructure
+        if: inputs.operation == 'destroy-staging'
+        run: terraform -chdir=deploy/aws/terraform/staging-core destroy -auto-approve

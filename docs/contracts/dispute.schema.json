@@ -1,0 +1,808 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FoC durable dispute coordination v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "PrepareReview"
+        },
+        "producer": {
+          "const": "admin-service"
+        },
+        "operationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "caseId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorRole": {
+          "type": "string",
+          "enum": [
+            "ADMIN",
+            "REQUESTER",
+            "COURIER"
+          ]
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "intent": {
+              "type": "string",
+              "enum": [
+                "REPORT",
+                "LEGACY"
+              ]
+            }
+          },
+          "required": [
+            "intent"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventVersion",
+        "type",
+        "producer",
+        "operationId",
+        "caseId",
+        "orderId",
+        "actorId",
+        "actorRole",
+        "occurredAt",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "PrepareReview",
+      "x-topic": "admin.dispute.commands"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "PrepareResolution"
+        },
+        "producer": {
+          "const": "admin-service"
+        },
+        "operationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "caseId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorRole": {
+          "const": "ADMIN"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "disposition": {
+              "type": "string",
+              "enum": [
+                "RETURN_TO_REQUESTER",
+                "PAY_COURIER",
+                "KEEP_EXISTING"
+              ]
+            }
+          },
+          "required": [
+            "disposition"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventVersion",
+        "type",
+        "producer",
+        "operationId",
+        "caseId",
+        "orderId",
+        "actorId",
+        "actorRole",
+        "occurredAt",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "PrepareResolution",
+      "x-topic": "admin.dispute.commands"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "OrderReviewFrozen"
+        },
+        "producer": {
+          "const": "order-service"
+        },
+        "operationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "caseId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorRole": {
+          "type": "string",
+          "enum": [
+            "ADMIN",
+            "REQUESTER",
+            "COURIER"
+          ]
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "requesterId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "courierId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "PENDING_CREDIT",
+                "OPEN",
+                "ACCEPTED",
+                "PICKED_UP",
+                "DELIVERED",
+                "COMPLETED",
+                "CANCELLED",
+                "EXPIRED",
+                "RESERVATION_FAILED"
+              ]
+            },
+            "creditStatus": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "RESERVED",
+                    "RELEASED",
+                    "SETTLED",
+                    "COMPENSATED"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "resolved": {
+              "type": "boolean"
+            },
+            "participants": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          "required": [
+            "orderId",
+            "caseId",
+            "requesterId",
+            "courierId",
+            "state",
+            "creditStatus",
+            "resolved",
+            "participants"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventVersion",
+        "type",
+        "producer",
+        "operationId",
+        "caseId",
+        "orderId",
+        "actorId",
+        "actorRole",
+        "occurredAt",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "OrderReviewFrozen",
+      "x-topic": "order.dispute.events"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "ErrandReviewPrepared"
+        },
+        "producer": {
+          "const": "chat-service"
+        },
+        "operationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "caseId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorRole": {
+          "type": "string",
+          "enum": [
+            "ADMIN",
+            "REQUESTER",
+            "COURIER"
+          ]
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "readOnly": {
+              "const": true
+            },
+            "orderConfirmationId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "readOnly",
+            "orderConfirmationId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventVersion",
+        "type",
+        "producer",
+        "operationId",
+        "caseId",
+        "orderId",
+        "actorId",
+        "actorRole",
+        "occurredAt",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "ErrandReviewPrepared",
+      "x-topic": "chat.dispute.events"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "CaseClosurePrepared"
+        },
+        "producer": {
+          "const": "chat-service"
+        },
+        "operationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "caseId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorRole": {
+          "const": "ADMIN"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "readOnly": {
+              "const": true
+            }
+          },
+          "required": [
+            "readOnly"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventVersion",
+        "type",
+        "producer",
+        "operationId",
+        "caseId",
+        "orderId",
+        "actorId",
+        "actorRole",
+        "occurredAt",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "CaseClosurePrepared",
+      "x-topic": "chat.dispute.events"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "SettleDisputeCredits"
+        },
+        "producer": {
+          "const": "order-service"
+        },
+        "operationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "caseId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorRole": {
+          "const": "ADMIN"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "requesterId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "courierId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "disposition": {
+              "type": "string",
+              "enum": [
+                "RETURN_TO_REQUESTER",
+                "PAY_COURIER",
+                "KEEP_EXISTING"
+              ]
+            }
+          },
+          "required": [
+            "requesterId",
+            "courierId",
+            "disposition"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventVersion",
+        "type",
+        "producer",
+        "operationId",
+        "caseId",
+        "orderId",
+        "actorId",
+        "actorRole",
+        "occurredAt",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "SettleDisputeCredits",
+      "x-topic": "order.dispute.commands"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "DisputeCreditsSettled"
+        },
+        "producer": {
+          "const": "credit-service"
+        },
+        "operationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "caseId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorRole": {
+          "const": "ADMIN"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "disposition": {
+              "type": "string",
+              "enum": [
+                "RETURN_TO_REQUESTER",
+                "PAY_COURIER",
+                "KEEP_EXISTING"
+              ]
+            },
+            "reservationStatus": {
+              "type": "string",
+              "enum": [
+                "ABSENT",
+                "RELEASED",
+                "SETTLED",
+                "COMPENSATED"
+              ]
+            },
+            "complete": {
+              "const": true
+            },
+            "requesterId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "courierId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "operationId",
+            "caseId",
+            "orderId",
+            "disposition",
+            "reservationStatus",
+            "complete",
+            "requesterId",
+            "courierId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventVersion",
+        "type",
+        "producer",
+        "operationId",
+        "caseId",
+        "orderId",
+        "actorId",
+        "actorRole",
+        "occurredAt",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "DisputeCreditsSettled",
+      "x-topic": "credit.dispute.events"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "OrderDisputeFinalized"
+        },
+        "producer": {
+          "const": "order-service"
+        },
+        "operationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "caseId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actorRole": {
+          "const": "ADMIN"
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "requesterId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "courierId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "PENDING_CREDIT",
+                "OPEN",
+                "ACCEPTED",
+                "PICKED_UP",
+                "DELIVERED",
+                "COMPLETED",
+                "CANCELLED",
+                "EXPIRED",
+                "RESERVATION_FAILED"
+              ]
+            },
+            "creditStatus": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "RESERVED",
+                    "RELEASED",
+                    "SETTLED",
+                    "COMPENSATED"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "resolved": {
+              "const": true
+            },
+            "participants": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "disposition": {
+              "type": "string",
+              "enum": [
+                "RETURN_TO_REQUESTER",
+                "PAY_COURIER",
+                "KEEP_EXISTING"
+              ]
+            },
+            "creditConfirmationId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "orderId",
+            "caseId",
+            "requesterId",
+            "courierId",
+            "state",
+            "creditStatus",
+            "resolved",
+            "participants",
+            "disposition",
+            "creditConfirmationId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventVersion",
+        "type",
+        "producer",
+        "operationId",
+        "caseId",
+        "orderId",
+        "actorId",
+        "actorRole",
+        "occurredAt",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "OrderDisputeFinalized",
+      "x-topic": "order.dispute.events"
+    }
+  ]
+}

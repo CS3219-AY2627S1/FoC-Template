@@ -1,0 +1,22 @@
+# Optional strategic-merge patch, NOT a standalone manifest. Requires the UserActivated image.
+spec:
+  template:
+    spec:
+      containers:
+        - name: user-service
+          env:
+            - name: USER_EVENTS_PUBLISHER_ENABLED
+              value: "true"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+            - name: KAFKA_SECURITY_PROTOCOL
+              value: SASL_PLAINTEXT
+            - name: KAFKA_SASL_MECHANISM
+              value: PLAIN
+            - name: KAFKA_USERNAME
+              value: user_service
+            - name: KAFKA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: user-kafka-client
+                  key: KAFKA_PASSWORD

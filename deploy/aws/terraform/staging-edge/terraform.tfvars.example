@@ -1,0 +1,3 @@
+alb_arn      = "arn:aws:elasticloadbalancing:ap-southeast-1:ACCOUNT_ID:loadbalancer/app/k8s-focstagi-gateway-EXAMPLE/EXAMPLE"
+alb_dns_name = "internal-k8s-focstagi-gateway-example.ap-southeast-1.elb.amazonaws.com"
+alb_security_group_id = "sg-0123456789abcdef0"

@@ -1,0 +1,15 @@
+-- Durable service-local command inbox, leased retries, immutable original outbox envelopes.
+CREATE TABLE dispute_inbox(event_id UUID PRIMARY KEY, operation_id UUID NOT NULL, topic TEXT NOT NULL, payload TEXT NOT NULL, content_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING','DONE','REJECTED')), attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(), lease_until TIMESTAMPTZ, last_error TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX dispute_inbox_due ON dispute_inbox(next_attempt_at) WHERE status='PENDING';
+CREATE TABLE dispute_outbox(event_id UUID PRIMARY KEY, operation_id UUID NOT NULL, topic TEXT NOT NULL, message_key TEXT NOT NULL, payload TEXT NOT NULL, fingerprint TEXT NOT NULL, repeat_until_done BOOLEAN NOT NULL, active BOOLEAN NOT NULL DEFAULT true, attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(), lease_until TIMESTAMPTZ, published_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX dispute_outbox_due ON dispute_outbox(next_attempt_at) WHERE active;
+CREATE TABLE dispute_quarantine(topic TEXT NOT NULL, partition_id INTEGER NOT NULL, source_offset BIGINT NOT NULL, content_hash TEXT NOT NULL, reason TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(topic,partition_id,source_offset));
+CREATE TABLE dispute_operations(operation_id UUID NOT NULL, stage TEXT NOT NULL, fingerprint TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(operation_id,stage));
+ALTER TABLE admin_cases ADD COLUMN review_status TEXT NOT NULL DEFAULT 'LEGACY' CHECK(review_status IN ('LEGACY','PREPARING','READY','REJECTED'));
+ALTER TABLE admin_report_preparations ADD COLUMN actor_role VARCHAR(16) NOT NULL DEFAULT 'REQUESTER';
+ALTER TABLE admin_report_preparations ADD COLUMN status TEXT NOT NULL DEFAULT 'PENDING';
+ALTER TABLE admin_report_preparations ADD COLUMN failure_code TEXT;
+ALTER TABLE admin_resolution_preparations ADD COLUMN initial_evidence TEXT;
+ALTER TABLE admin_resolution_preparations ADD COLUMN status TEXT NOT NULL DEFAULT 'PENDING';
+
+ALTER TABLE admin_case_decisions ADD COLUMN owner_confirmations TEXT NOT NULL DEFAULT '{}';

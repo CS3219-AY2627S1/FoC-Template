@@ -1,0 +1,408 @@
+[
+  {
+    "topic": "admin.credit.commands",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000001",
+      "eventType": "AdminCreditCorrectionRequested",
+      "eventVersion": 1,
+      "aggregateType": "AdminAction",
+      "aggregateId": "11111111-1111-4111-8111-111111111111",
+      "aggregateVersion": 1,
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "producer": "admin-service",
+      "correlationId": "11111111-1111-4111-8111-111111111111",
+      "causationId": null,
+      "actor": {
+        "type": "USER",
+        "userId": "22222222-2222-4222-8222-222222222222",
+        "role": "ADMIN"
+      },
+      "data": {
+        "operationId": "11111111-1111-4111-8111-111111111111",
+        "caseId": "11111111-1111-4111-8111-111111111111",
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "targetUserId": "11111111-1111-4111-8111-111111111111",
+        "requestedBy": "22222222-2222-4222-8222-222222222222",
+        "caseRevision": 1,
+        "reason": "example",
+        "amount": 1
+      }
+    }
+  },
+  {
+    "topic": "admin.user.commands",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000002",
+      "eventType": "AdminUserBanRequested",
+      "eventVersion": 1,
+      "aggregateType": "AdminAction",
+      "aggregateId": "11111111-1111-4111-8111-111111111111",
+      "aggregateVersion": 1,
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "producer": "admin-service",
+      "correlationId": "11111111-1111-4111-8111-111111111111",
+      "causationId": null,
+      "actor": {
+        "type": "USER",
+        "userId": "22222222-2222-4222-8222-222222222222",
+        "role": "ADMIN"
+      },
+      "data": {
+        "operationId": "11111111-1111-4111-8111-111111111111",
+        "caseId": "11111111-1111-4111-8111-111111111111",
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "targetUserId": "11111111-1111-4111-8111-111111111111",
+        "requestedBy": "22222222-2222-4222-8222-222222222222",
+        "caseRevision": 1,
+        "reason": "example"
+      }
+    }
+  },
+  {
+    "topic": "credit.admin.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000003",
+      "eventType": "AdminCreditCorrectionApplied",
+      "eventVersion": 1,
+      "aggregateType": "AdminAction",
+      "aggregateId": "11111111-1111-4111-8111-111111111111",
+      "aggregateVersion": 1,
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "producer": "credit-service",
+      "correlationId": "11111111-1111-4111-8111-111111111111",
+      "causationId": "11111111-1111-4111-8111-111111111111",
+      "actor": {
+        "type": "USER",
+        "userId": "22222222-2222-4222-8222-222222222222",
+        "role": "ADMIN"
+      },
+      "data": {
+        "operationId": "11111111-1111-4111-8111-111111111111",
+        "caseId": "11111111-1111-4111-8111-111111111111",
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "targetUserId": "11111111-1111-4111-8111-111111111111",
+        "requestedBy": "22222222-2222-4222-8222-222222222222",
+        "completedAt": "2026-10-29T12:00:00Z",
+        "result": "APPLIED",
+        "amount": 1,
+        "availableBalance": 1,
+        "reservedBalance": 1,
+        "ledgerEntryId": "11111111-1111-4111-8111-111111111111"
+      }
+    }
+  },
+  {
+    "topic": "credit.admin.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000004",
+      "eventType": "AdminCreditCorrectionRejected",
+      "eventVersion": 1,
+      "aggregateType": "AdminAction",
+      "aggregateId": "11111111-1111-4111-8111-111111111111",
+      "aggregateVersion": 1,
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "producer": "credit-service",
+      "correlationId": "11111111-1111-4111-8111-111111111111",
+      "causationId": "11111111-1111-4111-8111-111111111111",
+      "actor": {
+        "type": "USER",
+        "userId": "22222222-2222-4222-8222-222222222222",
+        "role": "ADMIN"
+      },
+      "data": {
+        "operationId": "11111111-1111-4111-8111-111111111111",
+        "caseId": "11111111-1111-4111-8111-111111111111",
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "targetUserId": "11111111-1111-4111-8111-111111111111",
+        "requestedBy": "22222222-2222-4222-8222-222222222222",
+        "completedAt": "2026-10-29T12:00:00Z",
+        "result": "REJECTED",
+        "amount": 1,
+        "reasonCode": "ACTOR_NOT_AUTHORIZED"
+      }
+    }
+  },
+  {
+    "topic": "user.admin.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000005",
+      "eventType": "AdminUserBanApplied",
+      "eventVersion": 1,
+      "aggregateType": "AdminAction",
+      "aggregateId": "11111111-1111-4111-8111-111111111111",
+      "aggregateVersion": 1,
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "producer": "user-service",
+      "correlationId": "11111111-1111-4111-8111-111111111111",
+      "causationId": "11111111-1111-4111-8111-111111111111",
+      "actor": {
+        "type": "USER",
+        "userId": "22222222-2222-4222-8222-222222222222",
+        "role": "ADMIN"
+      },
+      "data": {
+        "operationId": "11111111-1111-4111-8111-111111111111",
+        "caseId": "11111111-1111-4111-8111-111111111111",
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "targetUserId": "11111111-1111-4111-8111-111111111111",
+        "requestedBy": "22222222-2222-4222-8222-222222222222",
+        "completedAt": "2026-10-29T12:00:00Z",
+        "result": "APPLIED",
+        "previousStatus": "ACTIVE",
+        "status": "BANNED"
+      }
+    }
+  },
+  {
+    "topic": "user.admin.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000006",
+      "eventType": "AdminUserBanRejected",
+      "eventVersion": 1,
+      "aggregateType": "AdminAction",
+      "aggregateId": "11111111-1111-4111-8111-111111111111",
+      "aggregateVersion": 1,
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "producer": "user-service",
+      "correlationId": "11111111-1111-4111-8111-111111111111",
+      "causationId": "11111111-1111-4111-8111-111111111111",
+      "actor": {
+        "type": "USER",
+        "userId": "22222222-2222-4222-8222-222222222222",
+        "role": "ADMIN"
+      },
+      "data": {
+        "operationId": "11111111-1111-4111-8111-111111111111",
+        "caseId": "11111111-1111-4111-8111-111111111111",
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "targetUserId": "11111111-1111-4111-8111-111111111111",
+        "requestedBy": "22222222-2222-4222-8222-222222222222",
+        "completedAt": "2026-10-29T12:00:00Z",
+        "result": "REJECTED",
+        "reasonCode": "ACTOR_NOT_AUTHORIZED"
+      }
+    }
+  },
+  {
+    "topic": "order.lifecycle.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000007",
+      "eventType": "OrderTransitioned",
+      "eventVersion": 1,
+      "aggregateType": "Order",
+      "aggregateId": "11111111-1111-4111-8111-111111111111",
+      "aggregateVersion": 1,
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "producer": "order-service",
+      "correlationId": "11111111-1111-4111-8111-111111111111",
+      "causationId": "11111111-1111-4111-8111-111111111111",
+      "actor": {
+        "type": "USER",
+        "userId": "22222222-2222-4222-8222-222222222222",
+        "role": "COURIER"
+      },
+      "data": {
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "requesterId": "11111111-1111-4111-8111-111111111111",
+        "previousCourierId": null,
+        "courierId": "22222222-2222-4222-8222-222222222222",
+        "fromState": "OPEN",
+        "toState": "ACCEPTED",
+        "action": "ACCEPT",
+        "sourceSequence": 1,
+        "reasonCode": null,
+        "snapshot": {
+          "orderId": "11111111-1111-4111-8111-111111111111",
+          "requesterId": "11111111-1111-4111-8111-111111111111",
+          "courierId": "22222222-2222-4222-8222-222222222222",
+          "status": "ACCEPTED",
+          "title": "example",
+          "description": "example",
+          "creditReward": 1,
+          "pickupDeadline": "2026-10-29T12:00:00Z",
+          "pickupLocationId": "11111111-1111-4111-8111-111111111111",
+          "dropoffLocationId": "11111111-1111-4111-8111-111111111111",
+          "pickupLocationName": "example",
+          "dropoffLocationName": "example"
+        }
+      }
+    }
+  },
+  {
+    "topic": "chat.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000008",
+      "eventType": "ChatMessageSent",
+      "eventVersion": 1,
+      "aggregateType": "Conversation",
+      "aggregateId": "11111111-1111-4111-8111-111111111111",
+      "aggregateVersion": 1,
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "producer": "chat-service",
+      "correlationId": "11111111-1111-4111-8111-111111111111",
+      "causationId": "11111111-1111-4111-8111-111111111111",
+      "actor": {
+        "type": "USER",
+        "userId": "22222222-2222-4222-8222-222222222222",
+        "role": "REQUESTER"
+      },
+      "data": {
+        "messageId": "11111111-1111-4111-8111-111111111111",
+        "conversationId": "11111111-1111-4111-8111-111111111111",
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "senderUserId": "22222222-2222-4222-8222-222222222222",
+        "recipientUserId": "11111111-1111-4111-8111-111111111111",
+        "messageType": "TEXT",
+        "messagePreview": "I am on my way."
+      }
+    }
+  },
+  {
+    "topic": "credit.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000009",
+      "eventType": "DisputeCreditsFinalized",
+      "eventVersion": 1,
+      "aggregateType": "Order",
+      "aggregateId": "11111111-1111-4111-8111-111111111111",
+      "aggregateVersion": 1,
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "producer": "credit-service",
+      "correlationId": "11111111-1111-4111-8111-111111111111",
+      "causationId": "11111111-1111-4111-8111-111111111111",
+      "actor": {
+        "type": "USER",
+        "userId": "22222222-2222-4222-8222-222222222222",
+        "role": "ADMIN"
+      },
+      "data": {
+        "operationId": "11111111-1111-4111-8111-111111111111",
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "caseId": "11111111-1111-4111-8111-111111111111",
+        "disposition": "RETURN_TO_REQUESTER",
+        "reservationStatus": "ABSENT"
+      }
+    }
+  },
+  {
+    "topic": "admin.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000010",
+      "eventType": "CaseOpened",
+      "eventVersion": 1,
+      "aggregateType": "AdminCase",
+      "aggregateId": "11111111-1111-4111-8111-111111111111",
+      "aggregateVersion": 1,
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "producer": "admin-service",
+      "correlationId": "11111111-1111-4111-8111-111111111111",
+      "causationId": "11111111-1111-4111-8111-111111111111",
+      "actor": {
+        "type": "USER",
+        "userId": "22222222-2222-4222-8222-222222222222",
+        "role": "REQUESTER"
+      },
+      "data": {
+        "caseId": "11111111-1111-4111-8111-111111111111",
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "sourceSequence": 1,
+        "reporterId": "11111111-1111-4111-8111-111111111111"
+      }
+    }
+  },
+  {
+    "topic": "admin.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000011",
+      "eventType": "CaseClaimed",
+      "eventVersion": 1,
+      "aggregateType": "AdminCase",
+      "aggregateId": "11111111-1111-4111-8111-111111111111",
+      "aggregateVersion": 1,
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "producer": "admin-service",
+      "correlationId": "11111111-1111-4111-8111-111111111111",
+      "causationId": "11111111-1111-4111-8111-111111111111",
+      "actor": {
+        "type": "USER",
+        "userId": "22222222-2222-4222-8222-222222222222",
+        "role": "ADMIN"
+      },
+      "data": {
+        "caseId": "11111111-1111-4111-8111-111111111111",
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "sourceSequence": 1,
+        "reviewerId": "22222222-2222-4222-8222-222222222222"
+      }
+    }
+  },
+  {
+    "topic": "admin.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000012",
+      "eventType": "CaseActionCompleted",
+      "eventVersion": 1,
+      "aggregateType": "AdminCase",
+      "aggregateId": "11111111-1111-4111-8111-111111111111",
+      "aggregateVersion": 1,
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "producer": "admin-service",
+      "correlationId": "11111111-1111-4111-8111-111111111111",
+      "causationId": "11111111-1111-4111-8111-111111111111",
+      "actor": {
+        "type": "USER",
+        "userId": "22222222-2222-4222-8222-222222222222",
+        "role": "ADMIN"
+      },
+      "data": {
+        "caseId": "11111111-1111-4111-8111-111111111111",
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "sourceSequence": 1,
+        "operationId": "11111111-1111-4111-8111-111111111111",
+        "ownerEventId": "11111111-1111-4111-8111-111111111111",
+        "targetUserId": "11111111-1111-4111-8111-111111111111",
+        "result": "APPLIED"
+      }
+    }
+  },
+  {
+    "topic": "admin.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "event": {
+      "eventId": "00000000-0000-4000-8000-000000000013",
+      "eventType": "CaseResolved",
+      "eventVersion": 1,
+      "aggregateType": "AdminCase",
+      "aggregateId": "11111111-1111-4111-8111-111111111111",
+      "aggregateVersion": 1,
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "producer": "admin-service",
+      "correlationId": "11111111-1111-4111-8111-111111111111",
+      "causationId": "11111111-1111-4111-8111-111111111111",
+      "actor": {
+        "type": "USER",
+        "userId": "22222222-2222-4222-8222-222222222222",
+        "role": "ADMIN"
+      },
+      "data": {
+        "caseId": "11111111-1111-4111-8111-111111111111",
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "sourceSequence": 1,
+        "reviewerId": "22222222-2222-4222-8222-222222222222",
+        "resolvedAt": "2026-10-29T12:00:00Z"
+      }
+    }
+  }
+]

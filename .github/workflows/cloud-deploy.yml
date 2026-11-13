@@ -1,0 +1,177 @@
+name: Deploy AWS staging applications
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      deploy_all:
+        description: Rebuild and deploy all staging application services
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-staging-mutating-operations
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: >-
+      vars.AWS_STAGING_ENABLED == 'true' &&
+      ((github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      services: ${{ steps.plan.outputs.services }}
+      tag: ${{ steps.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select images
+        id: plan
+        env:
+          DEPLOY_ALL: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_all }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, sys
+          sys.path.insert(0, str(pathlib.Path('.github/scripts').resolve()))
+          import image_plan
+          if os.environ.get('DEPLOY_ALL') == 'true':
+              services = list(image_plan.SERVICES)
+          else:
+              paths = image_plan.changed_paths_from_parents()
+              services = image_plan.select_services(paths)
+          tag = f"sha-{os.environ['SOURCE_SHA']}-r{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
+          output = pathlib.Path(os.environ['GITHUB_OUTPUT'])
+          with output.open('a') as stream:
+              stream.write('matrix=' + json.dumps(image_plan.service_matrix(services), separators=(',',':')) + '\n')
+              stream.write('services=' + json.dumps(services, separators=(',',':')) + '\n')
+              stream.write('tag=' + tag + '\n')
+          PY
+  publish:
+    needs: plan
+    if: needs.plan.outputs.services != '[]'
+    runs-on: ubuntu-24.04
+    environment: aws-staging-deploy
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-southeast-1
+      - uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v4
+      - name: Build and publish immutable image
+        env:
+          SERVICE: ${{ matrix.service }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          account_id=$(aws sts get-caller-identity --query Account --output text)
+          registry="$account_id.dkr.ecr.ap-southeast-1.amazonaws.com"
+          docker buildx build --platform linux/amd64 --push \
+            -t "$registry/foc-$SERVICE:$TAG" "$SERVICE"
+  deploy:
+    needs: [plan, publish]
+    if: needs.plan.outputs.services != '[]'
+    runs-on: ubuntu-24.04
+    environment: aws-staging-deploy
+    env:
+      AWS_REGION: ap-southeast-1
+      EKS_CLUSTER_NAME: foc-staging
+      TAG: ${{ needs.plan.outputs.tag }}
+      CHANGED_SERVICES: ${{ needs.plan.outputs.services }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Check MSK runtime readiness
+        id: runtime
+        run: |
+          ready=$(aws ssm get-parameter --name /foc/staging/msk-runtime-ready \
+            --query Parameter.Value --output text 2>/dev/null || printf false)
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          if [ "$ready" != true ]; then
+            echo '::warning::Published images were not deployed because MSK has not completed one-time provisioning.'
+          fi
+      - uses: azure/setup-helm@v4
+        if: steps.runtime.outputs.ready == 'true'
+        with:
+          version: v3.19.0
+      - name: Resolve current and changed images
+        if: steps.runtime.outputs.ready == 'true'
+        run: |
+          aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+          account_id=$(aws sts get-caller-identity --query Account --output text)
+          registry="$account_id.dkr.ecr.$AWS_REGION.amazonaws.com"
+          : > "$RUNNER_TEMP/previous-images"
+          for pair in gateway:gateway-service user:user-service supplier:supplier-service order:order-service credit:credit-service admin:admin-service chat:chat-service notification:notification-service; do
+            key=${pair%%:*}; service=${pair##*:}
+            deployment=$service; [ "$key" = gateway ] && deployment=gateway
+            if ! old=$(kubectl -n foc-staging get deployment "$deployment" -o jsonpath='{.spec.template.spec.containers[0].image}'); then
+              echo "::error::Deployment $deployment is not in staging yet. Run AWS staging infrastructure -> apply-core, then provision-runtime."
+              exit 1
+            fi
+            printf '%s %s %s\n' "$deployment" "$deployment" "$old" >> "$RUNNER_TEMP/previous-images"
+            if jq -e --arg value "$service" 'index($value) != null' <<< "$CHANGED_SERVICES" >/dev/null; then
+              image="$registry/foc-$service:$TAG"
+            else
+              image=$old
+            fi
+            export "${key^^}_IMAGE=$image"
+          done
+          CHAT_S3_BUCKET="foc-team-12-chat-attachments-${account_id}-${AWS_REGION}"
+          SUPPLIER_S3_BUCKET="foc-team-12-supplier-images-${account_id}-${AWS_REGION}"
+          export CHAT_S3_BUCKET SUPPLIER_S3_BUCKET
+          {
+            env | grep -E '^(GATEWAY|USER|SUPPLIER|ORDER|CREDIT|ADMIN|CHAT|NOTIFICATION)_IMAGE='
+            echo "CHAT_S3_BUCKET=$CHAT_S3_BUCKET"
+            echo "SUPPLIER_S3_BUCKET=$SUPPLIER_S3_BUCKET"
+          } >> "$GITHUB_ENV"
+      - name: Deploy and smoke-test with rollback on failure
+        if: steps.runtime.outputs.ready == 'true'
+        run: |
+          RDS_HOST=$(aws ssm get-parameter --name /foc/staging/rds-host --query Parameter.Value --output text)
+          RDS_MASTER_SECRET_ARN=$(aws ssm get-parameter --name /foc/staging/rds-master-secret-arn --query Parameter.Value --output text)
+          ALB_SECURITY_GROUP_ID=$(aws ssm get-parameter --name /foc/staging/alb-security-group-id --query Parameter.Value --output text)
+          EXTERNAL_SECRETS_ROLE_ARN=$(aws ssm get-parameter --name /foc/staging/external-secrets-role-arn --query Parameter.Value --output text)
+          CHAT_SERVICE_ROLE_ARN=$(aws ssm get-parameter --name /foc/staging/chat-service-role-arn --query Parameter.Value --output text)
+          SUPPLIER_SERVICE_ROLE_ARN=$(aws ssm get-parameter --name /foc/staging/supplier-service-role-arn --query Parameter.Value --output text)
+          MSK_BOOTSTRAP_SERVERS=$(aws ssm get-parameter --name /foc/staging/msk-bootstrap-brokers --query Parameter.Value --output text)
+          PUBLIC_URL=$(aws ssm get-parameter --name /foc/staging/public-url --query Parameter.Value --output text)
+          export RDS_HOST RDS_MASTER_SECRET_ARN ALB_SECURITY_GROUP_ID EXTERNAL_SECRETS_ROLE_ARN CHAT_SERVICE_ROLE_ARN SUPPLIER_SERVICE_ROLE_ARN MSK_BOOTSTRAP_SERVERS PUBLIC_URL
+          if deploy/aws/scripts/deploy-platform.sh && deploy/aws/scripts/smoke-test.sh; then
+            exit 0
+          fi
+          echo 'Deployment failed; restoring previous application images.' >&2
+          while read -r deployment container old; do
+            kubectl -n foc-staging set image "deployment/$deployment" "$container=$old"
+            kubectl -n foc-staging rollout status "deployment/$deployment" --timeout=15m || true
+          done < "$RUNNER_TEMP/previous-images"
+          exit 1
+      - name: Show Kubernetes diagnostics on failure
+        if: failure() && steps.runtime.outputs.ready == 'true'
+        run: |
+          kubectl -n foc-staging get pods,deployments,hpa,ingress -o wide
+          kubectl -n foc-staging get events --sort-by=.lastTimestamp | tail -100

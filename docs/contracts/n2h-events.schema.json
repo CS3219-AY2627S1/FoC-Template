@@ -1,0 +1,1984 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FoC N2H Kafka review draft",
+  "description": "New messages only. Existing core v1 event schemas are not redefined.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventType": {
+          "const": "AdminCreditCorrectionRequested"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "aggregateType": {
+          "const": "AdminAction"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "const": 1
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producer": {
+          "const": "admin-service"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "causationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actor": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "USER"
+            },
+            "userId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "ADMIN"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "userId",
+            "role"
+          ],
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "targetUserId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "requestedBy": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "caseRevision": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "amount": {
+              "type": "integer",
+              "not": {
+                "const": 0
+              }
+            }
+          },
+          "required": [
+            "operationId",
+            "caseId",
+            "orderId",
+            "targetUserId",
+            "requestedBy",
+            "caseRevision",
+            "reason",
+            "amount"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventType",
+        "eventVersion",
+        "aggregateType",
+        "aggregateId",
+        "aggregateVersion",
+        "occurredAt",
+        "producer",
+        "correlationId",
+        "causationId",
+        "actor",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "AdminCreditCorrectionRequested",
+      "x-topic": "admin.credit.commands"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventType": {
+          "const": "AdminUserBanRequested"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "aggregateType": {
+          "const": "AdminAction"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "const": 1
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producer": {
+          "const": "admin-service"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "causationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actor": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "USER"
+            },
+            "userId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "ADMIN"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "userId",
+            "role"
+          ],
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "targetUserId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "requestedBy": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "caseRevision": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "operationId",
+            "caseId",
+            "orderId",
+            "targetUserId",
+            "requestedBy",
+            "caseRevision",
+            "reason"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventType",
+        "eventVersion",
+        "aggregateType",
+        "aggregateId",
+        "aggregateVersion",
+        "occurredAt",
+        "producer",
+        "correlationId",
+        "causationId",
+        "actor",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "AdminUserBanRequested",
+      "x-topic": "admin.user.commands"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventType": {
+          "const": "AdminCreditCorrectionApplied"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "aggregateType": {
+          "const": "AdminAction"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "const": 1
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producer": {
+          "const": "credit-service"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "causationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actor": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "USER"
+            },
+            "userId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "ADMIN"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "userId",
+            "role"
+          ],
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "targetUserId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "requestedBy": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "completedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "result": {
+              "const": "APPLIED"
+            },
+            "amount": {
+              "type": "integer",
+              "not": {
+                "const": 0
+              }
+            },
+            "availableBalance": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reservedBalance": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "ledgerEntryId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "operationId",
+            "caseId",
+            "orderId",
+            "targetUserId",
+            "requestedBy",
+            "completedAt",
+            "result",
+            "amount",
+            "availableBalance",
+            "reservedBalance",
+            "ledgerEntryId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventType",
+        "eventVersion",
+        "aggregateType",
+        "aggregateId",
+        "aggregateVersion",
+        "occurredAt",
+        "producer",
+        "correlationId",
+        "causationId",
+        "actor",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "AdminCreditCorrectionApplied",
+      "x-topic": "credit.admin.events"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventType": {
+          "const": "AdminCreditCorrectionRejected"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "aggregateType": {
+          "const": "AdminAction"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "const": 1
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producer": {
+          "const": "credit-service"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "causationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actor": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "USER"
+            },
+            "userId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "ADMIN"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "userId",
+            "role"
+          ],
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "targetUserId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "requestedBy": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "completedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "result": {
+              "const": "REJECTED"
+            },
+            "amount": {
+              "type": "integer",
+              "not": {
+                "const": 0
+              }
+            },
+            "reasonCode": {
+              "type": "string",
+              "enum": [
+                "ACTOR_NOT_AUTHORIZED",
+                "ACCOUNT_NOT_FOUND",
+                "INVALID_REQUEST",
+                "INSUFFICIENT_AVAILABLE_CREDITS",
+                "NUMERIC_LIMIT",
+                "SELF_SANCTION_FORBIDDEN",
+                "LAST_ADMIN_PROTECTED",
+                "INVALID_ACCOUNT_STATE"
+              ]
+            }
+          },
+          "required": [
+            "operationId",
+            "caseId",
+            "orderId",
+            "targetUserId",
+            "requestedBy",
+            "completedAt",
+            "result",
+            "amount",
+            "reasonCode"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventType",
+        "eventVersion",
+        "aggregateType",
+        "aggregateId",
+        "aggregateVersion",
+        "occurredAt",
+        "producer",
+        "correlationId",
+        "causationId",
+        "actor",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "AdminCreditCorrectionRejected",
+      "x-topic": "credit.admin.events"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventType": {
+          "const": "AdminUserBanApplied"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "aggregateType": {
+          "const": "AdminAction"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "const": 1
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producer": {
+          "const": "user-service"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "causationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actor": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "USER"
+            },
+            "userId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "ADMIN"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "userId",
+            "role"
+          ],
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "targetUserId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "requestedBy": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "completedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "result": {
+              "type": "string",
+              "enum": [
+                "APPLIED",
+                "NO_CHANGE"
+              ]
+            },
+            "previousStatus": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "BANNED"
+              ]
+            },
+            "status": {
+              "const": "BANNED"
+            }
+          },
+          "required": [
+            "operationId",
+            "caseId",
+            "orderId",
+            "targetUserId",
+            "requestedBy",
+            "completedAt",
+            "result",
+            "previousStatus",
+            "status"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventType",
+        "eventVersion",
+        "aggregateType",
+        "aggregateId",
+        "aggregateVersion",
+        "occurredAt",
+        "producer",
+        "correlationId",
+        "causationId",
+        "actor",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "AdminUserBanApplied",
+      "x-topic": "user.admin.events"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventType": {
+          "const": "AdminUserBanRejected"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "aggregateType": {
+          "const": "AdminAction"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "const": 1
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producer": {
+          "const": "user-service"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "causationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actor": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "USER"
+            },
+            "userId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "ADMIN"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "userId",
+            "role"
+          ],
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "targetUserId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "requestedBy": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "completedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "result": {
+              "const": "REJECTED"
+            },
+            "reasonCode": {
+              "type": "string",
+              "enum": [
+                "ACTOR_NOT_AUTHORIZED",
+                "ACCOUNT_NOT_FOUND",
+                "INVALID_REQUEST",
+                "INSUFFICIENT_AVAILABLE_CREDITS",
+                "NUMERIC_LIMIT",
+                "SELF_SANCTION_FORBIDDEN",
+                "LAST_ADMIN_PROTECTED",
+                "INVALID_ACCOUNT_STATE"
+              ]
+            }
+          },
+          "required": [
+            "operationId",
+            "caseId",
+            "orderId",
+            "targetUserId",
+            "requestedBy",
+            "completedAt",
+            "result",
+            "reasonCode"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventType",
+        "eventVersion",
+        "aggregateType",
+        "aggregateId",
+        "aggregateVersion",
+        "occurredAt",
+        "producer",
+        "correlationId",
+        "causationId",
+        "actor",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "AdminUserBanRejected",
+      "x-topic": "user.admin.events"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventType": {
+          "const": "OrderTransitioned"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "aggregateType": {
+          "const": "Order"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producer": {
+          "const": "order-service"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "causationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actor": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "USER"
+                },
+                "userId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "REQUESTER",
+                    "COURIER",
+                    "ADMIN"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "userId",
+                "role"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "SYSTEM"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "requesterId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "previousCourierId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "courierId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "fromState": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "PENDING_CREDIT",
+                    "OPEN",
+                    "ACCEPTED",
+                    "PICKED_UP",
+                    "DELIVERED",
+                    "COMPLETED",
+                    "CANCELLED",
+                    "EXPIRED",
+                    "RESERVATION_FAILED"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "toState": {
+              "type": "string",
+              "enum": [
+                "PENDING_CREDIT",
+                "OPEN",
+                "ACCEPTED",
+                "PICKED_UP",
+                "DELIVERED",
+                "COMPLETED",
+                "CANCELLED",
+                "EXPIRED",
+                "RESERVATION_FAILED"
+              ]
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "SUBMIT",
+                "OPEN",
+                "FAIL_RESERVATION",
+                "CANCEL",
+                "EXPIRE",
+                "ACCEPT",
+                "WITHDRAW",
+                "PICK_UP",
+                "DELIVER",
+                "COMPLETE",
+                "EDIT",
+                "REWARD_CHANGE_APPLIED",
+                "REWARD_CHANGE_REJECTED",
+                "REVIEW_STARTED",
+                "DISPUTE_RESOLVED"
+              ]
+            },
+            "sourceSequence": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "reasonCode": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "snapshot": {
+              "type": "object",
+              "properties": {
+                "orderId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "requesterId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "courierId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "PENDING_CREDIT",
+                    "OPEN",
+                    "ACCEPTED",
+                    "PICKED_UP",
+                    "DELIVERED",
+                    "COMPLETED",
+                    "CANCELLED",
+                    "EXPIRED",
+                    "RESERVATION_FAILED"
+                  ]
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "creditReward": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "pickupDeadline": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "pickupLocationId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "dropoffLocationId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "pickupLocationName": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "dropoffLocationName": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "reviewCaseId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "reviewResolved": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "orderId",
+                "requesterId",
+                "courierId",
+                "status",
+                "title",
+                "description",
+                "creditReward",
+                "pickupDeadline",
+                "pickupLocationId",
+                "dropoffLocationId",
+                "pickupLocationName",
+                "dropoffLocationName"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "orderId",
+            "requesterId",
+            "previousCourierId",
+            "courierId",
+            "fromState",
+            "toState",
+            "action",
+            "sourceSequence",
+            "reasonCode",
+            "snapshot"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventType",
+        "eventVersion",
+        "aggregateType",
+        "aggregateId",
+        "aggregateVersion",
+        "occurredAt",
+        "producer",
+        "correlationId",
+        "causationId",
+        "actor",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "OrderTransitioned",
+      "x-topic": "order.lifecycle.events"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventType": {
+          "const": "ChatMessageSent"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "aggregateType": {
+          "const": "Conversation"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producer": {
+          "const": "chat-service"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "causationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "actor": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "USER"
+            },
+            "userId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "REQUESTER",
+                "COURIER"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "userId"
+          ],
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "messageId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "conversationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "senderUserId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "recipientUserId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "messageType": {
+              "type": "string",
+              "enum": [
+                "TEXT",
+                "QUICK_REPLY",
+                "IMAGE"
+              ]
+            },
+            "messagePreview": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            }
+          },
+          "required": [
+            "messageId",
+            "conversationId",
+            "orderId",
+            "senderUserId",
+            "recipientUserId",
+            "messageType"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventType",
+        "eventVersion",
+        "aggregateType",
+        "aggregateId",
+        "aggregateVersion",
+        "occurredAt",
+        "producer",
+        "correlationId",
+        "causationId",
+        "actor",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "ChatMessageSent",
+      "x-topic": "chat.events"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventType": {
+          "const": "DisputeCreditsFinalized"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "aggregateType": {
+          "const": "Order"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producer": {
+          "const": "credit-service"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "causationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actor": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "USER"
+            },
+            "userId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "ADMIN"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "userId",
+            "role"
+          ],
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "disposition": {
+              "type": "string",
+              "enum": [
+                "RETURN_TO_REQUESTER",
+                "PAY_COURIER",
+                "KEEP_EXISTING"
+              ]
+            },
+            "reservationStatus": {
+              "type": "string",
+              "enum": [
+                "ABSENT",
+                "RELEASED",
+                "SETTLED",
+                "COMPENSATED"
+              ]
+            }
+          },
+          "required": [
+            "operationId",
+            "orderId",
+            "caseId",
+            "disposition",
+            "reservationStatus"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventType",
+        "eventVersion",
+        "aggregateType",
+        "aggregateId",
+        "aggregateVersion",
+        "occurredAt",
+        "producer",
+        "correlationId",
+        "causationId",
+        "actor",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "DisputeCreditsFinalized",
+      "x-topic": "credit.events"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventType": {
+          "const": "CaseOpened"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "aggregateType": {
+          "const": "AdminCase"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producer": {
+          "const": "admin-service"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "causationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actor": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "USER"
+                },
+                "userId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "REQUESTER",
+                    "COURIER",
+                    "ADMIN"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "userId",
+                "role"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "SYSTEM"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sourceSequence": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "reporterId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "caseId",
+            "orderId",
+            "sourceSequence",
+            "reporterId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventType",
+        "eventVersion",
+        "aggregateType",
+        "aggregateId",
+        "aggregateVersion",
+        "occurredAt",
+        "producer",
+        "correlationId",
+        "causationId",
+        "actor",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "CaseOpened",
+      "x-topic": "admin.events"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventType": {
+          "const": "CaseClaimed"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "aggregateType": {
+          "const": "AdminCase"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producer": {
+          "const": "admin-service"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "causationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actor": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "USER"
+            },
+            "userId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "ADMIN"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "userId",
+            "role"
+          ],
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sourceSequence": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "reviewerId": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "caseId",
+            "orderId",
+            "sourceSequence",
+            "reviewerId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventType",
+        "eventVersion",
+        "aggregateType",
+        "aggregateId",
+        "aggregateVersion",
+        "occurredAt",
+        "producer",
+        "correlationId",
+        "causationId",
+        "actor",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "CaseClaimed",
+      "x-topic": "admin.events"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventType": {
+          "const": "CaseActionCompleted"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "aggregateType": {
+          "const": "AdminCase"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producer": {
+          "const": "admin-service"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "causationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actor": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "USER"
+            },
+            "userId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "ADMIN"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "userId",
+            "role"
+          ],
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sourceSequence": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "operationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "ownerEventId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "targetUserId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "result": {
+              "type": "string",
+              "enum": [
+                "APPLIED",
+                "NO_CHANGE",
+                "REJECTED"
+              ]
+            }
+          },
+          "required": [
+            "caseId",
+            "orderId",
+            "sourceSequence",
+            "operationId",
+            "ownerEventId",
+            "targetUserId",
+            "result"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventType",
+        "eventVersion",
+        "aggregateType",
+        "aggregateId",
+        "aggregateVersion",
+        "occurredAt",
+        "producer",
+        "correlationId",
+        "causationId",
+        "actor",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "CaseActionCompleted",
+      "x-topic": "admin.events"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "eventType": {
+          "const": "CaseResolved"
+        },
+        "eventVersion": {
+          "const": 1
+        },
+        "aggregateType": {
+          "const": "AdminCase"
+        },
+        "aggregateId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "aggregateVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "occurredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producer": {
+          "const": "admin-service"
+        },
+        "correlationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "causationId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actor": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "USER"
+            },
+            "userId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "ADMIN"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "userId",
+            "role"
+          ],
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "caseId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orderId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sourceSequence": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "reviewerId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "resolvedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "caseId",
+            "orderId",
+            "sourceSequence",
+            "reviewerId",
+            "resolvedAt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "eventId",
+        "eventType",
+        "eventVersion",
+        "aggregateType",
+        "aggregateId",
+        "aggregateVersion",
+        "occurredAt",
+        "producer",
+        "correlationId",
+        "causationId",
+        "actor",
+        "data"
+      ],
+      "additionalProperties": false,
+      "title": "CaseResolved",
+      "x-topic": "admin.events"
+    }
+  ]
+}

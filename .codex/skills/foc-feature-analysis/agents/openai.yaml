@@ -1,0 +1,6 @@
+interface:
+  display_name: "FoC Feature Analysis"
+  short_description: "Define a FoC feature brief"
+  default_prompt: "Use $foc-feature-analysis to prepare an approval-ready Friend on Campus feature brief."
+policy:
+  allow_implicit_invocation: false

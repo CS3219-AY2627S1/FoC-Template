@@ -1,0 +1,95 @@
+# Both ends of new connections must be allowed under the shared default deny.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-admin
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: admin-service
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+        - podSelector:
+            matchLabels:
+              app: chat-service
+      ports:
+        - protocol: TCP
+          port: 8084
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: admin-db
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: user-service
+      ports:
+        - protocol: TCP
+          port: 8081
+    - to:
+        - podSelector:
+            matchLabels:
+              app: chat-service
+      ports:
+        - protocol: TCP
+          port: 8085
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-admin-db
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: admin-db
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: admin-service
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: foc-gateway-admin
+  namespace: foc-local
+  labels:
+    foc/network-isolation: v1
+spec:
+  podSelector:
+    matchLabels:
+      app: gateway
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: admin-service
+      ports:
+        - protocol: TCP
+          port: 8084

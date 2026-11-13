@@ -1,0 +1,6 @@
+interface:
+  display_name: "FoC Commit"
+  short_description: "Create logical FoC commits"
+  default_prompt: "Use $foc-commit to group and commit the current Friend on Campus repository changes."
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,483 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: gateway, namespace: foc-staging }
+spec:
+  replicas: 2
+  strategy: { type: RollingUpdate, rollingUpdate: { maxSurge: 1, maxUnavailable: 0 } }
+  selector: { matchLabels: { app: gateway } }
+  template:
+    metadata: { labels: { app: gateway } }
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: gateway } }
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: gateway } }
+      automountServiceAccountToken: false
+      containers:
+        - name: gateway
+          image: foc-gateway-service:bootstrap
+          imagePullPolicy: IfNotPresent
+          ports: [{ name: http, containerPort: 8088 }]
+          env:
+            - { name: USER_SERVICE_URL, value: "http://user-service:8081" }
+            - { name: SUPPLIER_SERVICE_URL, value: "http://supplier-service:8080" }
+            - { name: ORDER_SERVICE_URL, value: "http://order-service:8082" }
+            - { name: CREDIT_SERVICE_URL, value: "http://credit-service:8083" }
+            - { name: ADMIN_SERVICE_URL, value: "http://admin-service:8084" }
+            - { name: CHAT_SERVICE_URL, value: "http://chat-service:8085" }
+            - { name: NOTIFICATION_SERVICE_URL, value: "http://notification-service:8086" }
+            - { name: JAVA_TOOL_OPTIONS, value: "-XX:MaxRAMPercentage=70.0 -XX:ActiveProcessorCount=2 -XX:TieredStopAtLevel=1" }
+          startupProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 120 }
+          readinessProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 10, timeoutSeconds: 3 }
+          livenessProbe: { tcpSocket: { port: http }, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 6 }
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: "1", memory: 1Gi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: gateway, namespace: foc-staging }
+spec: { type: ClusterIP, selector: { app: gateway }, ports: [{ name: http, port: 8088, targetPort: http }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: user-service, namespace: foc-staging }
+spec:
+  replicas: 2
+  strategy: { type: RollingUpdate, rollingUpdate: { maxSurge: 0, maxUnavailable: 1 } }
+  selector: { matchLabels: { app: user-service } }
+  template:
+    metadata: { labels: { app: user-service } }
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: user-service } }
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: user-service } }
+      automountServiceAccountToken: false
+      containers:
+        - name: user-service
+          image: foc-user-service:bootstrap
+          imagePullPolicy: IfNotPresent
+          ports: [{ name: http, containerPort: 8081 }]
+          env:
+            - { name: DB_HOST, valueFrom: { configMapKeyRef: { name: cloud-runtime, key: RDS_HOST } } }
+            - { name: DB_PORT, value: "5432" }
+            - { name: DB_NAME, value: user_db }
+            - { name: DB_USER, value: user_user }
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: user-service-secrets, key: DB_PASSWORD } } }
+            - { name: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE, value: "2" }
+            - { name: SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE, value: "0" }
+            - { name: JWT_PRIVATE_KEY, valueFrom: { secretKeyRef: { name: user-service-secrets, key: JWT_PRIVATE_KEY } } }
+            - { name: USER_SERVICE_TRUSTED_KEYS, valueFrom: { secretKeyRef: { name: user-service-secrets, key: USER_SERVICE_TRUSTED_KEYS } } }
+            - { name: USER_EVENTS_PUBLISHER_ENABLED, value: "true" }
+            - { name: USER_ADMIN_COMMANDS_ENABLED, value: "true" }
+            - { name: KAFKA_BOOTSTRAP_SERVERS, valueFrom: { configMapKeyRef: { name: cloud-runtime, key: KAFKA_BOOTSTRAP_SERVERS } } }
+            - { name: KAFKA_SECURITY_PROTOCOL, value: SASL_SSL }
+            - { name: KAFKA_SASL_MECHANISM, value: SCRAM-SHA-512 }
+            - { name: KAFKA_USERNAME, value: user_service }
+            - { name: KAFKA_PASSWORD, valueFrom: { secretKeyRef: { name: user-kafka-client, key: KAFKA_PASSWORD } } }
+            - { name: MAIL_PROVIDER, value: sendgrid }
+            - { name: SENDGRID_API_KEY, valueFrom: { secretKeyRef: { name: user-mail-secrets, key: SENDGRID_API_KEY } } }
+            - { name: SENDGRID_FROM_EMAIL, valueFrom: { secretKeyRef: { name: user-mail-secrets, key: SENDGRID_FROM_EMAIL } } }
+            - { name: ADMIN_BOOTSTRAP_EMAIL, valueFrom: { secretKeyRef: { name: user-service-secrets, key: ADMIN_BOOTSTRAP_EMAIL, optional: true } } }
+            - { name: ADMIN_BOOTSTRAP_USERNAME, valueFrom: { secretKeyRef: { name: user-service-secrets, key: ADMIN_BOOTSTRAP_USERNAME, optional: true } } }
+            - { name: ADMIN_BOOTSTRAP_PASSWORD, valueFrom: { secretKeyRef: { name: user-service-secrets, key: ADMIN_BOOTSTRAP_PASSWORD, optional: true } } }
+            - { name: JAVA_TOOL_OPTIONS, value: "-XX:MaxRAMPercentage=70.0 -XX:ActiveProcessorCount=2 -XX:TieredStopAtLevel=1" }
+          startupProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 120 }
+          readinessProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 10, timeoutSeconds: 3 }
+          livenessProbe: { tcpSocket: { port: http }, periodSeconds: 20, failureThreshold: 6 }
+          resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { cpu: "1", memory: 1Gi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: user-service, namespace: foc-staging }
+spec: { type: ClusterIP, selector: { app: user-service }, ports: [{ name: http, port: 8081, targetPort: http }] }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: supplier-service
+  namespace: foc-staging
+  annotations:
+    eks.amazonaws.com/role-arn: SUPPLIER_SERVICE_ROLE_ARN_REPLACED_BY_DEPLOY_SCRIPT
+automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: supplier-service, namespace: foc-staging }
+spec:
+  replicas: 2
+  strategy: { type: RollingUpdate, rollingUpdate: { maxSurge: 0, maxUnavailable: 1 } }
+  selector: { matchLabels: { app: supplier-service } }
+  template:
+    metadata: { labels: { app: supplier-service } }
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: supplier-service } }
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: supplier-service } }
+      serviceAccountName: supplier-service
+      automountServiceAccountToken: true
+      containers:
+        - name: supplier-service
+          image: foc-supplier-service:bootstrap
+          imagePullPolicy: IfNotPresent
+          ports: [{ name: http, containerPort: 8080 }]
+          env:
+            - { name: DB_HOST, valueFrom: { configMapKeyRef: { name: cloud-runtime, key: RDS_HOST } } }
+            - { name: DB_PORT, value: "5432" }
+            - { name: DB_NAME, value: supplier_db }
+            - { name: DB_USER, value: supplier_user }
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: supplier-service-secrets, key: DB_PASSWORD } } }
+            - { name: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE, value: "2" }
+            - { name: SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE, value: "0" }
+            - { name: SUPPLIER_USER_URL, value: "http://user-service:8081" }
+            - { name: SUPPLIER_SERVICE_KEY_ID, valueFrom: { secretKeyRef: { name: supplier-service-secrets, key: SUPPLIER_SERVICE_KEY_ID } } }
+            - { name: SUPPLIER_SERVICE_PRIVATE_KEY, valueFrom: { secretKeyRef: { name: supplier-service-secrets, key: SUPPLIER_SERVICE_PRIVATE_KEY } } }
+            - { name: SUPPLIER_JWT_JWK_SET_URI, value: "http://user-service:8081/.well-known/jwks.json" }
+            - { name: SUPPLIER_JWT_ISSUER, value: friend-on-campus-user-service }
+            - { name: SUPPLIER_JWT_AUDIENCE, value: friend-on-campus-api }
+            - { name: SUPPLIER_IMAGE_STORAGE, value: s3 }
+            - { name: SUPPLIER_S3_BUCKET, value: SUPPLIER_S3_BUCKET_REPLACED_BY_DEPLOY_SCRIPT }
+            - { name: SUPPLIER_S3_KEY_PREFIX, value: images }
+            - { name: AWS_REGION, value: AWS_REGION_REPLACED_BY_DEPLOY_SCRIPT }
+            - { name: JAVA_TOOL_OPTIONS, value: "-XX:MaxRAMPercentage=70.0" }
+          startupProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 60 }
+          readinessProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 10, timeoutSeconds: 3 }
+          livenessProbe: { tcpSocket: { port: http }, periodSeconds: 20, failureThreshold: 6 }
+          resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: "1", memory: 1Gi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: supplier-service, namespace: foc-staging }
+spec: { type: ClusterIP, selector: { app: supplier-service }, ports: [{ name: http, port: 8080, targetPort: http }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: order-service, namespace: foc-staging }
+spec:
+  replicas: 2
+  strategy: { type: RollingUpdate, rollingUpdate: { maxSurge: 0, maxUnavailable: 1 } }
+  selector: { matchLabels: { app: order-service } }
+  template:
+    metadata: { labels: { app: order-service } }
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: order-service } }
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: order-service } }
+      automountServiceAccountToken: false
+      containers:
+        - name: order-service
+          image: foc-order-service:bootstrap
+          imagePullPolicy: IfNotPresent
+          ports: [{ name: http, containerPort: 8082 }]
+          env:
+            - { name: DB_HOST, valueFrom: { configMapKeyRef: { name: cloud-runtime, key: RDS_HOST } } }
+            - { name: DB_PORT, value: "5432" }
+            - { name: DB_NAME, value: order_db }
+            - { name: DB_USER, value: order_user }
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: order-service-secrets, key: DB_PASSWORD } } }
+            - { name: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE, value: "2" }
+            - { name: SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE, value: "0" }
+            - { name: ORDER_USER_URL, value: "http://user-service:8081" }
+            - { name: ORDER_SERVICE_KEY_ID, valueFrom: { secretKeyRef: { name: order-service-secrets, key: ORDER_SERVICE_KEY_ID } } }
+            - { name: ORDER_SERVICE_PRIVATE_KEY, valueFrom: { secretKeyRef: { name: order-service-secrets, key: ORDER_SERVICE_PRIVATE_KEY } } }
+            - { name: ORDER_JWT_JWK_SET_URI, value: "http://user-service:8081/.well-known/jwks.json" }
+            - { name: ORDER_JWT_ISSUER, value: friend-on-campus-user-service }
+            - { name: ORDER_JWT_AUDIENCE, value: friend-on-campus-api }
+            - { name: ORDER_SERVICE_TRUSTED_KEYS, valueFrom: { secretKeyRef: { name: order-service-secrets, key: ORDER_SERVICE_TRUSTED_KEYS } } }
+            - { name: ORDER_KAFKA_ENABLED, value: "true" }
+            - { name: KAFKA_BOOTSTRAP_SERVERS, valueFrom: { configMapKeyRef: { name: cloud-runtime, key: KAFKA_BOOTSTRAP_SERVERS } } }
+            - { name: KAFKA_SECURITY_PROTOCOL, value: SASL_SSL }
+            - { name: KAFKA_SASL_MECHANISM, value: SCRAM-SHA-512 }
+            - { name: KAFKA_USERNAME, value: order_service }
+            - { name: ORDER_LIFECYCLE_EVENTS_ENABLED, value: "true" }
+            - { name: KAFKA_PASSWORD, valueFrom: { secretKeyRef: { name: order-kafka-client, key: KAFKA_PASSWORD } } }
+            - { name: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG, value: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="$(KAFKA_USERNAME)" password="$(KAFKA_PASSWORD)";' }
+            - { name: JAVA_TOOL_OPTIONS, value: "-XX:MaxRAMPercentage=70.0" }
+          startupProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 60 }
+          readinessProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 10, timeoutSeconds: 3 }
+          livenessProbe: { tcpSocket: { port: http }, periodSeconds: 20, failureThreshold: 6 }
+          resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: "1", memory: 1Gi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: order-service, namespace: foc-staging }
+spec: { type: ClusterIP, selector: { app: order-service }, ports: [{ name: http, port: 8082, targetPort: http }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: credit-service, namespace: foc-staging }
+spec:
+  replicas: 2
+  strategy: { type: RollingUpdate, rollingUpdate: { maxSurge: 0, maxUnavailable: 1 } }
+  selector: { matchLabels: { app: credit-service } }
+  template:
+    metadata: { labels: { app: credit-service } }
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: credit-service } }
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: credit-service } }
+      automountServiceAccountToken: false
+      containers:
+        - name: credit-service
+          image: foc-credit-service:bootstrap
+          imagePullPolicy: IfNotPresent
+          ports: [{ name: http, containerPort: 8083 }]
+          env:
+            - { name: DB_HOST, valueFrom: { configMapKeyRef: { name: cloud-runtime, key: RDS_HOST } } }
+            - { name: DB_PORT, value: "5432" }
+            - { name: DB_NAME, value: credit_db }
+            - { name: DB_USER, value: credit_user }
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: credit-service-secrets, key: DB_PASSWORD } } }
+            - { name: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE, value: "2" }
+            - { name: SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE, value: "0" }
+            - { name: CREDIT_USER_URL, value: "http://user-service:8081" }
+            - { name: CREDIT_SERVICE_KEY_ID, valueFrom: { secretKeyRef: { name: credit-service-secrets, key: CREDIT_SERVICE_KEY_ID } } }
+            - { name: CREDIT_SERVICE_PRIVATE_KEY, valueFrom: { secretKeyRef: { name: credit-service-secrets, key: CREDIT_SERVICE_PRIVATE_KEY } } }
+            - { name: CREDIT_JWT_JWK_SET_URI, value: "http://user-service:8081/.well-known/jwks.json" }
+            - { name: CREDIT_JWT_ISSUER, value: friend-on-campus-user-service }
+            - { name: CREDIT_JWT_AUDIENCE, value: friend-on-campus-api }
+            - { name: CREDIT_SERVICE_TRUSTED_KEYS, valueFrom: { secretKeyRef: { name: credit-service-secrets, key: CREDIT_SERVICE_TRUSTED_KEYS } } }
+            - { name: KAFKA_ENABLED, value: "true" }
+            - { name: KAFKA_BOOTSTRAP_SERVERS, valueFrom: { configMapKeyRef: { name: cloud-runtime, key: KAFKA_BOOTSTRAP_SERVERS } } }
+            - { name: KAFKA_SECURITY_PROTOCOL, value: SASL_SSL }
+            - { name: KAFKA_SASL_MECHANISM, value: SCRAM-SHA-512 }
+            - { name: KAFKA_USERNAME, value: credit_service }
+            - { name: KAFKA_PASSWORD, valueFrom: { secretKeyRef: { name: credit-kafka-client, key: KAFKA_PASSWORD } } }
+            - { name: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG, value: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="$(KAFKA_USERNAME)" password="$(KAFKA_PASSWORD)";' }
+            - { name: KAFKA_CONSUMER_GROUP, value: credit-service }
+            - { name: JAVA_TOOL_OPTIONS, value: "-XX:MaxRAMPercentage=70.0" }
+          startupProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 60 }
+          readinessProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 10, timeoutSeconds: 3 }
+          livenessProbe: { tcpSocket: { port: http }, periodSeconds: 20, failureThreshold: 6 }
+          resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: "1", memory: 1Gi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: credit-service, namespace: foc-staging }
+spec: { type: ClusterIP, selector: { app: credit-service }, ports: [{ name: http, port: 8083, targetPort: http }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: admin-service, namespace: foc-staging }
+spec:
+  replicas: 2
+  strategy: { type: RollingUpdate, rollingUpdate: { maxSurge: 0, maxUnavailable: 1 } }
+  selector: { matchLabels: { app: admin-service } }
+  template:
+    metadata: { labels: { app: admin-service } }
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: admin-service } }
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: admin-service } }
+      automountServiceAccountToken: false
+      containers:
+        - name: admin-service
+          image: foc-admin-service:bootstrap
+          imagePullPolicy: IfNotPresent
+          ports: [{ name: http, containerPort: 8084 }]
+          env:
+            - { name: ADMIN_DB_HOST, valueFrom: { configMapKeyRef: { name: cloud-runtime, key: RDS_HOST } } }
+            - { name: ADMIN_DB_PORT, value: "5432" }
+            - { name: ADMIN_DB_NAME, value: admin_db }
+            - { name: ADMIN_DB_USER, value: admin_user }
+            - { name: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE, value: "2" }
+            - { name: SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE, value: "0" }
+            - { name: ADMIN_USER_URL, value: "http://user-service:8081" }
+            - { name: ADMIN_USER_JWKS, value: "http://user-service:8081/.well-known/jwks.json" }
+            - { name: ADMIN_CHAT_URL, value: "http://chat-service:8085" }
+            - { name: ADMIN_KAFKA_ENABLED, value: "true" }
+            - { name: KAFKA_BOOTSTRAP_SERVERS, valueFrom: { configMapKeyRef: { name: cloud-runtime, key: KAFKA_BOOTSTRAP_SERVERS } } }
+            - { name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL, value: SASL_SSL }
+            - { name: SPRING_KAFKA_PROPERTIES_SASL_MECHANISM, value: SCRAM-SHA-512 }
+            - { name: JAVA_TOOL_OPTIONS, value: "-XX:MaxRAMPercentage=70.0 -XX:ActiveProcessorCount=2 -XX:TieredStopAtLevel=1" }
+          envFrom:
+            - secretRef: { name: admin-service-secrets }
+            - secretRef: { name: admin-kafka-client }
+          startupProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 120 }
+          readinessProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 10, timeoutSeconds: 3 }
+          livenessProbe: { tcpSocket: { port: http }, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 6 }
+          resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: "1", memory: 1Gi } }
+          securityContext: { runAsNonRoot: true, runAsUser: 999, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: admin-service, namespace: foc-staging }
+spec: { type: ClusterIP, selector: { app: admin-service }, ports: [{ name: http, port: 8084, targetPort: http }] }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chat-service
+  namespace: foc-staging
+  annotations:
+    eks.amazonaws.com/role-arn: CHAT_SERVICE_ROLE_ARN_REPLACED_BY_DEPLOY_SCRIPT
+automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: chat-service, namespace: foc-staging }
+spec:
+  replicas: 2
+  strategy: { type: RollingUpdate, rollingUpdate: { maxSurge: 0, maxUnavailable: 1 } }
+  selector: { matchLabels: { app: chat-service } }
+  template:
+    metadata: { labels: { app: chat-service } }
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: chat-service } }
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: chat-service } }
+      serviceAccountName: chat-service
+      automountServiceAccountToken: true
+      containers:
+        - name: chat-service
+          image: foc-chat-service:bootstrap
+          imagePullPolicy: IfNotPresent
+          ports: [{ name: http, containerPort: 8085 }]
+          env:
+            - { name: DB_HOST, valueFrom: { configMapKeyRef: { name: cloud-runtime, key: RDS_HOST } } }
+            - { name: DB_PORT, value: "5432" }
+            - { name: DB_NAME, value: chat_db }
+            - { name: DB_USER, value: chat_user }
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: chat-service-secrets, key: DB_PASSWORD } } }
+            - { name: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE, value: "2" }
+            - { name: SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE, value: "0" }
+            - { name: CHAT_JWT_JWK_SET_URI, value: "http://user-service:8081/.well-known/jwks.json" }
+            - { name: CHAT_JWT_ISSUER, value: friend-on-campus-user-service }
+            - { name: CHAT_JWT_AUDIENCE, value: friend-on-campus-api }
+            - { name: CHAT_SERVICE_KEY_ID, valueFrom: { secretKeyRef: { name: chat-service-secrets, key: CHAT_SERVICE_KEY_ID } } }
+            - { name: CHAT_SERVICE_PRIVATE_KEY, valueFrom: { secretKeyRef: { name: chat-service-secrets, key: CHAT_SERVICE_PRIVATE_KEY } } }
+            - { name: CHAT_SERVICE_TRUSTED_KEYS, valueFrom: { secretKeyRef: { name: chat-service-secrets, key: CHAT_SERVICE_TRUSTED_KEYS } } }
+            - { name: CHAT_ADMIN_URL, value: "http://admin-service:8084" }
+            - { name: CHAT_USER_URL, value: "http://user-service:8081" }
+            - { name: CHAT_ORDER_URL, value: "http://order-service:8082" }
+            - { name: CHAT_CREDIT_URL, value: "http://credit-service:8083" }
+            - { name: CHAT_KAFKA_ENABLED, value: "true" }
+            - { name: KAFKA_BOOTSTRAP_SERVERS, valueFrom: { configMapKeyRef: { name: cloud-runtime, key: KAFKA_BOOTSTRAP_SERVERS } } }
+            - { name: KAFKA_SECURITY_PROTOCOL, value: SASL_SSL }
+            - { name: KAFKA_SASL_MECHANISM, value: SCRAM-SHA-512 }
+            - { name: KAFKA_USERNAME, value: chat_service }
+            - { name: KAFKA_PASSWORD, valueFrom: { secretKeyRef: { name: chat-kafka-client, key: KAFKA_PASSWORD } } }
+            - { name: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG, value: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="$(KAFKA_USERNAME)" password="$(KAFKA_PASSWORD)";' }
+            - { name: CHAT_RABBIT_ENABLED, value: "true" }
+            - { name: RABBITMQ_HOST, value: rabbitmq }
+            - { name: RABBITMQ_PORT, value: "5672" }
+            - { name: RABBITMQ_USERNAME, value: chat_service }
+            - { name: RABBITMQ_PASSWORD, valueFrom: { secretKeyRef: { name: chat-service-secrets, key: RABBITMQ_PASSWORD } } }
+            - { name: CHAT_ATTACHMENT_STORAGE, value: s3 }
+            - { name: CHAT_S3_BUCKET, value: CHAT_S3_BUCKET_REPLACED_BY_DEPLOY_SCRIPT }
+            - { name: CHAT_S3_KEY_PREFIX, value: attachments }
+            - { name: AWS_REGION, value: AWS_REGION_REPLACED_BY_DEPLOY_SCRIPT }
+            - { name: CHAT_TRANSLATION_PROVIDER, valueFrom: { secretKeyRef: { name: chat-service-secrets, key: CHAT_TRANSLATION_PROVIDER, optional: true } } }
+            - { name: GEMINI_API_KEY, valueFrom: { secretKeyRef: { name: chat-service-secrets, key: GEMINI_API_KEY, optional: true } } }
+            - { name: CHAT_GEMINI_MODEL, value: gemini-3.5-flash-lite }
+            - { name: CHAT_TRANSLATION_MAX_ATTEMPTS, value: "3" }
+            - { name: JAVA_TOOL_OPTIONS, value: "-XX:MaxRAMPercentage=70.0 -XX:ActiveProcessorCount=2 -XX:TieredStopAtLevel=1" }
+          startupProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 120 }
+          readinessProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 10, timeoutSeconds: 3 }
+          livenessProbe: { tcpSocket: { port: http }, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 6 }
+          resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: "1", memory: 1Gi } }
+          securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: chat-service, namespace: foc-staging }
+spec: { type: ClusterIP, selector: { app: chat-service }, ports: [{ name: http, port: 8085, targetPort: http }] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: notification-service, namespace: foc-staging }
+spec:
+  replicas: 2
+  strategy: { type: RollingUpdate, rollingUpdate: { maxSurge: 0, maxUnavailable: 1 } }
+  selector: { matchLabels: { app: notification-service } }
+  template:
+    metadata: { labels: { app: notification-service } }
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: notification-service } }
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: { matchLabels: { app: notification-service } }
+      automountServiceAccountToken: false
+      containers:
+        - name: notification-service
+          image: foc-notification-service:bootstrap
+          imagePullPolicy: IfNotPresent
+          ports: [{ name: http, containerPort: 8086 }]
+          env:
+            - { name: DB_HOST, valueFrom: { configMapKeyRef: { name: cloud-runtime, key: RDS_HOST } } }
+            - { name: DB_PORT, value: "5432" }
+            - { name: DB_NAME, value: notification_db }
+            - { name: DB_USER, value: notification_user }
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: notification-service-secrets, key: DB_PASSWORD } } }
+            - { name: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE, value: "2" }
+            - { name: SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE, value: "0" }
+            - { name: NOTIFICATION_JWT_JWK_SET_URI, value: "http://user-service:8081/.well-known/jwks.json" }
+            - { name: NOTIFICATION_JWT_ISSUER, value: friend-on-campus-user-service }
+            - { name: NOTIFICATION_JWT_AUDIENCE, value: friend-on-campus-api }
+            - { name: NOTIFICATION_KAFKA_ENABLED, value: "true" }
+            - { name: KAFKA_BOOTSTRAP_SERVERS, valueFrom: { configMapKeyRef: { name: cloud-runtime, key: KAFKA_BOOTSTRAP_SERVERS } } }
+            - { name: KAFKA_SECURITY_PROTOCOL, value: SASL_SSL }
+            - { name: KAFKA_SASL_MECHANISM, value: SCRAM-SHA-512 }
+            - { name: KAFKA_USERNAME, value: notification_service }
+            - { name: KAFKA_PASSWORD, valueFrom: { secretKeyRef: { name: notification-kafka-client, key: KAFKA_PASSWORD } } }
+            - { name: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG, value: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="$(KAFKA_USERNAME)" password="$(KAFKA_PASSWORD)";' }
+            - { name: JAVA_TOOL_OPTIONS, value: "-XX:MaxRAMPercentage=70.0 -XX:ActiveProcessorCount=2 -XX:TieredStopAtLevel=1" }
+          startupProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 120 }
+          readinessProbe: { httpGet: { path: /actuator/health, port: http }, periodSeconds: 10, timeoutSeconds: 3 }
+          livenessProbe: { tcpSocket: { port: http }, periodSeconds: 20, timeoutSeconds: 3, failureThreshold: 6 }
+          resources: { requests: { cpu: 100m, memory: 512Mi }, limits: { cpu: "1", memory: 1Gi } }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: notification-service, namespace: foc-staging }
+spec: { type: ClusterIP, selector: { app: notification-service }, ports: [{ name: http, port: 8086, targetPort: http }] }

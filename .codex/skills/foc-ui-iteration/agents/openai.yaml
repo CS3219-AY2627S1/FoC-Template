@@ -1,0 +1,6 @@
+interface:
+  display_name: "FoC UI Iteration"
+  short_description: "Build an accessible FoC UI flow"
+  default_prompt: "Use $foc-ui-iteration to implement an approved Friend on Campus UI flow."
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,51 @@
+apiVersion: eks.amazonaws.com/v1
+kind: IngressClassParams
+metadata:
+  name: foc-private-alb
+spec:
+  scheme: internal
+  loadBalancerName: foc-staging-gateway
+---
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: alb
+spec:
+  controller: eks.amazonaws.com/alb
+  parameters:
+    apiGroup: eks.amazonaws.com
+    kind: IngressClassParams
+    name: foc-private-alb
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gateway
+  namespace: foc-staging
+  annotations:
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health
+    # Each backend is checked on its own Service port: Gateway uses 8088 and Chat uses 8085.
+    alb.ingress.kubernetes.io/healthcheck-port: traffic-port
+    alb.ingress.kubernetes.io/security-groups: ALB_SECURITY_GROUP_REPLACED_BY_DEPLOY_SCRIPT
+    alb.ingress.kubernetes.io/manage-backend-security-group-rules: "true"
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          # Spring Cloud Gateway Server Web MVC cannot proxy WebSocket upgrades. Send the socket
+          # endpoint straight to Chat; CloudFront and the ALB preserve the Upgrade handshake.
+          - path: /ws/chat
+            pathType: Prefix
+            backend:
+              service:
+                name: chat-service
+                port: { number: 8085 }
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port: { number: 8088 }

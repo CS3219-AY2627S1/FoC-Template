@@ -1,0 +1,48 @@
+:root {
+  color-scheme: light;
+
+  --foc-canvas: #f7f6f3;
+  --foc-surface: #ffffff;
+  --foc-ink: #12151b;
+  --foc-muted: #686a70;
+  --foc-action: #172641;
+  --foc-action-soft: #f0f2fb;
+  --foc-line: #e8e6e1;
+  --foc-danger: #a2372b;
+  --foc-danger-soft: #f9ece9;
+  --foc-focus: #5068b3;
+  --foc-info: #215b80;
+  --foc-info-soft: #eaf2f8;
+  --foc-warning: #84530b;
+  --foc-warning-soft: #fff3dc;
+  --foc-blue: #5068b3;
+  --foc-mauve: #a36f76;
+  --foc-coral: #df9b93;
+  --foc-gold: #f1c675;
+  --foc-shadow: 0 18px 50px rgb(23 38 65 / 11%);
+  --foc-shadow-soft: 0 1px 2px rgb(23 38 65 / 6%), 0 8px 24px rgb(23 38 65 / 7%);
+
+  --foc-space-0: 0;
+  --foc-space-4: 0.25rem;
+  --foc-space-8: 0.5rem;
+  --foc-space-12: 0.75rem;
+  --foc-space-16: 1rem;
+  --foc-space-24: 1.5rem;
+  --foc-space-32: 2rem;
+  --foc-space-56: 3.5rem;
+
+  --foc-radius-8: 0.5rem;
+  --foc-radius-12: 0.75rem;
+  --foc-radius-pill: 999px;
+
+  --foc-text-caption: 0.75rem;
+  --foc-text-small: 0.875rem;
+  --foc-text-label: 0.875rem;
+  --foc-text-body: 1rem;
+  --foc-text-heading: 1.25rem;
+  --foc-text-mobile-title: 1.625rem;
+  --foc-text-title: 2rem;
+
+  /* CSS custom properties cannot currently drive media-query conditions. */
+  --foc-breakpoint-desktop: 48rem;
+}

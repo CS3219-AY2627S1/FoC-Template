@@ -1,0 +1,6 @@
+interface:
+  display_name: "FoC Iterate Feature"
+  short_description: "Coordinate a FoC feature workflow"
+  default_prompt: "Use $foc-iterate-feature to run one bounded Friend on Campus feature iteration."
+policy:
+  allow_implicit_invocation: false

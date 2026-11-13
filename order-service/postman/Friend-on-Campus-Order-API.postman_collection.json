@@ -1,0 +1,2944 @@
+{
+  "info": {
+    "_postman_id": "50fdef3f-a711-401f-82f6-ba886ebbe21c",
+    "name": "Order Service",
+    "description": "Friend on Campus Order API through the gateway, following the errand lifecycle end to end.\n\nBefore running: set requesterEmail/requesterPassword, courierEmail/courierPassword and adminEmail/adminPassword (three different ACTIVE accounts; the requester needs 10 available credits - a new account's allocation - and the admin account must have the Admin role and may switch to Courier). Run folders in order (Collection Runner, or one request at a time). Tokens are filled in by the sign-in requests.\n\nNever commit real passwords or tokens: put them in a local environment, or clear the variables before exporting.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{requesterToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// A pickup deadline two hours from now, so every create/edit sends a future deadline.",
+          "pm.collectionVariables.set('pickupDeadline', new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString());"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8088"
+    },
+    {
+      "key": "requesterEmail",
+      "value": ""
+    },
+    {
+      "key": "requesterPassword",
+      "value": ""
+    },
+    {
+      "key": "courierEmail",
+      "value": ""
+    },
+    {
+      "key": "courierPassword",
+      "value": ""
+    },
+    {
+      "key": "adminEmail",
+      "value": ""
+    },
+    {
+      "key": "adminPassword",
+      "value": ""
+    },
+    {
+      "key": "requesterToken",
+      "value": ""
+    },
+    {
+      "key": "courierToken",
+      "value": ""
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "adminCourierToken",
+      "value": ""
+    },
+    {
+      "key": "requesterCourierToken",
+      "value": ""
+    },
+    {
+      "key": "courierRequesterToken",
+      "value": ""
+    },
+    {
+      "key": "requesterId",
+      "value": ""
+    },
+    {
+      "key": "courierId",
+      "value": ""
+    },
+    {
+      "key": "pickupLocationId",
+      "value": ""
+    },
+    {
+      "key": "pickupLocationName",
+      "value": ""
+    },
+    {
+      "key": "dropoffLocationId",
+      "value": ""
+    },
+    {
+      "key": "dropoffLocationName",
+      "value": ""
+    },
+    {
+      "key": "pickupDeadline",
+      "value": ""
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    },
+    {
+      "key": "version",
+      "value": "0"
+    },
+    {
+      "key": "completedVersion",
+      "value": ""
+    },
+    {
+      "key": "requesterAvailableBefore",
+      "value": ""
+    },
+    {
+      "key": "courierAvailableBefore",
+      "value": ""
+    },
+    {
+      "key": "courierBeforeCompensation",
+      "value": ""
+    },
+    {
+      "key": "tries",
+      "value": "0"
+    },
+    {
+      "key": "createKey",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Setup",
+      "description": "Run first. Signs in both people and picks two Supplier locations. Fill in the four account variables (Variables tab) before running; keep real passwords in your local environment, not in the exported file.",
+      "item": [
+        {
+          "name": "Gateway health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Requester: sign in",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "login"
+              ]
+            },
+            "description": "Signs in through the gateway and stores the token. Tokens stay in collection variables: never export or commit them.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{requesterEmail}}\",\n  \"password\": \"{{requesterPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('requesterToken', pm.response.json().accessToken);",
+                  "pm.collectionVariables.set('requesterId', pm.response.json().userId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Requester: switch to REQUESTER",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/session-role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "session-role"
+              ]
+            },
+            "description": "Each session carries exactly one role; the backend authorises every action by it.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"REQUESTER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('role REQUESTER', () => pm.expect(pm.response.json().role).to.eql('REQUESTER'));",
+                  "pm.collectionVariables.set('requesterToken', pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Requester: credits",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/credits/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "credits",
+                "me"
+              ]
+            },
+            "description": "Creates the one-time 10-credit allocation if needed (idempotent) and records the balance.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('requesterAvailableBefore', pm.response.json().availableBalance);",
+                  "pm.test('at least 10 credits available (errands A = 7 and B = 3)', () => pm.expect(pm.response.json().availableBalance).to.be.at.least(10));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Courier: sign in",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "login"
+              ]
+            },
+            "description": "Signs in through the gateway and stores the token. Tokens stay in collection variables: never export or commit them.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{courierEmail}}\",\n  \"password\": \"{{courierPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('courierToken', pm.response.json().accessToken);",
+                  "pm.collectionVariables.set('courierId', pm.response.json().userId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Courier: switch to COURIER",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/session-role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "session-role"
+              ]
+            },
+            "description": "Each session carries exactly one role; the backend authorises every action by it.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"COURIER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('role COURIER', () => pm.expect(pm.response.json().role).to.eql('COURIER'));",
+                  "pm.collectionVariables.set('courierToken', pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Courier: credits",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/credits/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "credits",
+                "me"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('courierAvailableBefore', pm.response.json().availableBalance);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Admin: sign in",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "login"
+              ]
+            },
+            "description": "Signs in through the gateway and stores the token. Tokens stay in collection variables: never export or commit them.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('adminToken', pm.response.json().accessToken);",
+                  "pm.collectionVariables.set('adminId', pm.response.json().userId);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Admin: switch to ADMIN",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/session-role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "session-role"
+              ]
+            },
+            "description": "Each session carries exactly one role; the backend authorises every action by it.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"ADMIN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('role ADMIN', () => pm.expect(pm.response.json().role).to.eql('ADMIN'));",
+                  "pm.collectionVariables.set('adminToken', pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Admin's account: a COURIER session (third person for the race)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/session-role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "session-role"
+              ]
+            },
+            "description": "Lets the admin account act as a second courier for the race-loser request in folder 2.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"COURIER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('adminCourierToken', pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Pick two campus locations (Supplier)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/suppliers?page=0&size=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "suppliers"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "2"
+                }
+              ]
+            },
+            "description": "Order never calls Supplier: the client picks locations here and sends both the ID and the name, which Order stores as a snapshot.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const [p, d] = pm.response.json().items;",
+                  "pm.test('two active locations', () => pm.expect(d).to.exist);",
+                  "pm.collectionVariables.set('pickupLocationId', p.id); pm.collectionVariables.set('pickupLocationName', p.name);",
+                  "pm.collectionVariables.set('dropoffLocationId', d.id); pm.collectionVariables.set('dropoffLocationName', d.name);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "1. Create, read and edit (requester)",
+      "description": "Validation, the credit reservation through Kafka, reads and editing.",
+      "item": [
+        {
+          "name": "Create errand - no token (401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Collect my printed notes\",\n  \"description\": \"A bound set of CS3219 lecture notes from the print shop.\",\n  \"pickupLocationId\": \"{{pickupLocationId}}\",\n  \"pickupLocationName\": \"{{pickupLocationName}}\",\n  \"dropoffLocationId\": \"{{dropoffLocationId}}\",\n  \"dropoffLocationName\": \"{{dropoffLocationName}}\",\n  \"creditReward\": 6,\n  \"pickupDeadline\": \"{{pickupDeadline}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create errand - as courier (403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "Only a REQUESTER session may post.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Collect my printed notes\",\n  \"description\": \"A bound set of CS3219 lecture notes from the print shop.\",\n  \"pickupLocationId\": \"{{pickupLocationId}}\",\n  \"pickupLocationName\": \"{{pickupLocationName}}\",\n  \"dropoffLocationId\": \"{{dropoffLocationId}}\",\n  \"dropoffLocationName\": \"{{dropoffLocationName}}\",\n  \"creditReward\": 6,\n  \"pickupDeadline\": \"{{pickupDeadline}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create errand - invalid fields (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"description\": \"A bound set of CS3219 lecture notes from the print shop.\",\n  \"pickupLocationId\": \"{{pickupLocationId}}\",\n  \"pickupLocationName\": \"{{pickupLocationName}}\",\n  \"dropoffLocationId\": \"{{pickupLocationId}}\",\n  \"dropoffLocationName\": \"{{dropoffLocationName}}\",\n  \"creditReward\": 0,\n  \"pickupDeadline\": \"{{pickupDeadline}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('field errors', () => pm.expect(pm.response.json().errors).to.include.keys('title', 'creditReward'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create errand (201, PENDING_CREDIT)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{createKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Collect my printed notes\",\n  \"description\": \"A bound set of CS3219 lecture notes from the print shop.\",\n  \"pickupLocationId\": \"{{pickupLocationId}}\",\n  \"pickupLocationName\": \"{{pickupLocationName}}\",\n  \"dropoffLocationId\": \"{{dropoffLocationId}}\",\n  \"dropoffLocationName\": \"{{dropoffLocationName}}\",\n  \"creditReward\": 6,\n  \"pickupDeadline\": \"{{pickupDeadline}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// One key for this errand; the next request retries with it.",
+                  "pm.collectionVariables.set('createKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.test('state PENDING_CREDIT', () => pm.expect(pm.response.json().state).to.eql('PENDING_CREDIT'));",
+                  "pm.test('requester is the token subject', () => pm.expect(pm.response.json().requesterId).to.eql(pm.collectionVariables.get('requesterId')));",
+                  "pm.collectionVariables.set('orderId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create errand - retry with the same Idempotency-Key (200, same errand)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{createKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Collect my printed notes\",\n  \"description\": \"A bound set of CS3219 lecture notes from the print shop.\",\n  \"pickupLocationId\": \"{{pickupLocationId}}\",\n  \"pickupLocationName\": \"{{pickupLocationName}}\",\n  \"dropoffLocationId\": \"{{dropoffLocationId}}\",\n  \"dropoffLocationName\": \"{{dropoffLocationName}}\",\n  \"creditReward\": 6,\n  \"pickupDeadline\": \"{{pickupDeadline}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200, not a second 201', () => pm.response.to.have.status(200));",
+                  "pm.test('the errand the first request created', () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('orderId')));",
+                  "pm.test('Location names it', () => pm.expect(pm.response.headers.get('Location')).to.eql('/api/orders/' + pm.collectionVariables.get('orderId')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create errand - same key, different body (409 IDEMPOTENCY_KEY_REUSED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{createKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Collect my printed notes\",\n  \"description\": \"A bound set of CS3219 lecture notes from the print shop.\",\n  \"pickupLocationId\": \"{{pickupLocationId}}\",\n  \"pickupLocationName\": \"{{pickupLocationName}}\",\n  \"dropoffLocationId\": \"{{dropoffLocationId}}\",\n  \"dropoffLocationName\": \"{{dropoffLocationName}}\",\n  \"creditReward\": 5,\n  \"pickupDeadline\": \"{{pickupDeadline}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));",
+                  "pm.test('IDEMPOTENCY_KEY_REUSED', () => pm.expect(pm.response.json().code).to.eql('IDEMPOTENCY_KEY_REUSED'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get errand - waits until OPEN",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}"
+              ]
+            },
+            "description": "Repeats itself (up to 15 times) while Credit answers OrderSubmitted with CreditReserved.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Credit reserves the reward asynchronously over Kafka; poll until the errand opens.",
+                  "const tries = Number(pm.collectionVariables.get('tries') || 0);",
+                  "if (pm.response.json().state === 'PENDING_CREDIT' && tries < 15) {",
+                  "  pm.collectionVariables.set('tries', tries + 1);",
+                  "  setTimeout(() => {}, 1000);",
+                  "  pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.set('tries', 0);",
+                  "  pm.test('state OPEN (Credit reserved the reward)', () => pm.expect(pm.response.json().state).to.eql('OPEN'));",
+                  "  pm.collectionVariables.set('version', pm.response.json().version);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Requester credits - 6 reserved",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/credits/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "credits",
+                "me"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('reserved includes the reward', () => pm.expect(pm.response.json().reservedBalance).to.be.at.least(6));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Edit errand - raise reward to 7",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}"
+              ]
+            },
+            "description": "Credit reserves only the difference (1 credit). The new reward applies after CreditAdjusted.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Collect my printed notes\",\n  \"description\": \"A bound set of CS3219 lecture notes from the print shop.\",\n  \"pickupLocationId\": \"{{pickupLocationId}}\",\n  \"pickupLocationName\": \"{{pickupLocationName}}\",\n  \"dropoffLocationId\": \"{{dropoffLocationId}}\",\n  \"dropoffLocationName\": \"{{dropoffLocationName}}\",\n  \"creditReward\": 7,\n  \"pickupDeadline\": \"{{pickupDeadline}}\",\n  \"version\": \"{{version}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('reward change pending', () => pm.expect(pm.response.json().pendingCreditReward).to.eql(7));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get errand - reward applied",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const o = pm.response.json(); const tries = Number(pm.collectionVariables.get('tries') || 0);",
+                  "if (o.pendingCreditReward !== null && tries < 15) { pm.collectionVariables.set('tries', tries + 1); setTimeout(() => {}, 1000); pm.execution.setNextRequest(pm.info.requestName); }",
+                  "else { pm.collectionVariables.set('tries', 0); pm.test('reward 7', () => pm.expect(o.creditReward).to.eql(7)); pm.collectionVariables.set('version', o.version); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Edit errand - stale version (409 VERSION_CONFLICT)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Collect my notes\",\n  \"description\": \"A bound set of CS3219 lecture notes from the print shop.\",\n  \"pickupLocationId\": \"{{pickupLocationId}}\",\n  \"pickupLocationName\": \"{{pickupLocationName}}\",\n  \"dropoffLocationId\": \"{{dropoffLocationId}}\",\n  \"dropoffLocationName\": \"{{dropoffLocationName}}\",\n  \"creditReward\": 7,\n  \"pickupDeadline\": \"{{pickupDeadline}}\",\n  \"version\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));",
+                  "pm.test('code VERSION_CONFLICT', () => pm.expect(pm.response.json().code).to.eql('VERSION_CONFLICT'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get errand history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "history"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('submit, open and reward change recorded', () => pm.expect(pm.response.json().map(t => t.action)).to.include.members(['SUBMIT', 'OPEN']));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Discover and accept (courier)",
+      "description": "Query patterns and relationship checks.",
+      "item": [
+        {
+          "name": "Requester's own account: switch to COURIER",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/session-role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "session-role"
+              ]
+            },
+            "description": "The same student can request and run errands; this session is used to show self-acceptance is refused.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"COURIER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('requesterCourierToken', pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Open errands - as courier (contains it)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders?sort=reward&page=0&size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "sort",
+                  "value": "reward"
+                },
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('listed', () => pm.expect(pm.response.json().items.map(o => o.id)).to.include(pm.collectionVariables.get('orderId')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Open errands - filtered by reward",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders?minReward=7&maxReward=7&sort=deadline",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "minReward",
+                  "value": "7"
+                },
+                {
+                  "key": "maxReward",
+                  "value": "7"
+                },
+                {
+                  "key": "sort",
+                  "value": "deadline"
+                }
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('every reward is 7', () => pm.response.json().items.forEach(o => pm.expect(o.creditReward).to.eql(7)));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Open errands - as requester (own errand hidden)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('own errand not offered', () => pm.expect(pm.response.json().items.map(o => o.id)).to.not.include(pm.collectionVariables.get('orderId')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Accept own errand (403 SELF_ACCEPTANCE_FORBIDDEN)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "accept"
+              ]
+            },
+            "description": "Uses the requester's own account switched to COURIER (set in this folder's first request).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterCourierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Same person, now in a Courier session: the role is right but the relationship is not."
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', () => pm.response.to.have.status(403));",
+                  "pm.test('code SELF_ACCEPTANCE_FORBIDDEN', () => pm.expect(pm.response.json().code).to.eql('SELF_ACCEPTANCE_FORBIDDEN'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Accept - as requester session (403)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "accept"
+              ]
+            },
+            "description": "A REQUESTER session may not accept, whoever it is.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Accept (200, ACCEPTED)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "accept"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('state ACCEPTED', () => pm.expect(pm.response.json().state).to.eql('ACCEPTED'));",
+                  "pm.test('courier assigned', () => pm.expect(pm.response.json().courierId).to.eql(pm.collectionVariables.get('courierId')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Accept again - race loser (409 ORDER_ALREADY_ACCEPTED)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "accept"
+              ]
+            },
+            "description": "A third account (the admin's, in a COURIER session) tries after the first courier won: the row lock serialises accepts and the loser sees ACCEPTED. Needs folder 5's admin sign-in first; skip it if you have no third account.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminCourierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));",
+                  "pm.test('code ORDER_ALREADY_ACCEPTED', () => pm.expect(pm.response.json().code).to.eql('ORDER_ALREADY_ACCEPTED'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Edit after acceptance (409 INVALID_STATE_TRANSITION)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Collect my printed notes\",\n  \"description\": \"A bound set of CS3219 lecture notes from the print shop.\",\n  \"pickupLocationId\": \"{{pickupLocationId}}\",\n  \"pickupLocationName\": \"{{pickupLocationName}}\",\n  \"dropoffLocationId\": \"{{dropoffLocationId}}\",\n  \"dropoffLocationName\": \"{{dropoffLocationName}}\",\n  \"creditReward\": 7,\n  \"pickupDeadline\": \"{{pickupDeadline}}\",\n  \"version\": \"{{version}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Courier: my active errands",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/me/delivered?status=active",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "me",
+                "delivered"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "active"
+                }
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('assigned errand listed', () => pm.expect(pm.response.json().items.map(o => o.id)).to.include(pm.collectionVariables.get('orderId')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Deliver and complete",
+      "description": "The happy path, plus wrong-actor and duplicate checks.",
+      "item": [
+        {
+          "name": "Pick up - as requester session (403)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/pickup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "pickup"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Pick up (200, PICKED_UP)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/pickup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "pickup"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('state PICKED_UP', () => pm.expect(pm.response.json().state).to.eql('PICKED_UP'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Cancel after pickup (409 CANCELLATION_NOT_ALLOWED)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "cancel"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));",
+                  "pm.test('code CANCELLATION_NOT_ALLOWED', () => pm.expect(pm.response.json().code).to.eql('CANCELLATION_NOT_ALLOWED'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Deliver (200, DELIVERED)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/deliver",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "deliver"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('state DELIVERED', () => pm.expect(pm.response.json().state).to.eql('DELIVERED'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Complete - as courier session (403)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "complete"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Complete (200, COMPLETED)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "complete"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('state COMPLETED', () => pm.expect(pm.response.json().state).to.eql('COMPLETED'));",
+                  "pm.collectionVariables.set('completedVersion', pm.response.json().version);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Complete again (200, no second effect)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "complete"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('state COMPLETED', () => pm.expect(pm.response.json().state).to.eql('COMPLETED'));",
+                  "pm.test('version unchanged: no second transition or settlement', () => pm.expect(pm.response.json().version).to.eql(Number(pm.collectionVariables.get('completedVersion'))));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Courier credits - received the reward",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/credits/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "credits",
+                "me"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tries = Number(pm.collectionVariables.get('tries') || 0); const got = pm.response.json().availableBalance - Number(pm.collectionVariables.get('courierAvailableBefore'));",
+                  "if (got < 7 && tries < 15) { pm.collectionVariables.set('tries', tries + 1); setTimeout(() => {}, 1000); pm.execution.setNextRequest(pm.info.requestName); }",
+                  "else { pm.collectionVariables.set('tries', 0); pm.test('courier +7 (full reward settled)', () => pm.expect(got).to.eql(7)); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Requester: my past errands",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/me/requested?status=past&state=COMPLETED",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "me",
+                "requested"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "past"
+                },
+                {
+                  "key": "state",
+                  "value": "COMPLETED"
+                }
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('completed errand listed', () => pm.expect(pm.response.json().items.map(o => o.id)).to.include(pm.collectionVariables.get('orderId')));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Cancel, compensate and withdraw",
+      "description": "Cancellation before and after acceptance, and courier withdrawal.",
+      "item": [
+        {
+          "name": "Courier's own account: switch to REQUESTER",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/me/session-role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "me",
+                "session-role"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"REQUESTER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('courierRequesterToken', pm.response.json().accessToken);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create errand B (reward 3)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Errand B\",\n  \"description\": \"A bound set of CS3219 lecture notes from the print shop.\",\n  \"pickupLocationId\": \"{{pickupLocationId}}\",\n  \"pickupLocationName\": \"{{pickupLocationName}}\",\n  \"dropoffLocationId\": \"{{dropoffLocationId}}\",\n  \"dropoffLocationName\": \"{{dropoffLocationName}}\",\n  \"creditReward\": 3,\n  \"pickupDeadline\": \"{{pickupDeadline}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('orderId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get errand B - waits until OPEN",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Credit reserves the reward asynchronously over Kafka; poll until the errand opens.",
+                  "const tries = Number(pm.collectionVariables.get('tries') || 0);",
+                  "if (pm.response.json().state === 'PENDING_CREDIT' && tries < 15) {",
+                  "  pm.collectionVariables.set('tries', tries + 1);",
+                  "  setTimeout(() => {}, 1000);",
+                  "  pm.execution.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.set('tries', 0);",
+                  "  pm.test('state OPEN (Credit reserved the reward)', () => pm.expect(pm.response.json().state).to.eql('OPEN'));",
+                  "  pm.collectionVariables.set('version', pm.response.json().version);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Withdraw - not the assigned courier (403 NOT_ASSIGNED_COURIER)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/withdraw",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "withdraw"
+              ]
+            },
+            "description": "Nobody has accepted B yet, so this courier is not assigned and may not withdraw.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', () => pm.response.to.have.status(403));",
+                  "pm.test('code NOT_ASSIGNED_COURIER', () => pm.expect(pm.response.json().code).to.eql('NOT_ASSIGNED_COURIER'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Accept B",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "accept"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('state ACCEPTED', () => pm.expect(pm.response.json().state).to.eql('ACCEPTED'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Withdraw B before the deadline (200, back to OPEN)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/withdraw",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "withdraw"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('state OPEN', () => pm.expect(pm.response.json().state).to.eql('OPEN'));",
+                  "pm.test('courier cleared', () => pm.expect(pm.response.json().courierId).to.eql(null));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Accept B again (a withdrawn courier may re-accept)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "accept"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('state ACCEPTED', () => pm.expect(pm.response.json().state).to.eql('ACCEPTED'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Courier credits before cancel",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/credits/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "credits",
+                "me"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('courierBeforeCompensation', pm.response.json().availableBalance);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Cancel - unrelated user (403 NOT_ORDER_REQUESTER)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "cancel"
+              ]
+            },
+            "description": "The courier's account in a REQUESTER session: right role, but not this errand's requester.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierRequesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', () => pm.response.to.have.status(403));",
+                  "pm.test('code NOT_ORDER_REQUESTER', () => pm.expect(pm.response.json().code).to.eql('NOT_ORDER_REQUESTER'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Cancel accepted errand (200, courier gets ceil(20%) of 3 = 1)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "cancel"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('state CANCELLED', () => pm.expect(pm.response.json().state).to.eql('CANCELLED'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Courier credits - received ceil(20%) = 1",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/credits/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "credits",
+                "me"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{courierToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tries = Number(pm.collectionVariables.get('tries') || 0); const got = pm.response.json().availableBalance - Number(pm.collectionVariables.get('courierBeforeCompensation'));",
+                  "if (got < 1 && tries < 15) { pm.collectionVariables.set('tries', tries + 1); setTimeout(() => {}, 1000); pm.execution.setNextRequest(pm.info.requestName); }",
+                  "else { pm.collectionVariables.set('tries', 0); pm.test('courier +1 = ceil(3 x 20%)', () => pm.expect(got).to.eql(1)); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Cancel again (200, no second effect)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{orderId}}",
+                "cancel"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('state CANCELLED', () => pm.expect(pm.response.json().state).to.eql('CANCELLED'));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Admin views",
+      "description": "Read-only support views; needs PR #95 deployed.",
+      "item": [
+        {
+          "name": "Admin: requester's past errands",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/admin/users/{{requesterId}}/requested?status=past",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "admin",
+                "users",
+                "{{requesterId}}",
+                "requested"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "past"
+                }
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('includes the completed errand', () => pm.expect(pm.response.json().totalItems).to.be.at.least(1));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Admin: courier's deliveries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/admin/users/{{courierId}}/delivered",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "admin",
+                "users",
+                "{{courierId}}",
+                "delivered"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Admin view - as requester session (403)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/admin/users/{{requesterId}}/requested",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "admin",
+                "users",
+                "{{requesterId}}",
+                "requested"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{requesterToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}

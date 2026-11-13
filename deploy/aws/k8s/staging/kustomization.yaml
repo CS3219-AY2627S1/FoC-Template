@@ -1,0 +1,61 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace-storage.yaml
+  - external-secrets.yaml
+  - applications.yaml
+  - autoscaling.yaml
+  - ingress.yaml
+  - ../../../kafka/k8s/ui.yaml
+  - ../../../../chat-service/k8s/rabbitmq.yaml
+images:
+  - { name: foc-gateway-service, newName: foc-gateway-service, newTag: bootstrap }
+  - { name: foc-user-service, newName: foc-user-service, newTag: bootstrap }
+  - { name: foc-supplier-service, newName: foc-supplier-service, newTag: bootstrap }
+  - { name: foc-order-service, newName: foc-order-service, newTag: bootstrap }
+  - { name: foc-credit-service, newName: foc-credit-service, newTag: bootstrap }
+  - { name: foc-admin-service, newName: foc-admin-service, newTag: bootstrap }
+  - { name: foc-chat-service, newName: foc-chat-service, newTag: bootstrap }
+  - { name: foc-notification-service, newName: foc-notification-service, newTag: bootstrap }
+patches:
+  # The reusable Kafka UI base is namespace-neutral; application manifests name foc-staging directly.
+  # Avoid a global namespace transformer because Kustomize cannot infer that the two CRDs below
+  # (ClusterSecretStore and IngressClassParams) are cluster-scoped without their OpenAPI schemas.
+  - target:
+      kind: ^(Service|Deployment)$
+      name: ^kafka-ui$
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: foc-staging
+  - target:
+      kind: ^(Service|StatefulSet)$
+      name: ^rabbitmq$
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: foc-staging
+  - target: { kind: StatefulSet, name: rabbitmq }
+    patch: |-
+      - op: add
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: foc-encrypted-gp3
+  - target: { kind: Deployment, name: kafka-ui }
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: foc-staging-msk
+      - op: replace
+        path: /spec/template/spec/containers/0/env/1
+        value:
+          name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS
+          valueFrom:
+            configMapKeyRef:
+              name: cloud-runtime
+              key: KAFKA_BOOTSTRAP_SERVERS
+      - op: replace
+        path: /spec/template/spec/containers/0/env/3/value
+        value: SASL_SSL
+      - op: replace
+        path: /spec/template/spec/containers/0/env/4/value
+        value: SCRAM-SHA-512

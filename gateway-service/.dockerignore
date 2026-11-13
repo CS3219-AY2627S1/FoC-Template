@@ -1,0 +1,11 @@
+target/
+.git/
+.gitignore
+.gitattributes
+.idea/
+.vscode/
+*.iml
+README.md
+k8s/*.key
+k8s/*.pem
+k8s/*.env*

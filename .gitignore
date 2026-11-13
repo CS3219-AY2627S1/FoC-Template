@@ -2,14 +2,38 @@
 dist/
 build/
 out/
+target/
+node_modules/
+coverage/
 
 # Environment / secrets
 .env
 .env.local
 .env.*.local
+.env.chat-translation
 *.pem
 *.key
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Local implementation planning
+user-service/IMPLEMENTATION_CHECKLIST.md
+
+# Claude Code: local config and skills (skills mirror .codex/skills)
+.claude/
+
+# Terraform local state, provider cache, plans and private inputs
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.aws-local/

@@ -1,0 +1,180 @@
+[
+  {
+    "topic": "admin.dispute.commands",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "message": {
+      "eventId": "11111111-1111-4111-8111-111111111111",
+      "eventVersion": 1,
+      "type": "PrepareReview",
+      "producer": "admin-service",
+      "operationId": "11111111-1111-4111-8111-111111111111",
+      "caseId": "11111111-1111-4111-8111-111111111111",
+      "orderId": "11111111-1111-4111-8111-111111111111",
+      "actorId": "11111111-1111-4111-8111-111111111111",
+      "actorRole": "ADMIN",
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "data": {
+        "intent": "REPORT"
+      }
+    }
+  },
+  {
+    "topic": "admin.dispute.commands",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "message": {
+      "eventId": "11111111-1111-4111-8111-111111111111",
+      "eventVersion": 1,
+      "type": "PrepareResolution",
+      "producer": "admin-service",
+      "operationId": "11111111-1111-4111-8111-111111111111",
+      "caseId": "11111111-1111-4111-8111-111111111111",
+      "orderId": "11111111-1111-4111-8111-111111111111",
+      "actorId": "11111111-1111-4111-8111-111111111111",
+      "actorRole": "ADMIN",
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "data": {
+        "disposition": "RETURN_TO_REQUESTER"
+      }
+    }
+  },
+  {
+    "topic": "order.dispute.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "message": {
+      "eventId": "11111111-1111-4111-8111-111111111111",
+      "eventVersion": 1,
+      "type": "OrderReviewFrozen",
+      "producer": "order-service",
+      "operationId": "11111111-1111-4111-8111-111111111111",
+      "caseId": "11111111-1111-4111-8111-111111111111",
+      "orderId": "11111111-1111-4111-8111-111111111111",
+      "actorId": "11111111-1111-4111-8111-111111111111",
+      "actorRole": "ADMIN",
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "data": {
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "caseId": "11111111-1111-4111-8111-111111111111",
+        "requesterId": "11111111-1111-4111-8111-111111111111",
+        "courierId": "11111111-1111-4111-8111-111111111111",
+        "state": "PENDING_CREDIT",
+        "creditStatus": "RESERVED",
+        "resolved": true,
+        "participants": []
+      }
+    }
+  },
+  {
+    "topic": "chat.dispute.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "message": {
+      "eventId": "11111111-1111-4111-8111-111111111111",
+      "eventVersion": 1,
+      "type": "ErrandReviewPrepared",
+      "producer": "chat-service",
+      "operationId": "11111111-1111-4111-8111-111111111111",
+      "caseId": "11111111-1111-4111-8111-111111111111",
+      "orderId": "11111111-1111-4111-8111-111111111111",
+      "actorId": "11111111-1111-4111-8111-111111111111",
+      "actorRole": "ADMIN",
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "data": {
+        "readOnly": true,
+        "orderConfirmationId": "11111111-1111-4111-8111-111111111111"
+      }
+    }
+  },
+  {
+    "topic": "chat.dispute.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "message": {
+      "eventId": "11111111-1111-4111-8111-111111111111",
+      "eventVersion": 1,
+      "type": "CaseClosurePrepared",
+      "producer": "chat-service",
+      "operationId": "11111111-1111-4111-8111-111111111111",
+      "caseId": "11111111-1111-4111-8111-111111111111",
+      "orderId": "11111111-1111-4111-8111-111111111111",
+      "actorId": "11111111-1111-4111-8111-111111111111",
+      "actorRole": "ADMIN",
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "data": {
+        "readOnly": true
+      }
+    }
+  },
+  {
+    "topic": "order.dispute.commands",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "message": {
+      "eventId": "11111111-1111-4111-8111-111111111111",
+      "eventVersion": 1,
+      "type": "SettleDisputeCredits",
+      "producer": "order-service",
+      "operationId": "11111111-1111-4111-8111-111111111111",
+      "caseId": "11111111-1111-4111-8111-111111111111",
+      "orderId": "11111111-1111-4111-8111-111111111111",
+      "actorId": "11111111-1111-4111-8111-111111111111",
+      "actorRole": "ADMIN",
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "data": {
+        "requesterId": "11111111-1111-4111-8111-111111111111",
+        "courierId": "11111111-1111-4111-8111-111111111111",
+        "disposition": "RETURN_TO_REQUESTER"
+      }
+    }
+  },
+  {
+    "topic": "credit.dispute.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "message": {
+      "eventId": "11111111-1111-4111-8111-111111111111",
+      "eventVersion": 1,
+      "type": "DisputeCreditsSettled",
+      "producer": "credit-service",
+      "operationId": "11111111-1111-4111-8111-111111111111",
+      "caseId": "11111111-1111-4111-8111-111111111111",
+      "orderId": "11111111-1111-4111-8111-111111111111",
+      "actorId": "11111111-1111-4111-8111-111111111111",
+      "actorRole": "ADMIN",
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "data": {
+        "operationId": "11111111-1111-4111-8111-111111111111",
+        "caseId": "11111111-1111-4111-8111-111111111111",
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "disposition": "RETURN_TO_REQUESTER",
+        "reservationStatus": "ABSENT",
+        "complete": true,
+        "requesterId": "11111111-1111-4111-8111-111111111111",
+        "courierId": "11111111-1111-4111-8111-111111111111"
+      }
+    }
+  },
+  {
+    "topic": "order.dispute.events",
+    "key": "11111111-1111-4111-8111-111111111111",
+    "message": {
+      "eventId": "11111111-1111-4111-8111-111111111111",
+      "eventVersion": 1,
+      "type": "OrderDisputeFinalized",
+      "producer": "order-service",
+      "operationId": "11111111-1111-4111-8111-111111111111",
+      "caseId": "11111111-1111-4111-8111-111111111111",
+      "orderId": "11111111-1111-4111-8111-111111111111",
+      "actorId": "11111111-1111-4111-8111-111111111111",
+      "actorRole": "ADMIN",
+      "occurredAt": "2026-10-29T12:00:00Z",
+      "data": {
+        "orderId": "11111111-1111-4111-8111-111111111111",
+        "caseId": "11111111-1111-4111-8111-111111111111",
+        "requesterId": "11111111-1111-4111-8111-111111111111",
+        "courierId": "11111111-1111-4111-8111-111111111111",
+        "state": "PENDING_CREDIT",
+        "creditStatus": "RESERVED",
+        "resolved": true,
+        "participants": [],
+        "disposition": "RETURN_TO_REQUESTER",
+        "creditConfirmationId": "11111111-1111-4111-8111-111111111111"
+      }
+    }
+  }
+]

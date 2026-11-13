@@ -1,0 +1,6 @@
+interface:
+  display_name: "FoC Verify Feature"
+  short_description: "Verify a FoC feature change"
+  default_prompt: "Use $foc-verify-feature to run applicable Friend on Campus feature checks."
+policy:
+  allow_implicit_invocation: false

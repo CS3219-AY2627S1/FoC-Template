@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: supplier-service-config
+  namespace: foc-local
+data:
+  DB_HOST: supplier-db
+  DB_PORT: "5432"
+  DB_NAME: supplier_db
+  DB_USER: supplier_user
+  SUPPLIER_JWT_JWK_SET_URI: http://user-service:8081/.well-known/jwks.json
+  SUPPLIER_JWT_ISSUER: friend-on-campus-user-service
+  SUPPLIER_JWT_AUDIENCE: friend-on-campus-api
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=70.0"
+  SUPPLIER_USER_URL: http://user-service.foc-local.svc.cluster.local.:8081
+  SUPPLIER_SERVICE_KEY_ID: supplier-service-1

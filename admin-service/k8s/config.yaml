@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: admin-service-config
+  namespace: foc-local
+data:
+  ADMIN_DB_HOST: admin-db.foc-local.svc.cluster.local.
+  ADMIN_DB_PORT: "5432"
+  ADMIN_DB_NAME: admin_db
+  ADMIN_DB_USER: admin_user
+  ADMIN_USER_URL: http://user-service.foc-local.svc.cluster.local.:8081
+  ADMIN_USER_JWKS: http://user-service.foc-local.svc.cluster.local.:8081/.well-known/jwks.json
+  ADMIN_CHAT_URL: http://chat-service.foc-local.svc.cluster.local.:8085
+  ADMIN_KAFKA_ENABLED: "true"
+  ADMIN_CASE_EVENTS_ENABLED: "true"
+  ADMIN_CASE_EVENTS_TRANSACTION_ID: admin-case-events-v1
+  KAFKA_BOOTSTRAP_SERVERS: kafka.foc-local.svc.cluster.local.:9092
+  SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL: SASL_PLAINTEXT
+  SPRING_KAFKA_PROPERTIES_SASL_MECHANISM: PLAIN
+  JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70.0 -XX:ActiveProcessorCount=2 -XX:TieredStopAtLevel=1

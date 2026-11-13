@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chat-service-config
+  namespace: foc-local
+data:
+  DB_HOST: chat-db.foc-local.svc.cluster.local.
+  DB_PORT: "5432"
+  DB_NAME: chat_db
+  DB_USER: chat_user
+  CHAT_JWT_JWK_SET_URI: http://user-service.foc-local.svc.cluster.local.:8081/.well-known/jwks.json
+  CHAT_ADMIN_URL: http://admin-service.foc-local.svc.cluster.local.:8084
+  CHAT_USER_URL: http://user-service.foc-local.svc.cluster.local.:8081
+  CHAT_ORDER_URL: http://order-service.foc-local.svc.cluster.local.:8082
+  CHAT_CREDIT_URL: http://credit-service.foc-local.svc.cluster.local.:8083
+  CHAT_JWT_ISSUER: friend-on-campus-user-service
+  CHAT_JWT_AUDIENCE: friend-on-campus-api
+  CHAT_KAFKA_ENABLED: "true"
+  KAFKA_BOOTSTRAP_SERVERS: kafka.foc-local.svc.cluster.local.:9092
+  KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+  KAFKA_SASL_MECHANISM: PLAIN
+  KAFKA_USERNAME: chat_service
+  CHAT_RABBIT_ENABLED: "true"
+  RABBITMQ_HOST: rabbitmq.foc-local.svc.cluster.local.
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_USERNAME: chat_service
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=70.0 -XX:ActiveProcessorCount=2 -XX:TieredStopAtLevel=1"

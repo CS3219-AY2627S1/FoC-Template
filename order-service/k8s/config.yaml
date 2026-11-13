@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-service-config
+  namespace: foc-local
+data:
+  DB_HOST: order-db
+  DB_PORT: "5432"
+  DB_NAME: order_db
+  DB_USER: order_user
+  ORDER_JWT_JWK_SET_URI: http://user-service:8081/.well-known/jwks.json
+  ORDER_JWT_ISSUER: friend-on-campus-user-service
+  ORDER_JWT_AUDIENCE: friend-on-campus-api
+  ORDER_KAFKA_ENABLED: "true"
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+  KAFKA_SASL_MECHANISM: PLAIN
+  KAFKA_USERNAME: order_service
+  # Apply only after the cluster's kafka-init has created order.lifecycle.events and Order's Write ACL.
+  ORDER_LIFECYCLE_EVENTS_ENABLED: "true"
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=70.0"
+  ORDER_USER_URL: http://user-service.foc-local.svc.cluster.local.:8081
+  ORDER_SERVICE_KEY_ID: order-service-1

@@ -1,0 +1,4 @@
+interface:
+  display_name: "FoC Integrate Service"
+  short_description: "Connect a completed service to FoC infrastructure"
+  default_prompt: "Use $foc-integrate-service <service-directory> prepare to inspect and integrate this service with the FoC runtime."

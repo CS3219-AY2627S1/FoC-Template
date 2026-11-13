@@ -1,0 +1,93 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-ui
+spec:
+  type: ClusterIP
+  selector:
+    app: kafka-ui
+  ports:
+    - name: http
+      port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-ui
+  template:
+    metadata:
+      labels:
+        app: kafka-ui
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      containers:
+        - name: kafka-ui
+          image: ghcr.io/kafbat/kafka-ui:v1.5.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: KAFKA_CLUSTERS_0_NAME
+              value: foc-local
+            - name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS
+              value: kafka:9092
+            - name: KAFKA_CLUSTERS_0_READONLY
+              value: "true"
+            - name: KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL
+              value: SASL_PLAINTEXT
+            - name: KAFKA_CLUSTERS_0_PROPERTIES_SASL_MECHANISM
+              value: PLAIN
+            - name: KAFKA_CLUSTERS_0_CONSUMERPROPERTIES_GROUP_ID
+              value: kafka-ui-browser
+            - name: DYNAMIC_CONFIG_ENABLED
+              value: "false"
+            - name: AUTH_TYPE
+              value: LOGIN_FORM
+            - name: MCP_ENABLED
+              value: "false"
+            - name: JAVA_TOOL_OPTIONS
+              value: -XX:MaxRAMPercentage=65.0
+            - name: LOGGING_LEVEL_IO_KAFBAT_UI
+              value: INFO
+          envFrom:
+            - secretRef:
+                name: kafka-ui-secrets
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]

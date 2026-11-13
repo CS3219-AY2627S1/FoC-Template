@@ -1,0 +1,6 @@
+interface:
+  display_name: "FoC Feature Implementation"
+  short_description: "Implement an approved FoC feature"
+  default_prompt: "Use $foc-feature-implementation to build an approved Friend on Campus feature and its tests."
+policy:
+  allow_implicit_invocation: false
