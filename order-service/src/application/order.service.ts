@@ -1,0 +1,549 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: GPT-6.1 Sol.
+ * Scope: AI-assisted implementation of order service code (derivedKey, OrderService).
+ * Author review: Validated derivedKey, OrderService input handling, return values, and thrown errors in order-service/order.service.ts; edited naming and formatting for readability.
+ */
+
+import { Inject, Injectable } from '@nestjs/common';
+import { createHash } from 'node:crypto';
+import { ORDER_REPOSITORY, SERVICE_CLIENTS } from './ports';
+import type { OrderRepository, ErrandServices, OperationRecord } from './ports';
+import type { ErrandSort } from './ports';
+import {
+  assertEditFields,
+  DEFAULT_ITEM_TYPE,
+  normalized,
+  OrderError,
+} from '../domain/errand';
+import type {
+  CreateErrand,
+  DisputeOutcome,
+  EditErrand,
+  ErrandRecord,
+} from '../domain/errand';
+import { alreadyApplied, transition } from '../domain/lifecycle';
+import type {
+  ActorRole,
+  ErrandStatus,
+  LifecycleAction,
+} from '../domain/lifecycle';
+
+function digest(value: object) {
+  return createHash('sha256')
+    .update(JSON.stringify(value, Object.keys(value).sort()))
+    .digest('hex');
+}
+/**
+ * A stable idempotency key for requests that carry none, so repeating one finds the
+ * same journal operation (UUID-shaped, version nibble 8).
+ */
+export function derivedKey(...parts: string[]) {
+  const hex = createHash('sha256').update(parts.join(':')).digest('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-8${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+@Injectable()
+export class OrderService {
+  constructor(
+    @Inject(ORDER_REPOSITORY) private readonly repository: OrderRepository,
+    @Inject(SERVICE_CLIENTS) private readonly clients: ErrandServices,
+  ) {}
+  // coneect the layers: HTTP controller -> order service -> order repository -> postgreSQL
+  async createReview(
+    requesterId: string,
+    errandId: string,
+    stars: number,
+    comment?: string,
+  ) {
+    return this.repository.createReview(errandId, requesterId, stars, comment);
+  }
+
+  async ratingSummary(courierId: string) {
+    return this.repository.ratingSummary(courierId);
+  }
+
+  reviewOverview(userId: string) {
+    return this.repository.reviewOverview(userId);
+  }
+
+  async review(errandId: string, userId: string, token: string) {
+    await this.find(errandId, userId, token);
+    return { review: await this.repository.findReview(errandId) };
+  }
+
+  async create(
+    requesterId: string,
+    token: string,
+    key: string,
+    raw: CreateErrand,
+  ) {
+    const input = {
+      ...normalized(raw),
+      itemType: raw.itemType ?? DEFAULT_ITEM_TYPE,
+    };
+    const hash = digest({ kind: 'CREATE', ...input });
+    const prior = await this.repository.findByKey(requesterId, key);
+    if (prior && prior.inputDigest !== hash)
+      throw new OrderError(
+        'IDEMPOTENCY_CONFLICT',
+        'This key was already used with different data.',
+        409,
+      );
+    const op =
+      prior ??
+      (await this.repository.createIntent(requesterId, key, hash, {
+        ...input,
+        ...(await this.clients.pickup(input.pickupLocationId, token)),
+      }));
+    return this.submit(op);
+  }
+  async edit(requesterId: string, id: string, key: string, raw: EditErrand) {
+    const input = normalized(raw);
+    assertEditFields(input);
+    return this.submit(
+      await this.repository.editIntent(
+        requesterId,
+        id,
+        key,
+        digest({ kind: 'EDIT', id, ...input }),
+        input,
+      ),
+    );
+  }
+  /**
+   * DELETE: administrators soft-delete and release in any state (unchanged, Q-011);
+   * for everyone else it is a requester cancel on the same route (D-014).
+   */
+  async remove(actorId: string, token: string, id: string, key: string) {
+    if (!(await this.clients.isAdministrator(token)))
+      return this.cancel(actorId, id, key);
+    return this.submit(
+      await this.repository.deleteIntent(
+        actorId,
+        id,
+        key,
+        digest({ kind: 'DELETE', id }),
+      ),
+    );
+  }
+  /**
+   * D-015: the requester cancels an OPEN or ACCEPTED errand and the whole reservation
+   * is released over HTTP. A repeat returns the same operation.
+   */
+  async cancel(
+    requesterId: string,
+    id: string,
+    key = derivedKey('cancel', id),
+  ) {
+    return this.submit(
+      await this.repository.cancelIntent(
+        requesterId,
+        id,
+        key,
+        digest({ kind: 'CANCEL', id }),
+      ),
+    );
+  }
+  process(id: string) {
+    return this.repository.execute(id, async (op) => {
+      if (op.kind === 'CREATE')
+        await this.clients.reserve(
+          op.errandId,
+          op.requesterId,
+          op.payload.offeredCredits,
+        );
+      else if (op.kind === 'RESOLVE_REFUND')
+        await this.clients.refundDispute(
+          op.errandId,
+          op.requesterId,
+          op.payload.offeredCredits,
+        );
+      else if (op.kind === 'RESOLVE_PAY') {
+        if (!op.courierId)
+          throw new OrderError(
+            'WORKFLOW_INVARIANT_FAILED',
+            'A courier is required to settle this dispute.',
+            409,
+          );
+        await this.clients.settleDispute(
+          op.errandId,
+          op.requesterId,
+          op.courierId,
+          op.payload.offeredCredits,
+        );
+      } else if (op.kind !== 'EDIT')
+        await this.clients.release(
+          op.errandId,
+          op.requesterId,
+          op.payload.offeredCredits,
+        );
+      else if (op.payload.offeredCredits !== op.previousAmount)
+        await this.clients.adjust(
+          op.errandId,
+          op.id,
+          op.requesterId,
+          op.payload.offeredCredits,
+        );
+    });
+  }
+  private async submit(prepared: OperationRecord) {
+    let operation = prepared;
+    try {
+      operation = await this.process(prepared.id);
+    } catch {
+      /* journal survives; worker resumes the same operation */
+    }
+    if (operation.status === 'FAILED')
+      throw new OrderError(
+        operation.errorCode || 'CREDITS_REJECTED',
+        'The required credit operation could not be completed. No order changes were applied.',
+        operation.errorStatus || 409,
+      );
+    return {
+      operationId: operation.id,
+      status: operation.status,
+      errand:
+        operation.status === 'SUCCEEDED'
+          ? await this.repository.find(operation.errandId)
+          : null,
+    };
+  }
+  async operation(id: string, userId: string) {
+    const op = await this.repository.operation(id, userId);
+    if (!op)
+      throw new OrderError('OPERATION_NOT_FOUND', 'Operation not found.', 404);
+    return {
+      operationId: op.id,
+      errandId: op.errandId,
+      status: op.status,
+      errorCode: op.errorCode,
+      errand:
+        op.status === 'SUCCEEDED'
+          ? await this.repository.find(op.errandId)
+          : null,
+    };
+  }
+  private async withBookmarks(errands: ErrandRecord[], userId: string) {
+    const ids = new Set(
+      await this.repository.bookmarkedIds(
+        userId,
+        errands.map((errand) => errand.id),
+      ),
+    );
+    return errands.map((errand) => ({
+      ...errand,
+      isStarred: ids.has(errand.id),
+    }));
+  }
+  async bookmark(id: string, userId: string, starred: boolean) {
+    // Removing a private bookmark is allowed even after access to the errand ends.
+    if (starred) {
+      const errand = await this.find(id, userId);
+      if (errand.status === 'COMPLETED' || errand.status === 'EXPIRED') {
+        throw new OrderError(
+          'ERRAND_NOT_BOOKMARKABLE',
+          'Completed or expired errands cannot be starred.',
+          409,
+        );
+      }
+    }
+    await this.repository.bookmark(id, userId, starred);
+    return { isStarred: starred };
+  }
+  async starred(
+    userId: string,
+    limit: number,
+    offset: number,
+    sort: ErrandSort = 'newest',
+  ) {
+    const errands = await this.repository.listStarred(
+      userId,
+      limit,
+      offset,
+      sort,
+    );
+    return errands.map((errand) => ({ ...errand, isStarred: true }));
+  }
+  async list(
+    limit: number,
+    offset: number,
+    sort: ErrandSort = 'newest',
+    userId?: string,
+  ) {
+    const errands = await this.repository.listOpen(limit, offset, sort);
+    return userId ? this.withBookmarks(errands, userId) : errands;
+  }
+  async managed(
+    userId: string,
+    token: string,
+    limit: number,
+    offset: number,
+    sort: ErrandSort = 'newest',
+    requesterId?: string,
+  ) {
+    const admin = await this.clients.isAdministrator(token);
+    if (requesterId && requesterId !== userId && !admin)
+      throw new OrderError(
+        'ADMINISTRATOR_REQUIRED',
+        "Only administrators may list another requester's errands.",
+        403,
+      );
+    return this.withBookmarks(
+      await this.repository.listManaged(
+        requesterId ?? (admin ? null : userId),
+        limit,
+        offset,
+        sort,
+      ),
+      userId,
+    );
+  }
+  /** Errands the caller is (or was) the courier for, in any status. */
+  async assigned(
+    userId: string,
+    limit: number,
+    offset: number,
+    sort: ErrandSort = 'newest',
+  ) {
+    return this.withBookmarks(
+      await this.repository.listAssigned(userId, limit, offset, sort),
+      userId,
+    );
+  }
+  /** FR5/FR6: claim an OPEN errand; exactly one concurrent courier wins. */
+  async accept(id: string, userId: string, token: string) {
+    // Q-005 (one active errand) and Q-012 (courier credit account) are parked; their
+    // checks go here, before the conditional UPDATE.
+    if (await this.repository.isExcluded(id, userId))
+      throw new OrderError(
+        'ERRAND_COURIER_EXCLUDED',
+        'You were released from this errand and cannot accept it again.',
+        403,
+      );
+    return this.act(id, 'accept', userId, token);
+  }
+  /**
+   * D-016: the assigned courier gives an ACCEPTED errand back; it reopens, credits stay
+   * reserved, and this courier is excluded from it. A repeat returns the current state.
+   */
+  async courierCancel(id: string, userId: string, token: string) {
+    if (await this.repository.isExcluded(id, userId))
+      return this.find(id, userId, token);
+    return this.act(id, 'courier-cancel', userId, token);
+  }
+  /** FR7.1: the assigned courier collected the item. */
+  pickup(id: string, userId: string, token: string) {
+    return this.act(id, 'pickup', userId, token);
+  }
+  /** D-005: the assigned courier handed the item over. */
+  deliver(id: string, userId: string, token: string) {
+    return this.act(id, 'deliver', userId, token);
+  }
+  /** D-021: statement creation and DELIVERED -> DISPUTED are one transaction. */
+  async dispute(
+    id: string,
+    userId: string,
+    token: string,
+    explanation: string,
+  ) {
+    await this.repository.openDispute(
+      id,
+      userId,
+      this.disputeStatement(explanation),
+    );
+    return this.find(id, userId, token);
+  }
+  async respondToDispute(
+    id: string,
+    userId: string,
+    token: string,
+    response: string,
+  ) {
+    await this.repository.respondToDispute(
+      id,
+      userId,
+      this.disputeStatement(response),
+    );
+    return this.find(id, userId, token);
+  }
+  async resolveDispute(
+    id: string,
+    administratorId: string,
+    token: string,
+    key: string,
+    outcome: DisputeOutcome,
+  ) {
+    if (!(await this.clients.isAdministrator(token)))
+      throw new OrderError(
+        'ADMINISTRATOR_REQUIRED',
+        'Administrator privileges are required.',
+        403,
+      );
+    return this.submit(
+      await this.repository.resolveDisputeIntent(
+        administratorId,
+        id,
+        key,
+        digest({ kind: 'RESOLVE_DISPUTE', id, outcome }),
+        outcome,
+      ),
+    );
+  }
+  /** D-006: the requester confirms (also early, from PICKED_UP); the courier is paid via the outbox. */
+  confirm(id: string, userId: string, token: string) {
+    return this.act(id, 'confirm', userId, token);
+  }
+  /**
+   * D-008: completes a DELIVERED errand once its 4 h deadline has passed. Safe to run
+   * any number of times; returns false when a confirm or dispute got there first.
+   */
+  autoComplete(id: string) {
+    return this.repository.transition(
+      id,
+      transition('DELIVERED', 'auto-complete', 'SYSTEM'),
+      null,
+    );
+  }
+  /**
+   * D-017/D-019: an OPEN errand past `expiresAt` becomes EXPIRED and its whole
+   * reservation is released through the journal. Safe to run any number of times;
+   * false when it is not due or the release is still in doubt (the recovery worker
+   * finishes it).
+   */
+  async expire(id: string) {
+    const op = await this.repository.expireIntent(
+      id,
+      derivedKey('expire', id),
+      digest({ kind: 'EXPIRE', id }),
+    );
+    if (!op) return false;
+    try {
+      return (await this.process(op.id)).status === 'SUCCEEDED';
+    } catch {
+      return false; /* journal survives; the recovery worker resumes it */
+    }
+  }
+  /**
+   * D-017: reopens an ACCEPTED errand nobody picked up within 30 minutes, with the
+   * same effect as a courier cancel. A no-op (false) once the courier picked up, the
+   * requester cancelled, or the errand changed hands.
+   */
+  async reopen(id: string) {
+    const errand = await this.repository.find(id);
+    if (errand?.status !== 'ACCEPTED' || !errand.courierId) return false;
+    return this.repository.transition(
+      id,
+      transition('ACCEPTED', 'reopen', 'SYSTEM'),
+      null,
+      errand.courierId,
+    );
+  }
+  /**
+   * Resolves the transition from a fresh read and applies it as one conditional
+   * UPDATE. If a concurrent change wins in between, the second read explains why.
+   */
+  private async act(
+    id: string,
+    action: LifecycleAction,
+    userId: string,
+    token: string,
+  ) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const row = this.resolve(await this.repository.find(id), action, userId);
+      if (!row || (await this.repository.transition(id, row, userId)))
+        return this.find(id, userId, token);
+    }
+    throw new OrderError(
+      'ERRAND_STATE_CHANGED',
+      'The errand changed while updating it. Reload and try again.',
+      409,
+    );
+  }
+  /** The transition to apply, or null when this actor already applied it. */
+  private resolve(
+    errand: ErrandRecord | null,
+    action: LifecycleAction,
+    userId: string,
+  ) {
+    if (!errand || errand.deletedAt)
+      throw new OrderError('ERRAND_NOT_FOUND', 'Errand not found.', 404);
+    const role: ActorRole | null =
+      errand.requesterId === userId
+        ? 'REQUESTER'
+        : errand.courierId === userId || action === 'accept'
+          ? 'COURIER'
+          : null;
+    if (!role)
+      throw new OrderError(
+        'ERRAND_ACTION_FORBIDDEN',
+        `Only the requester or the assigned courier may ${action} this errand.`,
+        403,
+      );
+    const status = errand.status as ErrandStatus;
+    // An accept candidate is not yet a participant, so a lost race is never a replay.
+    const participant = role === 'REQUESTER' || errand.courierId === userId;
+    if (participant && alreadyApplied(status, action, role)) return null;
+    const row = transition(status, action, role);
+    // Message only: the conditional UPDATE re-checks the deadline with the DB clock.
+    if (action === 'accept' && errand.expiresAt <= new Date())
+      throw new OrderError(
+        'ERRAND_EXPIRED',
+        'This errand expired before anyone accepted it.',
+        409,
+      );
+    if (errand.pendingOperationId)
+      throw new OrderError(
+        'ERRAND_OPERATION_PENDING',
+        'Another change is still being processed.',
+        409,
+      );
+    return row;
+  }
+  async find(id: string, requesterId: string, token?: string) {
+    const errand = await this.repository.find(id);
+    if (
+      !errand ||
+      errand.deletedAt ||
+      (errand.requesterId !== requesterId &&
+        errand.courierId !== requesterId &&
+        !(token && (await this.clients.isAdministrator(token))) &&
+        (errand.status !== 'OPEN' || errand.courierId !== null))
+    )
+      throw new OrderError('ERRAND_NOT_FOUND', 'Errand not found.', 404);
+    if (errand.pendingOperationId)
+      throw new OrderError(
+        'ERRAND_OPERATION_PENDING',
+        'This errand is being updated. Try again shortly.',
+        409,
+      );
+    const [requesterUsername, courierUsername] = token
+      ? await Promise.all([
+          this.clients.username(errand.requesterId, token),
+          errand.courierId
+            ? this.clients.username(errand.courierId, token)
+            : null,
+        ])
+      : [null, null];
+    return {
+      ...errand,
+      availableForAcceptance:
+        errand.status === 'OPEN' &&
+        errand.courierId === null &&
+        errand.expiresAt > new Date() &&
+        !(await this.repository.isExcluded(errand.id, requesterId)),
+      requesterUsername,
+      courierUsername,
+    };
+  }
+
+  private disputeStatement(value: string) {
+    const statement = value.trim();
+    if (!statement || statement.length > 2000)
+      throw new OrderError(
+        'INVALID_DISPUTE_STATEMENT',
+        'A dispute statement must contain 1 to 2000 characters.',
+        400,
+      );
+    return statement;
+  }
+}

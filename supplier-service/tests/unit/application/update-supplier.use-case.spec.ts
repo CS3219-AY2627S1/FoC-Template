@@ -1,0 +1,131 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: GPT-6.1 Sol.
+ * Scope: AI-assisted implementation of update supplier use case test cases.
+ * Author review: Validated the assertions and setup for "normalizes and updates a supplier name and category"; clarified test descriptions and assertion formatting.
+ */
+
+import type {
+  CreateSupplierRecord,
+  SupplierManagementRepositoryPort,
+  UpdateSupplierLocationRecord,
+  UpdateSupplierRecord,
+} from '../../../src/application/ports/supplier-management.repository.port.js';
+import { UpdateSupplierUseCase } from '../../../src/application/use-cases/update-supplier.use-case.js';
+import { categoriesFromLegacy } from '../../../src/domain/supplier-categories.js';
+import type { SupplierCatalogEntry } from '../../../src/domain/supplier-catalog.js';
+
+const SUPPLIER_ID = '30000000-0000-4000-8000-000000000001';
+
+class StubSupplierManagementRepository implements SupplierManagementRepositoryPort {
+  findPossibleDuplicates(): Promise<[]> {
+    return Promise.resolve([]);
+  }
+
+  readonly records: UpdateSupplierRecord[] = [];
+
+  createSupplier(record: CreateSupplierRecord): Promise<SupplierCatalogEntry> {
+    void record;
+    throw new Error('Not used by these tests.');
+  }
+
+  deactivateSupplier(supplierId: string): Promise<void> {
+    void supplierId;
+    throw new Error('Not used by these tests.');
+  }
+
+  findCampusLocationById(): Promise<null> {
+    return Promise.resolve(null);
+  }
+
+  updateSupplier(record: UpdateSupplierRecord): Promise<SupplierCatalogEntry> {
+    this.records.push(record);
+
+    return Promise.resolve({
+      category: record.category ?? 'FOOD_COFFEE',
+      categories:
+        record.categories ??
+        categoriesFromLegacy(record.category ?? 'FOOD_COFFEE'),
+      id: record.id,
+      locations: [],
+      name: record.name ?? 'Starbucks',
+    });
+  }
+
+  updateSupplierLocation(record: UpdateSupplierLocationRecord): Promise<never> {
+    void record;
+    throw new Error('Not used by these tests.');
+  }
+}
+
+describe('UpdateSupplierUseCase', () => {
+  it('normalizes repeated whitespace when renaming a supplier', async () => {
+    const repository = new StubSupplierManagementRepository();
+    await new UpdateSupplierUseCase(repository).execute(SUPPLIER_ID, {
+      name: '  Campus\t Coffee   Shop  ',
+    });
+    expect(repository.records[0]?.name).toBe('Campus Coffee Shop');
+  });
+  it('replaces tags with beverages only', async () => {
+    const repository = new StubSupplierManagementRepository();
+    await new UpdateSupplierUseCase(repository).execute(SUPPLIER_ID, {
+      categories: ['BEVERAGES'],
+    });
+    expect(repository.records[0]).toMatchObject({
+      categories: ['BEVERAGES'],
+      category: 'FOOD_COFFEE',
+    });
+  });
+  it('normalizes and updates a supplier name and category', async () => {
+    const repository = new StubSupplierManagementRepository();
+    const useCase = new UpdateSupplierUseCase(repository);
+
+    await expect(
+      useCase.execute(SUPPLIER_ID, {
+        category: 'FOOD_COFFEE',
+        name: ' Starbucks Coffee ',
+      }),
+    ).resolves.toMatchObject({
+      category: 'FOOD_COFFEE',
+      name: 'Starbucks Coffee',
+    });
+    expect(repository.records).toEqual([
+      {
+        category: 'FOOD_COFFEE',
+        categories: ['FOOD', 'BEVERAGES'],
+        id: SUPPLIER_ID,
+        name: 'Starbucks Coffee',
+      },
+    ]);
+  });
+
+  it('supports updating only the category', async () => {
+    const repository = new StubSupplierManagementRepository();
+    const useCase = new UpdateSupplierUseCase(repository);
+
+    await useCase.execute(SUPPLIER_ID, { category: 'SHOPPING' });
+
+    expect(repository.records).toEqual([
+      {
+        category: 'SHOPPING',
+        categories: ['SHOPPING'],
+        id: SUPPLIER_ID,
+        name: undefined,
+      },
+    ]);
+  });
+
+  it.each([
+    [{}, 'SUPPLIER_UPDATE_EMPTY'],
+    [{ name: '   ' }, 'NAME_REQUIRED'],
+    [{ category: 'OTHER' }, 'CATEGORY_INVALID'],
+  ])('rejects an invalid update with %s', async (input, code) => {
+    const repository = new StubSupplierManagementRepository();
+    const useCase = new UpdateSupplierUseCase(repository);
+
+    await expect(useCase.execute(SUPPLIER_ID, input)).rejects.toMatchObject({
+      code,
+    });
+    expect(repository.records).toHaveLength(0);
+  });
+});

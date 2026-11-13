@@ -1,0 +1,239 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: GPT-6.1 Sol.
+ * Scope: AI-assisted implementation of service clients code (UpstreamFailure, ServiceClients).
+ * Author review: Validated UpstreamFailure, ServiceClients input handling, return values, and thrown errors in order-service/service-clients.ts; edited naming and formatting for readability.
+ */
+
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { isUUID } from 'class-validator';
+import { OrderError } from '../domain/errand';
+import type { ErrandDetails } from '../domain/errand';
+import { CORRELATION_HEADER, currentCorrelationId } from './correlation';
+
+function correlationHeader(): Record<string, string> {
+  const id = currentCorrelationId();
+  return id ? { [CORRELATION_HEADER]: id } : {};
+}
+
+export class UpstreamFailure extends Error {
+  constructor(
+    public readonly code: string,
+    public readonly status: number,
+    public readonly retryable: boolean,
+  ) {
+    super('A required service could not complete the request.');
+  }
+}
+@Injectable()
+export class ServiceClients {
+  constructor(private readonly config: ConfigService) {}
+  async request<T>(
+    service: 'USER' | 'SUPPLIER' | 'CREDIT',
+    path: string,
+    token: string,
+    body?: object,
+  ): Promise<T> {
+    const url = this.config.getOrThrow<string>(`${service}_SERVICE_URL`);
+    let response: Response;
+    try {
+      response = await fetch(`${url.replace(/\/$/, '')}/${path}`, {
+        method: body ? 'POST' : 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...correlationHeader(),
+          ...(body ? { 'Content-Type': 'application/json' } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        redirect: 'error',
+        signal: AbortSignal.timeout(8000),
+      });
+    } catch {
+      throw new UpstreamFailure('SERVICE_UNAVAILABLE', 503, true);
+    }
+    const data: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const code =
+        data &&
+        typeof data === 'object' &&
+        'code' in data &&
+        typeof data.code === 'string' &&
+        /^[A-Z0-9_]{1,100}$/.test(data.code)
+          ? data.code
+          : 'UPSTREAM_REQUEST_FAILED';
+      throw new UpstreamFailure(
+        code,
+        response.status,
+        response.status >= 500 || code === 'CONCURRENT_OPERATION',
+      );
+    }
+    if (!data) throw new UpstreamFailure('INVALID_SERVICE_RESPONSE', 503, true);
+    return data as T;
+  }
+  async identity(token: string) {
+    const profile = await this.request<{
+      id: string;
+      status: string;
+      emailVerifiedAt: string | null;
+    }>('USER', 'api/accounts/me', token);
+    if (
+      !isUUID(profile?.id, '4') ||
+      typeof profile.status !== 'string' ||
+      (profile.emailVerifiedAt !== null &&
+        (typeof profile.emailVerifiedAt !== 'string' ||
+          !Number.isFinite(Date.parse(profile.emailVerifiedAt))))
+    )
+      throw new UpstreamFailure('INVALID_SERVICE_RESPONSE', 503, true);
+    if (profile.status !== 'ACTIVE' || !profile.emailVerifiedAt)
+      throw new OrderError(
+        'ACTIVE_ACCOUNT_REQUIRED',
+        'A verified, active account is required.',
+        403,
+      );
+    return profile.id;
+  }
+  async isAdministrator(token: string) {
+    const profile = await this.request<{ isAdmin: boolean }>(
+      'USER',
+      'api/accounts/me',
+      token,
+    );
+    if (typeof profile?.isAdmin !== 'boolean')
+      throw new UpstreamFailure('INVALID_SERVICE_RESPONSE', 503, true);
+    return profile.isAdmin;
+  }
+  async username(userId: string, token: string) {
+    try {
+      const identity = await this.request<{ id: string; username: string }>(
+        'USER',
+        `api/accounts/${userId}/identity`,
+        token,
+      );
+      if (
+        identity?.id !== userId ||
+        typeof identity?.username !== 'string' ||
+        !identity.username.trim() ||
+        identity.username.length > 100
+      )
+        throw new UpstreamFailure('INVALID_SERVICE_RESPONSE', 503, true);
+      return identity.username;
+    } catch (error) {
+      if (error instanceof UpstreamFailure && error.status === 404) return null;
+      throw error;
+    }
+  }
+  async release(errandId: string, requesterId: string, amount: number) {
+    try {
+      await this.request(
+        'CREDIT',
+        `v1/credit-reservations/${errandId}/release`,
+        this.config.getOrThrow<string>('CREDIT_ORDER_SERVICE_TOKEN'),
+        { requesterId, amount },
+      );
+    } catch (error) {
+      if (
+        !(error instanceof UpstreamFailure) ||
+        error.code !== 'RESERVATION_STATE_CONFLICT'
+      )
+        throw error; /* Settled credits cannot be refunded by deleting a request. */
+    }
+  }
+  async refundDispute(errandId: string, requesterId: string, amount: number) {
+    await this.request(
+      'CREDIT',
+      `v1/credit-reservations/${errandId}/release`,
+      this.config.getOrThrow<string>('CREDIT_ORDER_SERVICE_TOKEN'),
+      { requesterId, amount },
+    );
+  }
+  async settleDispute(
+    errandId: string,
+    requesterId: string,
+    courierId: string,
+    amount: number,
+  ) {
+    await this.request(
+      'CREDIT',
+      `v1/credit-reservations/${errandId}/settlement`,
+      this.config.getOrThrow<string>('CREDIT_ORDER_SERVICE_TOKEN'),
+      { requesterId, courierId, amount },
+    );
+  }
+  async pickup(
+    id: string,
+    token: string,
+  ): Promise<
+    Pick<ErrandDetails, 'pickupSupplierName' | 'pickupLocationLabel'>
+  > {
+    const suppliers = await this.request<
+      {
+        name: string;
+        locations: {
+          id: string;
+          building: string;
+          floor: number;
+          supplierAtLocation: string;
+        }[];
+      }[]
+    >('SUPPLIER', 'api/suppliers', token);
+    if (!Array.isArray(suppliers))
+      throw new UpstreamFailure('INVALID_SERVICE_RESPONSE', 503, true);
+    for (const supplier of suppliers) {
+      if (
+        !supplier ||
+        typeof supplier !== 'object' ||
+        typeof supplier.name !== 'string' ||
+        !Array.isArray(supplier.locations)
+      )
+        throw new UpstreamFailure('INVALID_SERVICE_RESPONSE', 503, true);
+      const location = supplier.locations.find(
+        (item) => item && typeof item === 'object' && item.id === id,
+      );
+      if (
+        location &&
+        typeof supplier.name === 'string' &&
+        typeof location.supplierAtLocation === 'string'
+      ) {
+        const label = location.supplierAtLocation;
+        if (
+          !supplier.name.trim() ||
+          supplier.name.length > 150 ||
+          !label.trim() ||
+          label.length > 300
+        )
+          throw new UpstreamFailure('INVALID_SERVICE_RESPONSE', 503, true);
+        return {
+          pickupSupplierName: supplier.name,
+          pickupLocationLabel: label,
+        };
+      }
+    }
+    throw new OrderError(
+      'PICKUP_UNAVAILABLE',
+      'This pickup location is unavailable for new errands.',
+      400,
+    );
+  }
+  async reserve(errandId: string, requesterId: string, amount: number) {
+    const token = this.config.getOrThrow<string>('CREDIT_ORDER_SERVICE_TOKEN');
+    await this.request('CREDIT', 'v1/credit-reservations', token, {
+      errandId,
+      requesterId,
+      amount,
+    });
+  }
+  async adjust(
+    errandId: string,
+    operationId: string,
+    requesterId: string,
+    amount: number,
+  ) {
+    await this.request(
+      'CREDIT',
+      `v1/credit-reservations/${errandId}/adjustment`,
+      this.config.getOrThrow<string>('CREDIT_ORDER_SERVICE_TOKEN'),
+      { requesterId, targetAmount: amount, idempotencyKey: operationId },
+    );
+  }
+}

@@ -1,0 +1,557 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: GPT-6.1 Sol.
+ * Scope: AI-assisted implementation of admin test cases.
+ * Author review: Validated the assertions and setup for "admin supplier workflows submit service contracts and show failures" against the browser actions and mocked responses; clarified test descriptions and assertion formatting.
+ */
+
+import { expect, test, type Page } from "@playwright/test";
+
+const admin = {
+  id: "10000000-0000-4000-8000-000000000001",
+  username: "CampusAdmin",
+  email: "admin@u.nus.edu",
+  isAdmin: true,
+  status: "ACTIVE",
+};
+const student = {
+  ...admin,
+  id: "10000000-0000-4000-8000-000000000002",
+  username: "Student",
+  email: "student@u.nus.edu",
+  isAdmin: false,
+};
+const supplier = {
+  id: "20000000-0000-4000-8000-000000000001",
+  name: "Campus Coffee",
+  category: "FOOD_COFFEE",
+  categories: ["FOOD", "BEVERAGES"],
+  locations: [
+    {
+      id: "30000000-0000-4000-8000-000000000001",
+      building: "UTown",
+      floor: 1,
+      locationDescription: "Main entrance",
+      latitude: 1.3,
+      longitude: 103.7,
+      opensAt: "08:00",
+      closesAt: "20:00",
+      isOpenOvernight: false,
+      imageUrl:
+        "https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/ROBOT_CAFE.jpeg",
+      supplierAtLocation: "Campus Coffee",
+    },
+  ],
+};
+const campusLocations = [
+  {
+    id: "30000000-0000-4000-8000-000000000001",
+    building: "UTown",
+    latitude: 1.3,
+    longitude: 103.7,
+  },
+  {
+    id: "30000000-0000-4000-8000-000000000002",
+    building: "Science",
+    latitude: 1.2966,
+    longitude: 103.7801,
+  },
+  {
+    id: "30000000-0000-4000-8000-000000000003",
+    building: "Library",
+    latitude: 1.2967,
+    longitude: 103.7728,
+  },
+];
+
+async function session(page: Page, user: typeof admin | null) {
+  await page.route("**/api/auth/session", (route) =>
+    route.fulfill({
+      status: user ? 200 : 401,
+      json: user || { message: "Please log in." },
+    }),
+  );
+  await page.route("**/api/auth/refresh", (route) =>
+    route.fulfill({ status: 401, json: { message: "Please log in." } }),
+  );
+}
+
+test("admin supplier workflows submit service contracts and show failures", async ({
+  page,
+}) => {
+  await session(page, admin);
+  let catalog = [structuredClone(supplier)];
+  const writes: { method: string; path: string; body: unknown }[] = [];
+  let rejectCreate = true;
+  await page.route("**/api/admin/suppliers**", async (route) => {
+    const request = route.request();
+    if (
+      request.method() === "GET" &&
+      new URL(request.url()).pathname.endsWith("/campus-locations")
+    )
+      return route.fulfill({ json: campusLocations });
+    if (request.method() === "GET") return route.fulfill({ json: catalog });
+    const body = request.postDataJSON();
+    writes.push({
+      method: request.method(),
+      path: new URL(request.url()).pathname,
+      body,
+    });
+    if (request.method() === "POST" && rejectCreate) {
+      rejectCreate = false;
+      return route.fulfill({
+        status: 409,
+        json: { message: "Supplier already exists." },
+      });
+    }
+    if (request.method() === "DELETE") catalog = [];
+    return route.fulfill({ json: { success: true } });
+  });
+  await page.goto("/admin");
+  await expect(
+    page.getByRole("heading", { name: "Admin dashboard" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("img", { name: "Campus Coffee supplier" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("img", { name: "Campus Coffee supplier" }),
+  ).toHaveAttribute(
+    "style",
+    /raw\.githubusercontent\.com\/CS3219-AY2627S1\/FoC-Template\/main\/data\/images\/ROBOT_CAFE\.jpeg/,
+  );
+  await page.getByRole("button", { name: "Food", exact: true }).click();
+  await expect(page.getByText("Campus Coffee", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Beverages", exact: true }).click();
+  await expect(page.getByText("Campus Coffee", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Add supplier", exact: true }).click();
+  await page.getByLabel("Supplier name").fill("New Coffee");
+  await page.getByRole("checkbox", { name: "Beverages", exact: true }).check();
+  await page
+    .getByRole("combobox", { name: "Building" })
+    .selectOption(campusLocations[1].id);
+  await page.getByLabel("Floor", { exact: true }).fill("2");
+  await page.getByLabel("Location description").fill("Near the entrance");
+  await page.getByLabel("Opening time").fill("08:00");
+  await page.getByLabel("Closing time").fill("20:00");
+  await page.getByRole("button", { name: "Create supplier" }).click();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "Supplier already exists",
+  );
+  await expect(page.getByLabel("Supplier name")).toHaveValue("New Coffee");
+  await page.getByRole("button", { name: "Create supplier" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Supplier created" }),
+  ).toBeVisible();
+  expect(writes[1].body).toEqual({
+    name: "New Coffee",
+    categories: ["FOOD", "BEVERAGES"],
+    location: {
+      campusLocationId: campusLocations[1].id,
+      floor: 2,
+      locationDescription: "Near the entrance",
+      opensAt: "08:00",
+      closesAt: "20:00",
+    },
+  });
+  await page
+    .getByRole("button", { name: "Edit supplier", exact: true })
+    .click();
+  await page.getByLabel("Supplier name").fill("Renamed Coffee");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Changes saved" }),
+  ).toBeVisible();
+  expect(writes[2]).toMatchObject({
+    method: "PATCH",
+    body: { name: "Renamed Coffee", categories: ["FOOD", "BEVERAGES"] },
+  });
+  await page.getByRole("button", { name: "Edit pickup location" }).click();
+  await page
+    .getByRole("combobox", { name: "Building" })
+    .selectOption(campusLocations[2].id);
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Changes saved" }),
+  ).toBeVisible();
+  expect(writes[3]).toMatchObject({
+    method: "PATCH",
+    path: `/api/admin/suppliers/${supplier.id}/locations/${supplier.locations[0].id}`,
+    body: {
+      campusLocationId: campusLocations[2].id,
+      imageUrl:
+        "https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/ROBOT_CAFE.jpeg",
+    },
+  });
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(writes).toHaveLength(4);
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm deletion" }).click();
+  await expect(page.getByText("No suppliers found.")).toBeVisible();
+  expect(writes[4].method).toBe("DELETE");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("suppliers without photos show a category placeholder icon", async ({
+  page,
+}) => {
+  await session(page, admin);
+  await page.route("**/api/admin/suppliers**", (route) =>
+    route.fulfill({
+      json: new URL(route.request().url()).pathname.endsWith(
+        "/campus-locations",
+      )
+        ? campusLocations
+        : [
+            {
+              ...supplier,
+              locations: supplier.locations.map((location) => ({
+                ...location,
+                imageUrl: null,
+              })),
+            },
+          ],
+    }),
+  );
+
+  await page.goto("/admin");
+  const placeholder = page.getByRole("img", {
+    name: "No image available for Campus Coffee",
+  });
+  await expect(placeholder).toBeVisible();
+  await expect(
+    placeholder.locator(".admin-card-placeholder-burger"),
+  ).toBeVisible();
+});
+
+test("matches show descriptions and require fresh confirmation after form edits", async ({
+  page,
+}) => {
+  await session(page, admin);
+  const writes: Record<string, unknown>[] = [];
+  await page.route("**/api/admin/suppliers**", async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      return route.fulfill({
+        json: new URL(request.url()).pathname.endsWith("/campus-locations")
+          ? campusLocations
+          : [supplier],
+      });
+    }
+    const body = request.postDataJSON();
+    writes.push(body);
+    if (body.confirmDistinctOutlet !== true) {
+      return route.fulfill({
+        status: 409,
+        json: {
+          code: "POSSIBLE_SUPPLIER_DUPLICATE",
+          message: "Similar suppliers already exist at this location.",
+          matches: [
+            {
+              supplierId: supplier.id,
+              supplierName: supplier.name,
+              locationId: supplier.locations[0].id,
+              building: "UTown",
+              floor: 1,
+              locationDescription: "Main entrance",
+            },
+          ],
+        },
+      });
+    }
+    return route.fulfill({ status: 201, json: supplier });
+  });
+
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "Add supplier", exact: true }).click();
+  await page.getByLabel("Supplier name").fill("Another Coffee");
+  await page.getByRole("checkbox", { name: "Beverages", exact: true }).check();
+  await page
+    .getByRole("combobox", { name: "Building" })
+    .selectOption(campusLocations[0].id);
+  await page.getByLabel("Floor", { exact: true }).fill("1");
+  await page.getByLabel("Location description").fill("Near staircase");
+  await page.getByLabel("Opening time").fill("08:00");
+  await page.getByLabel("Closing time").fill("20:00");
+  await page
+    .getByRole("button", { name: "Create supplier", exact: true })
+    .click();
+  const warning = page.getByRole("region", { name: "Review matching outlets" });
+  await expect(warning).toBeVisible();
+  await expect(page.getByLabel("Supplier name")).toHaveValue("Another Coffee");
+  await expect(warning).toContainText("Campus Coffee");
+  await expect(warning).toContainText("Main entrance");
+  await expect(
+    page.getByRole("button", { name: "Confirm separate pickup point" }),
+  ).toBeDisabled();
+  expect(writes).toHaveLength(1);
+  expect(writes[0]).not.toHaveProperty("confirmDistinctOutlet");
+
+  await page
+    .getByRole("checkbox", { name: /different physical pickup point/ })
+    .check();
+  await page.getByLabel("Location description").fill("Opposite study area");
+  await expect(warning).not.toBeVisible();
+  await page
+    .getByRole("button", { name: "Create supplier", exact: true })
+    .click();
+  await expect(warning).toBeVisible();
+  expect(writes[1]).not.toHaveProperty("confirmDistinctOutlet");
+  await expect(
+    page.getByRole("checkbox", { name: /different physical pickup point/ }),
+  ).not.toBeChecked();
+  await page
+    .getByRole("checkbox", { name: /different physical pickup point/ })
+    .check();
+  await page
+    .getByRole("button", { name: "Confirm separate pickup point" })
+    .click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Supplier created" }),
+  ).toBeVisible();
+  expect(writes).toHaveLength(3);
+  expect(writes[2]).toMatchObject({
+    confirmDistinctOutlet: true,
+    location: { locationDescription: "Opposite study area", floor: 1 },
+  });
+});
+
+for (const action of ["Use existing outlet", "Edit existing outlet"]) {
+  test(`match review can ${action.toLowerCase()} without creating another record`, async ({
+    page,
+  }) => {
+    await session(page, admin);
+    let writes = 0;
+    await page.route("**/api/admin/suppliers**", (route) => {
+      if (route.request().method() === "GET")
+        return route.fulfill({
+          json: route.request().url().endsWith("/campus-locations")
+            ? campusLocations
+            : [supplier],
+        });
+      writes += 1;
+      return route.fulfill({
+        status: 409,
+        json: {
+          code: "POSSIBLE_SUPPLIER_DUPLICATE",
+          message: "Review matches",
+          matches: [
+            {
+              supplierId: supplier.id,
+              supplierName: supplier.name,
+              locationId: supplier.locations[0].id,
+              building: "UTown",
+              floor: 1,
+              locationDescription: "Main entrance",
+            },
+          ],
+        },
+      });
+    });
+    await page.goto("/admin");
+    await page
+      .getByRole("button", { name: "Add supplier", exact: true })
+      .click();
+    await page.getByLabel("Supplier name").fill("Another Coffee");
+    await page
+      .getByRole("combobox", { name: "Building" })
+      .selectOption(campusLocations[0].id);
+    await page.getByLabel("Floor", { exact: true }).fill("1");
+    await page.getByLabel("Location description").fill("New point");
+    await page.getByLabel("Opening time").fill("09:00");
+    await page.getByLabel("Closing time").fill("18:00");
+    await page
+      .getByRole("button", { name: "Create supplier", exact: true })
+      .click();
+    await page.getByRole("button", { name: action, exact: true }).click();
+    if (action === "Use existing outlet") {
+      await expect(
+        page
+          .getByRole("status")
+          .filter({ hasText: "No duplicate was created" }),
+      ).toBeVisible();
+    } else {
+      await expect(
+        page.getByRole("heading", {
+          name: "Edit pickup location · Campus Coffee",
+        }),
+      ).toBeVisible();
+      await expect(page.getByLabel("Location description")).toHaveValue(
+        "Main entrance",
+      );
+    }
+    expect(writes).toBe(1);
+  });
+}
+
+test("account search, promotion and demotion require confirmation and protect self", async ({
+  page,
+}) => {
+  await session(page, admin);
+  await page.route("**/api/admin/suppliers**", (route) =>
+    route.fulfill({
+      json: new URL(route.request().url()).pathname.endsWith(
+        "/campus-locations",
+      )
+        ? campusLocations
+        : [],
+    }),
+  );
+  const changes: unknown[] = [];
+  let search = "";
+  await page.route("**/api/admin/accounts**", (route) => {
+    if (route.request().method() === "GET") {
+      search = new URL(route.request().url()).searchParams.get("search") || "";
+      return route.fulfill({ json: [admin, student] });
+    }
+    changes.push(route.request().postDataJSON());
+    return route.fulfill({
+      json: { id: student.id, isAdmin: changes.length === 1 },
+    });
+  });
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "Accounts & privileges" }).click();
+  await expect(
+    page.getByRole("button", { name: "Remove admin access" }),
+  ).toBeDisabled();
+  await page.getByLabel("Search accounts").fill("Student");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: "Make administrator" }).click();
+  expect(search).toBe("Student");
+  expect(changes).toHaveLength(0);
+  await page.getByRole("button", { name: "Confirm privilege change" }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "active sessions have been revoked",
+  );
+  expect(changes).toEqual([{ isAdmin: true }]);
+  await page
+    .getByRole("article")
+    .filter({ hasText: "student@u.nus.edu" })
+    .getByRole("button", { name: "Remove admin access" })
+    .click();
+  await page.getByRole("button", { name: "Confirm privilege change" }).click();
+  await expect(page.getByRole("status")).toContainText("is now a student");
+  expect(changes).toEqual([{ isAdmin: true }, { isAdmin: false }]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("student and guest cannot open administrator controls", async ({
+  page,
+}) => {
+  await session(page, student);
+  await page.goto("/admin");
+  await expect(
+    page.getByRole("heading", { name: "Administrator access required" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Admin dashboard" })).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole("button", { name: "Add supplier" })).toHaveCount(
+    0,
+  );
+  await session(page, null);
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Log in to continue" }),
+  ).toBeVisible();
+});
+
+test("admin adapter rejects unauthenticated, cross-origin and unknown operations", async ({
+  request,
+  baseURL,
+}) => {
+  expect((await request.get("/api/admin/accounts")).status()).toBe(401);
+  expect((await request.get("/api/admin/suppliers")).status()).toBe(401);
+  expect(
+    (
+      await request.post("/api/admin/suppliers", {
+        headers: { Origin: "https://untrusted.example" },
+        data: {},
+      })
+    ).status(),
+  ).toBe(403);
+  expect(
+    (
+      await request.post("/api/admin/suppliers", {
+        headers: { Origin: baseURL! },
+        data: {},
+      })
+    ).status(),
+  ).toBe(401);
+  expect(
+    (
+      await request.patch("/api/admin/accounts/not-an-id/administrator", {
+        headers: { Origin: baseURL! },
+        data: { isAdmin: true },
+      })
+    ).status(),
+  ).toBe(404);
+});
+
+for (const user of [admin, student]) {
+  test(`${user.isAdmin ? "admin" : "student"} login opens the appropriate dashboard`, async ({
+    page,
+  }) => {
+    let loggedIn = false;
+    await page.route("**/api/auth/session", (route) =>
+      route.fulfill({
+        status: loggedIn ? 200 : 401,
+        json: loggedIn ? user : { message: "Please log in." },
+      }),
+    );
+    await page.route("**/api/auth/refresh", (route) =>
+      route.fulfill({ status: 401, json: { message: "Please log in." } }),
+    );
+    await page.route("**/api/auth/login", (route) => {
+      loggedIn = true;
+      return route.fulfill({ json: { user } });
+    });
+    await page.route("**/api/admin/suppliers**", (route) =>
+      route.fulfill({
+        json: new URL(route.request().url()).pathname.endsWith(
+          "/campus-locations",
+        )
+          ? campusLocations
+          : [],
+      }),
+    );
+    await page.route("**/api/suppliers", (route) =>
+      route.fulfill({ json: [] }),
+    );
+    await page.goto("/login");
+    await page.getByLabel("NUS email").fill(user.email);
+    await page.getByLabel("Password", { exact: true }).fill("test-password");
+    await page.getByRole("button", { name: "Log in", exact: true }).click();
+    await expect(page).toHaveURL(/\/$/);
+  });
+}
+
+test("bodyless supplier deletion passes JSON validation but retains access checks", async ({
+  request,
+  baseURL,
+}) => {
+  const path = "/api/admin/suppliers/20000000-0000-4000-8000-000000000001";
+  const sameOrigin = await request.delete(path, {
+    headers: { Origin: baseURL! },
+  });
+  expect(sameOrigin.status()).toBe(401);
+  const crossOrigin = await request.delete(path, {
+    headers: { Origin: "https://untrusted.example" },
+  });
+  expect(crossOrigin.status()).toBe(403);
+  const missingOrigin = await request.delete(path);
+  expect(missingOrigin.status()).toBe(403);
+  const nonJsonUpdate = await request.patch(path, {
+    headers: { Origin: baseURL! },
+  });
+  expect(nonJsonUpdate.status()).toBe(415);
+});

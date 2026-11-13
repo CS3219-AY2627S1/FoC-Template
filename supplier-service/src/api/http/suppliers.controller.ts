@@ -1,0 +1,65 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: GPT-6.1 Sol.
+ * Scope: AI-assisted implementation of supplier HTTP request handlers.
+ * Author review: Checked SuppliersController query forwarding and returned response values; edited handler naming and formatting.
+ */
+
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiBadRequestResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+
+import { ListCampusLocationsUseCase } from '../../application/use-cases/list-campus-locations.use-case.js';
+import { ListSuppliersUseCase } from '../../application/use-cases/list-suppliers.use-case.js';
+import { JwtAuthenticationGuard } from '../../platform/auth/jwt-authentication.guard.js';
+import { RequireRoles } from '../../platform/auth/require-roles.decorator.js';
+import { RolesGuard } from '../../platform/auth/roles.guard.js';
+import { UserRole } from '../../platform/auth/user-role.js';
+import { CampusLocationResponse } from './dto/campus-location.response.js';
+import { SupplierResponse } from './dto/supplier.response.js';
+import { ListSuppliersRequest } from './dto/list-suppliers.request.js';
+
+@ApiTags('suppliers')
+@ApiBearerAuth('access-token')
+@Controller('suppliers')
+@UseGuards(JwtAuthenticationGuard, RolesGuard)
+export class SuppliersController {
+  constructor(
+    private readonly listCampusLocations: ListCampusLocationsUseCase,
+    private readonly listSuppliers: ListSuppliersUseCase,
+  ) {}
+
+  @Get('campus-locations')
+  @RequireRoles(UserRole.Student, UserRole.Admin)
+  @ApiOperation({ summary: 'List fixed NUS campus pickup locations' })
+  @ApiOkResponse({ type: [CampusLocationResponse] })
+  @ApiUnauthorizedResponse({
+    description: 'A valid, unexpired user-service access token is required.',
+  })
+  listCampusLocationOptions(): Promise<CampusLocationResponse[]> {
+    return this.listCampusLocations.execute();
+  }
+
+  @Get()
+  @RequireRoles(UserRole.Student, UserRole.Admin)
+  @ApiOperation({
+    summary:
+      'List active suppliers and pickup locations, optionally filtered by category tag',
+  })
+  @ApiBadRequestResponse({
+    description: 'Unsupported category tag or query parameter.',
+  })
+  @ApiOkResponse({ type: [SupplierResponse] })
+  @ApiUnauthorizedResponse({
+    description: 'A valid, unexpired user-service access token is required.',
+  })
+  list(@Query() query: ListSuppliersRequest): Promise<SupplierResponse[]> {
+    return this.listSuppliers.execute(query.category);
+  }
+}

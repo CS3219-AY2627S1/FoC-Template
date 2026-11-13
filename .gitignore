@@ -2,6 +2,15 @@
 dist/
 build/
 out/
+coverage/
+node_modules/
+.next/
+playwright-report/
+test-results/
+.local/
+credit-service/src/generated/
+order-service/src/generated/
+*.tsbuildinfo
 
 # Environment / secrets
 .env

@@ -1,0 +1,22 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: GPT-6.1 Sol.
+ * Scope: AI-assisted implementation of jest config tooling configuration.
+ * Author review: Checked infra/jest.config.cjs configuration keys and referenced paths; edited configuration layout and indentation.
+ */
+
+/** @type {import('jest').Config} */
+module.exports = {
+  moduleFileExtensions: ['js', 'json', 'ts'],
+  preset: 'ts-jest',
+  rootDir: '.',
+  // Removes the temporary cdk.out directories each synth creates.
+  setupFilesAfterEnv: ['aws-cdk-lib/testhelpers/jest-autoclean'],
+  // CDK's template validator warns about the deliberately fixed zones per test.
+  silent: true,
+  testEnvironment: 'node',
+  testMatch: ['<rootDir>/tests/**/*.spec.ts'],
+  transform: {
+    '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }],
+  },
+};

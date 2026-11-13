@@ -1,0 +1,162 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: GPT-6.1 Sol.
+ * Scope: AI-assisted implementation of authentication controller code (AuthenticationController).
+ * Author review: Validated AuthenticationController Post handlers, parameter handling, and returned values; edited handler naming and formatting. Additional review item: Check invalid-request responses and HTTP status codes for unsuccessful operations.
+ */
+
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Header,
+  HttpCode,
+  Inject,
+  Ip,
+  Post,
+  Res,
+  UnauthorizedException,
+} from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiForbiddenResponse,
+  ApiNoContentResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiTooManyRequestsResponse,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+
+import { AuthenticationError } from '../../application/errors/authentication.error.js';
+import { LoginUseCase } from '../../application/use-cases/login.use-case.js';
+import { LogoutUseCase } from '../../application/use-cases/logout.use-case.js';
+import { RefreshSessionUseCase } from '../../application/use-cases/refresh-session.use-case.js';
+import { AccountValidationError } from '../../domain/account-validation.error.js';
+import {
+  PUBLIC_ENDPOINT_RATE_LIMITER,
+  type PublicEndpointRateLimiterPort,
+} from '../../application/ports/public-endpoint-rate-limiter.port.js';
+import { AuthenticationResponse } from './dto/authentication.response.js';
+import { LoginRequest } from './dto/login.request.js';
+import { RefreshTokenRequest } from './dto/refresh-token.request.js';
+import { enforcePublicEndpointRateLimit } from './security/enforce-public-endpoint-rate-limit.js';
+
+interface HeaderResponse {
+  header(name: string, value: string): unknown;
+}
+
+@ApiTags('authentication')
+@Controller('auth')
+export class AuthenticationController {
+  constructor(
+    private readonly loginUseCase: LoginUseCase,
+    private readonly logoutUseCase: LogoutUseCase,
+    private readonly refreshSessionUseCase: RefreshSessionUseCase,
+    @Inject(PUBLIC_ENDPOINT_RATE_LIMITER)
+    private readonly publicEndpointRateLimiter: PublicEndpointRateLimiterPort,
+  ) {}
+
+  @Post('login')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
+  @ApiOperation({ summary: 'Log in and create an authentication session' })
+  @ApiOkResponse({ type: AuthenticationResponse })
+  @ApiBadRequestResponse({ description: 'Login details are invalid.' })
+  @ApiForbiddenResponse({ description: 'Account is not active.' })
+  @ApiUnauthorizedResponse({ description: 'Credentials are invalid.' })
+  @ApiTooManyRequestsResponse({ description: 'Login rate limit exceeded.' })
+  async login(
+    @Body() request: LoginRequest,
+    @Ip() clientIdentifier: string,
+    @Res({ passthrough: true }) reply: HeaderResponse,
+  ): Promise<AuthenticationResponse> {
+    try {
+      await enforcePublicEndpointRateLimit(
+        this.publicEndpointRateLimiter,
+        reply,
+        'login',
+        clientIdentifier,
+        request.email.trim().toLowerCase(),
+      );
+      return await this.loginUseCase.execute(request);
+    } catch (error: unknown) {
+      this.rethrowAsHttpException(error);
+    }
+  }
+
+  @Post('refresh')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
+  @ApiOperation({ summary: 'Rotate a refresh token and renew the session' })
+  @ApiOkResponse({ type: AuthenticationResponse })
+  @ApiBadRequestResponse({ description: 'Refresh token format is invalid.' })
+  @ApiUnauthorizedResponse({
+    description: 'Refresh token is invalid, expired, or already used.',
+  })
+  @ApiTooManyRequestsResponse({ description: 'Refresh rate limit exceeded.' })
+  async refresh(
+    @Body() request: RefreshTokenRequest,
+    @Ip() clientIdentifier: string,
+    @Res({ passthrough: true }) reply: HeaderResponse,
+  ): Promise<AuthenticationResponse> {
+    try {
+      await enforcePublicEndpointRateLimit(
+        this.publicEndpointRateLimiter,
+        reply,
+        'refresh',
+        clientIdentifier,
+        request.refreshToken,
+      );
+      return await this.refreshSessionUseCase.execute(request);
+    } catch (error: unknown) {
+      this.rethrowAsHttpException(error);
+    }
+  }
+
+  @Post('logout')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Revoke an authentication session' })
+  @ApiNoContentResponse({
+    description: 'Session revocation accepted without revealing token state.',
+  })
+  @ApiBadRequestResponse({ description: 'Refresh token format is invalid.' })
+  async logout(@Body() request: RefreshTokenRequest): Promise<void> {
+    await this.logoutUseCase.execute(request);
+  }
+
+  private rethrowAsHttpException(error: unknown): never {
+    if (error instanceof AccountValidationError) {
+      throw new BadRequestException({
+        code: error.code,
+        field: error.field,
+        message: error.message,
+        statusCode: 400,
+      });
+    }
+
+    if (error instanceof AuthenticationError) {
+      const response = {
+        code: error.code,
+        message: error.message,
+        ...(error.suspendedUntil
+          ? { suspendedUntil: error.suspendedUntil.toISOString() }
+          : {}),
+      };
+
+      if (
+        error.code === 'ACCOUNT_NOT_ACTIVE' ||
+        error.code === 'ACCOUNT_TEMPORARILY_SUSPENDED'
+      ) {
+        throw new ForbiddenException({ ...response, statusCode: 403 });
+      }
+
+      throw new UnauthorizedException({ ...response, statusCode: 401 });
+    }
+
+    throw error;
+  }
+}

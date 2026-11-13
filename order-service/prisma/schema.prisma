@@ -1,0 +1,213 @@
+// AI Assistance Disclosure:
+// Tool: GPT-6.1 Sol.
+// Scope: AI-assisted implementation of C:\ Prisma declarations.
+// Author review: Checked the existing Errand, ErrandBookmark, ErrandOperation declarations in order-service for field, relation, and mapping consistency; standardized declaration formatting.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ErrandStatus {
+  OPEN
+  ACCEPTED
+  PICKED_UP
+  DELIVERED
+  DISPUTED
+  RESOLVED
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum ErrandItemType {
+  FOOD
+  NON_PERISHABLE
+}
+
+enum CompletionMethod {
+  REQUESTER_CONFIRMED
+  AUTO_TIMEOUT
+}
+
+enum ActorRole {
+  REQUESTER
+  COURIER
+  ADMIN
+  SYSTEM
+}
+
+enum OperationStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+enum OperationKind {
+  CREATE
+  EDIT
+  DELETE
+  CANCEL
+  EXPIRE
+  RESOLVE_REFUND
+  RESOLVE_PAY
+}
+
+enum DisputeStatus {
+  OPEN
+  RESOLVED
+}
+
+enum DisputeOutcome {
+  REFUND_REQUESTER
+  PAY_COURIER
+}
+
+model Errand {
+  id                  String            @id @db.Uuid
+  requesterId         String            @map("requester_id") @db.Uuid
+  courierId           String?           @map("courier_id") @db.Uuid
+  status              ErrandStatus      @default(OPEN)
+  pickupLocationId    String            @map("pickup_location_id") @db.Uuid
+  pickupSupplierName  String            @map("pickup_supplier_name") @db.VarChar(150)
+  pickupLocationLabel String            @map("pickup_location_label") @db.VarChar(300)
+  description         String            @db.VarChar(1000)
+  deliveryDestination String            @map("delivery_destination") @db.VarChar(250)
+  instructions        String            @db.VarChar(1000)
+  offeredCredits      Int               @map("offered_credits")
+  itemType            ErrandItemType    @default(NON_PERISHABLE) @map("item_type")
+  expiresAt           DateTime          @map("expires_at") @db.Timestamptz(3)
+  version             Int               @default(0)
+  pendingOperationId  String?           @unique @map("pending_operation_id") @db.Uuid
+  pendingOperation    ErrandOperation?  @relation("PendingOperation", fields: [pendingOperationId], references: [id], onDelete: Restrict)
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt           DateTime?         @map("deleted_at") @db.Timestamptz(3)
+  acceptedAt          DateTime?         @map("accepted_at") @db.Timestamptz(3)
+  pickedUpAt          DateTime?         @map("picked_up_at") @db.Timestamptz(3)
+  deliveredAt         DateTime?         @map("delivered_at") @db.Timestamptz(3)
+  disputedAt          DateTime?         @map("disputed_at") @db.Timestamptz(3)
+  completedAt         DateTime?         @map("completed_at") @db.Timestamptz(3)
+  cancelledAt         DateTime?         @map("cancelled_at") @db.Timestamptz(3)
+  expiredAt           DateTime?         @map("expired_at") @db.Timestamptz(3)
+  completionMethod    CompletionMethod? @map("completion_method")
+  history             ErrandHistory[]
+  excludedCouriers    ErrandExcludedCourier[]
+  review CourierReview?
+  bookmarks ErrandBookmark[]
+  dispute ErrandDispute?
+
+  @@index([status, courierId, createdAt, id])
+  @@index([requesterId, createdAt])
+  @@map("errands")
+}
+
+model ErrandDispute {
+  errandId              String          @id @map("errand_id") @db.Uuid
+  errand                Errand          @relation(fields: [errandId], references: [id], onDelete: Restrict)
+  status                DisputeStatus   @default(OPEN)
+  requesterStatement    String          @map("requester_statement") @db.VarChar(2000)
+  requesterId           String          @map("requester_id") @db.Uuid
+  requesterSubmittedAt  DateTime        @default(now()) @map("requester_submitted_at") @db.Timestamptz(3)
+  courierStatement      String?         @map("courier_statement") @db.VarChar(2000)
+  courierId             String          @map("courier_id") @db.Uuid
+  courierSubmittedAt    DateTime?       @map("courier_submitted_at") @db.Timestamptz(3)
+  outcome               DisputeOutcome?
+  resolvedBy            String?         @map("resolved_by") @db.Uuid
+  resolvedAt            DateTime?       @map("resolved_at") @db.Timestamptz(3)
+
+  @@index([status, requesterSubmittedAt])
+  @@map("errand_disputes")
+}
+
+model ErrandBookmark {
+  errandId String @map("errand_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  errand Errand @relation(fields: [errandId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([errandId, userId])
+  @@index([userId, errandId])
+  @@map("errand_bookmarks")
+}
+
+model ErrandOperation {
+  lockedErrand    Errand?         @relation("PendingOperation")
+  id              String          @id @default(uuid()) @db.Uuid
+  idempotencyKey  String          @map("idempotency_key") @db.Uuid
+  requesterId     String          @map("requester_id") @db.Uuid
+  errandId        String          @map("errand_id") @db.Uuid
+  kind            OperationKind
+  status          OperationStatus @default(PENDING)
+  inputDigest     String          @map("input_digest") @db.VarChar(64)
+  payload         Json
+  expectedVersion Int?            @map("expected_version")
+  previousAmount  Int?            @map("previous_amount")
+  errorCode       String?         @map("error_code") @db.VarChar(100)
+  errorStatus     Int?            @map("error_status")
+  correlationId   String?         @map("correlation_id") @db.VarChar(128)
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([requesterId, idempotencyKey])
+  @@index([status, createdAt])
+  @@map("errand_operations")
+}
+
+model ErrandHistory {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  errandId      String        @map("errand_id") @db.Uuid
+  errand        Errand        @relation(fields: [errandId], references: [id], onDelete: Restrict)
+  fromStatus    ErrandStatus? @map("from_status")
+  toStatus      ErrandStatus  @map("to_status")
+  action        String        @db.VarChar(40)
+  actorRole     ActorRole     @map("actor_role")
+  actorId       String?       @map("actor_id") @db.Uuid
+  courierId     String?       @map("courier_id") @db.Uuid
+  correlationId String?       @map("correlation_id") @db.VarChar(128)
+  occurredAt    DateTime      @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  @@index([errandId, occurredAt])
+  @@map("errand_history")
+}
+
+model ErrandExcludedCourier {
+  errandId  String   @map("errand_id") @db.Uuid
+  errand    Errand   @relation(fields: [errandId], references: [id], onDelete: Restrict)
+  courierId String   @map("courier_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([errandId, courierId])
+  @@map("errand_excluded_couriers")
+}
+
+model CourierReview {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  errandId    String   @unique @map("errand_id") @db.Uuid
+  errand      Errand   @relation(fields: [errandId], references: [id], onDelete: Restrict)
+  requesterId String   @map("requester_id") @db.Uuid
+  courierId   String   @map("courier_id") @db.Uuid
+  stars       Int
+  comment     String?  @db.VarChar(1000)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([courierId, createdAt, id])
+  @@map("courier_reviews")
+}
+
+model OutboxEvent {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  aggregateId String    @map("aggregate_id") @db.Uuid
+  eventType   String    @map("event_type") @db.VarChar(100)
+  payload     Json
+  headers     Json      @default("{}")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
+
+  @@map("outbox_events")
+}

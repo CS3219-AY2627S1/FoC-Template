@@ -1,0 +1,128 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: GPT-6.1 Sol.
+ * Scope: AI-assisted implementation of account rules test cases.
+ * Author review: Validated the assertions and setup for "accepts an alphanumeric username"; clarified test descriptions and assertion formatting.
+ */
+
+import { AccountValidationError } from '../../../../../src/modules/accounts/domain/account-validation.error.js';
+import { EmailVerificationCode } from '../../../../../src/modules/accounts/domain/email-verification-code.js';
+import {
+  AccountStatus,
+  NEW_ACCOUNT_DEFAULTS,
+} from '../../../../../src/modules/accounts/domain/account-status.js';
+import { NusEmail } from '../../../../../src/modules/accounts/domain/nus-email.js';
+import { assertPasswordMeetsPolicy } from '../../../../../src/modules/accounts/domain/password-policy.js';
+import { PhoneNumber } from '../../../../../src/modules/accounts/domain/phone-number.js';
+import { Username } from '../../../../../src/modules/accounts/domain/username.js';
+
+function expectValidationCode(action: () => unknown, code: string): void {
+  try {
+    action();
+    throw new Error(`Expected validation error ${code}.`);
+  } catch (error: unknown) {
+    expect(error).toBeInstanceOf(AccountValidationError);
+    expect(error).toMatchObject({ code });
+  }
+}
+
+describe('account domain rules', () => {
+  describe('Username', () => {
+    it('accepts an alphanumeric username', () => {
+      expect(Username.create('Arthur3219').value).toBe('Arthur3219');
+    });
+
+    it.each(['', 'arthur_3219', 'arthur 3219', 'arthur-3219'])(
+      'rejects invalid username %p',
+      (username) => {
+        expect(() => Username.create(username)).toThrow(AccountValidationError);
+      },
+    );
+
+    it('rejects an excessively long username', () => {
+      expectValidationCode(
+        () => Username.create('a'.repeat(51)),
+        'USERNAME_TOO_LONG',
+      );
+    });
+  });
+
+  describe('NusEmail', () => {
+    it('normalizes a valid NUS email address', () => {
+      expect(NusEmail.create('  Student@U.NUS.EDU ').value).toBe(
+        'student@u.nus.edu',
+      );
+    });
+
+    it.each([
+      '',
+      'student@nus.edu',
+      'student@gmail.com',
+      'student@@u.nus.edu',
+      '.student@u.nus.edu',
+      'student..name@u.nus.edu',
+    ])('rejects invalid NUS email %p', (email) => {
+      expect(() => NusEmail.create(email)).toThrow(AccountValidationError);
+    });
+
+    it('rejects an excessively long NUS email', () => {
+      expectValidationCode(
+        () => NusEmail.create(`${'a'.repeat(250)}@u.nus.edu`),
+        'EMAIL_TOO_LONG',
+      );
+    });
+  });
+
+  describe('PhoneNumber', () => {
+    it('accepts a digits-only phone number', () => {
+      expect(PhoneNumber.create('91234567').value).toBe('91234567');
+    });
+
+    it.each(['', '1234567', '1234567890123456', '+6591234567', '9123 4567'])(
+      'rejects invalid phone number %p',
+      (phoneNumber) => {
+        expect(() => PhoneNumber.create(phoneNumber)).toThrow(
+          AccountValidationError,
+        );
+      },
+    );
+  });
+
+  describe('password policy', () => {
+    it('accepts a password satisfying every requirement', () => {
+      expect(() => assertPasswordMeetsPolicy('Strong!Pass')).not.toThrow();
+    });
+
+    it.each([
+      ['Short!', 'PASSWORD_TOO_SHORT'],
+      ['lowercase!', 'PASSWORD_MISSING_UPPERCASE'],
+      ['UPPERCASE!', 'PASSWORD_MISSING_LOWERCASE'],
+      ['NoSpecial123', 'PASSWORD_MISSING_SPECIAL_CHARACTER'],
+      [`Aa!${'x'.repeat(126)}`, 'PASSWORD_TOO_LONG'],
+    ])('rejects an invalid password with code %s', (password, code) => {
+      expectValidationCode(() => assertPasswordMeetsPolicy(password), code);
+    });
+  });
+
+  describe('EmailVerificationCode', () => {
+    it('preserves a six-digit code including leading zeroes', () => {
+      expect(EmailVerificationCode.create('042731').value).toBe('042731');
+    });
+
+    it.each(['', '12345', '1234567', '12345a'])(
+      'rejects invalid verification code %p',
+      (code) => {
+        expect(() => EmailVerificationCode.create(code)).toThrow(
+          AccountValidationError,
+        );
+      },
+    );
+  });
+
+  it('defines safe defaults for a newly registered account', () => {
+    expect(NEW_ACCOUNT_DEFAULTS).toEqual({
+      isAdmin: false,
+      status: AccountStatus.PendingVerification,
+    });
+  });
+});

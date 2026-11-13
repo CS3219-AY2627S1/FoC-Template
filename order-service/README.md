@@ -1,0 +1,146 @@
+# Order Service
+
+## Courier reviews and ratings
+
+Authenticated requesters can review the assigned courier after an errand reaches
+`COMPLETED`. Reviews contain an integer `stars` value from 1 to 5 and an optional
+string `comment` of at most 1000 characters after trimming. Blank comments are
+stored as `null`. Courier and requester IDs come from the errand and authenticated
+session, never from the request body.
+
+```http
+POST /api/errands/:id/review
+Authorization: Bearer <requester-access-token>
+Content-Type: application/json
+
+{"stars":5,"comment":"Quick delivery, thank you!"}
+```
+
+Returns HTTP 200 with `id`, `errandId`, `requesterId`, `courierId`, `stars`,
+`comment`, and `createdAt`. One review is permitted per errand. An identical
+normalised retry returns the same review; different content returns 409
+`REVIEW_ALREADY_EXISTS`. No `Idempotency-Key` header is needed. Non-owners receive
+403 (including administrators); missing/deleted errands receive 404;
+non-completed errands receive 409. Reviews never change credit balances.
+
+```http
+GET /api/couriers/:courierId/rating-summary
+Authorization: Bearer <access-token>
+```
+
+Returns `courierId`, `averageStars`, and `reviewCount`. With no reviews the average
+is `null` and the count is 0. This endpoint aggregates local reviews; it does not
+check whether the courier UUID exists in User Service.
+
+`GET /api/errands/:id/review` returns `{ "review": null }` before submission, or
+`{ "review": { ...savedReview } }` afterward. It uses the same viewing permissions
+as errand details: participants and administrators may read completed-errand
+reviews; inaccessible, missing or deleted errands return 404. The web app uses
+this endpoint to restore the saved review after a page reload. All review routes
+require an authenticated session and disable response caching. Written-review
+listing and review editing/deletion are outside this implementation.
+
+`GET /api/couriers/me/review-overview` powers the signed-in home-page panel.
+It returns your `courierId`, all-time `averageStars` / `reviewCount`, and
+`recentComments` (up to three objects containing `id`, `stars`, `comment`, and
+`createdAt`). Identity comes from the authenticated session, never query/body
+parameters. Comments exclude empty/star-only reviews and sort newest-first by
+`createdAt`, then `id`. Star-only reviews still contribute to the average/count.
+No ratings yields null/0 and an empty list. The panel is available to every
+signed-in user, including admins, and hidden for guests. Public comment listings
+remain outside scope. No new database migration is required.
+
+Before starting locally, run `pnpm db:generate` and `pnpm db:migrate` from this
+folder to generate the review model and apply `202610300001_courier_reviews`.
+The review integration tests in `tests/integration/errands.spec.ts` use isolated
+PostgreSQL containers: run `pnpm test:integration` with Docker available.
+
+> Requirements, decisions, contracts and roadmap: [`docs/`](docs/). Agent workflow and skills: [`.agents/README.md`](.agents/README.md). Change history with rationale: [`logs/`](logs/).
+
+FR4 creation, authenticated open browsing and requester editing. Uses Node 24, TypeScript, NestJS/Fastify, Prisma 7, PostgreSQL, and Redis/BullMQ recovery. Services own separate databases; credit changes use the Credit Service HTTP API.
+
+## PowerShell startup
+
+From the repository root, with existing User, Supplier and Credit Services configured:
+
+```powershell
+$env:NODE_OPTIONS = "--use-system-ca"
+pnpm install
+docker compose up -d --wait order-db order-redis
+Copy-Item order-service/.env.example order-service/.env # first setup only
+```
+
+Set Order's `CREDIT_ORDER_SERVICE_TOKEN` to the matching caller-scoped value used by Credit Service. Credit accounts must already be provisioned after user verification; Order Service cannot create them. Apply the Credit migrations and restart Credit Service:
+
+```powershell
+Set-Location credit-service
+pnpm db:generate
+pnpm db:migrate
+pnpm start:dev
+```
+
+In another terminal, from the repository root:
+
+```powershell
+$env:NODE_OPTIONS = "--use-system-ca"
+Set-Location order-service
+pnpm db:generate
+pnpm db:migrate
+pnpm start:dev
+```
+
+User (3001), Supplier (3002), Credit (3003) and Order (3004) must run. Include `$env:NODE_OPTIONS = "--use-system-ca"` before starting User Service on Windows for verification email certificates. Order PostgreSQL uses 5436, Redis 6380. OpenAPI: http://localhost:3004/docs.
+
+Launch the frontend in another terminal from the repository root:
+
+```powershell
+pnpm --filter @foc/web-app dev
+```
+
+Visit http://localhost:3000/errands. The web server uses ORDER_SERVICE_URL, default http://127.0.0.1:3004. It displays actual OPEN, unassigned errands with pagination, empty and retry states. Creation is available through the web Errands page; editing currently uses the backend API.
+
+## API
+
+All routes require a bearer access token. Identity is derived from the live User Service session; inactive, suspended and unverified accounts are rejected.
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | /api/errands?limit=50&offset=0 | Published OPEN errands |
+| GET | /api/errands/:id | Open errand or your own errand |
+| POST | /api/errands | Create after credit reservation |
+| PATCH | /api/errands/:id | Edit your OPEN unassigned errand |
+| GET | /api/errand-operations/:id | Your operation outcome |
+
+POST/PATCH require a UUID v4 Idempotency-Key header. Retry with the same key and normalized payload; conflicting reuse returns 409. Create requires pickupLocationId (available Supplier location UUID), description, deliveryDestination, instructions and positive whole offeredCredits. Unknown fields, including requester IDs, are rejected. PATCH requires expectedVersion and at least one editable field: description, deliveryDestination, instructions, offeredCredits. Pickup cannot be edited. Non-owner edits return 403; stale versions or assigned/later states return 409. Increases reserve additional credits; decreases release excess.
+
+## Consistency
+
+PostgreSQL persists an operation intent before calling Credit Service. Only successful reservation permits publishing an OPEN errand. Credit adjustments use immutable operation IDs and send the complete desired reservation amount. Pending edits are locked and hidden until fields and reserved credits agree.
+
+This is a recoverable workflow across independent databases, not a global ACID transaction. Definitive insufficient-credit failures return 422 and publish no errand/edit. Uncertain responses or a failed local commit return 202 with a PENDING operation ID. Poll the operation or retry the same key; BullMQ resumes the PostgreSQL journal without double charging. Redis outages delay recovery but do not lose persisted intents. Readiness checks PostgreSQL. No RabbitMQ events are introduced.
+
+Acceptance, assignment and settlement are outside this implementation. Future acceptance must atomically check OPEN, no courier and no pending operation.
+
+## Tests
+
+```powershell
+pnpm --filter @foc/order-service build
+pnpm --filter @foc/order-service lint
+pnpm --filter @foc/order-service test
+pnpm --filter @foc/order-service test:integration
+pnpm --filter @foc/web-app exec playwright test errands.spec.ts
+```
+
+Integration tests require Docker and use isolated PostgreSQL databases with the real Credit HTTP API. Cover validation, ownership, versions, concurrency, insufficient funds, bounty edits, lost responses and failed-commit recovery.
+
+## Detail views and request management
+
+GET /api/errands/manage lists the acting user's requests; administrators receive all nondeleted requests. GET /api/errands/:id also allows administrators to inspect requests in later states. PATCH is restricted to nonadministrator owners of OPEN unassigned requests. Administrators cannot edit even their own requests.
+
+DELETE /api/errands/:id requires a UUID Idempotency-Key. Owners can delete OPEN unassigned requests; administrators can delete any request. Pending changes return 409. Deletion persists a DELETE operation, idempotently releases reserved credits, then sets deletedAt and increments the version in an Order transaction. Completed credit transfers are preserved. Deleted requests disappear from listing/detail APIs; PostgreSQL retains the record and operation history for auditing. Network uncertainty returns 202, recovered by the same worker as creation/editing.
+
+Apply the new migration with `pnpm --filter @foc/order-service db:migrate`, then restart Order Service. Swagger documents the management and DELETE endpoints.
+
+Creator editing includes administrator creators of OPEN unassigned requests. Administrators cannot edit requests belonging to other users. This replaces the earlier blanket prohibition on administrator editing.
+
+Catalogue GET routes accept sort=newest (default), oldest, credits-highest or credits-lowest. Sorting happens in PostgreSQL before limit/offset, with deterministic tie breakers. Other values return 400.

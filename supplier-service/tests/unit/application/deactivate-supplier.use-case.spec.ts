@@ -1,0 +1,59 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: GPT-6.1 Sol.
+ * Scope: AI-assisted implementation of deactivate supplier use case test cases.
+ * Author review: Validated the assertions and setup for "deactivates the requested supplier"; clarified test descriptions and assertion formatting.
+ */
+
+import type {
+  CreateSupplierRecord,
+  SupplierManagementRepositoryPort,
+  UpdateSupplierLocationRecord,
+  UpdateSupplierRecord,
+} from '../../../src/application/ports/supplier-management.repository.port.js';
+import { DeactivateSupplierUseCase } from '../../../src/application/use-cases/deactivate-supplier.use-case.js';
+import type { SupplierCatalogEntry } from '../../../src/domain/supplier-catalog.js';
+
+const SUPPLIER_ID = '30000000-0000-4000-8000-000000000001';
+
+class StubSupplierManagementRepository implements SupplierManagementRepositoryPort {
+  findPossibleDuplicates(): Promise<[]> {
+    return Promise.resolve([]);
+  }
+
+  readonly deactivatedSupplierIds: string[] = [];
+
+  createSupplier(record: CreateSupplierRecord): Promise<SupplierCatalogEntry> {
+    void record;
+    throw new Error('Not used by these tests.');
+  }
+
+  deactivateSupplier(supplierId: string): Promise<void> {
+    this.deactivatedSupplierIds.push(supplierId);
+    return Promise.resolve();
+  }
+
+  findCampusLocationById(): Promise<null> {
+    return Promise.resolve(null);
+  }
+
+  updateSupplier(record: UpdateSupplierRecord): Promise<SupplierCatalogEntry> {
+    void record;
+    throw new Error('Not used by these tests.');
+  }
+
+  updateSupplierLocation(record: UpdateSupplierLocationRecord): Promise<never> {
+    void record;
+    throw new Error('Not used by these tests.');
+  }
+}
+
+describe('DeactivateSupplierUseCase', () => {
+  it('deactivates the requested supplier', async () => {
+    const repository = new StubSupplierManagementRepository();
+    const useCase = new DeactivateSupplierUseCase(repository);
+
+    await expect(useCase.execute(SUPPLIER_ID)).resolves.toBeUndefined();
+    expect(repository.deactivatedSupplierIds).toEqual([SUPPLIER_ID]);
+  });
+});

@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+**/node_modules
+**/dist
+**/coverage
+credit-service/src/generated
+order-service/src/generated
+**/.env
+**/.env.*
+.local

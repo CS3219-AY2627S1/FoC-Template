@@ -1,0 +1,38 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: GPT-6.1 Sol.
+ * Scope: AI-assisted implementation of register account request code (RegisterAccountRequest).
+ * Author review: Checked RegisterAccountRequest validation decorators (IsString, IsNotEmpty, MaxLength) and optional fields; standardized property formatting and annotations.
+ */
+
+import { ApiProperty } from '@nestjs/swagger';
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+
+import { EMAIL_MAXIMUM_LENGTH } from '../../../domain/nus-email.js';
+import { PASSWORD_MAXIMUM_LENGTH } from '../../../domain/password-policy.js';
+import { USERNAME_MAXIMUM_LENGTH } from '../../../domain/username.js';
+
+export class RegisterAccountRequest {
+  @ApiProperty({ example: 'student@u.nus.edu' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(EMAIL_MAXIMUM_LENGTH)
+  email!: string;
+
+  @ApiProperty({ example: 'Strong!Pass', format: 'password', writeOnly: true })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(PASSWORD_MAXIMUM_LENGTH)
+  password!: string;
+
+  @ApiProperty({ example: '91234567' })
+  @IsString()
+  @IsNotEmpty()
+  phoneNumber!: string;
+
+  @ApiProperty({ example: 'Arthur3219' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(USERNAME_MAXIMUM_LENGTH)
+  username!: string;
+}

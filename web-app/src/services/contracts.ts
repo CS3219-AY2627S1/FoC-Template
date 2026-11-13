@@ -1,0 +1,185 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: GPT-6.1 Sol.
+ * Scope: AI-assisted implementation of contracts code (ErrandOperation, Errand, CourierReview).
+ * Author review: Checked existing ErrandOperation, Errand parameter and return types against their callers; edited type declaration layout and member naming.
+ */
+
+// HTTP contracts from the backend service response DTOs.
+export interface ErrandOperation {
+  operationId: string;
+  status: "PENDING" | "SUCCEEDED" | "FAILED";
+  errand?: Errand;
+  errorCode?: string;
+}
+export interface Errand {
+  isStarred?: boolean;
+  availableForAcceptance?: boolean;
+  acceptedAt?: string | null;
+  pickedUpAt?: string | null;
+  deliveredAt?: string | null;
+  disputedAt?: string | null;
+  completedAt?: string | null;
+  cancelledAt?: string | null;
+  expiredAt?: string | null;
+  expiresAt?: string;
+  completionMethod?: "REQUESTER_CONFIRMED" | "AUTO_TIMEOUT" | null;
+  dispute?: ErrandDispute | null;
+  itemType?: "FOOD" | "NON_PERISHABLE";
+  requesterUsername?: string | null;
+  courierUsername?: string | null;
+  id: string;
+  requesterId: string;
+  courierId: string | null;
+  status: string;
+  pickupLocationId: string;
+  pickupSupplierName: string;
+  pickupLocationLabel: string;
+  description: string;
+  deliveryDestination: string;
+  instructions: string;
+  offeredCredits: number;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface ErrandDispute {
+  status: "OPEN" | "RESOLVED";
+  requesterStatement: string;
+  requesterId: string;
+  requesterSubmittedAt: string;
+  courierStatement: string | null;
+  courierId: string;
+  courierSubmittedAt: string | null;
+  outcome: "REFUND_REQUESTER" | "PAY_COURIER" | null;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+}
+export interface CourierReview {
+  id: string;
+  errandId: string;
+  requesterId: string;
+  courierId: string;
+  stars: number;
+  comment: string | null;
+  createdAt: string;
+}
+
+export interface CourierRatingSummary {
+  courierId: string;
+  averageStars: number | null;
+  reviewCount: number;
+}
+
+export interface CourierReviewOverview extends CourierRatingSummary {
+  recentComments: (Pick<CourierReview, "id" | "stars" | "createdAt"> & {
+    comment: string;
+  })[];
+}
+
+export type ErrandPreview = Pick<
+  Errand,
+  | "id"
+  | "isStarred"
+  | "status"
+  | "description"
+  | "pickupSupplierName"
+  | "pickupLocationLabel"
+  | "deliveryDestination"
+  | "offeredCredits"
+  | "createdAt"
+>;
+export interface CreditBalance {
+  userId: string;
+  availableCredits: number;
+  reservedCredits: number;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Profile {
+  id: string;
+  username: string;
+  email: string;
+  phoneNumber: string;
+  isAdmin: boolean;
+  status: string;
+  suspendedUntil?: string | null;
+  emailVerifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReportIdentity {
+  id: string;
+  username: string;
+}
+
+export interface UserReport {
+  id: string;
+  reporterUserId: string;
+  reportedUserId: string;
+  reporter: ReportIdentity;
+  reportedUser: ReportIdentity;
+  description: string;
+  status: "OPEN" | "RESOLVED";
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  resolvedBy: ReportIdentity | null;
+}
+
+export interface SuspensionResult {
+  id: string;
+  username: string;
+  status: "SUSPENDED";
+  suspendedUntil: string;
+}
+
+export interface Authentication {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  tokenType: "Bearer";
+  user: Pick<Profile, "id" | "username" | "isAdmin">;
+}
+
+export const categoryLabels = {
+  FOOD: "Food",
+  BEVERAGES: "Beverages",
+  PRINTING: "Printing",
+  SHOPPING: "Shopping",
+} as const;
+
+export type SupplierCategory = keyof typeof categoryLabels;
+
+export interface CampusLocation {
+  id: string;
+  building: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface PickupLocation {
+  id: string;
+  supplierAtLocation: string;
+  building: string;
+  floor: number | null;
+  locationDescription: string;
+  latitude: number | null;
+  longitude: number | null;
+  opensAt: string;
+  closesAt: string;
+  isOpenOvernight: boolean;
+  imageUrl: string | null;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  /** Legacy projection kept while older service responses are supported. */
+  category: "FOOD" | "FOOD_COFFEE" | "PRINTING" | "SHOPPING";
+  categories?: SupplierCategory[];
+  locations: PickupLocation[];
+}

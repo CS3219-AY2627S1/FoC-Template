@@ -1,0 +1,118 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: GPT-6.1 Sol.
+ * Scope: AI-assisted implementation of api code (ApiError, request, sessionLock).
+ * Author review: Validated ApiError, request existing type members and constant values in web-app/api.ts; edited naming and formatting for readability.
+ */
+
+import { supplierMatches, type SupplierMatch } from "./supplier-matches";
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+    public code?: string,
+    public retryAfter?: number,
+    public matches: SupplierMatch[] = [],
+    public suspendedUntil?: string,
+  ) {
+    super(message);
+  }
+}
+
+export async function request<T>(
+  path: string,
+  body?: unknown,
+  method = body === undefined ? "GET" : "POST",
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/${path}`, {
+      method,
+      credentials: "same-origin",
+      cache: "no-store",
+      headers:
+        body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError(
+      0,
+      "Unable to connect. Check your connection and try again.",
+    );
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok)
+    throw new ApiError(
+      response.status,
+      data.message || "The request could not be completed.",
+      data.code,
+      Number(response.headers.get("Retry-After")) || undefined,
+      data.code === "POSSIBLE_SUPPLIER_DUPLICATE"
+        ? supplierMatches(data.matches)
+        : [],
+      typeof data.suspendedUntil === "string" ? data.suspendedUntil : undefined,
+    );
+  return data as T;
+}
+
+// Refresh tokens are single-use. Serialize rotation, login, and logout across tabs.
+let queue: Promise<unknown> = Promise.resolve();
+export function sessionLock<T>(operation: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== "undefined" && navigator.locks)
+    return navigator.locks.request("foc-session", operation);
+  const next = queue.then(operation, operation);
+  queue = next.catch(() => undefined);
+  return next;
+}
+
+export async function authenticatedRequest<T>(
+  path: string,
+  body?: unknown,
+  method = body === undefined ? "GET" : "POST",
+): Promise<T> {
+  try {
+    return await request<T>(path, body, method);
+  } catch (error) {
+    if (
+      error instanceof ApiError &&
+      error.code === "CURRENT_PASSWORD_INCORRECT"
+    )
+      throw error;
+    if (!(error instanceof ApiError) || error.status !== 401) throw error;
+    return sessionLock(async () => {
+      // Another tab may already have rotated the token while this tab was waiting.
+      try {
+        return await request<T>(path, body, method);
+      } catch (retryError) {
+        if (
+          retryError instanceof ApiError &&
+          retryError.code === "CURRENT_PASSWORD_INCORRECT"
+        )
+          throw retryError;
+        if (!(retryError instanceof ApiError) || retryError.status !== 401)
+          throw retryError;
+        // Do not rotate a valid session when another service rejects its token.
+        if (path !== "auth/session") {
+          try {
+            await request("auth/session");
+          } catch (sessionError) {
+            if (
+              !(sessionError instanceof ApiError) ||
+              sessionError.status !== 401
+            )
+              throw sessionError;
+            await request("auth/refresh", {});
+            return request<T>(path, body, method);
+          }
+          throw new ApiError(
+            403,
+            "The requested service could not authorize your account. Please contact the administrator.",
+          );
+        }
+        await request("auth/refresh", {});
+        return request<T>(path, body, method);
+      }
+    });
+  }
+}

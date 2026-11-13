@@ -1,0 +1,103 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: GPT-6.1 Sol.
+ * Scope: AI-assisted implementation of login code (LoginInput, AuthenticationResult, LoginDependencies).
+ * Author review: Validated LoginInput, AuthenticationResult input handling, dependency calls, and success/error return paths; clarified local naming and control-flow formatting.
+ */
+
+import { AccountStatus } from '../../domain/account-status.js';
+import { effectiveAccountStatus } from '../../domain/temporary-suspension.js';
+import { NusEmail } from '../../domain/nus-email.js';
+import { AuthenticationError } from '../errors/authentication.error.js';
+import type { AuthenticationRepositoryPort } from '../ports/authentication-repository.port.js';
+import type { PasswordVerifierPort } from '../ports/password-verifier.port.js';
+import type { SessionTokenPair } from '../services/session-token-issuer.js';
+import type { SessionTokenIssuer } from '../services/session-token-issuer.js';
+
+export interface LoginInput {
+  email: string;
+  password: string;
+}
+
+export interface AuthenticationResult extends SessionTokenPair {
+  user: {
+    id: string;
+    isAdmin: boolean;
+    username: string;
+  };
+}
+
+export interface LoginDependencies {
+  passwordVerifier: PasswordVerifierPort;
+  repository: Pick<
+    AuthenticationRepositoryPort,
+    'createSession' | 'findAccountByEmail'
+  >;
+  sessionTokenIssuer: SessionTokenIssuer;
+}
+
+export class LoginUseCase {
+  constructor(private readonly dependencies: LoginDependencies) {}
+
+  async execute(input: LoginInput): Promise<AuthenticationResult> {
+    const email = NusEmail.create(input.email).value;
+    const account =
+      await this.dependencies.repository.findAccountByEmail(email);
+    const passwordMatches = await this.dependencies.passwordVerifier.verify(
+      input.password,
+      account?.passwordHash ?? null,
+    );
+
+    if (!account || !passwordMatches) {
+      throw new AuthenticationError(
+        'INVALID_CREDENTIALS',
+        'Email address or password is incorrect.',
+      );
+    }
+
+    const prepared = this.dependencies.sessionTokenIssuer.prepare();
+    if (
+      account.status === AccountStatus.Active &&
+      account.suspendedUntil &&
+      account.suspendedUntil > prepared.record.createdAt
+    ) {
+      throw new AuthenticationError(
+        'ACCOUNT_TEMPORARILY_SUSPENDED',
+        'Your account is temporarily suspended.',
+        account.suspendedUntil,
+      );
+    }
+    if (
+      effectiveAccountStatus(
+        account.status,
+        account.suspendedUntil,
+        prepared.record.createdAt,
+      ) !== AccountStatus.Active
+    ) {
+      throw new AuthenticationError(
+        'ACCOUNT_NOT_ACTIVE',
+        'Account is not available for login.',
+      );
+    }
+
+    const tokens = await this.dependencies.sessionTokenIssuer.issueTokens(
+      account,
+      prepared,
+    );
+    await this.dependencies.repository.createSession(
+      this.dependencies.sessionTokenIssuer.toSessionRecord(
+        prepared,
+        account.id,
+      ),
+    );
+
+    return {
+      ...tokens,
+      user: {
+        id: account.id,
+        isAdmin: account.isAdmin,
+        username: account.username,
+      },
+    };
+  }
+}

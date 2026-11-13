@@ -1,0 +1,104 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: GPT-6.1 Sol.
+ * Scope: AI-assisted implementation of outlet display code (supplierCards, outletTitle, outletAddress).
+ * Author review: Validated supplierCards, outletTitle existing type members and constant values in web-app/outlet-display.ts; edited naming and formatting for readability.
+ */
+
+import type { PickupLocation, Supplier } from "@/services/contracts";
+
+export function supplierCards(suppliers: Supplier[]) {
+  return suppliers.flatMap((supplier) => {
+    const floors = new Map<string, Set<number>>();
+    for (const location of supplier.locations) {
+      if (location.floor === null) continue;
+      const building = location.building.trim().toLowerCase();
+      if (!floors.has(building)) floors.set(building, new Set());
+      floors.get(building)!.add(location.floor);
+    }
+    const splitLocations = supplier.locations.filter(
+      (location) =>
+        location.floor !== null &&
+        (floors.get(location.building.trim().toLowerCase())?.size ?? 0) > 1,
+    );
+    const splitIds = new Set(splitLocations.map((location) => location.id));
+    const groupedLocations = supplier.locations.filter(
+      (location) => !splitIds.has(location.id),
+    );
+    return [
+      ...(groupedLocations.length
+        ? [
+            {
+              id: supplier.id,
+              supplier,
+              title: supplier.name,
+              locations: groupedLocations,
+              href: `/suppliers/${supplier.id}`,
+            },
+          ]
+        : []),
+      ...splitLocations.map((location) => ({
+        id: location.id,
+        supplier,
+        title: outletTitle(supplier.name, location),
+        locations: [location],
+        href: `/suppliers/${supplier.id}#outlet-${location.id}`,
+      })),
+    ];
+  });
+}
+
+export function outletTitle(name: string, location: PickupLocation): string {
+  if (location.floor === null) return `${name} — ${location.building}`;
+  // Preserve names that an administrator has already qualified with the floor.
+  if (new RegExp(`(?:Level|Floor)\\s*${location.floor}$`, "i").test(name)) {
+    return name;
+  }
+  return `${name} — Level ${location.floor}`;
+}
+
+export function outletAddress(location: PickupLocation): string {
+  return `${location.building} · ${location.floor === null ? "Floor not specified" : `Floor ${location.floor}`}`;
+}
+
+// AI-assisted: shorten location-qualified names only in pickup option labels.
+export function pickupSupplierDisplayName(
+  name: string,
+  building: string,
+): string {
+  const match = /^(.*\S)\s+@\s+(.+)$/.exec(name);
+  if (!match) return name;
+
+  const key = (value: string) =>
+    value.trim().replace(/\s+/g, " ").toLowerCase();
+  const suffix = key(match[2]);
+  const buildingKey = key(building);
+  const aliases: Record<string, string[]> = {
+    yih: ["yusof ishak house"],
+    md11: ["medicine block md11"],
+    s9: ["science block s9"],
+    s16: ["science block s16"],
+    cde: ["college of design and engineering"],
+    utown: ["stephen riady centre", "education resource centre"],
+    science: ["science lt27"],
+  };
+
+  return suffix === buildingKey ||
+    (Object.hasOwn(aliases, suffix) && aliases[suffix].includes(buildingKey))
+    ? match[1].trim()
+    : name;
+}
+
+export function supplierImageUrl(imageUrl: string | null): string | null {
+  if (!imageUrl) return null;
+  try {
+    const url = new URL(imageUrl);
+    if (url.hostname !== "github.com") return imageUrl;
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length < 5 || parts[2] !== "blob") return imageUrl;
+    const [owner, repository, , revision, ...path] = parts;
+    return `https://raw.githubusercontent.com/${owner}/${repository}/${revision}/${path.join("/")}`;
+  } catch {
+    return imageUrl;
+  }
+}

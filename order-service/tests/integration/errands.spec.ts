@@ -1,0 +1,2897 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: GPT-6.1 Sol.
+ * Scope: AI-assisted implementation of errands test cases.
+ * Author review: Validated the assertions and setup for "persists private bookmarks, replays mutations, and filters before pagination" against the service calls and test data; clarified test descriptions and assertion formatting.
+ */
+
+import { Test } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import creditConfiguration from '../../../credit-service/src/infrastructure/configuration';
+import { ValidationPipe } from '@nestjs/common';
+import {
+  FastifyAdapter,
+  type NestFastifyApplication,
+} from '@nestjs/platform-fastify';
+import {
+  PostgreSqlContainer,
+  type StartedPostgreSqlContainer,
+} from '@testcontainers/postgresql';
+import { createServer, type Server } from 'node:http';
+import { once } from 'node:events';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { Client } from 'pg';
+import { AppModule } from '../../src/app.module';
+import { HttpFilter } from '../../src/api/http.filter';
+import { PrismaService } from '../../src/infrastructure/prisma.service';
+import { RecoveryWorker } from '../../src/infrastructure/recovery.worker';
+import { OutboxRelay } from '../../src/infrastructure/outbox.relay';
+import { TimerWorker } from '../../src/infrastructure/timer.worker';
+import type { ChannelModel } from 'amqplib';
+import { OrderService } from '../../src/application/order.service';
+import { expiryFor } from '../../src/domain/errand';
+import {
+  ORDER_REPOSITORY,
+  type OrderRepository,
+} from '../../src/application/ports';
+import { AppModule as CreditModule } from '../../../credit-service/src/app.module';
+import { PrismaService as CreditPrisma } from '../../../credit-service/src/infrastructure/prisma.service';
+import { HttpExceptionFilter as CreditFilter } from '../../../credit-service/src/api/http-exception.filter';
+import { CreditEventsHandler } from '../../../credit-service/src/api/credit-events.handler';
+
+const requesterId = '10000000-0000-4000-8000-000000000001';
+const otherId = '10000000-0000-4000-8000-000000000002';
+const pickupId = '20000000-0000-4000-8000-000000000001';
+const courierId = '10000000-0000-4000-8000-000000000003';
+/** Fake user-service sessions: `Bearer courier-7` is a distinct courier per number. */
+function userFor(authorization: unknown) {
+  const numbered = String(authorization).match(/^Bearer courier-(\d{1,4})$/);
+  if (numbered)
+    return `30000000-0000-4000-8000-${numbered[1].padStart(12, '0')}`;
+  return {
+    'Bearer requester': requesterId,
+    'Bearer other': otherId,
+    'Bearer admin': otherId,
+    'Bearer courier': courierId,
+  }[String(authorization)];
+}
+const input = {
+  pickupLocationId: pickupId,
+  description: 'Pick up coffee',
+  deliveryDestination: 'Library entrance',
+  instructions: 'Call on arrival',
+  offeredCredits: 20,
+};
+async function listen(server: Server) {
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  if (!address || typeof address === 'string')
+    throw new Error('Missing address');
+  return `http://127.0.0.1:${address.port}`;
+}
+async function migrate(url: string, folder: string) {
+  const client = new Client({ connectionString: url });
+  await client.connect();
+  try {
+    for (const name of readdirSync(folder).sort()) {
+      const migration = resolve(folder, name, 'migration.sql');
+      if (
+        name !== 'migration_lock.toml' &&
+        !name.startsWith('.') &&
+        existsSync(migration)
+      )
+        await client.query(readFileSync(migration, 'utf8'));
+    }
+  } finally {
+    await client.end();
+  }
+}
+describe('FR4 with real independent Order/Credit PostgreSQL databases and HTTP credit calls', () => {
+  let orderDb: StartedPostgreSqlContainer;
+  let creditDb: StartedPostgreSqlContainer;
+  let app: NestFastifyApplication;
+  let creditApp: NestFastifyApplication;
+  let prisma: PrismaService;
+  let creditPrisma: CreditPrisma;
+  let service: OrderService;
+  let lookup: Server;
+  let proxy: Server;
+  let available = true;
+  let accountActive = true;
+  let outage = false;
+  let loseAck: 'reserve' | 'adjust' | 'release' | 'settle' | null = null;
+  beforeAll(async () => {
+    [orderDb, creditDb] = await Promise.all([
+      new PostgreSqlContainer('postgres:17-alpine').start(),
+      new PostgreSqlContainer('postgres:17-alpine').start(),
+    ]);
+    await migrate(orderDb.getConnectionUri(), resolve('migrations'));
+    await migrate(
+      creditDb.getConnectionUri(),
+      resolve('../credit-service/migrations'),
+    );
+    process.env.DATABASE_URL = creditDb.getConnectionUri();
+    process.env.CREDIT_INITIAL_BALANCE = '100';
+    const creditModule = await Test.createTestingModule({
+      imports: [CreditModule],
+    })
+      .overrideProvider(ConfigService)
+      .useValue(
+        new ConfigService({
+          DATABASE_URL: creditDb.getConnectionUri(),
+          ...creditConfiguration(),
+        }),
+      )
+      .compile();
+    creditApp = creditModule.createNestApplication<NestFastifyApplication>(
+      new FastifyAdapter(),
+    );
+    creditApp.useGlobalPipes(
+      new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      }),
+    );
+    creditApp.useGlobalFilters(new CreditFilter());
+    await creditApp.init();
+    await creditApp.listen(0, '127.0.0.1');
+    creditPrisma = creditApp.get(CreditPrisma);
+    const creditAddress = creditApp
+      .getHttpAdapter()
+      .getInstance()
+      .server.address();
+    if (!creditAddress || typeof creditAddress === 'string')
+      throw new Error('Missing credit address');
+    const creditOrigin = `http://127.0.0.1:${creditAddress.port}`;
+    proxy = createServer(async (req, res) => {
+      if (outage) {
+        res
+          .writeHead(503, { 'Content-Type': 'application/json' })
+          .end('{"code":"SERVICE_UNAVAILABLE"}');
+        return;
+      }
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      const upstream = await fetch(`${creditOrigin}${req.url}`, {
+        method: req.method,
+        headers: {
+          authorization: String(req.headers.authorization || ''),
+          'Content-Type': 'application/json',
+          ...(req.headers['x-correlation-id']
+            ? { 'x-correlation-id': String(req.headers['x-correlation-id']) }
+            : {}),
+        },
+        body: body || undefined,
+      });
+      if (
+        upstream.ok &&
+        ((loseAck === 'reserve' && req.url === '/v1/credit-reservations') ||
+          (loseAck === 'adjust' && req.url?.endsWith('/adjustment')) ||
+          (loseAck === 'release' && req.url?.endsWith('/release')) ||
+          (loseAck === 'settle' && req.url?.endsWith('/settlement')))
+      ) {
+        loseAck = null;
+        res.destroy();
+        return;
+      }
+      res
+        .writeHead(upstream.status, { 'Content-Type': 'application/json' })
+        .end(await upstream.text());
+    });
+    process.env.CREDIT_SERVICE_URL = await listen(proxy);
+    lookup = createServer((req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      const identity = req.url?.match(/^\/api\/accounts\/([^/]+)\/identity$/);
+      if (identity) {
+        // Numbered couriers stand for accounts that no longer exist.
+        const username = {
+          [requesterId]: 'RequesterName',
+          [otherId]: 'OtherName',
+          [courierId]: 'CourierName',
+        }[identity[1]];
+        if (username) res.end(JSON.stringify({ id: identity[1], username }));
+        else res.writeHead(404).end('{}');
+        return;
+      }
+      if (req.url === '/api/accounts/me') {
+        const id = userFor(req.headers.authorization);
+        if (!accountActive || !id) {
+          res.writeHead(401).end('{}');
+          return;
+        }
+        res.end(
+          JSON.stringify({
+            id,
+            status: 'ACTIVE',
+            isAdmin: req.headers.authorization === 'Bearer admin',
+            emailVerifiedAt: new Date().toISOString(),
+          }),
+        );
+        return;
+      }
+      res.end(
+        JSON.stringify(
+          available
+            ? [
+                {
+                  name: 'Campus Cafe',
+                  locations: [
+                    {
+                      id: pickupId,
+                      building: 'Central Library',
+                      floor: 1,
+                      supplierAtLocation: 'Campus Cafe',
+                    },
+                  ],
+                },
+              ]
+            : [],
+        ),
+      );
+    });
+    process.env.USER_SERVICE_URL = process.env.SUPPLIER_SERVICE_URL =
+      await listen(lookup);
+    process.env.DATABASE_URL = orderDb.getConnectionUri();
+    process.env.REDIS_URL = 'redis://127.0.0.1:6380';
+    const module = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(ConfigService)
+      .useValue(
+        new ConfigService({
+          DATABASE_URL: orderDb.getConnectionUri(),
+          REDIS_URL: 'redis://127.0.0.1:6380',
+          USER_SERVICE_URL: process.env.USER_SERVICE_URL,
+          SUPPLIER_SERVICE_URL: process.env.SUPPLIER_SERVICE_URL,
+          CREDIT_SERVICE_URL: process.env.CREDIT_SERVICE_URL,
+          CREDIT_ORDER_SERVICE_TOKEN: process.env.CREDIT_ORDER_SERVICE_TOKEN,
+          // Tests drive the relay by hand (fakeRelay); never reach a real broker.
+          ORDER_EVENTS_ENABLED: 'false',
+        }),
+      )
+      .overrideProvider(RecoveryWorker)
+      .useValue({})
+      .overrideProvider(TimerWorker)
+      .useValue({})
+      .compile();
+    app = module.createNestApplication<NestFastifyApplication>(
+      new FastifyAdapter(),
+    );
+    app.useGlobalPipes(
+      new ValidationPipe({
+        transform: true,
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      }),
+    );
+    app.useGlobalFilters(new HttpFilter());
+    await app.init();
+    await app.getHttpAdapter().getInstance().ready();
+    prisma = app.get(PrismaService);
+    service = app.get(OrderService);
+  });
+  afterAll(async () => {
+    await app?.close();
+    if (proxy?.listening)
+      await new Promise<void>((done) => proxy.close(() => done()));
+    if (lookup?.listening)
+      await new Promise<void>((done) => lookup.close(() => done()));
+    await creditApp?.close();
+    await orderDb?.stop();
+    await creditDb?.stop();
+  });
+  beforeEach(async () => {
+    available = true;
+    accountActive = true;
+    outage = false;
+    loseAck = null;
+    await prisma.$executeRawUnsafe(
+      'TRUNCATE errands, errand_operations, outbox_events CASCADE',
+    );
+    await creditPrisma.$executeRawUnsafe('TRUNCATE credit_accounts CASCADE');
+    for (const userId of [requesterId, otherId]) {
+      const response = await creditApp.inject({
+        method: 'POST',
+        url: '/v1/credit-accounts',
+        headers: {
+          authorization: `Bearer ${process.env.CREDIT_USER_SERVICE_TOKEN}`,
+        },
+        payload: { userId },
+      });
+      expect(response.statusCode).toBe(201);
+    }
+  });
+  const auth = { authorization: 'Bearer requester' };
+  it('persists private bookmarks, replays mutations, and filters before pagination', async () => {
+    const first = (await create()).json().errand;
+    const second = (await create({ ...input, offeredCredits: 30 })).json()
+      .errand;
+    const star = (
+      id: string,
+      method: 'POST' | 'DELETE' = 'POST',
+      token = 'courier',
+    ) =>
+      app.inject({
+        method,
+        url: `/api/errands/${id}/star`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/api/errands/${first.id}/star`,
+        })
+      ).statusCode,
+    ).toBe(401);
+    expect((await star('invalid')).statusCode).toBe(400);
+    expect((await star(randomUUID())).statusCode).toBe(404);
+    const saves = await Promise.all([
+      star(first.id),
+      star(first.id),
+      star(second.id),
+    ]);
+    expect(saves.map((response) => response.statusCode)).toEqual([
+      200, 200, 200,
+    ]);
+    expect(
+      await prisma.errandBookmark.count({ where: { userId: courierId } }),
+    ).toBe(2);
+    const list = (token = 'courier', query = '') =>
+      app.inject({
+        method: 'GET',
+        url: `/api/errands/starred${query}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+    expect((await list('other')).json()).toEqual([]);
+    const page = await list(
+      'courier',
+      '?sort=credits-highest&limit=1&offset=1',
+    );
+    expect(page.json()).toEqual([
+      expect.objectContaining({ id: first.id, isStarred: true }),
+    ]);
+    const open = await app.inject({
+      method: 'GET',
+      url: '/api/errands',
+      headers: { authorization: 'Bearer courier' },
+    });
+    expect(
+      open.json().every((row: { isStarred: boolean }) => row.isStarred),
+    ).toBe(true);
+    await accept(first.id, 'other');
+    expect((await list()).json().map((row: { id: string }) => row.id)).toEqual([
+      second.id,
+    ]);
+    expect((await star(first.id)).statusCode).toBe(404);
+    expect((await star(first.id, 'DELETE')).json()).toEqual({
+      isStarred: false,
+    });
+    expect((await star(first.id, 'DELETE')).statusCode).toBe(200);
+    await prisma.errandBookmark.create({
+      data: { errandId: second.id, userId: requesterId },
+    });
+    for (const status of ['COMPLETED', 'EXPIRED'] as const) {
+      const now = new Date();
+      await prisma.errand.update({
+        where: { id: second.id },
+        data: {
+          status,
+          courierId: status === 'COMPLETED' ? courierId : null,
+          acceptedAt: status === 'COMPLETED' ? now : null,
+          pickedUpAt: status === 'COMPLETED' ? now : null,
+          completedAt: status === 'COMPLETED' ? now : null,
+          completionMethod:
+            status === 'COMPLETED' ? 'REQUESTER_CONFIRMED' : null,
+          expiredAt: status === 'EXPIRED' ? now : null,
+        },
+      });
+      expect((await list('requester')).json()).toEqual([]);
+      expect((await star(second.id, 'POST', 'requester')).statusCode).toBe(409);
+    }
+    await prisma.errand.update({
+      where: { id: second.id },
+      data: { deletedAt: new Date() },
+    });
+    expect((await list()).json()).toEqual([]);
+  });
+  const create = (
+    payload: object = input,
+    key = randomUUID(),
+    token = 'requester',
+  ) =>
+    app.inject({
+      method: 'POST',
+      url: '/api/errands',
+      headers: { authorization: `Bearer ${token}`, 'idempotency-key': key },
+      payload,
+    });
+  const edit = (
+    id: string,
+    payload: object,
+    key = randomUUID(),
+    token = 'requester',
+  ) =>
+    app.inject({
+      method: 'PATCH',
+      url: `/api/errands/${id}`,
+      headers: { authorization: `Bearer ${token}`, 'idempotency-key': key },
+      payload,
+    });
+  const remove = (id: string, token = 'requester', key = randomUUID()) =>
+    app.inject({
+      method: 'DELETE',
+      url: `/api/errands/${id}`,
+      headers: { authorization: `Bearer ${token}`, 'idempotency-key': key },
+    });
+  const accept = (id: string, token = 'courier') =>
+    app.inject({
+      method: 'POST',
+      url: `/api/errands/${id}/accept`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+  const read = (id: string, token: string) =>
+    app.inject({
+      method: 'GET',
+      url: `/api/errands/${id}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+  const balances = () =>
+    creditPrisma.creditAccount.findMany({
+      orderBy: { userId: 'asc' },
+      select: { userId: true, availableCredits: true, reservedCredits: true },
+    });
+  it('S4: a courier accepts an OPEN errand; both parties see it, strangers and the open list do not', async () => {
+    const id = (await create()).json().errand.id;
+    const response = await accept(id);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      id,
+      status: 'ACCEPTED',
+      courierId,
+      version: 1,
+      acceptedAt: expect.any(String),
+    });
+    const names = {
+      courierId,
+      courierUsername: 'CourierName',
+      requesterUsername: 'RequesterName',
+    };
+    expect(response.json()).toMatchObject(names);
+    expect((await read(id, 'courier')).json()).toMatchObject(names);
+    expect((await read(id, 'requester')).json()).toMatchObject(names);
+    expect((await read(id, 'other')).statusCode).toBe(404);
+    expect(
+      (
+        await app.inject({ method: 'GET', url: '/api/errands', headers: auth })
+      ).json(),
+    ).toEqual([]);
+    // The winner repeating the request gets the current state, not a second change.
+    expect((await accept(id)).json()).toMatchObject({ version: 1 });
+    expect(
+      await prisma.errandHistory.findMany({ where: { errandId: id } }),
+    ).toEqual([
+      expect.objectContaining({
+        fromStatus: 'OPEN',
+        toStatus: 'ACCEPTED',
+        action: 'accept',
+        actorRole: 'COURIER',
+        actorId: courierId,
+      }),
+    ]);
+  });
+  it('courierUsername is null while unassigned, after a release, and for a deleted courier account', async () => {
+    const id = (await create()).json().errand.id;
+    expect((await read(id, 'requester')).json()).toMatchObject({
+      courierId: null,
+      courierUsername: null,
+    });
+    await accept(id);
+    const released = await app.inject({
+      method: 'POST',
+      url: `/api/errands/${id}/courier-cancel`,
+      headers: { authorization: 'Bearer courier' },
+    });
+    expect(released.json()).toMatchObject({
+      courierId: null,
+      courierUsername: null,
+    });
+    const gone = await accept(id, 'courier-7');
+    expect(gone.statusCode).toBe(200);
+    expect(gone.json()).toMatchObject({
+      courierId: userFor('Bearer courier-7'),
+      courierUsername: null,
+      requesterUsername: 'RequesterName',
+    });
+  });
+  it('S4: rejects self-accept, unknown, deleted, taken and pending errands without changing them', async () => {
+    const id = (await create()).json().errand.id;
+    expect(
+      (await app.inject({ method: 'POST', url: `/api/errands/${id}/accept` }))
+        .statusCode,
+    ).toBe(401);
+    expect((await accept(id, 'requester')).json()).toMatchObject({
+      code: 'ERRAND_ACTION_FORBIDDEN',
+    });
+    expect((await accept(id, 'requester')).statusCode).toBe(403);
+    expect((await accept(randomUUID())).statusCode).toBe(404);
+    loseAck = 'adjust';
+    expect(
+      (await edit(id, { expectedVersion: 0, offeredCredits: 30 })).statusCode,
+    ).toBe(202);
+    expect((await accept(id)).json()).toMatchObject({
+      code: 'ERRAND_OPERATION_PENDING',
+    });
+    expect(await prisma.errand.findUnique({ where: { id } })).toMatchObject({
+      status: 'OPEN',
+      courierId: null,
+    });
+    const taken = (await create()).json().errand.id;
+    expect((await accept(taken)).statusCode).toBe(200);
+    const lost = await accept(taken, 'courier-1');
+    expect(lost.statusCode).toBe(409);
+    expect(lost.json()).toMatchObject({ code: 'ERRAND_INVALID_TRANSITION' });
+    const cancelled = (await create()).json().errand.id;
+    expect((await remove(cancelled)).statusCode).toBe(200);
+    expect((await accept(cancelled)).statusCode).toBe(409);
+    const deleted = (await create()).json().errand.id;
+    expect((await remove(deleted, 'admin')).statusCode).toBe(200);
+    expect((await accept(deleted)).statusCode).toBe(404);
+    // The taken errand's accept and the cancel; failed attempts leave no rows.
+    expect(await prisma.errandHistory.count()).toBe(2);
+  });
+  it('S4 race (FR6): 20 parallel accepts give one winner, version +1 once, losers change nothing', async () => {
+    for (let round = 0; round < 3; round++) {
+      const id = (await create()).json().errand.id;
+      const before = await balances();
+      const results = await Promise.all(
+        Array.from({ length: 20 }, (_, n) => accept(id, `courier-${n + 1}`)),
+      );
+      const winners = results.filter((result) => result.statusCode === 200);
+      expect(winners).toHaveLength(1);
+      expect(
+        results.filter((result) => result.statusCode === 409),
+      ).toHaveLength(19);
+      const winner = winners[0].json<{ courierId: string }>().courierId;
+      expect(await prisma.errand.findUnique({ where: { id } })).toMatchObject({
+        status: 'ACCEPTED',
+        courierId: winner,
+        version: 1,
+      });
+      expect((await read(id, 'requester')).json()).toMatchObject({
+        courierId: winner,
+      });
+      expect(
+        await prisma.errandHistory.count({ where: { errandId: id } }),
+      ).toBe(1);
+      expect(await balances()).toEqual(before);
+    }
+  });
+  it('S4 race: the same courier accepting twice in parallel gets the same errand twice', async () => {
+    const id = (await create()).json().errand.id;
+    const results = await Promise.all([accept(id), accept(id)]);
+    expect(results.map((result) => result.statusCode)).toEqual([200, 200]);
+    expect(await prisma.errand.findUnique({ where: { id } })).toMatchObject({
+      courierId,
+      version: 1,
+    });
+    expect(await prisma.errandHistory.count()).toBe(1);
+  });
+  const act = (id: string, action: string, token: string) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/errands/${id}/${action}`,
+      headers: { authorization: `Bearer ${token}` },
+      ...(action === 'dispute'
+        ? { payload: { statement: 'The delivery was not received as agreed.' } }
+        : action === 'respond-dispute'
+          ? { payload: { statement: 'I delivered it to the agreed location.' } }
+          : {}),
+    });
+  const resolveDispute = (
+    id: string,
+    outcome: 'REFUND_REQUESTER' | 'PAY_COURIER',
+    key = randomUUID(),
+    token = 'admin',
+  ) =>
+    app.inject({
+      method: 'POST',
+      url: `/api/errands/${id}/resolve-dispute`,
+      headers: {
+        authorization: `Bearer ${token}`,
+        'idempotency-key': key,
+      },
+      payload: { outcome },
+    });
+  const provisionCourier = async () => {
+    const response = await creditApp.inject({
+      method: 'POST',
+      url: '/v1/credit-accounts',
+      headers: {
+        authorization: `Bearer ${process.env.CREDIT_USER_SERVICE_TOKEN}`,
+      },
+      payload: { userId: courierId },
+    });
+    expect([200, 201]).toContain(response.statusCode);
+  };
+  describe('courier reviews and ratings', () => {
+    it('shows your own all-time average and only your three newest written comments', async () => {
+      const comments = [
+        'Oldest comment',
+        undefined,
+        'Third-newest comment',
+        'Second-newest comment',
+        'Newest comment',
+      ];
+      const stars = [5, 4, 1, 3, 2];
+      for (let index = 0; index < comments.length; index++) {
+        const id = await completedErrandForReview();
+        expect(
+          (
+            await review(id, {
+              stars: stars[index],
+              ...(comments[index] ? { comment: comments[index] } : {}),
+            })
+          ).statusCode,
+        ).toBe(200);
+        await prisma.courierReview.update({
+          where: { errandId: id },
+          data: {
+            createdAt: new Date(
+              `2026-10-${String(index + 1).padStart(2, '0')}T12:00:00Z`,
+            ),
+          },
+        });
+      }
+      const overview = await app.inject({
+        method: 'GET',
+        url: '/api/couriers/me/review-overview',
+        headers: { authorization: 'Bearer courier' },
+      });
+      expect(overview.statusCode).toBe(200);
+      expect(overview.json()).toMatchObject({
+        courierId,
+        averageStars: 3,
+        reviewCount: 5,
+      });
+      expect(
+        overview
+          .json()
+          .recentComments.map((value: { comment: string }) => value.comment),
+      ).toEqual([
+        'Newest comment',
+        'Second-newest comment',
+        'Third-newest comment',
+      ]);
+      expect(Object.keys(overview.json().recentComments[0]).sort()).toEqual([
+        'comment',
+        'createdAt',
+        'id',
+        'stars',
+      ]);
+      for (const token of ['requester', 'admin']) {
+        const empty = await app.inject({
+          method: 'GET',
+          url: `/api/couriers/me/review-overview?courierId=${courierId}`,
+          headers: { authorization: `Bearer ${token}` },
+        });
+        expect(empty.statusCode).toBe(200);
+        expect(empty.json()).toEqual({
+          courierId: token === 'requester' ? requesterId : otherId,
+          averageStars: null,
+          reviewCount: 0,
+          recentComments: [],
+        });
+      }
+      expect(
+        (
+          await app.inject({
+            method: 'GET',
+            url: '/api/couriers/me/review-overview',
+          })
+        ).statusCode,
+      ).toBe(401);
+    });
+
+    it('returns an empty comment list when ratings have no written comments', async () => {
+      const id = await completedErrandForReview();
+      expect((await review(id, { stars: 4 })).statusCode).toBe(200);
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/couriers/me/review-overview',
+        headers: { authorization: 'Bearer courier' },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        courierId,
+        averageStars: 4,
+        reviewCount: 1,
+        recentComments: [],
+      });
+    });
+    it('reads a saved review after refresh and returns null before submission', async () => {
+      const id = await completedErrandForReview();
+      const readReview = (token = 'requester') =>
+        app.inject({
+          method: 'GET',
+          url: `/api/errands/${id}/review`,
+          headers: { authorization: `Bearer ${token}` },
+        });
+      const empty = await readReview();
+      expect(empty.statusCode).toBe(200);
+      expect(empty.json()).toEqual({ review: null });
+      const submitted = await review(id, {
+        stars: 5,
+        comment: 'Reliable courier',
+      });
+      expect(submitted.statusCode).toBe(200);
+      for (const token of ['requester', 'courier', 'admin']) {
+        const response = await readReview(token);
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({ review: submitted.json() });
+      }
+      expect((await readReview('other')).statusCode).toBe(404);
+      expect(
+        (await app.inject({ method: 'GET', url: `/api/errands/${id}/review` }))
+          .statusCode,
+      ).toBe(401);
+      await prisma.errand.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
+      expect((await readReview()).statusCode).toBe(404);
+    });
+
+    it('rejects malformed or missing errand IDs on review reads', async () => {
+      expect(
+        (
+          await app.inject({
+            method: 'GET',
+            url: '/api/errands/invalid/review',
+            headers: auth,
+          })
+        ).statusCode,
+      ).toBe(400);
+      expect(
+        (
+          await app.inject({
+            method: 'GET',
+            url: `/api/errands/${randomUUID()}/review`,
+            headers: auth,
+          })
+        ).statusCode,
+      ).toBe(404);
+    });
+    async function completedErrandForReview() {
+      const created = await create();
+      expect(created.statusCode).toBe(201);
+      const id: string = created.json().errand.id;
+      expect((await accept(id)).statusCode).toBe(200);
+      expect((await act(id, 'pickup', 'courier')).statusCode).toBe(200);
+      expect((await act(id, 'deliver', 'courier')).statusCode).toBe(200);
+      const confirmed = await act(id, 'confirm', 'requester');
+      expect(confirmed.statusCode).toBe(200);
+      expect(confirmed.json().status).toBe('COMPLETED');
+      return id;
+    }
+
+    const review = (id: string, payload: object, token = 'requester') =>
+      app.inject({
+        method: 'POST',
+        url: `/api/errands/${id}/review`,
+        headers: { authorization: `Bearer ${token}` },
+        payload,
+      });
+    const summary = (id = courierId) =>
+      app.inject({
+        method: 'GET',
+        url: `/api/couriers/${id}/rating-summary`,
+        headers: auth,
+      });
+
+    it('persists a normalised review, derives its actors, and leaves credits unchanged', async () => {
+      const id = await completedErrandForReview();
+      const before = await balances();
+      const response = await review(id, {
+        stars: 5,
+        comment: '  Quick delivery!  ',
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        errandId: id,
+        requesterId,
+        courierId,
+        stars: 5,
+        comment: 'Quick delivery!',
+      });
+      expect(
+        await prisma.courierReview.findUnique({ where: { errandId: id } }),
+      ).toMatchObject({
+        id: response.json().id,
+        requesterId,
+        courierId,
+        stars: 5,
+      });
+      expect(await balances()).toEqual(before);
+      const result = await summary();
+      expect(result.statusCode).toBe(200);
+      expect(result.json()).toEqual({
+        courierId,
+        averageStars: 5,
+        reviewCount: 1,
+      });
+    });
+
+    it('replays concurrent identical submissions as one persisted review', async () => {
+      const id = await completedErrandForReview();
+      const results = await Promise.all([
+        review(id, { stars: 4, comment: '  Thanks!  ' }),
+        review(id, { stars: 4, comment: 'Thanks!' }),
+      ]);
+      expect(results.map((result) => result.statusCode)).toEqual([200, 200]);
+      expect(results[0].json().id).toBe(results[1].json().id);
+      expect(
+        await prisma.courierReview.count({ where: { errandId: id } }),
+      ).toBe(1);
+    });
+
+    it('allows only one of two concurrent different reviews', async () => {
+      const id = await completedErrandForReview();
+      const results = await Promise.all([
+        review(id, { stars: 5 }),
+        review(id, { stars: 1 }),
+      ]);
+      expect(results.map((result) => result.statusCode).sort()).toEqual([
+        200, 409,
+      ]);
+      expect(
+        results.find((result) => result.statusCode === 409)?.json().code,
+      ).toBe('REVIEW_ALREADY_EXISTS');
+      expect(
+        await prisma.courierReview.count({ where: { errandId: id } }),
+      ).toBe(1);
+    });
+
+    it.each(['courier', 'other', 'admin'])(
+      'rejects a review by non-owner %s',
+      async (token) => {
+        const id = await completedErrandForReview();
+        const response = await review(id, { stars: 5 }, token);
+        expect(response.statusCode).toBe(403);
+        expect(response.json().code).toBe('REVIEW_REQUESTER_REQUIRED');
+        expect(await prisma.courierReview.count()).toBe(0);
+      },
+    );
+
+    it('requires authentication on both endpoints', async () => {
+      const id = await completedErrandForReview();
+      for (const request of [
+        {
+          method: 'POST' as const,
+          url: `/api/errands/${id}/review`,
+          payload: { stars: 5 },
+        },
+        {
+          method: 'GET' as const,
+          url: `/api/couriers/${courierId}/rating-summary`,
+        },
+      ])
+        expect((await app.inject(request)).statusCode).toBe(401);
+    });
+
+    it.each([
+      {},
+      { stars: 0 },
+      { stars: 6 },
+      { stars: 2.5 },
+      { stars: '5' },
+      { stars: null },
+      { stars: 5, comment: null },
+      { stars: 5, comment: 12 },
+      { stars: 5, comment: 'a'.repeat(1001) },
+      { stars: 5, courierId: otherId },
+      { stars: 5, requesterId: otherId },
+    ])(
+      'rejects invalid or caller-supplied identity fields (case %#)',
+      async (payload) => {
+        const id = await completedErrandForReview();
+        expect((await review(id, payload)).statusCode).toBe(400);
+        expect(await prisma.courierReview.count()).toBe(0);
+      },
+    );
+
+    it('stores blank comments as null and replays an omitted comment', async () => {
+      const id = await completedErrandForReview();
+      const first = await review(id, { stars: 3, comment: '   ' });
+      const replay = await review(id, { stars: 3 });
+      expect(first.statusCode).toBe(200);
+      expect(replay.statusCode).toBe(200);
+      expect(first.json().comment).toBeNull();
+      expect(replay.json().id).toBe(first.json().id);
+    });
+
+    it('accepts a 1000-character comment after trimming', async () => {
+      const id = await completedErrandForReview();
+      const response = await review(id, {
+        stars: 5,
+        comment: `  ${'a'.repeat(1000)}  `,
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().comment).toHaveLength(1000);
+    });
+
+    it('rejects reviews before completion', async () => {
+      const id = (await create()).json().errand.id;
+      for (const stage of ['open', 'accept', 'pickup', 'deliver']) {
+        if (stage === 'accept') expect((await accept(id)).statusCode).toBe(200);
+        if (stage === 'pickup' || stage === 'deliver')
+          expect((await act(id, stage, 'courier')).statusCode).toBe(200);
+        const response = await review(id, { stars: 5 });
+        expect(response.statusCode).toBe(409);
+        expect(response.json().code).toBe('ERRAND_NOT_REVIEWABLE');
+      }
+    });
+
+    it('returns 404 for missing or deleted errands', async () => {
+      const missing = await review(randomUUID(), { stars: 5 });
+      expect(missing.statusCode).toBe(404);
+      const id = await completedErrandForReview();
+      await prisma.errand.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
+      const deleted = await review(id, { stars: 5 });
+      expect(deleted.statusCode).toBe(404);
+      expect(await prisma.courierReview.count()).toBe(0);
+    });
+
+    it('returns null average for no reviews and calculates a fractional average', async () => {
+      expect((await summary()).json()).toEqual({
+        courierId,
+        averageStars: null,
+        reviewCount: 0,
+      });
+      const first = await completedErrandForReview();
+      const second = await completedErrandForReview();
+      expect((await review(first, { stars: 5 })).statusCode).toBe(200);
+      expect((await review(second, { stars: 4 })).statusCode).toBe(200);
+      expect((await summary()).json()).toEqual({
+        courierId,
+        averageStars: 4.5,
+        reviewCount: 2,
+      });
+      expect((await summary(otherId)).json()).toEqual({
+        courierId: otherId,
+        averageStars: null,
+        reviewCount: 0,
+      });
+    });
+
+    it('rejects malformed errand and courier UUIDs', async () => {
+      expect((await review('invalid', { stars: 5 })).statusCode).toBe(400);
+      expect((await summary('invalid')).statusCode).toBe(400);
+    });
+
+    it('enforces stars, unique errand, and no-self-review constraints in PostgreSQL', async () => {
+      const id = await completedErrandForReview();
+      const data = { errandId: id, requesterId, courierId, stars: 5 };
+      await expect(
+        prisma.courierReview.create({ data: { ...data, stars: 0 } }),
+      ).rejects.toThrow();
+      await expect(
+        prisma.courierReview.create({
+          data: { ...data, courierId: requesterId },
+        }),
+      ).rejects.toThrow();
+      await prisma.courierReview.create({ data });
+      await expect(prisma.courierReview.create({ data })).rejects.toThrow();
+      expect(await prisma.courierReview.count()).toBe(1);
+    });
+  });
+  it('S5: courier picks up and delivers, requester disputes; timestamps and history, no credit movement', async () => {
+    const id = (await create()).json().errand.id;
+    expect((await accept(id)).statusCode).toBe(200);
+    const before = await balances();
+    const pickedUp = await act(id, 'pickup', 'courier');
+    expect(pickedUp.statusCode).toBe(200);
+    expect(pickedUp.json()).toMatchObject({
+      status: 'PICKED_UP',
+      version: 2,
+      pickedUpAt: expect.any(String),
+    });
+    expect((await act(id, 'deliver', 'courier')).json()).toMatchObject({
+      status: 'DELIVERED',
+      deliveredAt: expect.any(String),
+    });
+    expect((await act(id, 'dispute', 'requester')).json()).toMatchObject({
+      status: 'DISPUTED',
+      version: 4,
+      disputedAt: expect.any(String),
+      completionMethod: null,
+    });
+    expect(
+      (
+        await prisma.errandHistory.findMany({
+          where: { errandId: id },
+          orderBy: { occurredAt: 'asc' },
+        })
+      ).map((row) => [row.fromStatus, row.toStatus, row.actorRole]),
+    ).toEqual([
+      ['OPEN', 'ACCEPTED', 'COURIER'],
+      ['ACCEPTED', 'PICKED_UP', 'COURIER'],
+      ['PICKED_UP', 'DELIVERED', 'COURIER'],
+      ['DELIVERED', 'DISPUTED', 'REQUESTER'],
+    ]);
+    expect(await balances()).toEqual(before);
+  });
+  it('S5: wrong actor gets 403, wrong state 409, a repeat returns the current state', async () => {
+    const id = (await create()).json().errand.id;
+    expect(
+      (await app.inject({ method: 'POST', url: `/api/errands/${id}/pickup` }))
+        .statusCode,
+    ).toBe(401);
+    expect((await act(id, 'pickup', 'courier')).statusCode).toBe(403);
+    expect((await accept(id)).statusCode).toBe(200);
+    expect((await act(id, 'pickup', 'requester')).statusCode).toBe(403);
+    expect((await act(id, 'pickup', 'other')).json()).toMatchObject({
+      code: 'ERRAND_ACTION_FORBIDDEN',
+    });
+    expect((await act(id, 'dispute', 'courier')).statusCode).toBe(403);
+    expect((await act(id, 'deliver', 'courier')).json()).toMatchObject({
+      code: 'ERRAND_INVALID_TRANSITION',
+    });
+    expect((await act(id, 'pickup', 'courier')).statusCode).toBe(200);
+    expect((await act(id, 'dispute', 'requester')).statusCode).toBe(409);
+    expect((await act(id, 'pickup', 'courier')).json()).toMatchObject({
+      status: 'PICKED_UP',
+      version: 2,
+    });
+    expect((await act(id, 'deliver', 'courier')).statusCode).toBe(200);
+    expect((await act(id, 'pickup', 'courier')).statusCode).toBe(409);
+    expect((await act(randomUUID(), 'deliver', 'courier')).statusCode).toBe(
+      404,
+    );
+    expect(await prisma.errandHistory.count({ where: { errandId: id } })).toBe(
+      3,
+    );
+  });
+  it('requires and persists the requester statement atomically with the dispute', async () => {
+    const id = await errandIn('DELIVERED');
+    const blank = await app.inject({
+      method: 'POST',
+      url: `/api/errands/${id}/dispute`,
+      headers: { authorization: 'Bearer requester' },
+      payload: { statement: '   ' },
+    });
+    expect(blank.statusCode).toBe(400);
+    expect(await statusOf(id)).toBe('DELIVERED');
+    expect(await prisma.errandDispute.count()).toBe(0);
+    expect((await act(id, 'dispute', 'courier')).statusCode).toBe(403);
+    const disputed = await act(id, 'dispute', 'requester');
+    expect(disputed.statusCode).toBe(200);
+    expect(disputed.json()).toMatchObject({
+      status: 'DISPUTED',
+      dispute: {
+        status: 'OPEN',
+        requesterId,
+        courierId,
+        requesterStatement: 'The delivery was not received as agreed.',
+        requesterSubmittedAt: expect.any(String),
+        courierStatement: null,
+      },
+    });
+    expect((await act(id, 'dispute', 'requester')).statusCode).toBe(200);
+    expect(await prisma.errandDispute.count()).toBe(1);
+  });
+  it('allows only the assigned courier to finalize one response', async () => {
+    const id = await errandIn('DELIVERED');
+    await act(id, 'dispute', 'requester');
+    expect((await act(id, 'respond-dispute', 'requester')).statusCode).toBe(
+      403,
+    );
+    expect((await act(id, 'respond-dispute', 'other')).statusCode).toBe(403);
+    const response = await act(id, 'respond-dispute', 'courier');
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      dispute: {
+        courierId,
+        courierStatement: 'I delivered it to the agreed location.',
+        courierSubmittedAt: expect.any(String),
+      },
+    });
+    expect((await act(id, 'respond-dispute', 'courier')).statusCode).toBe(200);
+    const changed = await app.inject({
+      method: 'POST',
+      url: `/api/errands/${id}/respond-dispute`,
+      headers: { authorization: 'Bearer courier' },
+      payload: { statement: 'A changed response.' },
+    });
+    expect(changed.statusCode).toBe(409);
+  });
+  it('blocks resolution until both statements exist and requires an administrator', async () => {
+    const id = await errandIn('DELIVERED');
+    await act(id, 'dispute', 'requester');
+    expect((await resolveDispute(id, 'REFUND_REQUESTER')).statusCode).toBe(409);
+    await act(id, 'respond-dispute', 'courier');
+    expect(
+      (await resolveDispute(id, 'REFUND_REQUESTER', randomUUID(), 'requester'))
+        .statusCode,
+    ).toBe(403);
+    expect(await statusOf(id)).toBe('DISPUTED');
+  });
+  it('refunds once and retains the complete final dispute audit record', async () => {
+    const id = await errandIn('DELIVERED');
+    await act(id, 'dispute', 'requester');
+    await act(id, 'respond-dispute', 'courier');
+    const key = randomUUID();
+    const resolved = await resolveDispute(id, 'REFUND_REQUESTER', key);
+    expect(resolved.statusCode).toBe(200);
+    expect(resolved.json()).toMatchObject({
+      status: 'SUCCEEDED',
+      errand: {
+        status: 'RESOLVED',
+        dispute: {
+          status: 'RESOLVED',
+          outcome: 'REFUND_REQUESTER',
+          resolvedBy: otherId,
+          resolvedAt: expect.any(String),
+          requesterStatement: 'The delivery was not received as agreed.',
+          courierStatement: 'I delivered it to the agreed location.',
+        },
+      },
+    });
+    expect((await resolveDispute(id, 'REFUND_REQUESTER', key)).statusCode).toBe(
+      200,
+    );
+    expect((await resolveDispute(id, 'PAY_COURIER')).statusCode).toBe(409);
+    expect(
+      (
+        await app.inject({
+          method: 'DELETE',
+          url: `/api/errands/${id}`,
+          headers: {
+            authorization: 'Bearer admin',
+            'idempotency-key': randomUUID(),
+          },
+        })
+      ).statusCode,
+    ).toBe(409);
+    expect(await balances()).toContainEqual({
+      userId: requesterId,
+      availableCredits: 100,
+      reservedCredits: 0,
+    });
+    expect(
+      await creditPrisma.ledgerEntry.count({
+        where: { errandId: id, type: 'RELEASE' },
+      }),
+    ).toBe(1);
+  });
+  it('pays the courier once through the Credit Service ledger', async () => {
+    await provisionCourier();
+    const id = await errandIn('DELIVERED');
+    await act(id, 'dispute', 'requester');
+    await act(id, 'respond-dispute', 'courier');
+    const key = randomUUID();
+    expect((await resolveDispute(id, 'PAY_COURIER', key)).json()).toMatchObject(
+      {
+        status: 'SUCCEEDED',
+        errand: {
+          status: 'RESOLVED',
+          dispute: { outcome: 'PAY_COURIER' },
+        },
+      },
+    );
+    expect((await resolveDispute(id, 'PAY_COURIER', key)).statusCode).toBe(200);
+    expect(await balances()).toContainEqual({
+      userId: requesterId,
+      availableCredits: 80,
+      reservedCredits: 0,
+    });
+    expect(
+      await creditPrisma.creditAccount.findUniqueOrThrow({
+        where: { userId: courierId },
+      }),
+    ).toMatchObject({ availableCredits: 120 });
+    expect(
+      await creditPrisma.ledgerEntry.count({
+        where: { errandId: id, type: 'SETTLE' },
+      }),
+    ).toBe(2);
+  });
+  it('serializes conflicting administrator decisions to one financial outcome', async () => {
+    await provisionCourier();
+    const id = await errandIn('DELIVERED');
+    await act(id, 'dispute', 'requester');
+    await act(id, 'respond-dispute', 'courier');
+    const results = await Promise.all([
+      resolveDispute(id, 'REFUND_REQUESTER'),
+      resolveDispute(id, 'PAY_COURIER'),
+    ]);
+    expect(results.map((result) => result.statusCode).sort()).toEqual([
+      200, 409,
+    ]);
+    const dispute = await prisma.errandDispute.findUniqueOrThrow({
+      where: { errandId: id },
+    });
+    expect(dispute.status).toBe('RESOLVED');
+    const reservation = await creditPrisma.creditReservation.findUniqueOrThrow({
+      where: { errandId: id },
+    });
+    expect([
+      ['REFUND_REQUESTER', 'RELEASED'],
+      ['PAY_COURIER', 'SETTLED'],
+    ]).toContainEqual([dispute.outcome, reservation.status]);
+  });
+  it('recovers a lost credit acknowledgement before recording resolution', async () => {
+    await provisionCourier();
+    const id = await errandIn('DELIVERED');
+    await act(id, 'dispute', 'requester');
+    await act(id, 'respond-dispute', 'courier');
+    loseAck = 'settle';
+    const pending = await resolveDispute(id, 'PAY_COURIER');
+    expect(pending.statusCode).toBe(202);
+    const operationId = pending.json().operationId as string;
+    expect(await statusOf(id)).toBe('DISPUTED');
+    expect(
+      await creditPrisma.creditReservation.findUniqueOrThrow({
+        where: { errandId: id },
+      }),
+    ).toMatchObject({ status: 'SETTLED' });
+    await service.process(operationId);
+    expect(await statusOf(id)).toBe('RESOLVED');
+    expect(
+      await creditPrisma.ledgerEntry.count({
+        where: { errandId: id, type: 'SETTLE' },
+      }),
+    ).toBe(2);
+  });
+  it('S5 race: 10 parallel pickups by the assigned courier apply once', async () => {
+    const id = (await create()).json().errand.id;
+    await accept(id);
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => act(id, 'pickup', 'courier')),
+    );
+    expect(results.every((result) => result.statusCode === 200)).toBe(true);
+    expect(await prisma.errand.findUnique({ where: { id } })).toMatchObject({
+      status: 'PICKED_UP',
+      version: 2,
+    });
+    expect(await prisma.errandHistory.count({ where: { errandId: id } })).toBe(
+      2,
+    );
+  });
+  /** Creates an errand and walks it to `status` through the real routes. */
+  const errandIn = async (status: 'PICKED_UP' | 'DELIVERED') => {
+    const id = (await create()).json().errand.id;
+    await accept(id);
+    await act(id, 'pickup', 'courier');
+    if (status === 'DELIVERED') await act(id, 'deliver', 'courier');
+    return id as string;
+  };
+  it('S6a: requester confirms; errand.completed.v1 is written once with exactly the credit payload', async () => {
+    const id = await errandIn('DELIVERED');
+    const correlationId = randomUUID();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/errands/${id}/confirm`,
+      headers: {
+        authorization: 'Bearer requester',
+        'x-correlation-id': correlationId,
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: 'COMPLETED',
+      completionMethod: 'REQUESTER_CONFIRMED',
+      completedAt: expect.any(String),
+    });
+    expect((await act(id, 'confirm', 'requester')).statusCode).toBe(200);
+    const events = await prisma.outboxEvent.findMany();
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      aggregateId: id,
+      eventType: 'errand.completed.v1',
+      headers: { 'x-correlation-id': correlationId },
+      publishedAt: null,
+    });
+    expect(events[0].payload).toStrictEqual({
+      errandId: id,
+      requesterId,
+      courierId,
+      amount: input.offeredCredits,
+    });
+  });
+  it('S6a contract: credit-service settles the stored event, paying the courier once', async () => {
+    expect(
+      (
+        await creditApp.inject({
+          method: 'POST',
+          url: '/v1/credit-accounts',
+          headers: {
+            authorization: `Bearer ${process.env.CREDIT_USER_SERVICE_TOKEN}`,
+          },
+          payload: { userId: courierId },
+        })
+      ).statusCode,
+    ).toBe(201);
+    const id = await errandIn('PICKED_UP');
+    expect((await act(id, 'confirm', 'requester')).json()).toMatchObject({
+      status: 'COMPLETED',
+      completionMethod: 'REQUESTER_CONFIRMED',
+    });
+    const event = await prisma.outboxEvent.findFirstOrThrow({
+      where: { aggregateId: id },
+    });
+    const envelope = {
+      eventId: event.id,
+      eventType: event.eventType,
+      data: event.payload as never,
+    };
+    const handler = creditApp.get(CreditEventsHandler);
+    await handler.handleErrandCompleted(envelope);
+    await handler.handleErrandCompleted(envelope);
+    const account = (userId: string) =>
+      creditPrisma.creditAccount.findUnique({ where: { userId } });
+    expect(await account(requesterId)).toMatchObject({
+      availableCredits: 80,
+      reservedCredits: 0,
+    });
+    expect(await account(courierId)).toMatchObject({ availableCredits: 120 });
+  });
+  it('S6a: only the requester confirms, and only from PICKED_UP or DELIVERED', async () => {
+    const id = (await create()).json().errand.id;
+    expect((await act(id, 'confirm', 'requester')).statusCode).toBe(409);
+    await accept(id);
+    expect((await act(id, 'confirm', 'requester')).statusCode).toBe(409);
+    await act(id, 'pickup', 'courier');
+    expect((await act(id, 'confirm', 'courier')).statusCode).toBe(403);
+    expect((await act(id, 'confirm', 'other')).statusCode).toBe(403);
+    await act(id, 'deliver', 'courier');
+    await act(id, 'dispute', 'requester');
+    expect((await act(id, 'confirm', 'requester')).statusCode).toBe(409);
+    expect(await prisma.outboxEvent.count()).toBe(0);
+  });
+  it('S6a race: confirm vs dispute on DELIVERED has exactly one winner', async () => {
+    for (let round = 0; round < 5; round++) {
+      const id = await errandIn('DELIVERED');
+      const results = await Promise.all([
+        act(id, 'confirm', 'requester'),
+        act(id, 'dispute', 'requester'),
+      ]);
+      expect(results.map((result) => result.statusCode).sort()).toEqual([
+        200, 409,
+      ]);
+      const { status } = await prisma.errand.findUniqueOrThrow({
+        where: { id },
+      });
+      expect(
+        await prisma.outboxEvent.count({ where: { aggregateId: id } }),
+      ).toBe(status === 'COMPLETED' ? 1 : 0);
+      expect(
+        await prisma.errandHistory.count({ where: { errandId: id } }),
+      ).toBe(4);
+    }
+  });
+  it('S6a race: early confirm vs deliver always ends COMPLETED with one event', async () => {
+    for (let round = 0; round < 5; round++) {
+      const id = await errandIn('PICKED_UP');
+      const [confirmed, delivered] = await Promise.all([
+        act(id, 'confirm', 'requester'),
+        act(id, 'deliver', 'courier'),
+      ]);
+      // If deliver commits first, confirm re-reads DELIVERED and still completes.
+      expect(confirmed.statusCode).toBe(200);
+      expect(await prisma.errand.findUnique({ where: { id } })).toMatchObject({
+        status: 'COMPLETED',
+        completionMethod: 'REQUESTER_CONFIRMED',
+      });
+      expect(
+        await prisma.outboxEvent.count({ where: { aggregateId: id } }),
+      ).toBe(1);
+      expect(
+        await prisma.errandHistory.count({ where: { errandId: id } }),
+      ).toBe(delivered.statusCode === 200 ? 4 : 3);
+    }
+  });
+  it('S6a race: 10 parallel confirms produce one completion and one event', async () => {
+    const id = await errandIn('DELIVERED');
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => act(id, 'confirm', 'requester')),
+    );
+    expect(results.every((result) => result.statusCode === 200)).toBe(true);
+    expect(await prisma.outboxEvent.count({ where: { aggregateId: id } })).toBe(
+      1,
+    );
+    expect(await prisma.errand.findUnique({ where: { id } })).toMatchObject({
+      status: 'COMPLETED',
+      version: 4,
+    });
+  });
+  /**
+   * Relay wired to an in-memory confirm channel; `nack` makes the broker reject and
+   * `unroutable` makes it return the message (no queue bound) before confirming.
+   */
+  function fakeRelay(
+    config: Record<string, string> = { ORDER_EVENTS_ENABLED: 'true' },
+  ) {
+    const sent: { routingKey: string; body: unknown; options: unknown }[] = [];
+    const broker = { nack: false, unroutable: false };
+    let onReturn: (message: unknown) => void = () => undefined;
+    const channel = {
+      assertExchange: jest.fn(() => Promise.resolve()),
+      close: () => Promise.resolve(),
+      on: (event: string, listener: (message: unknown) => void) => {
+        if (event === 'return') onReturn = listener;
+      },
+      publish: (
+        _exchange: string,
+        routingKey: string,
+        content: Buffer,
+        options: { messageId: string },
+        done: (error: Error | null) => void,
+      ) => {
+        if (broker.nack) return done(new Error('nack'));
+        if (broker.unroutable) {
+          onReturn({ properties: { messageId: options.messageId } });
+          return done(null);
+        }
+        sent.push({
+          routingKey,
+          body: JSON.parse(content.toString()),
+          options,
+        });
+        done(null);
+      },
+    };
+    class TestRelay extends OutboxRelay {
+      protected open() {
+        return Promise.resolve({
+          on: () => undefined,
+          close: () => Promise.resolve(),
+          createConfirmChannel: () => Promise.resolve(channel),
+        } as unknown as ChannelModel);
+      }
+    }
+    const relay = new TestRelay(prisma, new ConfigService(config));
+    return { relay, sent, broker, channel };
+  }
+  it("S6a relay: publishes credit's envelope after broker confirm, once per event", async () => {
+    const id = await errandIn('DELIVERED');
+    const correlationId = randomUUID();
+    await app.inject({
+      method: 'POST',
+      url: `/api/errands/${id}/confirm`,
+      headers: {
+        authorization: 'Bearer requester',
+        'x-correlation-id': correlationId,
+      },
+    });
+    const event = await prisma.outboxEvent.findFirstOrThrow();
+    const { relay, sent, channel } = fakeRelay();
+    expect(await relay.publishPending()).toBe(1);
+    expect(channel.assertExchange).toHaveBeenCalledWith('foc.events', 'topic', {
+      durable: true,
+    });
+    expect(sent).toEqual([
+      {
+        routingKey: 'errand.completed.v1',
+        body: {
+          pattern: 'errand.completed.v1',
+          data: {
+            eventId: event.id,
+            eventType: 'errand.completed.v1',
+            data: { errandId: id, requesterId, courierId, amount: 20 },
+          },
+        },
+        options: expect.objectContaining({
+          deliveryMode: 2,
+          mandatory: true,
+          messageId: event.id,
+          contentType: 'application/json',
+          headers: { 'x-correlation-id': correlationId },
+        }),
+      },
+    ]);
+    expect(
+      (await prisma.outboxEvent.findUniqueOrThrow({ where: { id: event.id } }))
+        .publishedAt,
+    ).toBeInstanceOf(Date);
+    expect(await relay.publishPending()).toBe(0);
+    expect(sent).toHaveLength(1);
+    await relay.onModuleDestroy();
+  });
+  it('S6a relay: a broker rejection keeps the row pending and the retry reuses the eventId', async () => {
+    const id = await errandIn('DELIVERED');
+    await act(id, 'confirm', 'requester');
+    const { relay, sent, broker } = fakeRelay();
+    broker.nack = true;
+    expect(await relay.publishPending()).toBe(0);
+    expect(
+      await prisma.outboxEvent.count({ where: { publishedAt: null } }),
+    ).toBe(1);
+    broker.nack = false;
+    expect(await relay.publishPending()).toBe(1);
+    const event = await prisma.outboxEvent.findFirstOrThrow();
+    expect(sent.map((message) => message.options)).toEqual([
+      expect.objectContaining({ messageId: event.id }),
+    ]);
+    expect(event.publishedAt).toBeInstanceOf(Date);
+    await relay.onModuleDestroy();
+  });
+  it('relay: an unroutable event (no queue bound yet) stays pending until a consumer binds', async () => {
+    const id = await errandIn('DELIVERED');
+    await act(id, 'confirm', 'requester');
+    const { relay, sent, broker } = fakeRelay();
+    broker.unroutable = true;
+    expect(await relay.publishPending()).toBe(0);
+    expect(
+      await prisma.outboxEvent.count({ where: { publishedAt: null } }),
+    ).toBe(1);
+    broker.unroutable = false;
+    expect(await relay.publishPending()).toBe(1);
+    expect(sent).toHaveLength(1);
+    expect(
+      await prisma.outboxEvent.count({ where: { publishedAt: null } }),
+    ).toBe(0);
+    await relay.onModuleDestroy();
+  });
+  it.each([
+    [{}, 1],
+    [{ ORDER_EVENTS_ENABLED: 'true' }, 1],
+    [{ ORDER_EVENTS_ENABLED: 'false' }, 0],
+  ])(
+    'relay: config %j publishes %i event on start (on unless explicitly false)',
+    async (config, expected) => {
+      const id = await errandIn('DELIVERED');
+      await act(id, 'confirm', 'requester');
+      const { relay, sent } = fakeRelay(config);
+      relay.onModuleInit();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await relay.onModuleDestroy();
+      expect(sent).toHaveLength(expected);
+    },
+  );
+  /** Moves an errand's lifecycle timestamps into the past instead of waiting. */
+  const age = (id: string, interval: string) =>
+    prisma.$executeRaw`UPDATE "errands" SET "accepted_at" = "accepted_at" - ${interval}::interval, "picked_up_at" = "picked_up_at" - ${interval}::interval, "delivered_at" = "delivered_at" - ${interval}::interval WHERE "id" = ${id}::uuid`;
+  it('S6b: a DELIVERED errand completes automatically after 4 h with one event (D-008)', async () => {
+    const due = await errandIn('DELIVERED');
+    const early = await errandIn('DELIVERED');
+    await age(due, '4 hours 1 second');
+    await age(early, '3 hours 59 minutes');
+    expect(await service.autoComplete(early)).toBe(false);
+    expect(
+      await app.get<OrderRepository>(ORDER_REPOSITORY).dueAutoCompletions(),
+    ).toEqual([due]);
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => service.autoComplete(due)),
+    );
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(
+      await prisma.errand.findUnique({ where: { id: due } }),
+    ).toMatchObject({ status: 'COMPLETED', completionMethod: 'AUTO_TIMEOUT' });
+    expect(await prisma.outboxEvent.findMany()).toEqual([
+      expect.objectContaining({
+        aggregateId: due,
+        payload: { errandId: due, requesterId, courierId, amount: 20 },
+      }),
+    ]);
+    expect(
+      await prisma.errandHistory.findFirst({
+        where: { errandId: due, toStatus: 'COMPLETED' },
+      }),
+    ).toMatchObject({
+      actorRole: 'SYSTEM',
+      actorId: null,
+      action: 'auto-complete',
+    });
+    expect(
+      await prisma.errand.findUnique({ where: { id: early } }),
+    ).toMatchObject({ status: 'DELIVERED', completionMethod: null });
+    expect((await act(due, 'confirm', 'requester')).statusCode).toBe(200);
+    expect(await prisma.outboxEvent.count()).toBe(1);
+  });
+  it('S6b: a dispute at 3h59m wins; the later job is a no-op', async () => {
+    const id = await errandIn('DELIVERED');
+    await age(id, '3 hours 59 minutes');
+    expect((await act(id, 'dispute', 'requester')).statusCode).toBe(200);
+    await age(id, '2 minutes');
+    expect(
+      await app.get<OrderRepository>(ORDER_REPOSITORY).dueAutoCompletions(),
+    ).toEqual([]);
+    expect(await service.autoComplete(id)).toBe(false);
+    expect(await prisma.errand.findUnique({ where: { id } })).toMatchObject({
+      status: 'DISPUTED',
+    });
+    expect(await prisma.outboxEvent.count()).toBe(0);
+  });
+  it('S6b race: requester confirm vs the 4 h job completes once', async () => {
+    for (let round = 0; round < 5; round++) {
+      const id = await errandIn('DELIVERED');
+      await age(id, '5 hours');
+      const [confirmed, timed] = await Promise.all([
+        act(id, 'confirm', 'requester'),
+        service.autoComplete(id),
+      ]);
+      expect(confirmed.statusCode).toBe(200);
+      const errand = await prisma.errand.findUniqueOrThrow({ where: { id } });
+      expect(errand.completionMethod).toBe(
+        timed ? 'AUTO_TIMEOUT' : 'REQUESTER_CONFIRMED',
+      );
+      expect(
+        await prisma.outboxEvent.count({ where: { aggregateId: id } }),
+      ).toBe(1);
+    }
+  });
+  const list = (url: string, token: string) =>
+    app.inject({
+      method: 'GET',
+      url,
+      headers: { authorization: `Bearer ${token}` },
+    });
+  it('D3 queries: courier assignments, admin view of one requester, availableForAcceptance', async () => {
+    const open = (await create()).json().errand.id;
+    const taken = (await create()).json().errand.id;
+    const own = (await create(input, randomUUID(), 'other')).json().errand.id;
+    expect((await read(open, 'courier')).json()).toMatchObject({
+      availableForAcceptance: true,
+    });
+    await accept(taken);
+    expect((await read(taken, 'courier')).json()).toMatchObject({
+      availableForAcceptance: false,
+    });
+    expect(
+      (await list('/api/errands/assigned', 'courier'))
+        .json<{ id: string }[]>()
+        .map((errand) => errand.id),
+    ).toEqual([taken]);
+    expect((await list('/api/errands/assigned', 'requester')).json()).toEqual(
+      [],
+    );
+    const ids = (response: { json: () => unknown }) =>
+      (response.json() as { id: string }[]).map((errand) => errand.id).sort();
+    expect(
+      ids(
+        await list(`/api/errands/manage?requesterId=${requesterId}`, 'admin'),
+      ),
+    ).toEqual([open, taken].sort());
+    expect(ids(await list('/api/errands/manage', 'admin'))).toEqual(
+      [open, taken, own].sort(),
+    );
+    expect(
+      ids(
+        await list(
+          `/api/errands/manage?requesterId=${requesterId}`,
+          'requester',
+        ),
+      ),
+    ).toEqual([open, taken].sort());
+    const forbidden = await list(
+      `/api/errands/manage?requesterId=${otherId}`,
+      'requester',
+    );
+    expect(forbidden.statusCode).toBe(403);
+    expect(forbidden.json()).toMatchObject({ code: 'ADMINISTRATOR_REQUIRED' });
+    expect(
+      (await list('/api/errands/manage?requesterId=nope', 'admin')).statusCode,
+    ).toBe(400);
+    expect(
+      (await list(`/api/errands?requesterId=${requesterId}`, 'admin'))
+        .statusCode,
+    ).toBe(400);
+  });
+  const cancel = (id: string, token = 'requester') =>
+    app.inject({
+      method: 'POST',
+      url: `/api/errands/${id}/cancel`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+  const releases = () =>
+    creditPrisma.ledgerEntry.count({ where: { type: 'RELEASE' } });
+  const requesterBalance = () =>
+    creditPrisma.creditAccount.findUnique({
+      where: { userId: requesterId },
+      select: { availableCredits: true, reservedCredits: true },
+    });
+  it('S7: owner DELETE cancels on the same route; the CANCELLED errand stays visible to the requester (D-014)', async () => {
+    const id = (await create()).json().errand.id;
+    const key = randomUUID();
+    expect((await remove(id, 'other')).statusCode).toBe(403);
+    const first = await remove(id, 'requester', key);
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toMatchObject({
+      status: 'SUCCEEDED',
+      errand: { id, status: 'CANCELLED', cancelledAt: expect.any(String) },
+    });
+    // Same key, a new key and the POST route all return the one cancel operation.
+    for (const repeat of [
+      await remove(id, 'requester', key),
+      await remove(id),
+      await cancel(id),
+    ]) {
+      expect(repeat.statusCode).toBe(200);
+      expect(repeat.json()).toMatchObject({
+        operationId: first.json().operationId,
+        errand: { status: 'CANCELLED' },
+      });
+    }
+    expect(await prisma.errand.findUnique({ where: { id } })).toMatchObject({
+      status: 'CANCELLED',
+      deletedAt: null,
+    });
+    expect((await read(id, 'requester')).json()).toMatchObject({
+      status: 'CANCELLED',
+      availableForAcceptance: false,
+    });
+    expect(
+      (await list('/api/errands/manage', 'requester'))
+        .json<{ id: string; status: string }[]>()
+        .map((errand) => [errand.id, errand.status]),
+    ).toEqual([[id, 'CANCELLED']]);
+    expect((await list('/api/errands', 'courier')).json()).toEqual([]);
+    expect(await requesterBalance()).toEqual({
+      availableCredits: 100,
+      reservedCredits: 0,
+    });
+    expect(await releases()).toBe(1);
+    expect(
+      await prisma.errandHistory.findMany({ where: { errandId: id } }),
+    ).toEqual([
+      expect.objectContaining({
+        fromStatus: 'OPEN',
+        toStatus: 'CANCELLED',
+        action: 'cancel',
+        actorRole: 'REQUESTER',
+        actorId: requesterId,
+        courierId: null,
+      }),
+    ]);
+  });
+  it('S7: cancelling an ACCEPTED errand releases the whole escrow and the courier (D-015)', async () => {
+    const id = (await create()).json().errand.id;
+    expect((await accept(id)).statusCode).toBe(200);
+    const response = await cancel(id);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: 'SUCCEEDED',
+      errand: { status: 'CANCELLED', courierId: null, acceptedAt: null },
+    });
+    expect(await requesterBalance()).toEqual({
+      availableCredits: 100,
+      reservedCredits: 0,
+    });
+    expect(await releases()).toBe(1);
+    // The released courier can no longer read or act on the errand.
+    expect((await read(id, 'courier')).statusCode).toBe(404);
+    expect((await act(id, 'pickup', 'courier')).statusCode).toBe(403);
+    expect((await list('/api/errands/assigned', 'courier')).json()).toEqual([]);
+    expect(
+      await prisma.errandHistory.findFirst({
+        where: { errandId: id, action: 'cancel' },
+      }),
+    ).toMatchObject({
+      fromStatus: 'ACCEPTED',
+      toStatus: 'CANCELLED',
+      actorId: requesterId,
+      courierId,
+    });
+  });
+  it('S7: cancel is 409 from PICKED_UP onward, 403 for anyone but the requester, and never moves credits then', async () => {
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/api/errands/${randomUUID()}/cancel`,
+        })
+      ).statusCode,
+    ).toBe(401);
+    expect((await cancel(randomUUID())).statusCode).toBe(404);
+    const open = (await create()).json().errand.id;
+    expect((await cancel(open, 'other')).json()).toMatchObject({
+      code: 'ERRAND_OWNER_REQUIRED',
+    });
+    const picked = await errandIn('PICKED_UP');
+    expect((await cancel(picked, 'courier')).statusCode).toBe(403);
+    for (const id of [picked, await errandIn('DELIVERED')]) {
+      for (const response of [await cancel(id), await remove(id)]) {
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toMatchObject({
+          code: 'ERRAND_INVALID_TRANSITION',
+        });
+      }
+    }
+    const disputed = await errandIn('DELIVERED');
+    await act(disputed, 'dispute', 'requester');
+    expect((await cancel(disputed)).statusCode).toBe(409);
+    expect(await releases()).toBe(0);
+    expect(
+      await prisma.errandOperation.count({ where: { kind: 'CANCEL' } }),
+    ).toBe(0);
+  });
+  it('S7: a lost release acknowledgement keeps the cancel pending and locked until a repeat completes it once', async () => {
+    const id = (await create()).json().errand.id;
+    await accept(id);
+    loseAck = 'release';
+    const pending = await cancel(id);
+    expect(pending.statusCode).toBe(202);
+    expect(pending.json()).toMatchObject({ status: 'PENDING', errand: null });
+    // While the release is in doubt the courier cannot pick up.
+    expect((await act(id, 'pickup', 'courier')).json()).toMatchObject({
+      code: 'ERRAND_OPERATION_PENDING',
+    });
+    // Repeating the request resumes the same operation instead of starting another.
+    const repeat = await cancel(id);
+    expect(repeat.statusCode).toBe(200);
+    expect(repeat.json()).toMatchObject({
+      operationId: pending.json().operationId,
+      status: 'SUCCEEDED',
+    });
+    expect((await service.process(pending.json().operationId)).status).toBe(
+      'SUCCEEDED',
+    );
+    expect(await prisma.errand.findUnique({ where: { id } })).toMatchObject({
+      status: 'CANCELLED',
+      courierId: null,
+      pendingOperationId: null,
+    });
+    expect(await releases()).toBe(1);
+    expect(await requesterBalance()).toEqual({
+      availableCredits: 100,
+      reservedCredits: 0,
+    });
+  });
+  it('S8: the courier gives an ACCEPTED errand back; it reopens with credits reserved and that courier excluded (D-016)', async () => {
+    const id = (await create()).json().errand.id;
+    await accept(id);
+    const response = await act(id, 'courier-cancel', 'courier');
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      id,
+      status: 'OPEN',
+      courierId: null,
+      acceptedAt: null,
+      version: 2,
+      availableForAcceptance: false,
+    });
+    expect(await requesterBalance()).toEqual({
+      availableCredits: 80,
+      reservedCredits: 20,
+    });
+    expect(await releases()).toBe(0);
+    expect(
+      await prisma.errandHistory.findFirst({
+        where: { errandId: id, action: 'courier-cancel' },
+      }),
+    ).toMatchObject({
+      fromStatus: 'ACCEPTED',
+      toStatus: 'OPEN',
+      actorRole: 'COURIER',
+      actorId: courierId,
+      courierId,
+    });
+    expect(await prisma.errandExcludedCourier.findMany()).toEqual([
+      expect.objectContaining({ errandId: id, courierId }),
+    ]);
+    // A repeat returns the current state; nothing else is written.
+    expect((await act(id, 'courier-cancel', 'courier')).json()).toMatchObject({
+      status: 'OPEN',
+      version: 2,
+    });
+    expect(await prisma.errandHistory.count({ where: { errandId: id } })).toBe(
+      2,
+    );
+    const again = await accept(id);
+    expect(again.statusCode).toBe(403);
+    expect(again.json()).toMatchObject({ code: 'ERRAND_COURIER_EXCLUDED' });
+    // Back on the board for everyone else, and editable by the requester again.
+    expect(
+      (await list('/api/errands', 'courier-1')).json<{ id: string }[]>(),
+    ).toEqual([expect.objectContaining({ id })]);
+    expect((await read(id, 'courier-1')).json()).toMatchObject({
+      availableForAcceptance: true,
+    });
+    expect(
+      (await edit(id, { expectedVersion: 2, description: 'Reopened' }))
+        .statusCode,
+    ).toBe(200);
+    expect((await accept(id, 'courier-1')).statusCode).toBe(200);
+    // Excluded from this errand only.
+    const other = (await create()).json().errand.id;
+    expect((await accept(other)).statusCode).toBe(200);
+  });
+  it('S8: courier cancel is for the assigned courier only, and 409 after pickup (Q-020)', async () => {
+    const id = (await create()).json().errand.id;
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/api/errands/${id}/courier-cancel`,
+        })
+      ).statusCode,
+    ).toBe(401);
+    expect((await act(id, 'courier-cancel', 'courier')).statusCode).toBe(403);
+    await accept(id);
+    expect((await act(id, 'courier-cancel', 'requester')).json()).toMatchObject(
+      { code: 'ERRAND_ACTION_FORBIDDEN' },
+    );
+    expect((await act(id, 'courier-cancel', 'courier-1')).statusCode).toBe(403);
+    await act(id, 'pickup', 'courier');
+    const late = await act(id, 'courier-cancel', 'courier');
+    expect(late.statusCode).toBe(409);
+    expect(late.json()).toMatchObject({ code: 'ERRAND_INVALID_TRANSITION' });
+    expect(await prisma.errand.findUnique({ where: { id } })).toMatchObject({
+      status: 'PICKED_UP',
+      courierId,
+    });
+    expect(await prisma.errandExcludedCourier.count()).toBe(0);
+  });
+  it('S8: an ACCEPTED errand not picked up within 30 minutes reopens and excludes that courier (D-017)', async () => {
+    const repository = app.get<OrderRepository>(ORDER_REPOSITORY);
+    const due = (await create()).json().errand.id;
+    const early = (await create()).json().errand.id;
+    await accept(due);
+    await accept(early);
+    await age(due, '30 minutes 1 second');
+    await age(early, '29 minutes');
+    expect(await service.reopen(early)).toBe(false);
+    expect(await repository.dueReopens()).toEqual([due]);
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => service.reopen(due)),
+    );
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(
+      await prisma.errand.findUnique({ where: { id: due } }),
+    ).toMatchObject({
+      status: 'OPEN',
+      courierId: null,
+      acceptedAt: null,
+      version: 2,
+    });
+    expect(
+      await prisma.errandHistory.findFirst({
+        where: { errandId: due, action: 'reopen' },
+      }),
+    ).toMatchObject({
+      fromStatus: 'ACCEPTED',
+      toStatus: 'OPEN',
+      actorRole: 'SYSTEM',
+      actorId: null,
+      courierId,
+    });
+    expect(await repository.dueReopens()).toEqual([]);
+    expect((await accept(due)).json()).toMatchObject({
+      code: 'ERRAND_COURIER_EXCLUDED',
+    });
+    expect((await accept(due, 'courier-1')).statusCode).toBe(200);
+    expect(
+      await prisma.errand.findUnique({ where: { id: early } }),
+    ).toMatchObject({ status: 'ACCEPTED', courierId });
+    // Reopening never touches the reservation.
+    expect(await requesterBalance()).toEqual({
+      availableCredits: 60,
+      reservedCredits: 40,
+    });
+  });
+  it('S8: a pickup or a requester cancel before the job runs makes the reopen a no-op', async () => {
+    const picked = (await create()).json().errand.id;
+    const cancelled = (await create()).json().errand.id;
+    for (const id of [picked, cancelled]) {
+      await accept(id);
+      await age(id, '29 minutes 59 seconds');
+    }
+    expect((await act(picked, 'pickup', 'courier')).statusCode).toBe(200);
+    expect((await cancel(cancelled)).statusCode).toBe(200);
+    for (const id of [picked, cancelled]) await age(id, '1 minute');
+    expect(
+      await app.get<OrderRepository>(ORDER_REPOSITORY).dueReopens(),
+    ).toEqual([]);
+    expect(await service.reopen(picked)).toBe(false);
+    expect(await service.reopen(cancelled)).toBe(false);
+    expect(
+      await prisma.errand.findUnique({ where: { id: picked } }),
+    ).toMatchObject({ status: 'PICKED_UP', courierId });
+    expect(
+      await prisma.errand.findUnique({ where: { id: cancelled } }),
+    ).toMatchObject({ status: 'CANCELLED' });
+    expect(await prisma.errandExcludedCourier.count()).toBe(0);
+  });
+  it('admins can inspect/manage/delete all requests and edit only their own', async () => {
+    const id = (await create()).json().errand.id;
+    await prisma.errand.update({
+      where: { id },
+      data: {
+        status: 'PICKED_UP',
+        courierId: otherId,
+        acceptedAt: new Date(),
+        pickedUpAt: new Date(),
+      },
+    });
+    expect((await remove(id)).statusCode).toBe(409);
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/api/errands/${id}`,
+          headers: { authorization: 'Bearer admin' },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/api/errands/manage',
+          headers: { authorization: 'Bearer other' },
+        })
+      ).json(),
+    ).toEqual([]);
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/api/errands/manage',
+          headers: { authorization: 'Bearer admin' },
+        })
+      ).json(),
+    ).toHaveLength(1);
+    expect(
+      (
+        await edit(
+          id,
+          { expectedVersion: 0, description: 'Admin changed it' },
+          randomUUID(),
+          'admin',
+        )
+      ).statusCode,
+    ).toBe(403);
+    const ownId = (await create(input, randomUUID(), 'admin')).json().errand.id;
+    expect(
+      (
+        await edit(
+          ownId,
+          { expectedVersion: 0, description: 'Own admin errand' },
+          randomUUID(),
+          'admin',
+        )
+      ).statusCode,
+    ).toBe(200);
+    expect((await remove(id, 'admin')).statusCode).toBe(200);
+  });
+  it('lost release acknowledgement keeps deletion durable and retries without duplicate refunds', async () => {
+    const id = (await create()).json().errand.id;
+    loseAck = 'release';
+    const response = await remove(id);
+    expect(response.statusCode).toBe(202);
+    expect(
+      (await edit(id, { expectedVersion: 0, offeredCredits: 30 })).statusCode,
+    ).toBe(409);
+    expect((await service.process(response.json().operationId)).status).toBe(
+      'SUCCEEDED',
+    );
+    expect(
+      await creditPrisma.ledgerEntry.count({
+        where: { type: 'RELEASE' },
+      }),
+    ).toBe(1);
+    expect(
+      await creditPrisma.creditAccount.findUnique({
+        where: { userId: requesterId },
+      }),
+    ).toMatchObject({ availableCredits: 100, reservedCredits: 0 });
+  });
+  it('admin deletion preserves completed credit transfers', async () => {
+    const id = (await create()).json().errand.id;
+    // Exercise actual settlement through the Credit Service application.
+    const { CreditService } =
+      await import('../../../credit-service/src/application/credit.service');
+    await creditApp.get(CreditService).settle({
+      errandId: id,
+      requesterId,
+      courierId: otherId,
+      amount: input.offeredCredits,
+      correlationId: randomUUID(),
+    });
+    await prisma.errand.update({
+      where: { id },
+      data: {
+        status: 'COMPLETED',
+        courierId: otherId,
+        acceptedAt: new Date(),
+        pickedUpAt: new Date(),
+        completedAt: new Date(),
+        completionMethod: 'REQUESTER_CONFIRMED',
+      },
+    });
+    expect((await remove(id, 'admin')).statusCode).toBe(200);
+    expect(
+      await creditPrisma.creditAccount.findUnique({
+        where: { userId: requesterId },
+      }),
+    ).toMatchObject({ availableCredits: 80, reservedCredits: 0 });
+    expect(
+      await creditPrisma.creditAccount.findUnique({
+        where: { userId: otherId },
+      }),
+    ).toMatchObject({ availableCredits: 120, reservedCredits: 0 });
+  });
+  /** Moves an errand's creation and deadline into the past together (the CHECK keeps them 2 h / 24 h apart). */
+  const ageCreated = (id: string, interval: string) =>
+    prisma.$executeRaw`UPDATE "errands" SET "created_at" = "created_at" - ${interval}::interval, "expires_at" = "expires_at" - ${interval}::interval WHERE "id" = ${id}::uuid`;
+  const hours = (errand: { createdAt: Date; expiresAt: Date }) =>
+    (errand.expiresAt.getTime() - errand.createdAt.getTime()) / 3_600_000;
+  it('S7: the requester picks the item type; NON_PERISHABLE (default) expires after 24 h, FOOD after 2 h (D-018)', async () => {
+    const plain = await create();
+    expect(plain.statusCode).toBe(201);
+    expect(plain.json().errand).toMatchObject({
+      itemType: 'NON_PERISHABLE',
+      expiresAt: expect.any(String),
+    });
+    const food = await create({ ...input, itemType: 'FOOD' });
+    expect(food.json().errand).toMatchObject({ itemType: 'FOOD' });
+    const stored = await prisma.errand.findMany({
+      orderBy: { itemType: 'asc' },
+    });
+    expect(stored.map((errand) => [errand.itemType, hours(errand)])).toEqual([
+      ['FOOD', 2],
+      ['NON_PERISHABLE', 24],
+    ]);
+    for (const itemType of ['PARCEL', 'food', null, 7]) {
+      const response = await create({ ...input, itemType });
+      expect(response.statusCode).toBe(400);
+    }
+    // Fixed at creation (A-009): PATCH does not know the field.
+    expect(
+      (
+        await edit(plain.json().errand.id, {
+          expectedVersion: 0,
+          itemType: 'FOOD',
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(await prisma.errand.count()).toBe(2);
+    expect(await prisma.errandOperation.count()).toBe(2);
+  });
+  it('S7: an OPEN errand past its deadline expires once and releases its credits (D-017, D-019)', async () => {
+    const repository = app.get<OrderRepository>(ORDER_REPOSITORY);
+    const due = (await create({ ...input, itemType: 'FOOD' })).json().errand.id;
+    const early = (await create()).json().errand.id;
+    const taken = (await create({ ...input, itemType: 'FOOD' })).json().errand
+      .id;
+    await accept(taken);
+    await ageCreated(due, '2 hours 1 second');
+    await ageCreated(early, '23 hours 59 minutes');
+    await ageCreated(taken, '3 hours');
+    expect(await repository.dueExpiries()).toEqual([due]);
+    expect(await service.expire(early)).toBe(false);
+    // Only OPEN errands expire; the accepted one keeps going.
+    expect(await service.expire(taken)).toBe(false);
+    // Past the deadline but before the sweep, accept is already refused.
+    const late = await accept(due, 'courier-1');
+    expect(late.statusCode).toBe(409);
+    expect(late.json()).toMatchObject({ code: 'ERRAND_EXPIRED' });
+    expect((await read(due, 'courier-1')).json()).toMatchObject({
+      availableForAcceptance: false,
+    });
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => service.expire(due)),
+    );
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(
+      await prisma.errand.findUnique({ where: { id: due } }),
+    ).toMatchObject({
+      status: 'EXPIRED',
+      expiredAt: expect.any(Date),
+      courierId: null,
+    });
+    expect(
+      await prisma.errandHistory.findFirst({
+        where: { errandId: due, action: 'expire' },
+      }),
+    ).toMatchObject({
+      fromStatus: 'OPEN',
+      toStatus: 'EXPIRED',
+      actorRole: 'SYSTEM',
+      actorId: null,
+    });
+    expect(await releases()).toBe(1);
+    expect(await requesterBalance()).toEqual({
+      availableCredits: 60,
+      reservedCredits: 40,
+    });
+    expect(await repository.dueExpiries()).toEqual([]);
+    expect((await cancel(due)).statusCode).toBe(409);
+    expect((await accept(due, 'courier-1')).statusCode).toBe(409);
+    expect((await read(due, 'requester')).json()).toMatchObject({
+      status: 'EXPIRED',
+    });
+  });
+  it('S7: a reopened errand keeps its original deadline and can still expire (D-017)', async () => {
+    const created = (await create({ ...input, itemType: 'FOOD' })).json()
+      .errand;
+    await accept(created.id);
+    await act(created.id, 'courier-cancel', 'courier');
+    await accept(created.id, 'courier-1');
+    await age(created.id, '31 minutes');
+    expect(await service.reopen(created.id)).toBe(true);
+    const reopened = await prisma.errand.findUniqueOrThrow({
+      where: { id: created.id },
+    });
+    expect(reopened.expiresAt.toISOString()).toBe(created.expiresAt);
+    expect(hours(reopened)).toBe(2);
+    await ageCreated(created.id, '2 hours');
+    expect(await service.expire(created.id)).toBe(true);
+    expect(await releases()).toBe(1);
+  });
+  it('S7: a lost release acknowledgement on expiry stays pending and locked until the journal finishes it', async () => {
+    const id = (await create()).json().errand.id;
+    await ageCreated(id, '24 hours 1 second');
+    loseAck = 'release';
+    expect(await service.expire(id)).toBe(false);
+    const op = await prisma.errandOperation.findFirstOrThrow({
+      where: { errandId: id, kind: 'EXPIRE' },
+    });
+    expect(op).toMatchObject({ status: 'PENDING', requesterId });
+    expect(
+      await app.get<OrderRepository>(ORDER_REPOSITORY).dueExpiries(),
+    ).toEqual([]);
+    expect((await accept(id)).statusCode).toBe(409);
+    // The sweeper running again changes nothing; the recovery worker completes it.
+    expect(await service.expire(id)).toBe(false);
+    expect((await service.process(op.id)).status).toBe('SUCCEEDED');
+    expect(await prisma.errand.findUnique({ where: { id } })).toMatchObject({
+      status: 'EXPIRED',
+      pendingOperationId: null,
+    });
+    expect(await releases()).toBe(1);
+    expect(
+      await prisma.errandOperation.count({ where: { kind: 'EXPIRE' } }),
+    ).toBe(1);
+  });
+  const statusOf = async (id: string) =>
+    (await prisma.errand.findUniqueOrThrow({ where: { id } })).status;
+  const historyOf = (id: string) =>
+    prisma.errandHistory.findMany({
+      where: { errandId: id },
+      orderBy: { occurredAt: 'asc' },
+    });
+  it('F race: cancel vs 10 accepts always ends CANCELLED with one release; at most one courier got in first', async () => {
+    for (let round = 0; round < 5; round++) {
+      const id = (await create()).json().errand.id;
+      const before = await releases();
+      const [cancelled, ...accepts] = await Promise.all([
+        cancel(id),
+        ...Array.from({ length: 10 }, (_, n) => accept(id, `courier-${n + 1}`)),
+      ]);
+      expect(cancelled.statusCode).toBe(200);
+      const won = accepts.filter((response) => response.statusCode === 200);
+      expect(won.length).toBeLessThanOrEqual(1);
+      expect(
+        accepts.every((response) => [200, 409].includes(response.statusCode)),
+      ).toBe(true);
+      expect(await prisma.errand.findUnique({ where: { id } })).toMatchObject({
+        status: 'CANCELLED',
+        courierId: null,
+        pendingOperationId: null,
+      });
+      expect(await releases()).toBe(before + 1);
+      const history = await historyOf(id);
+      expect(history.map((row) => row.action)).toEqual(
+        won.length ? ['accept', 'cancel'] : ['cancel'],
+      );
+      if (won.length)
+        expect(history[1].courierId).toBe(won[0].json().courierId);
+    }
+    expect(await requesterBalance()).toEqual({
+      availableCredits: 100,
+      reservedCredits: 0,
+    });
+  });
+  it('F race: requester cancel vs courier pickup on ACCEPTED has exactly one winner', async () => {
+    for (let round = 0; round < 5; round++) {
+      const id = (await create()).json().errand.id;
+      await accept(id);
+      const before = await releases();
+      const [cancelled, picked] = await Promise.all([
+        cancel(id),
+        act(id, 'pickup', 'courier'),
+      ]);
+      const status = await statusOf(id);
+      if (status === 'CANCELLED') {
+        expect(cancelled.statusCode).toBe(200);
+        expect([403, 409]).toContain(picked.statusCode);
+        expect(await releases()).toBe(before + 1);
+      } else {
+        expect(status).toBe('PICKED_UP');
+        expect(picked.statusCode).toBe(200);
+        expect(cancelled.statusCode).toBe(409);
+        expect(await releases()).toBe(before);
+        expect(
+          await prisma.errandOperation.count({
+            where: { errandId: id, kind: 'CANCEL' },
+          }),
+        ).toBe(0);
+      }
+      // accept plus exactly one of cancel / pickup.
+      expect(await historyOf(id)).toHaveLength(2);
+    }
+  });
+  it('F race: courier cancel vs pickup by the same courier has exactly one winner', async () => {
+    for (let round = 0; round < 5; round++) {
+      const id = (await create({ ...input, offeredCredits: 5 })).json().errand
+        .id;
+      await accept(id);
+      const [given, picked] = await Promise.all([
+        act(id, 'courier-cancel', 'courier'),
+        act(id, 'pickup', 'courier'),
+      ]);
+      const errand = await prisma.errand.findUniqueOrThrow({ where: { id } });
+      const excluded = await prisma.errandExcludedCourier.count({
+        where: { errandId: id },
+      });
+      if (errand.status === 'OPEN') {
+        expect(given.statusCode).toBe(200);
+        expect([403, 409]).toContain(picked.statusCode);
+        expect(errand.courierId).toBeNull();
+        expect(excluded).toBe(1);
+      } else {
+        expect(errand).toMatchObject({ status: 'PICKED_UP', courierId });
+        expect(picked.statusCode).toBe(200);
+        expect(given.statusCode).toBe(409);
+        expect(excluded).toBe(0);
+      }
+      expect(errand.version).toBe(2);
+      expect(await historyOf(id)).toHaveLength(2);
+    }
+    expect(await releases()).toBe(0);
+  });
+  it('F race: the 30-minute reopen vs a pickup has exactly one winner', async () => {
+    for (let round = 0; round < 5; round++) {
+      const id = (await create({ ...input, offeredCredits: 5 })).json().errand
+        .id;
+      await accept(id);
+      await age(id, '31 minutes');
+      const [picked, reopened] = await Promise.all([
+        act(id, 'pickup', 'courier'),
+        service.reopen(id),
+      ]);
+      const errand = await prisma.errand.findUniqueOrThrow({ where: { id } });
+      if (reopened) {
+        expect(errand).toMatchObject({ status: 'OPEN', courierId: null });
+        expect([403, 409]).toContain(picked.statusCode);
+        expect(
+          await prisma.errandExcludedCourier.count({ where: { errandId: id } }),
+        ).toBe(1);
+      } else {
+        expect(errand).toMatchObject({ status: 'PICKED_UP', courierId });
+        expect(picked.statusCode).toBe(200);
+      }
+      expect(errand.version).toBe(2);
+      expect(await historyOf(id)).toHaveLength(2);
+    }
+  });
+  it('F race: expiry vs 10 accepts past the deadline ends EXPIRED with one release; before it, accept wins and expiry is a no-op', async () => {
+    for (let round = 0; round < 3; round++) {
+      const id = (await create({ ...input, itemType: 'FOOD' })).json().errand
+        .id;
+      await ageCreated(id, '2 hours 1 second');
+      const before = await releases();
+      const results = await Promise.all([
+        ...Array.from({ length: 3 }, () => service.expire(id)),
+        ...Array.from({ length: 10 }, (_, n) => accept(id, `courier-${n + 1}`)),
+      ]);
+      const expired = results.slice(0, 3);
+      const accepts = results.slice(3) as Awaited<ReturnType<typeof accept>>[];
+      expect(expired.filter(Boolean)).toHaveLength(1);
+      expect(accepts.every((response) => response.statusCode === 409)).toBe(
+        true,
+      );
+      expect(await statusOf(id)).toBe('EXPIRED');
+      expect(await releases()).toBe(before + 1);
+      expect((await historyOf(id)).map((row) => row.action)).toEqual([
+        'expire',
+      ]);
+    }
+    const fresh = (await create({ ...input, itemType: 'FOOD' })).json().errand
+      .id;
+    const [expired, accepted] = await Promise.all([
+      service.expire(fresh),
+      accept(fresh),
+    ]);
+    expect(expired).toBe(false);
+    expect(accepted.statusCode).toBe(200);
+    expect(await statusOf(fresh)).toBe('ACCEPTED');
+  });
+  it('F race: confirm vs dispute vs the 4 h job on DELIVERED still has exactly one winner', async () => {
+    for (let round = 0; round < 5; round++) {
+      const id = await errandIn('DELIVERED');
+      await age(id, '5 hours');
+      const [confirmed, disputed, timed] = await Promise.all([
+        act(id, 'confirm', 'requester'),
+        act(id, 'dispute', 'requester'),
+        service.autoComplete(id),
+      ]);
+      const errand = await prisma.errand.findUniqueOrThrow({ where: { id } });
+      const events = await prisma.outboxEvent.count({
+        where: { aggregateId: id },
+      });
+      if (errand.status === 'DISPUTED') {
+        expect(disputed.statusCode).toBe(200);
+        expect(confirmed.statusCode).toBe(409);
+        expect(timed).toBe(false);
+        expect(events).toBe(0);
+      } else {
+        expect(errand.status).toBe('COMPLETED');
+        expect(disputed.statusCode).toBe(409);
+        // A confirm after the job is a repeat of the same outcome, so it is 200 too.
+        expect(confirmed.statusCode).toBe(200);
+        expect(errand.completionMethod).toBe(
+          timed ? 'AUTO_TIMEOUT' : 'REQUESTER_CONFIRMED',
+        );
+        expect(events).toBe(1);
+      }
+      // accept, pickup, deliver and exactly one of the three.
+      expect(await historyOf(id)).toHaveLength(4);
+    }
+  });
+  it('reserves credits before publishing a uniquely identified OPEN errand and lists it', async () => {
+    const response = await create();
+    expect(response.statusCode).toBe(201);
+    const result = response.json<{
+      errand: {
+        id: string;
+        requesterId: string;
+        status: string;
+        createdAt: string;
+      };
+    }>();
+    expect(result.errand).toMatchObject({
+      requesterId,
+      status: 'OPEN',
+      pickupLocationLabel: 'Campus Cafe',
+    });
+    expect(result.errand.createdAt).toBeTruthy();
+    expect(
+      await creditPrisma.creditAccount.findUnique({
+        where: { userId: requesterId },
+      }),
+    ).toMatchObject({ availableCredits: 80, reservedCredits: 20 });
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/api/errands',
+      headers: auth,
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toHaveLength(1);
+  });
+  it('carries one correlation id from the request to credit-service ledger rows (NFR8)', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/errands',
+      headers: {
+        authorization: 'Bearer requester',
+        'idempotency-key': randomUUID(),
+        'x-correlation-id': 'demo-create-1',
+      },
+      payload: input,
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.headers['x-correlation-id']).toBe('demo-create-1');
+    const errandId = response.json<{ errand: { id: string } }>().errand.id;
+    expect(
+      await creditPrisma.ledgerEntry.findFirst({ where: { errandId } }),
+    ).toMatchObject({ correlationId: 'demo-create-1' });
+    expect(
+      await prisma.errandOperation.findFirst({ where: { errandId } }),
+    ).toMatchObject({ correlationId: 'demo-create-1' });
+    const generated = await app.inject({
+      method: 'GET',
+      url: '/api/errands',
+      headers: auth,
+    });
+    expect(generated.headers['x-correlation-id']).toMatch(/^[0-9a-f-]{36}$/);
+  });
+  it('sorts the whole catalogue before pagination by time or credits and rejects unknown options', async () => {
+    const ids: string[] = [];
+    for (const [index, offeredCredits] of [10, 30, 20].entries()) {
+      const id = (await create({ ...input, offeredCredits })).json().errand.id;
+      ids.push(id);
+      const createdAt = new Date(`2026-10-0${index + 1}T00:00:00Z`);
+      await prisma.errand.update({
+        where: { id },
+        data: { createdAt, expiresAt: expiryFor(createdAt, 'NON_PERISHABLE') },
+      });
+    }
+    const expected = {
+      newest: [ids[2], ids[1], ids[0]],
+      oldest: ids,
+      'credits-highest': [ids[1], ids[2], ids[0]],
+      'credits-lowest': [ids[0], ids[2], ids[1]],
+    };
+    for (const [sort, order] of Object.entries(expected)) {
+      for (const path of ['/api/errands', '/api/errands/manage']) {
+        const response = await app.inject({
+          method: 'GET',
+          url: `${path}?sort=${sort}&limit=1&offset=1`,
+          headers: auth,
+        });
+        expect(response.statusCode).toBe(200);
+        expect(
+          response.json().map((value: { id: string }) => value.id),
+        ).toEqual([order[1]]);
+      }
+    }
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/api/errands?sort=invalid',
+          headers: auth,
+        })
+      ).statusCode,
+    ).toBe(400);
+  });
+  it.each([
+    {},
+    { ...input, description: ' ' },
+    { ...input, instructions: null },
+    { ...input, offeredCredits: 0 },
+    { ...input, offeredCredits: 1.5 },
+    { ...input, requesterId: otherId },
+  ])(
+    'rejects invalid mandatory fields or spoofed identity without an errand or credits',
+    async (payload) => {
+      expect((await create(payload)).statusCode).toBe(400);
+      expect(await prisma.errand.count()).toBe(0);
+      expect(await creditPrisma.creditReservation.count()).toBe(0);
+    },
+  );
+  it('rejects missing idempotency keys, unavailable pickup locations and inactive sessions', async () => {
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/api/errands',
+          headers: auth,
+          payload: input,
+        })
+      ).statusCode,
+    ).toBe(400);
+    available = false;
+    expect((await create()).statusCode).toBe(400);
+    accountActive = false;
+    expect((await create()).statusCode).toBe(401);
+    expect(await prisma.errand.count()).toBe(0);
+  });
+  it('rejects insufficient credits without an errand, and never overspends concurrently', async () => {
+    expect((await create({ ...input, offeredCredits: 101 })).statusCode).toBe(
+      422,
+    );
+    expect(await prisma.errand.count()).toBe(0);
+    const responses = await Promise.all([
+      create({ ...input, offeredCredits: 80 }),
+      create({ ...input, offeredCredits: 80 }),
+    ]);
+    expect(responses.map((r) => r.statusCode).sort()).toEqual([201, 422]);
+    expect(await prisma.errand.count()).toBe(1);
+    expect(
+      await creditPrisma.creditAccount.findUnique({
+        where: { userId: requesterId },
+      }),
+    ).toMatchObject({ availableCredits: 20, reservedCredits: 80 });
+  });
+  it('replays identical creates without charging twice and rejects conflicting keys', async () => {
+    const key = randomUUID();
+    const [one, two] = await Promise.all([
+      create(input, key),
+      create(input, key),
+    ]);
+    expect(one.statusCode).toBe(201);
+    expect(two.statusCode).toBe(201);
+    expect(await prisma.errand.count()).toBe(1);
+    expect(
+      (await create({ ...input, description: 'Different' }, key)).statusCode,
+    ).toBe(409);
+    expect(
+      await creditPrisma.ledgerEntry.count({
+        where: { type: 'RESERVE' },
+      }),
+    ).toBe(1);
+  });
+  it('increases/decreases a bounty, releasing excess and reserving only the difference', async () => {
+    const original = (await create()).json<{ errand: { id: string } }>().errand;
+    expect(
+      (
+        await edit(original.id, {
+          expectedVersion: 0,
+          offeredCredits: 60,
+          description: 'Edited',
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      await creditPrisma.creditAccount.findUnique({
+        where: { userId: requesterId },
+      }),
+    ).toMatchObject({ availableCredits: 40, reservedCredits: 60 });
+    expect(
+      (
+        await edit(original.id, {
+          expectedVersion: 1,
+          offeredCredits: 10,
+          deliveryDestination: 'UTown',
+          instructions: 'Meet downstairs',
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      await creditPrisma.creditAccount.findUnique({
+        where: { userId: requesterId },
+      }),
+    ).toMatchObject({ availableCredits: 90, reservedCredits: 10 });
+    expect(
+      await prisma.errand.findUnique({ where: { id: original.id } }),
+    ).toMatchObject({
+      offeredCredits: 10,
+      deliveryDestination: 'UTown',
+      version: 2,
+    });
+  });
+  it('failed increases leave both errand fields and balances unchanged', async () => {
+    const id = (await create()).json<{ errand: { id: string } }>().errand.id;
+    expect(
+      (
+        await edit(id, {
+          expectedVersion: 0,
+          offeredCredits: 101,
+          description: 'Must not persist',
+        })
+      ).statusCode,
+    ).toBe(422);
+    expect(await prisma.errand.findUnique({ where: { id } })).toMatchObject({
+      description: input.description,
+      offeredCredits: 20,
+      version: 0,
+      pendingOperationId: null,
+    });
+    expect(
+      await creditPrisma.creditAccount.findUnique({
+        where: { userId: requesterId },
+      }),
+    ).toMatchObject({ availableCredits: 80, reservedCredits: 20 });
+  });
+  it('rejects non-owner, stale, empty, pickup-changing and accepted edits', async () => {
+    const id = (await create()).json<{ errand: { id: string } }>().errand.id;
+    expect(
+      (
+        await edit(
+          id,
+          { expectedVersion: 0, description: 'Other' },
+          randomUUID(),
+          'other',
+        )
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (await edit(id, { expectedVersion: 1, description: 'Stale' })).statusCode,
+    ).toBe(409);
+    expect((await edit(id, { expectedVersion: 0 })).statusCode).toBe(400);
+    expect(
+      (await edit(id, { expectedVersion: 0, pickupLocationId: randomUUID() }))
+        .statusCode,
+    ).toBe(400);
+    await prisma.errand.update({
+      where: { id },
+      data: { status: 'ACCEPTED', courierId: otherId, acceptedAt: new Date() },
+    });
+    expect(
+      (await edit(id, { expectedVersion: 0, description: 'Too late' }))
+        .statusCode,
+    ).toBe(409);
+    expect(
+      (
+        await app.inject({ method: 'GET', url: '/api/errands', headers: auth })
+      ).json(),
+    ).toEqual([]);
+  });
+  it('recovers a lost reservation acknowledgement without duplicate charges or partial publication', async () => {
+    loseAck = 'reserve';
+    const response = await create();
+    expect(response.statusCode).toBe(202);
+    const operationId = response.json<{ operationId: string }>().operationId;
+    expect(await prisma.errand.count()).toBe(0);
+    expect(await creditPrisma.creditReservation.count()).toBe(1);
+    expect((await service.process(operationId)).status).toBe('SUCCEEDED');
+    expect(await prisma.errand.count()).toBe(1);
+    expect(
+      await creditPrisma.ledgerEntry.count({
+        where: { type: 'RESERVE' },
+      }),
+    ).toBe(1);
+  });
+  it('retries after a real Order DB commit failure without reserving twice', async () => {
+    await prisma.$executeRawUnsafe(
+      `CREATE FUNCTION fail_publication() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'simulate crash after credits'; END $$`,
+    );
+    await prisma.$executeRawUnsafe(
+      'CREATE TRIGGER fail_publication BEFORE INSERT ON errands FOR EACH ROW EXECUTE FUNCTION fail_publication()',
+    );
+    const response = await create();
+    expect(response.statusCode).toBe(202);
+    expect(await prisma.errand.count()).toBe(0);
+    await prisma.$executeRawUnsafe('DROP TRIGGER fail_publication ON errands');
+    await prisma.$executeRawUnsafe('DROP FUNCTION fail_publication()');
+    await service.process(response.json<{ operationId: string }>().operationId);
+    expect(await prisma.errand.count()).toBe(1);
+    expect(
+      await creditPrisma.ledgerEntry.count({
+        where: { type: 'RESERVE' },
+      }),
+    ).toBe(1);
+  });
+  it('keeps a lost edit acknowledgement locked and hidden until idempotent recovery completes', async () => {
+    const id = (await create()).json<{ errand: { id: string } }>().errand.id;
+    loseAck = 'adjust';
+    const response = await edit(id, { expectedVersion: 0, offeredCredits: 30 });
+    expect(response.statusCode).toBe(202);
+    expect(
+      (
+        await app.inject({ method: 'GET', url: '/api/errands', headers: auth })
+      ).json(),
+    ).toEqual([]);
+    expect(
+      (await edit(id, { expectedVersion: 0, offeredCredits: 25 })).statusCode,
+    ).toBe(409);
+    await service.process(response.json<{ operationId: string }>().operationId);
+    expect(await prisma.errand.findUnique({ where: { id } })).toMatchObject({
+      offeredCredits: 30,
+      version: 1,
+      pendingOperationId: null,
+    });
+    expect(
+      await creditPrisma.creditAccount.findUnique({
+        where: { userId: requesterId },
+      }),
+    ).toMatchObject({ availableCredits: 70, reservedCredits: 30 });
+    expect(await creditPrisma.creditReservationAdjustment.count()).toBe(1);
+  });
+  it('S3: per-state CHECKs reject lifecycle rows missing their transition facts', async () => {
+    const id = (await create()).json().errand.id;
+    const at = new Date('2026-10-18T10:00:00Z');
+    const later = new Date('2026-10-18T10:05:00Z');
+    const rejected = async (data: object, constraint: string) =>
+      expect(prisma.errand.update({ where: { id }, data })).rejects.toThrow(
+        constraint,
+      );
+    await rejected(
+      { status: 'ACCEPTED', courierId: otherId },
+      'errands_assigned_states',
+    );
+    await rejected(
+      { status: 'PICKED_UP', courierId: otherId, acceptedAt: at },
+      'errands_picked_up_states',
+    );
+    await rejected(
+      {
+        status: 'DISPUTED',
+        courierId: otherId,
+        acceptedAt: at,
+        pickedUpAt: at,
+        deliveredAt: at,
+      },
+      'errands_disputed_state',
+    );
+    await rejected(
+      {
+        status: 'COMPLETED',
+        courierId: otherId,
+        acceptedAt: at,
+        pickedUpAt: at,
+        completedAt: at,
+      },
+      'errands_completion',
+    );
+    await rejected(
+      {
+        status: 'COMPLETED',
+        courierId: otherId,
+        acceptedAt: at,
+        pickedUpAt: at,
+        completedAt: at,
+        completionMethod: 'AUTO_TIMEOUT',
+      },
+      'errands_completion',
+    );
+    await rejected(
+      {
+        status: 'PICKED_UP',
+        courierId: otherId,
+        acceptedAt: later,
+        pickedUpAt: at,
+      },
+      'errands_lifecycle_order',
+    );
+    await rejected({ status: 'CANCELLED' }, 'errands_cancelled_state');
+    await rejected({ cancelledAt: at }, 'errands_cancelled_state');
+    await rejected({ status: 'EXPIRED' }, 'errands_expired_state');
+    await rejected({ expiredAt: at }, 'errands_expired_state');
+    await rejected(
+      {
+        status: 'CANCELLED',
+        cancelledAt: at,
+        courierId: otherId,
+        acceptedAt: at,
+      },
+      'errands_closed_unassigned',
+    );
+    await rejected(
+      { status: 'EXPIRED', expiredAt: at, acceptedAt: at },
+      'errands_closed_unassigned',
+    );
+    await prisma.errand.update({
+      where: { id },
+      data: {
+        status: 'DISPUTED',
+        courierId: otherId,
+        acceptedAt: at,
+        pickedUpAt: at,
+        deliveredAt: at,
+        disputedAt: later,
+      },
+    });
+    await prisma.errandHistory.create({
+      data: {
+        errandId: id,
+        fromStatus: 'DELIVERED',
+        toStatus: 'DISPUTED',
+        action: 'dispute',
+        actorRole: 'REQUESTER',
+        actorId: requesterId,
+      },
+    });
+    await expect(
+      prisma.errandHistory.create({
+        data: {
+          errandId: id,
+          toStatus: 'COMPLETED',
+          action: 'auto-complete',
+          actorRole: 'SYSTEM',
+          actorId: requesterId,
+        },
+      }),
+    ).rejects.toThrow('errand_history_actor');
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/api/errands/${id}`,
+          headers: auth,
+        })
+      ).json(),
+    ).toMatchObject({
+      status: 'DISPUTED',
+      disputedAt: later.toISOString(),
+      completionMethod: null,
+    });
+  });
+  it('journals outages durably and exposes operation status only to the requester', async () => {
+    outage = true;
+    const response = await create();
+    expect(response.statusCode).toBe(202);
+    const id = response.json<{ operationId: string }>().operationId;
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/api/errand-operations/${id}`,
+          headers: { authorization: 'Bearer other' },
+        })
+      ).statusCode,
+    ).toBe(404);
+    outage = false;
+    await service.process(id);
+    expect(await prisma.errand.count()).toBe(1);
+  });
+});

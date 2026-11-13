@@ -1,0 +1,24 @@
+# AI Assistance Disclosure:
+# Tool: GPT-6.1 Sol.
+# Scope: AI-assisted implementation of user-service/pnpm-workspace.yaml tooling configuration.
+# Author review: Checked user-service/pnpm-workspace.yaml entries for engineStrict, saveExact, allowBuilds against their existing uses; corrected indentation and configuration readability.
+
+engineStrict: true
+saveExact: true
+
+allowBuilds:
+  '@parcel/watcher': true
+  '@prisma/engines': true
+  '@scarf/scarf': false
+  argon2: true
+  cpu-features: false
+  msgpackr-extract: false
+  prisma: true
+  protobufjs: false
+  ssh2: false
+  unrs-resolver: true
+overrides:
+  deepmerge-ts@<8.0.0: 8.0.0
+  fastify@<5.12.5: 5.12.5
+  handlebars@<4.7.10: 4.7.10
+  mysql2@<=3.23.0: 3.23.1

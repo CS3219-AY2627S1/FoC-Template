@@ -1,0 +1,19 @@
+# order-service pass logs
+
+One file per working pass: a summary for humans at the top, then one entry per commit
+(what changed and why). Written by agents following
+`.agents/skills/order-commit-log` and `.agents/skills/order-change-summary`.
+
+| Log | Slice | Status |
+|---|---|---|
+| [2026-11-10-conflict-resolution.md](2026-11-10-conflict-resolution.md) | S12 dispute resolution | implemented; unit, build and browser regressions pass; database integration execution blocked by stopped Docker runtime |
+| [2026-11-01-bookmarks.md](2026-11-01-bookmarks.md) | Courier bookmarks | implemented; database integration verification blocked by unavailable Docker |
+| [2026-11-01-personal-rating-overview.md](2026-11-01-personal-rating-overview.md) | Personal ratings | done — self-only overview, home panel, 94 integration/32 browser tests pass; build security check blocks final exit |
+| [2026-11-01-review-frontend.md](2026-11-01-review-frontend.md) | Review frontend + read API | done — saved-review reload, ratings, requester form; 92 integration and 24 browser checks pass |
+| [2026-11-01-courier-reviews.md](2026-11-01-courier-reviews.md) | Courier reviews | done — 25 new PostgreSQL/HTTP cases, contract docs, 468 tests pass |
+| [2026-10-18-S0-agent-docs.md](2026-10-18-S0-agent-docs.md) | S0 | done — docs and agent tooling, no code |
+| [2026-10-18-D3-order-lifecycle.md](2026-10-18-D3-order-lifecycle.md) | S1, N1, S3–S6b, D3 queries, Docker, Postman | done — lifecycle, accept race, outbox + relay, 4 h timer, Postman; cancel/expiry blocked (Q-006/7/8) |
+| [2026-10-18-S7-cancel-expiry.md](2026-10-18-S7-cancel-expiry.md) | S7, S8 | done — requester/courier cancel, 30-min reopen, item-type expiry, IN_PROGRESS removed, 4 h timer fix; Q-020/Q-021 parked |
+| [2026-10-18-UI-courier-username.md](2026-10-18-UI-courier-username.md) | UI | done — `courierUsername` in order-service, shown in web-app instead of the courier id |
+| [2026-10-18-D3-postman-newman.md](2026-10-18-D3-postman-newman.md) | D3 | done — Newman run 121/121, credit-balance checks added, timers verified 18/18 |
+| [2026-10-18-fix-credit-settlement.md](2026-10-18-fix-credit-settlement.md) | fix | done — relay on by default, mandatory publish, credit event logs; compose (Q-018) still open |
