@@ -1,0 +1,169 @@
+.panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 20px;
+  border-radius: 12px;
+  background: white;
+  h2 {
+    margin: 0;
+    font-size: 18px;
+    overflow-wrap: anywhere;
+  }
+}
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 420px;
+  min-height: 120px;
+  margin: 0;
+  padding: 12px;
+  overflow-y: auto;
+  list-style: none;
+  border-radius: 10px;
+  background: #f6f8fb;
+}
+.empty {
+  margin: auto;
+  font-size: 14px;
+  color: #626b78;
+  text-align: center;
+}
+.row {
+  display: flex;
+  flex-direction: column;
+}
+// display the timing like wechat style
+.separator {
+  align-self: center;
+  margin: 6px 0 8px;
+  font-size: 12px;
+  color: #8a929e;
+}
+.message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 80%;
+  &[data-mine='true'] {
+    align-self: flex-end;
+    align-items: flex-end;
+    .bubble {
+      background: #173f7a;
+      color: white;
+    }
+  }
+  &[data-failed='true'] {
+    .bubble,
+    .media {
+      opacity: 0.6;
+    }
+  }
+}
+.sender {
+  margin: 0 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #414b59;
+}
+.bubble {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: white;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+// Photos and videos get a fixed size, for formatting
+.mediaLink {
+  display: block;
+  line-height: 0;
+}
+.media {
+  display: block;
+  width: 240px;
+  max-width: 100%;
+  height: auto;
+  max-height: 280px;
+  border-radius: 12px;
+  background: #e4e8ee;
+  object-fit: cover;
+}
+.status {
+  margin: 0 4px;
+  font-size: 11px;
+  color: #626b78;
+}
+.notice {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fff4e0;
+  color: #8b4c0b;
+  font-size: 13px;
+}
+.attach {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid #c9d1dc;
+  border-radius: 50%;
+  background: white;
+  color: #414b59;
+  cursor: pointer;
+}
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  textarea {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid #c9d1dc;
+    border-radius: 10px;
+    font: inherit;
+    font-size: 14px;
+    resize: none;
+  }
+}
+.send {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 50%;
+  background: #173f7a;
+  color: white;
+  cursor: pointer;
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+.note {
+  margin: 0;
+  font-size: 14px;
+  color: #626b78;
+}
+.error {
+  margin: 0;
+  font-size: 14px;
+  color: #b42318;
+}
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #2864cf;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

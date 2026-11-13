@@ -1,0 +1,21 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="RealtimeService" type="js.build_tools.npm">
+    <package-json value="$PROJECT_DIR$/realtime-service/package.json" />
+    <command value="run" />
+    <scripts>
+      <script value="dev" />
+    </scripts>
+    <node-interpreter value="project" />
+    <package-manager value="npm" />
+    <envs>
+      <env name="NODE_ENV" value="development" />
+      <env name="JWKS_URL" value="http://localhost:8080/api/.well-known/jwks.json" />
+      <env name="AWS_REGION" value="ap-southeast-1" />
+      <env name="AWS_ACCESS_KEY_ID" value="test" />
+      <env name="AWS_SECRET_ACCESS_KEY" value="test" />
+      <env name="AWS_ENDPOINT_URL" value="http://localhost:4566" />
+      <env name="SQS_QUEUE_URL" value="http://localhost:4566/000000000000/foc-dev-realtime-events" />
+    </envs>
+    <method v="2" />
+  </configuration>
+</component>

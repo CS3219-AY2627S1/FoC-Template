@@ -1,0 +1,20 @@
+#!/bin/bash
+set -euo pipefail
+
+export AWS_DEFAULT_REGION='${region}'
+
+gateway=$(docker ps -q --filter label=com.amazonaws.ecs.container-name=gateway)
+if [ -z "$gateway" ]; then
+  echo 'Waiting for the gateway before requesting a certificate.'
+  exit 1
+fi
+
+/opt/acme/bin/certbot certonly \
+  --non-interactive --agree-tos \
+  --webroot -w /var/lib/runtime/acme \
+  --email '${acme_email}' -d '${domain}' \
+  --keep-until-expiring \
+  --config-dir /var/lib/runtime/tls/acme \
+  --work-dir /var/lib/runtime/tls/work \
+  --logs-dir /var/log/acme \
+  --deploy-hook /usr/local/bin/deploy-certificate

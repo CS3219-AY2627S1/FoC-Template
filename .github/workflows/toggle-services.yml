@@ -1,0 +1,40 @@
+name: Start or stop services
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Start or stop all ECS services
+        required: true
+        type: choice
+        options:
+          - start
+          - stop
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: foc-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-southeast-1
+
+jobs:
+  toggle:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/production-context
+        with:
+          role: ${{ vars.AWS_INFRASTRUCTURE_ROLE }}
+          state-bucket: ${{ vars.TF_STATE_BUCKET }}
+      - name: Set task counts and wait for services
+        env:
+          ACTION: ${{ inputs.action }}
+        shell: bash
+        run: bash .github/scripts/toggle-services.sh "$ACTION"

@@ -2,10 +2,12 @@
 dist/
 build/
 out/
-
+.gradle
 # Environment / secrets
 .env
 .env.local
+.env.prod
+secrets/
 .env.*.local
 *.pem
 *.key
@@ -13,3 +15,18 @@ out/
 # OS
 .DS_Store
 Thumbs.db
+
+# IDE
+.idea/
+*.iml
+.run/
+# Terraform local working files; commit provider lock files.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+**/tfplan
+**/backend.hcl
+**/*.auto.tfvars
+
+!**/src/test/resources/keys/*.pem

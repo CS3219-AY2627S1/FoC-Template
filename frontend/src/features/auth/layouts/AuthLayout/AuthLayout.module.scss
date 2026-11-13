@@ -1,0 +1,46 @@
+.layout {
+  // Use a minimum height so longer forms can extend the page.
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 16px;
+  background-color: var(--color-background);
+  // Soften the photo behind the authentication card.
+  background-image:
+    linear-gradient(rgb(255 255 255 / 35%), rgb(255 255 255 / 35%)),
+    url('../../assets/auth-background.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.card {
+  width: 100%;
+  max-width: 440px;
+  margin-block: auto;
+  padding: 24px;
+  background-color: var(--color-surface);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgb(23 32 51 / 10%);
+  overflow-wrap: anywhere;
+}
+
+.brand {
+  margin: 0 0 24px;
+  color: #000;
+  font-size: 32px;
+  font-weight: 700;
+  text-align: center;
+}
+
+@media (min-width: 768px) {
+  .layout {
+    padding: 48px 24px;
+  }
+
+  .card {
+    padding: 40px;
+  }
+}

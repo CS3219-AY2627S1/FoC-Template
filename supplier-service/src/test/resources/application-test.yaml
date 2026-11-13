@@ -1,0 +1,33 @@
+spring:
+  main:
+    banner-mode: "off"
+  cloud:
+    aws:
+      region:
+        static: ap-southeast-1
+      s3:
+        region: ap-southeast-1
+        path-style-access-enabled: true
+      credentials:
+        access-key: test
+        secret-key: test
+  modulith:
+    events:
+      staleness:
+        published: 0s
+        processing: 0s
+        resubmitted: 0s
+server:
+  port: 0
+logging:
+  level:
+    root: WARN
+    foc.test.floci: INFO
+
+storage:
+  s3:
+    bucket: foc-supplier-integration
+
+events:
+  messaging:
+    topic-arn: arn:aws:sns:ap-southeast-1:000000000000:foc-test-supplier-events

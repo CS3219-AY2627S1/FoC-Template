@@ -1,0 +1,18 @@
+#!/bin/bash
+set -euo pipefail
+
+export AWS_DEFAULT_REGION='${region}'
+
+gateway=$(docker ps -q --filter label=com.amazonaws.ecs.container-name=gateway)
+[ -n "$gateway" ]
+
+install -m 644 '/var/lib/runtime/tls/acme/live/${domain}/fullchain.pem' /var/lib/runtime/tls/fullchain.pem.new
+install -m 600 '/var/lib/runtime/tls/acme/live/${domain}/privkey.pem' /var/lib/runtime/tls/privkey.pem.new
+mv /var/lib/runtime/tls/fullchain.pem.new /var/lib/runtime/tls/fullchain.pem
+mv /var/lib/runtime/tls/privkey.pem.new /var/lib/runtime/tls/privkey.pem
+
+docker exec "$gateway" nginx -s reload
+
+tar -czf /var/lib/runtime/tls.tar.gz -C /var/lib/runtime/tls .
+aws s3 cp /var/lib/runtime/tls.tar.gz 's3://${configuration_bucket}/tls.tar.gz' --only-show-errors
+rm /var/lib/runtime/tls.tar.gz

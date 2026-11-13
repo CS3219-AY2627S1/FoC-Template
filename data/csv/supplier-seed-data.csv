@@ -1,22 +1,75 @@
-Name,Type,Building,Floor,Location Description,Latitude,Longitude,StartingTime,ClosingTime,ImageURL
-Anna's x Soup Union,Food,Central Library,1,Next to NUS Co-op,1.296444,103.773032,0900hrs,1800hrs,https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/ANNA.jpeg
-NUS Co-op,Shopping,Central Library,1,Inside the library on the right side,1.2967866,103.7732677,0900hrs,1600hrs,https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/NUS_COOP.jpeg
-Printer @ Com 2,Printing,Com 2,1,Next to LT19,1.2938347,103.7744572,0000hrs,2359hrs,https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/PRINTER_COM2.jpeg
-Cool Spot,Food,Com2,1,Opp LT16,1.2940156,103.7738478,0900hrs,2130hrs,https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/COOL_SPOT.jpeg
-InstaChef,Food,Terrace,1,Next to foyer,1.2938898,103.7736305,0000hrs,2359hrs,https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/INSTACHEF.jpeg
-Cafe+ Robot Cafe,Food/Coffee,Central Library,1,Opp to central library entrance,1.296444,103.773032,0000hrs,2359hrs,https://github.com/CS3219-AY2627S1/FoC-Template/blob/main/data/images/ROBOT_CAFE.jpeg
-A Hot Hideout,Food,Prince George's Park,2,Near PGP entrance,1.2908445,103.7770891,1100hrs,2130hrs,
-Arise and Shine,Food,Engineering Block E4,4,Near LT6,1.2991517,103.769064,0800hrs,1800hrs,
-Bakehaus / Aurea,Food,The Ridge,1,Near COM2,1.2946778,103.7707872,0800hrs,2100hrs,
-Central Square @ YIH,Food,Yusof Ishak House,1,Closest to Opp UHC bus stop,1.2984401,103.7726256,0800hrs,2000hrs,
-Pasta Express,Food,Frontier,1,Aircon section,1.2947819,103.7704435,0930hrs,1930hrs,
-TOMORO COFFEE,Food/Coffee,Hon Sui Sen Memorial Library,2,Inside HSSML,1.2931259,103.7719943,0815hrs,1800hrs,
-Octobox,Shopping,Prince George’s Park,2,Near PGP entrance,1.2904347,103.7787588,0000hrs,2359hrs,
-Smooy,Food,COM3,1,The Terrace @ COM3,1.2948308,103.7716305,1100hrs,2100hrs,
-Goh Bros E-Print Pte Ltd,Printing,Yusof Ishak House,5,Take the long staircase up YIH,1.2984905,103.7720544,0900hrs,1800hrs,
-Cheers Unmanned Convenience Store,Shopping,Engineering Block E3,4,Take right from Arise n Shine,1.2994341,103.7526298,0000hrs,2359hrs,
-Nami,Food,innovation4.0,1,Opp TCOMS,1.2942982,103.7708813,0800hrs,1730hrs,
-Supersnacks,Food,Prince George’s Park,1,"At level 1 in Prince George's Park Residences, Block 10",1.2913847,103.7776367,1100hrs,0200hrs,
-Good Day Cafe,Food/Coffee,Medicine+Science Library,1,Inside MedScience library ,1.2967989,103.7794336,0730hrs,1830hrs,
-The Coffee Roaster,Food/Coffee,Blk AS8,1,Behind central library bus stop,1.296252229,103.7720926,0800hrs,1730hrs,
-he by He Brews,Food/Coffee,Engineering Block EA,1,Near LT7 & Engineering Auditorium,1.300566804,103.7707577,0800hrs,1700hrs,
+id,name,category,building,floor,location_description,latitude,longitude,active
+438f630d-70f1-519b-a271-a0ec74f0409b,Anna's x Soup Union,FOOD,Central Library,1,Next to NUS Co-op,1.296444,103.773032,true
+d20db68d-b147-53ea-a588-d347550859f2,NUS Co-op,SHOPPING,Central Library,1,"Inside Central Library, on the right",1.2967866,103.7732677,true
+88681fc3-e569-5921-9543-3d17e831fc72,Printer @ COM2,PRINTING,COM2,1,Next to LT19,1.2938347,103.7744572,true
+cc0b0490-a3ef-5be3-97bc-c9a215ba09b6,Cool Spot,FOOD,COM2,1,Opposite LT16,1.2940156,103.7738478,true
+4b518bc7-519f-50e2-b1db-f6a366df5cbb,InstaChef,FOOD,The Terrace,1,Next to the foyer,1.2938898,103.7736305,true
+deeb85c5-d0e6-5050-b0c9-cfcd5dca1bf9,Cafe+ Robot Cafe,COFFEE,Central Library,1,Opposite the Central Library entrance,1.296444,103.773032,true
+5072b4ff-84a9-5566-a0bc-8b791abef0de,A Hot Hideout,FOOD,Prince George's Park,2,Near the Prince George's Park entrance,1.2908445,103.7770891,true
+f7a0f5e2-c62f-532d-80f6-4f2bafab6c3f,Arise and Shine,FOOD,E4,4,Near LT6,1.2991517,103.769064,true
+71b4f11a-3771-5732-b3e3-521768708ecf,Bakehaus / Aurea,FOOD,The Ridge,1,Near COM2,1.2946778,103.7707872,true
+af9cbba4-98aa-5493-921c-3afe953065dd,Central Square @ YIH,FOOD,Yusof Ishak House,1,Near the Opp UHC bus stop,1.2984401,103.7726256,true
+0e58f17f-1e65-5d42-8ec6-71bf201e8b48,Pasta Express,FOOD,Frontier,1,Air-conditioned section,1.296522,103.7804625,true
+ae834dab-cfd7-5fbe-9e82-4d29f72bb6f7,TOMORO COFFEE,COFFEE,Hon Sui Sen Memorial Library,2,Inside Hon Sui Sen Memorial Library,1.2931259,103.7719943,true
+2988eac8-521f-5570-a300-150261d16c89,Octobox,SHOPPING,Prince George's Park,2,Near the Prince George's Park entrance,1.2904347,103.7787588,true
+391df1f6-7355-583c-8fe1-1bff16fd49d2,Smooy,FOOD,COM3,1,The Terrace at COM3,1.2946408,103.7745659,true
+ce09b443-dd43-56fa-b85d-e3110eee513e,Goh Bros E-Print Pte Ltd,PRINTING,Yusof Ishak House,5,Up the long staircase at Yusof Ishak House,1.2984905,103.7720544,true
+be0e3bf2-2077-524d-9df5-8992c15505ca,Cheers Unmanned Convenience Store,SHOPPING,E3,4,To the right of Arise and Shine,1.299587,103.7717445,true
+604954cc-68a0-53c9-9d6a-c505f833c7b1,Nami,FOOD,Innovation 4.0,1,Opposite TCOMS,1.2942982,103.7708813,true
+ce8bdc78-f05c-5919-8ae1-c2808512cc9d,Supersnacks,FOOD,Prince George's Park,1,"Prince George's Park Residences, Block 10",1.2913847,103.7776367,true
+ed913764-0ca0-537c-a432-d650d7e450fa,Good Day Cafe,COFFEE,Medicine + Science Library,1,Inside Medicine + Science Library,1.2967989,103.7794336,true
+5a48574d-b445-53cf-9a2d-f256c2258c4c,The Coffee Roaster,COFFEE,AS8,1,Behind the Central Library bus stop,1.296252229,103.7720926,true
+b609a470-4777-514c-abf2-af976902ccc4,he by He Brews,COFFEE,EA,1,Near LT7 and the Engineering Auditorium,1.300566804,103.7707577,true
+f7150fa0-d925-5689-86e0-1c3feadcca82,Bistro Box,FOOD,College of Design and Engineering,,Halal certified,1.2987754,103.7717957,true
+08d3f862-1b1b-5907-b081-0cda0e1ba7a4,Burnt Cones @ MD11,FOOD,MD11,1,Medicine block MD11,1.2959891,103.7817842,true
+82294ef4-f9e1-5aa7-87bb-30b4fe816500,Burnt Cones @ University Hall,FOOD,University Hall,1,,1.2971418,103.7775443,true
+43e7780d-aac1-5534-9966-fc53be5a5e7e,Cafe Delight,COFFEE,Ventus,1,,1.2953294,103.7702086,true
+fd2f8a16-183e-5d6a-ae14-3bace63d8c17,Chong Pang Tai Zhi Wei,FOOD,The Deck,2,Faculty of Arts and Social Sciences,1.2946935,103.7724925,true
+c463cc61-536b-5d59-90a1-e59bb1df4d47,CHAGEE,COFFEE,Yusof Ishak House,1,Tea drinks,1.2985723,103.7747998,true
+9534256b-3c9d-581e-ad3e-e14f9495825e,Eureka Taste,FOOD,MD6,1,Medicine block MD6,1.2953234,103.7817082,true
+9d4333b2-5810-548f-b4e2-fdb5666fb9a0,Fong Seng Nasi Lemak,FOOD,The Deck,2,Faculty of Arts and Social Sciences,1.2946935,103.7724925,true
+ccaf3031-6b7b-565e-871b-2d30f75f010d,Frontier,FOOD,Frontier,1,"Faculty of Science food court, 15 stalls; stall hours vary",1.296522,103.7804625,true
+e9dd7328-ba3b-5585-ae8b-6a2841234a48,Li Ji Coffeehouse,COFFEE,Frontier,1,Air-conditioned section,1.296522,103.7804625,true
+c4b3116d-bc2e-5fb6-9f39-4e14bc5f3c25,Liang Ban Kung Fu,FOOD,The Deck,2,Faculty of Arts and Social Sciences,1.2946935,103.7724925,true
+e20ab7c5-5f23-5610-bafa-35b238e66e8b,Makan Boleh,FOOD,The Terrace,1,The Terrace at COM3; halal certified,1.2946408,103.7745659,true
+616513f0-8dc5-503e-be33-b2f6233ce8a1,Mini Wok & Dim Sum,FOOD,Yusof Ishak House,1,,1.2985723,103.7747998,true
+de2890d4-02a8-500b-9a69-6ec8cfbd5f81,Mixue,COFFEE,Frontier,1,Ice cream and tea drinks,1.296522,103.7804625,true
+4b81db3f-d693-5a1c-866c-f95af9fca57d,Nine Fresh,FOOD,Frontier,1,"Desserts, Faculty of Science",1.296522,103.7804625,true
+4cd711e5-49d9-576c-a652-799c1f9fc570,Potato Corner,FOOD,Yusof Ishak House,1,,1.2985723,103.7747998,true
+27cac620-43c5-5442-bab9-32aa0b3dc56a,PGP Aircon Canteen,FOOD,Prince George's Park,2,11 stalls; stall hours vary,1.2908445,103.7770891,true
+517deb7d-0ece-5653-afc4-e15d9c2df2fc,QQ Rice,FOOD,S16,1,Science block S16,1.2967792,103.7802083,true
+e5915fef-7bc0-5349-9454-725e5954c333,Sloppy B,FOOD,University Sports Centre,1,,1.3003931,103.7763053,true
+82a02502-75cc-5475-9bad-cd89b20e4be5,Poonsti Cafe,COFFEE,Shaw Foundation Alumni House,1,"Food until 3pm, drinks until 4:30pm",1.2936775,103.7732796,true
+107f6b2d-925f-51e1-b7bf-41705833a352,Starbucks @ S9,COFFEE,S9,1,Science block S9,1.2959183,103.7799497,true
+fb389056-982f-5215-8499-070a5e98f557,Starbucks @ CDE,COFFEE,College of Design and Engineering,,,1.2987754,103.7717957,true
+bc8c6036-1ae7-54fc-b627-c48b3d26f325,Taiwan Ichiban,FOOD,Frontier,1,Air-conditioned section,1.296522,103.7804625,true
+62ac4bd7-e12a-5f98-b396-ff7d84b8ed72,Techno Edge,FOOD,Techno Edge,1,"Engineering food court, 12 stalls; stall hours vary",1.2980015,103.7714667,true
+f54fd274-2dfd-5b34-9f79-0ee26cac48f4,TempuRamen,FOOD,Yusof Ishak House,1,,1.2985723,103.7747998,true
+013a40f5-03b0-58ad-83f3-c5ee135831cc,The Acai Truck,FOOD,Prince George's Park,2,In the PGP canteen,1.2908445,103.7770891,true
+ff5a8a88-60ed-5aa3-97cf-9bceef7deb05,The Coffee Bean and Tea Leaf,COFFEE,The Terrace,1,The Terrace at COM3; halal certified,1.2946408,103.7745659,true
+df0cffcf-9fc0-5d61-80df-3bf5b0293f67,The Deck,FOOD,The Deck,1,"Faculty of Arts and Social Sciences food court, 13 stalls; stall hours vary",1.2946935,103.7724925,true
+b882db4f-bebc-537e-8d27-7637c0702458,The Spread,FOOD,Mochtar Riady Building,1,NUS Business School,1.2925222,103.7741334,true
+68cb8453-1a1e-509d-880c-898cae335be2,The Terrace,FOOD,The Terrace,1,COM3 food court,1.2946408,103.7745659,true
+9e3a8d0a-aee9-5373-80df-0ea926fe4eb9,Uncle Penyet Fusion,FOOD,Frontier,1,Air-conditioned section; halal certified,1.296522,103.7804625,true
+475dd592-20ea-517f-8d0a-18ba7b294e8a,Wild Skew,FOOD,Yusof Ishak House,2,,1.2985723,103.7747998,true
+33c8b812-d814-51ff-a757-74a487090c53,Wok Express,FOOD,Yusof Ishak House,1,Halal certified,1.2985723,103.7747998,true
+c79a008f-f46b-530b-b0f2-7aa265be05e3,Wonderful Cafe @ CDE,FOOD,College of Design and Engineering,,,1.2987754,103.7717957,true
+f6443670-0b99-587e-9b5f-9899011e99f9,Wonderful Cafe @ S16,FOOD,S16,1,Science block S16,1.2967792,103.7802083,true
+7091b166-090e-59b4-9ddd-b08b75bb2208,NUS Co-op @ LT27,SHOPPING,LT27,1,"Lim Seng Tjoe Lecture Theatre, #01-01",1.2970342,103.7808413,true
+2d7b6dc3-8aea-5df3-874a-c2c47c65f5d3,Bismillah Biryani,FOOD,Stephen Riady Centre,1,UTown,1.3046871,103.7724497,true
+bbcf9c4d-cc64-54f1-9efe-216ad7147c68,Fine Food,FOOD,Town Plaza,1,"UTown food court, 14 stalls",1.3051,103.7733,true
+ee9ce208-05fc-5caf-a41f-d2ed7bb3c225,Flavours @ UTown,FOOD,Stephen Riady Centre,1,"UTown food court, 11 stalls",1.3046871,103.7724497,true
+0f55f39c-8bc0-5af7-bf66-3301d7187c4e,Hwang's Korean Restaurant,FOOD,Town Plaza,1,UTown,1.3051,103.7733,true
+fd757153-6bc7-5c66-a07c-c083dc4b45ca,Jollibee,FOOD,Town Plaza,1,UTown,1.3051,103.7733,true
+745f01e8-ac9b-54f5-8a00-53540a76aece,Mr Bean / Do Qoo,FOOD,Town Plaza,1,UTown; halal certified,1.3051,103.7733,true
+6b7b9be4-f4b0-5405-8bf2-ae22c5452c18,Makan Malah!,FOOD,Town Plaza,1,UTown,1.3051,103.7733,true
+af790a58-b4fc-57cc-abf3-1c6667bf6e7e,Starbucks @ UTown,COFFEE,Education Resource Centre,1,UTown; open 24 hours in term time,1.3055219,103.7731434,true
+c81fc3ec-6892-56ca-b656-963a5ef11dc2,Subway,FOOD,Stephen Riady Centre,1,UTown; halal certified,1.3046871,103.7724497,true
+3bf9b065-5836-523e-a942-7a48d97bbcab,Supersnacks @ UTown,FOOD,Stephen Riady Centre,1,UTown,1.3046871,103.7724497,true
+386a39f2-763b-5e67-8239-887591bf5db1,The Royals Bistro,FOOD,Town Plaza,1,UTown; halal certified,1.3051,103.7733,true
+ed62f815-0a0a-5c03-969e-5f83ec825a39,Sapore,FOOD,Stephen Riady Centre,1,UTown,1.3046871,103.7724497,true
+cc861d2c-54d5-5835-b912-81212ac102b4,TOMORO COFFEE @ NUS College,COFFEE,NUS College,1,UTown,1.306088,103.771993,true
+de0414aa-d086-58c6-a7c9-e2556bf8fa5d,Triplets,FOOD,Stephen Riady Centre,1,UTown; halal certified,1.3046871,103.7724497,true
+b25e787d-f430-5890-9658-274d01284e9c,Udon Don Bar,FOOD,Town Plaza,1,UTown,1.3051,103.7733,true
+a070ef43-8ff5-5b75-ae72-cf5e7588bd2c,Waa Cow / Bueno Bueno,FOOD,Stephen Riady Centre,1,UTown,1.3046871,103.7724497,true
+a217cac4-dc04-50a4-a292-5bfffb21bfb7,The Merch Shop,SHOPPING,Stephen Riady Centre,1,"NUS Co-op merchandise store, #01-02",1.3046871,103.7724497,true

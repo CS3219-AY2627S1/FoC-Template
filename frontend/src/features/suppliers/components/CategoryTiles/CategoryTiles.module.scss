@@ -1,0 +1,75 @@
+.categories {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.category {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #080808;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.tile {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 16px;
+  background: var(--color-surface);
+  color: var(--color-primary);
+  transition: transform 0.15s;
+
+  &[data-tone='orange'] {
+    background: #fff1e0;
+    color: #c2620a;
+  }
+
+  &[data-tone='blue'] {
+    background: #e5efff;
+    color: #2864cf;
+  }
+
+  &[data-tone='purple'] {
+    background: #f1e8fb;
+    color: #7a3fbf;
+  }
+
+  &[data-tone='navy'] {
+    background: var(--color-primary-soft);
+    color: var(--color-primary);
+  }
+
+  &[data-tone='green'] {
+    background: #e7f6ee;
+    color: #188348;
+  }
+}
+
+.category:hover .tile {
+  transform: translateY(-2px);
+}
+
+@media (min-width: 601px) {
+  .categories {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 14px;
+  }
+}
+
+@media (min-width: 851px) {
+  .categories {
+    gap: 28px;
+  }
+}

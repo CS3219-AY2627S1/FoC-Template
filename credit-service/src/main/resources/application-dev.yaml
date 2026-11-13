@@ -1,0 +1,17 @@
+events:
+  messaging:
+    topic-arn: arn:aws:sns:${AWS_REGION:ap-southeast-1}:000000000000:foc-dev-credit-events
+    queue-name: foc-dev-credit-events
+
+spring:
+  cloud:
+    aws:
+      region:
+        static: ${AWS_REGION:ap-southeast-1}
+      sns:
+        endpoint: http://localhost:4566
+      sqs:
+        endpoint: http://localhost:4566
+      credentials:
+        access-key: test
+        secret-key: test

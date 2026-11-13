@@ -1,0 +1,153 @@
+resolver ${NGINX_LOCAL_RESOLVERS} valid=5s ipv6=off;
+resolver_timeout 2s;
+
+upstream user_backend {
+    zone user_backend 64k;
+    server ${FOC_USER_UPSTREAM};
+    keepalive 8;
+}
+
+upstream supplier_backend {
+    zone supplier_backend 64k;
+    server ${FOC_SUPPLIER_UPSTREAM};
+    keepalive 8;
+}
+
+upstream order_backend {
+    zone order_backend 64k;
+    server ${FOC_ORDER_UPSTREAM};
+    keepalive 8;
+}
+
+upstream credit_backend {
+    zone credit_backend 64k;
+    server ${FOC_CREDIT_UPSTREAM};
+    keepalive 8;
+}
+
+upstream realtime_backend {
+    zone realtime_backend 64k;
+    server ${FOC_REALTIME_UPSTREAM};
+    keepalive 8;
+}
+
+server {
+    listen 80;
+    server_name _;
+    server_tokens off;
+
+    include /etc/nginx/snippets/security-headers.conf;
+
+    location = /healthz {
+        return 200 'ok';
+    }
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+
+    location / {
+        return 308 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name _;
+    server_tokens off;
+
+    include /etc/nginx/snippets/security-headers.conf;
+
+    ssl_certificate     /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_types
+        application/json
+        text/css
+        application/javascript;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    client_max_body_size 10m;
+
+    proxy_hide_header X-Content-Type-Options;
+    proxy_hide_header X-Frame-Options;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+
+    location /socket.io/ {
+        proxy_pass http://realtime_backend;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 75s;
+        proxy_send_timeout 75s;
+        proxy_buffering off;
+    }
+
+    location = /api/.well-known/jwks.json {
+        proxy_pass http://user_backend;
+    }
+
+    location ~ ^/api/users(/|$) {
+        proxy_pass http://user_backend;
+    }
+
+    location ~ ^/api/auth(/|$) {
+        proxy_pass http://user_backend;
+    }
+
+    # Larger uploads: proof of delivery (up to 5 photos of 5 MB, sent together)
+    # and chat videos (up to 20 MB).
+    location ~ ^/api/orders/[^/]+/(deliver|messages/attachments)$ {
+        client_max_body_size 26m;
+        proxy_pass http://order_backend;
+    }
+
+    location ~ ^/api/orders(/|$) {
+        proxy_pass http://order_backend;
+    }
+
+    location ~ ^/api/credits(/|$) {
+        proxy_pass http://credit_backend;
+    }
+
+    location ~ ^/api/suppliers(/|$) {
+        proxy_pass http://supplier_backend;
+    }
+
+    location = /api {
+        default_type application/json;
+        return 404 '{"message":"Not found"}';
+    }
+
+    location /api/ {
+        default_type application/json;
+        return 404 '{"message":"Not found"}';
+    }
+
+    location /assets/ {
+        include /etc/nginx/snippets/security-headers.conf;
+        include /etc/nginx/snippets/cache-headers.conf;
+        try_files $uri =404;
+    }
+
+    location = /index.html {
+        include /etc/nginx/snippets/security-headers.conf;
+        include /etc/nginx/snippets/nocache-headers.conf;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

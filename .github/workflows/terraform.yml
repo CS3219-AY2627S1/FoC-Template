@@ -1,0 +1,93 @@
+name: Update infrastructure
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+# Shared with Deploy and database setup; do not cancel a running apply.
+concurrency:
+  group: foc-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-southeast-1
+  TF_IN_AUTOMATION: "true"
+  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform/environments/prod
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/production-context
+        with:
+          role: ${{ vars.AWS_INFRASTRUCTURE_ROLE }}
+          state-bucket: ${{ vars.TF_STATE_BUCKET }}
+          read-outputs: "false"
+      - name: Prepare infrastructure plan
+        run: |
+          set -euo pipefail
+
+          mkdir -p review
+          terraform plan -input=false -lock-timeout=5m -out=review/plan.tfplan
+          terraform show -no-color review/plan.tfplan > review/plan.txt
+          printf 'Review the infrastructure plan below or download the environment-plan artifact, then use Review deployments to approve terraform-approval.\n\n```text\n' >> "$GITHUB_STEP_SUMMARY"
+          cat review/plan.txt >> "$GITHUB_STEP_SUMMARY"
+          printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
+      - name: Check required parameters and queue removal
+        run: |
+          terraform show -json review/plan.tfplan > "$RUNNER_TEMP/plan.json"
+          bash "$GITHUB_WORKSPACE/.github/scripts/check-infrastructure-plan.sh" "$RUNNER_TEMP/plan.json"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: environment-plan
+          path: infra/terraform/environments/prod/review/
+          retention-days: 3
+
+  approval:
+    name: Review infrastructure plan
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions: {}
+    environment:
+      name: terraform-approval
+      url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Confirm plan approval
+        run: echo "The saved infrastructure plan was approved."
+
+  apply:
+    needs: [plan, approval]
+    runs-on: ubuntu-latest
+    # Configure required reviewers on this GitHub environment.
+    environment: production
+    defaults:
+      run:
+        working-directory: infra/terraform/environments/prod
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/production-context
+        with:
+          role: ${{ vars.AWS_INFRASTRUCTURE_ROLE }}
+          state-bucket: ${{ vars.TF_STATE_BUCKET }}
+          read-outputs: "false"
+      - uses: actions/download-artifact@v7
+        with:
+          name: environment-plan
+          path: infra/terraform/environments/prod/review
+      - name: Apply the reviewed infrastructure plan
+        run: |
+          set -euo pipefail
+
+          terraform show -json review/plan.tfplan > "$RUNNER_TEMP/plan.json"
+          bash "$GITHUB_WORKSPACE/.github/scripts/check-infrastructure-plan.sh" "$RUNNER_TEMP/plan.json"
+          terraform apply -input=false -lock-timeout=5m review/plan.tfplan

@@ -1,0 +1,208 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: Service to deploy
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - user
+          - supplier
+          - order
+          - credit
+          - realtime
+          - gateway
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: foc-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-southeast-1
+  TF_IN_AUTOMATION: "true"
+  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+  RELEASE_SHA: ${{ github.sha }}
+
+jobs:
+  select-services:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/production-context
+        with:
+          role: ${{ vars.AWS_INFRASTRUCTURE_ROLE }}
+          state-bucket: ${{ vars.TF_STATE_BUCKET }}
+      - name: Select services
+        id: select
+        env:
+          SELECTED_SERVICE: ${{ inputs.service }}
+          VITE_CARTO_API_KEY: ${{ vars.VITE_CARTO_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          matrix=$(jq -c --arg selected "$SELECTED_SERVICE" --arg carto "$VITE_CARTO_API_KEY" '
+            .repositories as $repositories
+            | [
+              {service: "user", dockerfile: "Dockerfile", target: "user-service"},
+              {service: "supplier", dockerfile: "Dockerfile", target: "supplier-service"},
+              {service: "order", dockerfile: "Dockerfile", target: "order-service"},
+              {service: "credit", dockerfile: "Dockerfile", target: "credit-service"},
+              {service: "realtime", dockerfile: "Dockerfile", target: "realtime-service"},
+              {
+                service: "gateway",
+                dockerfile: "frontend/Dockerfile",
+                target: "runtime",
+                build_args: ("VITE_CARTO_API_KEY=" + $carto)
+              }
+            ]
+            | map(select($selected == "all" or .service == $selected))
+            | map(. + {repository_url: $repositories[.service]})
+            | if length == 0 then error("Unknown service: " + $selected)
+              else {include: .} end
+          ' "$RUNNER_TEMP/deployment.json")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: select-services
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select-services.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_INFRASTRUCTURE_ROLE }}
+          aws-region: ap-southeast-1
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+      - name: Select release image
+        id: image
+        env:
+          REPOSITORY_URL: ${{ matrix.repository_url }}
+        run: |
+          set -euo pipefail
+
+          echo "repository=${REPOSITORY_URL#*/}" >> "$GITHUB_OUTPUT"
+          echo "tag=$REPOSITORY_URL:$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Reuse an existing immutable release image
+        id: existing
+        env:
+          REPOSITORY: ${{ steps.image.outputs.repository }}
+        run: |
+          set -euo pipefail
+
+          if digest=$(aws ecr describe-images --repository-name "$REPOSITORY" --image-ids "imageTag=$RELEASE_SHA" --query 'imageDetails[0].imageDigest' --output text 2> "$RUNNER_TEMP/image-lookup.err"); then
+            echo "Reusing $REPOSITORY:$RELEASE_SHA ($digest)"
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          elif [[ $(cat "$RUNNER_TEMP/image-lookup.err") == *'(ImageNotFoundException)'* ]]; then
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          else
+            cat "$RUNNER_TEMP/image-lookup.err" >&2
+            exit 1
+          fi
+      - uses: docker/setup-buildx-action@v4
+        if: steps.existing.outputs.exists == 'false'
+      - uses: docker/build-push-action@v7
+        if: steps.existing.outputs.exists == 'false'
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          build-args: ${{ matrix.build_args }}
+          platforms: linux/amd64
+          provenance: false
+          push: true
+          tags: ${{ steps.image.outputs.tag }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy:
+    needs: [select-services, publish]
+    runs-on: ubuntu-latest
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select-services.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/production-context
+        with:
+          role: ${{ vars.AWS_INFRASTRUCTURE_ROLE }}
+          state-bucket: ${{ vars.TF_STATE_BUCKET }}
+      - name: Read Terraform task definitions
+        id: deployment
+        working-directory: infra/terraform/environments/prod
+        env:
+          SERVICE: ${{ matrix.service }}
+        run: |
+          set -euo pipefail
+
+          jq -r --arg service "$SERVICE" --arg sha "$RELEASE_SHA" '
+            "cluster=\(.cluster)",
+            "task_definition=\(.task_definitions[$service])",
+            "image=\(.repositories[$service]):\($sha)"
+          ' "$RUNNER_TEMP/deployment.json" >> "$GITHUB_OUTPUT"
+
+          cluster=$(jq -er '.cluster' "$RUNNER_TEMP/deployment.json")
+          desired_count=$(aws ecs describe-services --cluster "$cluster" --services "$SERVICE" \
+            --query 'services[0].desiredCount' --output text)
+          [[ "$desired_count" =~ ^[0-9]+$ ]] || { echo 'Could not read the live service task count.' >&2; exit 1; }
+          echo "desired_count=$desired_count" >> "$GITHUB_OUTPUT"
+
+      - name: Set release image
+        id: task
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-arn: ${{ steps.deployment.outputs.task_definition }}
+          container-name: ${{ matrix.service }}
+          image: ${{ steps.deployment.outputs.image }}
+
+      - name: Deploy service
+        id: release
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2.6.4
+        with:
+          task-definition: ${{ steps.task.outputs.task-definition }}
+          cluster: ${{ steps.deployment.outputs.cluster }}
+          service: ${{ matrix.service }}
+          desired-count: ${{ steps.deployment.outputs.desired_count }}
+          wait-for-service-stability: ${{ steps.deployment.outputs.desired_count != '0' }}
+          wait-max-delay-seconds: 15
+
+      - name: Record release revision
+        env:
+          SERVICE: ${{ matrix.service }}
+          TASK_DEFINITION: ${{ steps.release.outputs.task-definition-arn }}
+          DESIRED_COUNT: ${{ steps.deployment.outputs.desired_count }}
+          STATUS: ${{ steps.deployment.outputs.desired_count == '0' && 'Staged' || 'Deployed' }}
+        run: echo "$STATUS $SERVICE — $TASK_DEFINITION (desired tasks $DESIRED_COUNT)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Print service events
+        if: failure()
+        env:
+          SERVICE: ${{ matrix.service }}
+        run: |
+          set -euo pipefail
+
+          prefix=$(jq -er '.parameter_prefix' "$RUNNER_TEMP/deployment.json")
+          aws ecs describe-services --cluster "$prefix" --services "$SERVICE" \
+            --query 'services[].{service:serviceName,events:events[:3]}'

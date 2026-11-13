@@ -1,0 +1,24 @@
+@forward 'normalize';
+@forward 'tokens';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  position: relative;
+  font-family: var(--font-family-base);
+  color: var(--color-text);
+}
+
+#app {
+  isolation: isolate;
+}

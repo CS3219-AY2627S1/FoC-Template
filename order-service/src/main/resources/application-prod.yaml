@@ -1,0 +1,28 @@
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 10000
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${FOC_JWKS_URI}
+server:
+  forward-headers-strategy: framework
+services:
+  credit-url: ${FOC_CREDIT_SERVICE_URL:http://credit-service:8083/api}
+  supplier-url: ${FOC_SUPPLIER_SERVICE_URL:http://supplier-service:8081/api}
+  user-url: ${FOC_USER_SERVICE_URL:http://user-service:8080/api}
+events:
+  messaging:
+    topic-arn: ${EVENTS_MESSAGING_TOPIC_ARN}
+    queue-name: ${EVENTS_MESSAGING_QUEUE_NAME}
+management:
+  opentelemetry:
+    resource-attributes:
+      "[service.instance.id]": ${HOSTNAME}
+storage:
+  delivery-photos:
+    bucket: ${FOC_ORDER_BUCKET}

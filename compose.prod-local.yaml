@@ -1,0 +1,103 @@
+# Prod profile against Floci. Includes the real AWS stack and replaces only the AWS endpoint.
+# docker compose --env-file .env.prod -f compose.prod-local.yaml up -d
+
+include:
+  - compose.prod.yaml
+
+x-floci-client: &floci-client
+  AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+  SPRING_CLOUD_AWS_REGION_STATIC: ${AWS_REGION:-ap-southeast-1}
+  SPRING_CLOUD_AWS_CREDENTIALS_ACCESS_KEY: test
+  SPRING_CLOUD_AWS_CREDENTIALS_SECRET_KEY: test
+  SPRING_CLOUD_AWS_SNS_ENDPOINT: http://floci:4566
+  SPRING_CLOUD_AWS_SQS_ENDPOINT: http://floci:4566
+  SPRING_CLOUD_AWS_S3_ENDPOINT: http://floci:4566
+  SPRING_CLOUD_AWS_S3_PATH_STYLE_ACCESS_ENABLED: "true"
+  FOC_S3_ENDPOINT: http://floci:4566
+  FOC_S3_PATH_STYLE: "true"
+
+services:
+  floci:
+    image: floci/floci:2.3.0-compat
+    ports:
+      - "127.0.0.1:4566:4566"
+    environment:
+      FLOCI_STORAGE_MODE: hybrid
+      FLOCI_SERVICES_S3_ENFORCE_AUTH: "true"
+      FLOCI_HOSTNAME: floci
+      AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+      FOC_NAME_PREFIX: foc-prod
+      FOC_USER_BUCKET: ${FOC_USER_BUCKET:-foc-prod-user}
+      FOC_SUPPLIER_BUCKET: ${FOC_SUPPLIER_BUCKET:-foc-prod-supplier}
+      FOC_ORDER_BUCKET: ${FOC_ORDER_BUCKET:-foc-prod-order}
+    volumes:
+      - floci_data:/app/data
+      - ./infra/docker/floci/init-resources.sh:/etc/localstack/init/ready.d/10-foc-resources.sh:ro
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/foc-resources-ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  user-service:
+    environment:
+      <<: *floci-client
+      EVENTS_MESSAGING_TOPIC_ARN: arn:aws:sns:${AWS_REGION:-ap-southeast-1}:000000000000:foc-prod-user-events
+    depends_on:
+      floci:
+        condition: service_healthy
+
+  admin-init:
+    environment:
+      <<: *floci-client
+      EVENTS_MESSAGING_TOPIC_ARN: arn:aws:sns:${AWS_REGION:-ap-southeast-1}:000000000000:foc-prod-user-events
+    depends_on:
+      floci:
+        condition: service_healthy
+
+  supplier-service:
+    environment:
+      <<: *floci-client
+      EVENTS_MESSAGING_TOPIC_ARN: arn:aws:sns:${AWS_REGION:-ap-southeast-1}:000000000000:foc-prod-supplier-events
+    depends_on:
+      floci:
+        condition: service_healthy
+
+  realtime-service:
+    environment:
+      AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_ENDPOINT_URL: http://floci:4566
+      SQS_QUEUE_URL: http://floci:4566/000000000000/foc-prod-realtime-events
+    depends_on:
+      floci:
+        condition: service_healthy
+
+  supplier-seed:
+    environment:
+      <<: *floci-client
+    depends_on:
+      floci:
+        condition: service_healthy
+
+  order-service:
+    environment:
+      <<: *floci-client
+      EVENTS_MESSAGING_TOPIC_ARN: arn:aws:sns:${AWS_REGION:-ap-southeast-1}:000000000000:foc-prod-order-events
+      EVENTS_MESSAGING_QUEUE_NAME: foc-prod-order-events
+    depends_on:
+      floci:
+        condition: service_healthy
+
+  credit-service:
+    environment:
+      <<: *floci-client
+      EVENTS_MESSAGING_TOPIC_ARN: arn:aws:sns:${AWS_REGION:-ap-southeast-1}:000000000000:foc-prod-credit-events
+      EVENTS_MESSAGING_QUEUE_NAME: foc-prod-credit-events
+    depends_on:
+      floci:
+        condition: service_healthy
+
+volumes:
+  floci_data:

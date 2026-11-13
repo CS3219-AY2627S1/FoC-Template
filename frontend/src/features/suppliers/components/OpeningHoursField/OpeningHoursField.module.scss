@@ -1,0 +1,138 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hint {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.row {
+  display: grid;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0f1f3;
+  column-gap: 12px;
+  grid-template-columns: 44px 104px minmax(0, 1fr) minmax(0, 1fr);
+  row-gap: 4px;
+
+  &:last-child {
+    border-bottom: 0;
+  }
+
+  @media (width >= 900px) {
+    grid-template-columns: 44px 104px minmax(0, 140px) minmax(0, 140px) 1fr;
+  }
+}
+
+.day {
+  font-size: 14px;
+  font-weight: 600;
+
+  .row[data-closed] & {
+    color: var(--color-text-muted);
+  }
+}
+
+.time {
+  min-height: 36px;
+  padding: 6px 10px;
+
+  &[data-disabled] {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+}
+
+// On narrow screens the note wraps under the time inputs.
+.note {
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 4px 10px;
+  grid-column: 3 / -1;
+
+  @media (width >= 900px) {
+    grid-column: auto;
+  }
+
+  &:empty {
+    display: none;
+  }
+}
+
+.overnight {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent-hover);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.error {
+  margin: 0;
+  color: var(--color-error);
+  font-size: 13px;
+}
+
+.switchLabel {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  gap: 8px;
+}
+
+.switch {
+  display: inline-flex;
+  width: 32px;
+  height: 18px;
+  flex-shrink: 0;
+  padding: 2px;
+  border: 0;
+  border-radius: 999px;
+  background-color: #d1d5db;
+  cursor: pointer;
+  transition: background-color 0.15s;
+
+  &[data-checked] {
+    background-color: var(--color-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+.thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background-color: #fff;
+  transition: translate 0.15s;
+
+  &[data-checked] {
+    translate: 14px 0;
+  }
+}

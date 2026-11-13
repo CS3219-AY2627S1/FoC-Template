@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  pull_request:
+
+jobs:
+  infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read Terraform version
+        id: terraform-version
+        run: echo "version=$(cat .terraform-version)" >> "$GITHUB_OUTPUT"
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ steps.terraform-version.outputs.version }}
+          terraform_wrapper: false
+      - name: Test operational scripts
+        run: python3 .github/scripts/tests/test_operations.py
+      - name: Check Terraform formatting
+        run: terraform -chdir=infra/terraform fmt -check -recursive
+      - name: Validate and test Terraform
+        working-directory: infra/terraform/environments/prod
+        run: |
+          terraform init -backend=false -input=false -lockfile=readonly
+          terraform validate
+          terraform test
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: Check backend
+        run: ./gradlew check -x :e2e-tests:test --no-daemon
+        env:
+          CI: true
+      - name: Upload backend test reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: backend-results
+          path: |
+            *-service/build/reports/tests/
+            *-service/build/test-results/
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Lint frontend
+        run: npm run lint
+      - name: Check frontend formatting
+        run: npm run format:check
+      - name: Test frontend
+        run: npm run test:run
+      - name: Build frontend
+        run: npm run build
+
+  realtime:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: realtime-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: realtime-service/package-lock.json
+      - name: Install realtime dependencies
+        run: npm ci
+      - name: Check realtime service
+        run: npm run check

@@ -1,0 +1,100 @@
+.card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto 16px;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--color-surface);
+  border-radius: 12px;
+  color: var(--color-text);
+  text-decoration: none;
+  &:hover,
+  &:focus-visible {
+    box-shadow: 0 0 0 1px #cbd2df;
+  }
+}
+.body {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  min-width: 0;
+}
+.expiry {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 5px;
+  background: #fff1e0;
+  color: #8b4c0b;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.credits {
+  min-width: 72px;
+  text-align: right;
+  color: var(--color-primary);
+  font-size: 14px;
+  font-weight: 600;
+  &[data-earned] {
+    color: #23734d;
+  }
+}
+.item {
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.route {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0;
+  font-size: 13px;
+  > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    overflow-wrap: anywhere;
+  }
+  svg {
+    flex: none;
+    color: var(--color-primary);
+  }
+  > span:last-child svg {
+    color: var(--color-accent);
+  }
+}
+.to {
+  color: var(--color-text-muted);
+}
+.people {
+  margin-top: -4px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+.arrow {
+  font-size: 24px;
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+@media (max-width: 799px) {
+  .card {
+    grid-template-columns: auto minmax(0, 1fr) 16px;
+  }
+  .body {
+    grid-column: 1 / -1;
+  }
+}
+@media (min-width: 800px) {
+  .card {
+    grid-template-columns: minmax(0, 1fr) 112px auto 20px;
+    gap: 16px;
+    padding: 20px;
+  }
+}

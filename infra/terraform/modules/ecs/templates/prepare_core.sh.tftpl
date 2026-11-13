@@ -1,0 +1,21 @@
+#!/bin/bash
+set -euo pipefail
+
+export AWS_DEFAULT_REGION='${region}'
+
+token=$(curl -fsS -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' http://169.254.169.254/latest/api/token)
+instance=$(curl -fsS -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/meta-data/instance-id)
+aws ec2 associate-address --allocation-id '${eip_allocation}' --instance-id "$instance" --allow-reassociation >/dev/null
+
+aws ssm get-parameter --name '${parameter_prefix}-jwt-private-key' --with-decryption --query Parameter.Value --output text > /var/lib/runtime/jwt/jwt_private_key
+aws ssm get-parameter --name '${parameter_prefix}-jwt-public-key' --with-decryption --query Parameter.Value --output text > /var/lib/runtime/jwt/jwt_public_key
+chown -R 10001:10001 /var/lib/runtime/jwt
+chmod 500 /var/lib/runtime/jwt
+chmod 400 /var/lib/runtime/jwt/*
+
+archive_count=$(aws s3api list-objects-v2 --bucket '${configuration_bucket}' --prefix tls.tar.gz --query KeyCount --output text)
+if [ "$archive_count" -gt 0 ]; then
+  aws s3 cp 's3://${configuration_bucket}/tls.tar.gz' /var/lib/runtime/tls.tar.gz --only-show-errors
+  tar -xzf /var/lib/runtime/tls.tar.gz -C /var/lib/runtime/tls
+  rm /var/lib/runtime/tls.tar.gz
+fi

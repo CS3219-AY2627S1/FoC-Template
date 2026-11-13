@@ -1,0 +1,13 @@
+.layout {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: #e7e2d4;
+}
+
+.content {
+  position: absolute;
+  inset: 0;
+}

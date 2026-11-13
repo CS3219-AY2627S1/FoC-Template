@@ -1,0 +1,48 @@
+spring:
+  cloud:
+    aws:
+      s3:
+        region: ${AWS_REGION:ap-southeast-1}
+        endpoint: ${FOC_S3_ENDPOINT:}
+        path-style-access-enabled: ${FOC_S3_PATH_STYLE:false}
+  modulith:
+    events:
+      registry-trigger-annotation: org.springframework.modulith.events.ApplicationModuleListener
+      completion-mode: delete
+      republish-outstanding-events-on-restart: true
+      jdbc:
+        schema-initialization:
+          enabled: false
+  application:
+    name: supplier-service
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  threads:
+    virtual:
+      enabled: true
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:8080/api/.well-known/jwks.json
+          jws-algorithms: ES256
+server:
+  servlet:
+    context-path: /api
+  port: 8081
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
+
+storage:
+  s3:
+    bucket: ${FOC_SUPPLIER_BUCKET:foc-dev-supplier}
+  supplier-images:
+    read-url-ttl: 10m

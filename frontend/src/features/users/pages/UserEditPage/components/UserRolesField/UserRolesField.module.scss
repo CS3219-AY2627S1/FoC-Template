@@ -1,0 +1,65 @@
+.roles {
+  padding: 0;
+  border: 0;
+  margin: 0;
+
+  legend {
+    padding: 0;
+    margin-bottom: 10px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+}
+
+.roleOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.roleOption {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 14px;
+  gap: 8px;
+}
+
+.checkbox {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: var(--color-surface);
+  color: #fff;
+  cursor: pointer;
+
+  &[data-checked] {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+.checkmark {
+  font-size: 12px;
+  line-height: 1;
+
+  &[data-unchecked] {
+    display: none;
+  }
+}
+
+.fieldError {
+  margin: 0;
+  color: var(--color-error);
+  font-size: 13px;
+}

@@ -1,0 +1,16 @@
+image_bucket_names = {
+  user     = "foc-prod-user"
+  supplier = "foc-prod-supplier"
+  order    = "foc-prod-order"
+}
+
+domain_name         = "foc.example.edu"
+acme_email          = "team@example.edu"
+mail_from           = "noreply@mail.example.edu"
+start_services      = false
+core_instance_type  = "t3a.medium"
+db_instance_class   = "db.t4g.micro"
+grafana_cloudwatch_reader = null
+
+# Set to the existing ECS host AMI in ap-southeast-1 before planning.
+# core_ami_id = "ami-..."

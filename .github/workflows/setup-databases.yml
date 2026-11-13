@@ -1,0 +1,36 @@
+name: Set up databases
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+# Shared with infrastructure apply and Deploy; do not cancel a running apply.
+concurrency:
+  group: foc-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-southeast-1
+  TF_IN_AUTOMATION: "true"
+  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+
+jobs:
+  setup:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: infra/terraform/environments/prod
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/production-context
+        with:
+          role: ${{ vars.AWS_INFRASTRUCTURE_ROLE }}
+          state-bucket: ${{ vars.TF_STATE_BUCKET }}
+      - name: Create service databases
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/setup-databases.sh" "$RUNNER_TEMP/deployment.json"

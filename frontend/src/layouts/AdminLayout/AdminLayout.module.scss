@@ -1,0 +1,110 @@
+.layout {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 100vh;
+  flex-direction: column;
+  background-color: var(--color-background);
+
+  @media (width >= 768px) {
+    flex-direction: row;
+  }
+}
+
+.sidebar {
+  flex-shrink: 0;
+  padding: 16px;
+  background-color: var(--color-primary);
+  color: #fff;
+
+  @media (width >= 768px) {
+    position: sticky;
+    top: 0;
+    width: 240px;
+    height: 100vh;
+  }
+}
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand {
+  color: var(--color-accent);
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.menuButton {
+  padding: 4px 8px;
+  border: 0;
+  background: none;
+  color: #fff;
+  cursor: pointer;
+  font-size: 20px;
+
+  @media (width >= 768px) {
+    display: none;
+  }
+}
+
+.nav {
+  display: none;
+  flex-direction: column;
+  margin-top: 16px;
+  gap: 4px;
+
+  .sidebar[data-open] & {
+    display: flex;
+  }
+
+  @media (width >= 768px) {
+    display: flex;
+    margin-top: 24px;
+  }
+}
+
+.link {
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: rgb(255 255 255 / 80%);
+  font-size: 14px;
+  text-decoration: none;
+
+  &:hover {
+    background-color: rgb(255 255 255 / 8%);
+  }
+
+  &[data-active] {
+    background-color: rgb(255 255 255 / 14%);
+    box-shadow: inset 3px 0 0 var(--color-accent);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  &[aria-disabled='true'] {
+    color: rgb(255 255 255 / 35%);
+    cursor: not-allowed;
+
+    &:hover {
+      background: none;
+    }
+  }
+}
+
+.back {
+  margin-top: 16px;
+}
+
+.main {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1;
+  padding: 24px 16px;
+
+  @media (width >= 768px) {
+    padding: 32px;
+  }
+}

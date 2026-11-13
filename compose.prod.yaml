@@ -1,0 +1,203 @@
+name: foc
+
+x-java-environment: &java-environment
+  SPRING_PROFILES_ACTIVE: prod
+  AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+  SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+  SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+
+x-java-healthcheck: &java-healthcheck
+  interval: 10s
+  timeout: 3s
+  retries: 12
+  start_period: 40s
+
+services:
+  postgres:
+    restart: unless-stopped
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg_data_prod:/var/lib/postgresql
+      - ./infra/docker/postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  user-service:
+    restart: unless-stopped
+    build:
+      context: .
+      target: user-service
+    environment:
+      <<: *java-environment
+      FOC_USER_BUCKET: ${FOC_USER_BUCKET}
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM}
+      FOC_FRONTEND_URL: ${FOC_FRONTEND_URL:-https://localhost}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/foc_user
+      EVENTS_MESSAGING_TOPIC_ARN: ${USER_EVENTS_TOPIC_ARN}
+    secrets:
+      - jwt_private_key
+      - jwt_public_key
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      <<: *java-healthcheck
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/api/actuator/health"]
+
+  admin-init:
+    extends:
+      service: user-service
+    profiles: ["setup"]
+    restart: "no"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod,admin-init
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL}
+      INITIAL_ADMIN_NAME: ${INITIAL_ADMIN_NAME:-System Administrator}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD}
+    healthcheck:
+      test: ["NONE"]
+
+  supplier-service:
+    restart: unless-stopped
+    build:
+      context: .
+      target: supplier-service
+    environment:
+      <<: *java-environment
+      FOC_JWKS_URI: http://user-service:8080/api/.well-known/jwks.json
+      FOC_SUPPLIER_BUCKET: ${FOC_SUPPLIER_BUCKET}
+      EVENTS_MESSAGING_TOPIC_ARN: ${SUPPLIER_EVENTS_TOPIC_ARN}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/foc_supplier
+    depends_on:
+      postgres:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+    healthcheck:
+      <<: *java-healthcheck
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8081/api/actuator/health"]
+
+  supplier-seed:
+    extends:
+      service: supplier-service
+    profiles: ["setup"]
+    restart: "no"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod,supplier-seed
+    healthcheck:
+      test: ["NONE"]
+
+  order-service:
+    restart: unless-stopped
+    build:
+      context: .
+      target: order-service
+    environment:
+      <<: *java-environment
+      FOC_JWKS_URI: http://user-service:8080/api/.well-known/jwks.json
+      FOC_ORDER_BUCKET: ${FOC_ORDER_BUCKET}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/foc_order
+      EVENTS_MESSAGING_TOPIC_ARN: ${ORDER_EVENTS_TOPIC_ARN}
+      EVENTS_MESSAGING_QUEUE_NAME: ${ORDER_EVENTS_QUEUE_NAME}
+      FOC_ORDER_AI_ENABLED: ${FOC_ORDER_AI_ENABLED:-false}
+      FOC_ORDER_AI_MODEL:
+      FOC_ORDER_AI_TRANSCRIPTION_MODEL:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+    healthcheck:
+      <<: *java-healthcheck
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8082/api/actuator/health"]
+
+  credit-service:
+    restart: unless-stopped
+    build:
+      context: .
+      target: credit-service
+    environment:
+      <<: *java-environment
+      FOC_JWKS_URI: http://user-service:8080/api/.well-known/jwks.json
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/foc_credit
+      EVENTS_MESSAGING_TOPIC_ARN: ${CREDIT_EVENTS_TOPIC_ARN}
+      EVENTS_MESSAGING_QUEUE_NAME: ${CREDIT_EVENTS_QUEUE_NAME}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+    healthcheck:
+      <<: *java-healthcheck
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8083/api/actuator/health"]
+
+  realtime-service:
+    restart: unless-stopped
+    build:
+      context: .
+      target: realtime-service
+    environment:
+      NODE_ENV: production
+      JWKS_URL: http://user-service:8080/api/.well-known/jwks.json
+      AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+      SQS_QUEUE_URL: ${REALTIME_EVENTS_QUEUE_URL}
+    depends_on:
+      user-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8084/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+  api-gateway:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./infra/docker/nginx/certs:/etc/nginx/certs
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--max-time", "3", "--output", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      user-service:
+        condition: service_healthy
+      supplier-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      credit-service:
+        condition: service_healthy
+      realtime-service:
+        condition: service_healthy
+
+volumes:
+  pg_data_prod:
+
+secrets:
+  jwt_private_key:
+    file: ${JWT_PRIVATE_KEY_FILE:-./secrets/jwt-private.pem}
+  jwt_public_key:
+    file: ${JWT_PUBLIC_KEY_FILE:-./secrets/jwt-public.pem}

@@ -1,0 +1,52 @@
+spring:
+  jackson:
+    deserialization:
+      accept-float-as-int: false
+  application:
+    name: credit-service
+  cloud:
+    aws:
+      sqs:
+        queue-not-found-strategy: fail
+        listener:
+          poll-timeout: 20s
+  modulith:
+    events:
+      registry-trigger-annotation: org.springframework.modulith.events.ApplicationModuleListener
+      completion-mode: delete
+      republish-outstanding-events-on-restart: true
+      jdbc:
+        schema-initialization:
+          enabled: false
+      staleness:
+        published: 1m
+        processing: 1m
+        resubmitted: 1m
+        check-interval: 30s
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  threads:
+    virtual:
+      enabled: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:8080/api/.well-known/jwks.json
+          jws-algorithms: ES256
+credits:
+  initial-allocation: 15
+server:
+  servlet:
+    context-path: /api
+  port: 8083
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
+
+logging:
+  level:
+    org.springframework.modulith.events.core.DefaultEventPublicationRegistry: WARN

@@ -1,0 +1,79 @@
+spring:
+  modulith:
+    events:
+      registry-trigger-annotation: org.springframework.modulith.events.ApplicationModuleListener
+      completion-mode: delete
+      republish-outstanding-events-on-restart: true
+      jdbc:
+        schema-initialization:
+          enabled: false
+      staleness:
+        published: 1m
+        processing: 1m
+        resubmitted: 1m
+        check-interval: 30s
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.starttls.required: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+  application:
+    name: user-service
+  cloud:
+    aws:
+      s3:
+        region: ${AWS_REGION:ap-southeast-1}
+        endpoint: ${FOC_S3_ENDPOINT:}
+        path-style-access-enabled: ${FOC_S3_PATH_STYLE:false}
+  servlet:
+    multipart:
+      max-file-size: 2MB
+      max-request-size: 3MB
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  threads:
+    virtual:
+      enabled: true
+auth:
+  access-token-ttl: 5m
+  refresh-token-ttl: 30d
+  refresh-cookie-secure: true
+  private-key-location: classpath:keys/private.pem
+  public-key-location: classpath:keys/public.pem
+  key-id: user-service
+server:
+  servlet:
+    context-path: /api
+  port: 8080
+account-mail:
+  from: ${MAIL_FROM:no-reply@localhost}
+  frontend-url: ${FOC_FRONTEND_URL:http://localhost:3000}
+  token-ttl: 30m
+  resend-interval: 60s
+# Email delivery does not determine whether the API can serve requests.
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  health:
+    mail:
+      enabled: false
+
+storage:
+  s3:
+    bucket: ${FOC_USER_BUCKET:foc-dev-user}
+  avatars:
+    read-url-ttl: 10m
+
+logging:
+  level:
+    org.springframework.modulith.events.core.DefaultEventPublicationRegistry: WARN

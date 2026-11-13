@@ -1,0 +1,45 @@
+plugins { id 'java' }
+
+java { toolchain { languageVersion = JavaLanguageVersion.of(25) } }
+repositories { mavenCentral() }
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:6.0.3'
+    testImplementation 'org.assertj:assertj-core:3.27.7'
+    testImplementation 'com.microsoft.playwright:playwright:1.63.0'
+    testImplementation 'org.testcontainers:testcontainers:2.0.5'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter:2.0.5'
+    testImplementation 'org.awaitility:awaitility:4.3.0'
+    testImplementation 'org.springframework:spring-jdbc:7.0.9'
+    testImplementation 'tools.jackson.core:jackson-databind:3.1.5'
+    testImplementation 'software.amazon.awssdk:sns:2.54.3'
+    testImplementation 'software.amazon.awssdk:sqs:2.54.3'
+    testRuntimeOnly 'org.postgresql:postgresql:42.7.13'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:6.0.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:6.0.3'
+    testRuntimeOnly 'ch.qos.logback:logback-classic:1.5.38'
+}
+
+tasks.register('installChromium', JavaExec) {
+    description = 'Download Playwright Chromium.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.microsoft.playwright.CLI'
+    args 'install', 'chromium'
+}
+
+tasks.named('test') {
+    dependsOn 'installChromium'
+    useJUnitPlatform()
+    systemProperty 'foc.root', rootProject.projectDir.absolutePath
+    systemProperty 'foc.e2e.output', layout.buildDirectory.dir('playwright').get().asFile.absolutePath
+    // Playwright.create() otherwise downloads Firefox and WebKit as well.
+    environment 'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD', '1'
+    maxParallelForks = 1
+}
+
+tasks.register('installBrowserDependencies', JavaExec) {
+    description = 'Install Chromium OS libraries for Playwright on Linux.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.microsoft.playwright.CLI'
+    args 'install-deps', 'chromium'
+}

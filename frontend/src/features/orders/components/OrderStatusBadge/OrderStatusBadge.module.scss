@@ -1,0 +1,49 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 112px;
+  width: 112px;
+  height: 28px;
+  box-sizing: border-box;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  &[data-status='CREATING'] {
+    background: #fff1e0;
+    color: #8b4c0b;
+  }
+  &[data-status='CREATE_FAILED'] {
+    background: #fde8e8;
+    color: #b42318;
+  }
+  &[data-status='OPEN'] {
+    background: #e5efff;
+    color: #2864cf;
+  }
+  &[data-status='ACCEPTED'] {
+    background: #e3f5ea;
+    color: #22805a;
+  }
+  &[data-status='PICKED_UP'] {
+    background: #fff2dc;
+    color: #ad680e;
+  }
+  &[data-status='DELIVERED'] {
+    background: #e0f4f4;
+    color: #136b6b;
+  }
+  &[data-status='COMPLETED'] {
+    background: #23734d;
+    color: white;
+  }
+  &[data-status='CANCELLED'] {
+    background: #d5dae1;
+    color: #414b59;
+  }
+  &[data-status='EXPIRED'] {
+    background: #f0f2f5;
+    color: #626b78;
+  }
+}

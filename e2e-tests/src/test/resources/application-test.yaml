@@ -1,0 +1,137 @@
+spring:
+  main:
+    banner-mode: "off"
+  datasource:
+    username: test
+    password: test
+    hikari:
+      connection-timeout: 2000
+      validation-timeout: 1000
+  cloud:
+    aws:
+      region:
+        static: ap-southeast-1
+      credentials:
+        access-key: test
+        secret-key: test
+      s3:
+        region: ap-southeast-1
+        endpoint: http://floci:4566
+        path-style-access-enabled: true
+      sqs:
+        endpoint: http://floci:4566
+        listener:
+          poll-timeout: 1s
+  modulith:
+    events:
+      staleness:
+        published: 1s
+        processing: 1s
+        resubmitted: 1s
+        check-interval: 100ms
+logging:
+  level:
+    root: WARN
+events:
+  publication:
+    retry-delay: 100ms
+---
+spring:
+  config:
+    activate:
+      on-profile: user-e2e
+  datasource:
+    url: jdbc:postgresql://postgres:5432/foc_user
+  cloud:
+    aws:
+      sns:
+        endpoint: http://toxiproxy:8666
+  mail:
+    host: mailpit
+    port: 1025
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
+      mail.smtp.starttls.required: false
+auth:
+  private-key-location: file:/test-keys/private.pem
+  public-key-location: file:/test-keys/public.pem
+storage:
+  s3:
+    bucket: foc-e2e-user
+events:
+  messaging:
+    topic-arn: arn:aws:sns:ap-southeast-1:000000000000:foc-e2e-user-events
+---
+spring:
+  config:
+    activate:
+      on-profile: supplier-e2e
+  datasource:
+    url: jdbc:postgresql://postgres:5432/foc_supplier
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://user-service:8080/api/.well-known/jwks.json
+  cloud:
+    aws:
+      sns:
+        endpoint: http://floci:4566
+storage:
+  s3:
+    bucket: foc-e2e-supplier
+events:
+  messaging:
+    topic-arn: arn:aws:sns:ap-southeast-1:000000000000:foc-e2e-supplier-events
+---
+spring:
+  config:
+    activate:
+      on-profile: credit-e2e
+  datasource:
+    url: jdbc:postgresql://postgres:5432/foc_credit
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://user-service:8080/api/.well-known/jwks.json
+  cloud:
+    aws:
+      s3:
+        enabled: false
+      sns:
+        endpoint: http://toxiproxy:8668
+events:
+  messaging:
+    topic-arn: arn:aws:sns:ap-southeast-1:000000000000:foc-e2e-credit-events
+    queue-name: foc-e2e-credit-events
+---
+spring:
+  config:
+    activate:
+      on-profile: order-e2e
+  datasource:
+    url: jdbc:postgresql://postgres:5432/foc_order
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://user-service:8080/api/.well-known/jwks.json
+  cloud:
+    aws:
+      sns:
+        endpoint: http://toxiproxy:8667
+storage:
+  delivery-photos:
+    bucket: foc-e2e-order
+services:
+  credit-url: http://credit-service:8083/api
+  supplier-url: http://supplier-service:8081/api
+  user-url: http://user-service:8080/api
+orders:
+  expiry-scan-delay: 1s
+events:
+  messaging:
+    topic-arn: arn:aws:sns:ap-southeast-1:000000000000:foc-e2e-order-events
+    queue-name: foc-e2e-order-events

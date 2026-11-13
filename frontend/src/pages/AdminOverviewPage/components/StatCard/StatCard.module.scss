@@ -1,0 +1,44 @@
+.card {
+  display: flex;
+  min-width: 0;
+  min-height: 150px;
+  flex-direction: column;
+  padding: 20px 22px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background-color: var(--color-surface);
+  gap: 10px;
+}
+
+.label {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.value {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 1.1;
+
+  .card[data-tone='danger'] & {
+    color: var(--color-error);
+  }
+
+  .card[data-tone='pending'] & {
+    color: #c0c6d0;
+  }
+}
+
+.hint {
+  margin-top: auto;
+  color: var(--color-text-muted);
+  font-size: 14px;
+
+  .card[data-tone='positive'] & {
+    color: #15803d;
+  }
+}

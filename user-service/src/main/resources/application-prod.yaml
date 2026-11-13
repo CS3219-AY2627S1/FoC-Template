@@ -1,0 +1,25 @@
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 10000
+server:
+  forward-headers-strategy: framework
+management:
+  opentelemetry:
+    resource-attributes:
+      "[service.instance.id]": ${HOSTNAME}
+auth:
+  refresh-cookie-secure: true
+  private-key-location: file:/run/secrets/jwt_private_key
+  public-key-location: file:/run/secrets/jwt_public_key
+account-mail:
+  from: ${MAIL_FROM}
+  frontend-url: ${FOC_FRONTEND_URL}
+events:
+  messaging:
+    topic-arn: ${EVENTS_MESSAGING_TOPIC_ARN}
+storage:
+  s3:
+    bucket: ${FOC_USER_BUCKET}

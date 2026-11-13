@@ -1,0 +1,16 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="CreditServiceApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <option name="ACTIVE_PROFILES" value="dev" />
+    <envs>
+      <env name="SPRING_DATASOURCE_URL" value="jdbc:postgresql://localhost:5432/foc_credit" />
+      <env name="SPRING_DATASOURCE_USERNAME" value="foc" />
+      <env name="SPRING_DATASOURCE_PASSWORD" value="pass" />
+      <env name="AWS_REGION" value="ap-southeast-1" />
+    </envs>
+    <module name="foc.credit-service.main" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.cs3219.foc.credit.CreditServiceApplication" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

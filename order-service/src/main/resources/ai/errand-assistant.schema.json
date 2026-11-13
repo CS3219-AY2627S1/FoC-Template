@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["message", "draft", "supplierChoiceIds"],
+  "properties": {
+    "message": { "type": "string" },
+    "draft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supplierId", "deliveryLocation", "description", "notes", "creditReward", "expiryMinutes"],
+      "properties": {
+        "supplierId": { "type": ["string", "null"] },
+        "deliveryLocation": { "type": ["string", "null"] },
+        "description": { "type": ["string", "null"] },
+        "notes": { "type": ["string", "null"] },
+        "creditReward": { "type": ["integer", "null"] },
+        "expiryMinutes": { "type": ["integer", "null"], "enum": [30, 60, 120, 240, 480, null] }
+      }
+    },
+    "supplierChoiceIds": { "type": "array", "items": { "type": "string" } }
+  }
+}

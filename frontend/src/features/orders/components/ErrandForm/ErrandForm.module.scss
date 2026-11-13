@@ -1,0 +1,50 @@
+.form {
+  display: grid;
+  gap: 28px;
+}
+
+.group {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+
+  h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+  }
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+
+  textarea {
+    resize: vertical;
+  }
+}
+
+.columns {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+}
+
+.actions {
+  margin-top: 0;
+  justify-content: flex-end;
+
+  > * {
+    flex: 0 0 auto;
+    min-width: 160px;
+  }
+}
+
+@media (min-width: 720px) {
+  .columns {
+    grid-template-columns: 1fr 1fr;
+    gap: 16px 24px;
+  }
+}

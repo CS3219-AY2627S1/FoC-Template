@@ -1,0 +1,21 @@
+.container {
+  min-height: 100dvh;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+
+  button {
+    min-height: 44px;
+    padding: 10px 20px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--color-primary);
+    color: white;
+    font: inherit;
+    cursor: pointer;
+  }
+}

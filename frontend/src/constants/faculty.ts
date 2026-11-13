@@ -1,0 +1,1 @@
+export const UNASSIGNED_FACULTY = 'UNASSIGNED'

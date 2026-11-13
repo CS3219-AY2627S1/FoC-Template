@@ -1,0 +1,127 @@
+.tableShell {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-height: 580px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: var(--color-surface);
+  --rdt-color-bg: var(--color-surface);
+  --rdt-color-text-primary: var(--color-text);
+  --rdt-color-divider: #e5e7eb;
+  --rdt-row-height: 52px;
+  --rdt-header-height: 52px;
+  --rdt-cell-padding-x: 16px;
+  --rdt-font-size: 14px;
+  --rdt-font-size-header: 12px;
+}
+
+.userName,
+.actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.userName {
+  width: 100%;
+  min-width: 0;
+}
+
+.overflowText {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &[data-overflowing] {
+    cursor: help;
+  }
+
+  &:focus-visible {
+    border-radius: 3px;
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+.tooltipPositioner {
+  z-index: 10;
+}
+
+.tooltip {
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background-color: var(--color-text);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 18%);
+  color: var(--color-surface);
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.actionLink {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  color: var(--color-text);
+  font-size: 13px;
+  text-decoration: none;
+
+  &:hover {
+    border-color: var(--color-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+.updatingOverlay {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(255 255 255 / 55%);
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid var(--color-primary-soft);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: spin 0.7s linear infinite;
+}
+
+.refreshIndicator {
+  position: absolute;
+  z-index: 2;
+  top: 14px;
+  right: 16px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .refreshIndicator {
+    animation: none;
+  }
+}

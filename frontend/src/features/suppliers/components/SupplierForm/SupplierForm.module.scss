@@ -1,0 +1,148 @@
+.layout {
+  display: grid;
+  align-items: start;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1fr);
+
+  @media (width >= 1280px) {
+    gap: 40px;
+    grid-template-columns: minmax(0, 1fr) 380px;
+  }
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 24px 24px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0;
+  border-bottom: 1px solid #f0f1f3;
+  gap: 16px;
+}
+
+.sectionTitle {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  @media (width >= 1280px) {
+    position: sticky;
+    top: 24px;
+  }
+}
+
+.previewLabel {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.previewHint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.row {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+
+  @media (width >= 640px) {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.required {
+  color: var(--color-error);
+}
+
+.hint,
+.error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.hint {
+  color: var(--color-text-muted);
+}
+
+.error {
+  color: var(--color-error);
+}
+
+.selectTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  text-align: left;
+}
+
+.selectIcon {
+  color: var(--color-text-muted);
+}
+
+.positioner {
+  z-index: 50;
+}
+
+.selectPopup {
+  min-width: var(--anchor-width);
+  padding: 4px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background-color: var(--color-surface);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
+}
+
+.selectItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  outline: none;
+
+  &[data-highlighted] {
+    background-color: var(--color-primary-soft);
+  }
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+  gap: 8px;
+}

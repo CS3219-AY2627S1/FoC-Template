@@ -1,0 +1,125 @@
+.viewport {
+  position: fixed;
+  z-index: 100;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  width: min(380px, calc(100vw - 32px));
+  flex-direction: column;
+  gap: 10px;
+}
+
+.toast {
+  --toast-accent: var(--color-primary);
+  --toast-border: color-mix(in srgb, var(--color-primary) 35%, white);
+  --toast-background: var(--color-primary-soft);
+
+  border: 1.5px solid var(--toast-border);
+  border-radius: 10px;
+  background-color: var(--toast-background);
+  box-shadow: 0 6px 20px rgb(15 23 42 / 8%);
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
+
+  &[data-variant='success'] {
+    --toast-accent: #16a34a;
+    --toast-border: #86efac;
+    --toast-background: #f0fdf4;
+  }
+
+  &[data-variant='warning'] {
+    --toast-accent: var(--color-accent);
+    --toast-border: color-mix(in srgb, var(--color-accent) 45%, white);
+    --toast-background: var(--color-accent-soft);
+  }
+
+  &[data-variant='error'] {
+    --toast-accent: #dc2626;
+    --toast-border: #fca5a5;
+    --toast-background: #fef2f2;
+  }
+
+  &[data-starting-style],
+  &[data-ending-style] {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+.content {
+  display: flex;
+  align-items: flex-start;
+  padding: 14px 14px 14px 16px;
+  gap: 12px;
+}
+
+.icon {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background-color: var(--toast-accent);
+  color: #fff;
+}
+
+.text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  padding-top: 4px;
+  gap: 2px;
+}
+
+.title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.description {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+
+  &:empty {
+    display: none;
+  }
+}
+
+.close {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-text-muted);
+  line-height: 0;
+  cursor: pointer;
+
+  svg {
+    display: block;
+  }
+
+  &:hover {
+    background-color: rgb(15 23 42 / 6%);
+    color: var(--color-text);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--toast-accent);
+    outline-offset: 1px;
+  }
+}

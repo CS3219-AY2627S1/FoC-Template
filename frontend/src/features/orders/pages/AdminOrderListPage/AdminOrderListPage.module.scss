@@ -1,0 +1,46 @@
+.sectionHeading {
+  font-size: 18px;
+  margin: 28px 0 16px;
+}
+
+.tableWrap {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--color-surface);
+  border-radius: 12px;
+}
+
+.table {
+  width: 100%;
+  min-width: 800px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+  overflow-wrap: normal;
+
+  th {
+    white-space: nowrap;
+  }
+
+  th:first-child,
+  td:first-child {
+    width: 34%;
+    min-width: 230px;
+  }
+
+  th,
+  td {
+    padding: 16px;
+    border-bottom: 1px solid #e8ecf1;
+    vertical-align: top;
+  }
+
+  td small {
+    display: block;
+    color: var(--color-text-muted);
+    margin-top: 6px;
+    overflow-wrap: anywhere;
+  }
+}

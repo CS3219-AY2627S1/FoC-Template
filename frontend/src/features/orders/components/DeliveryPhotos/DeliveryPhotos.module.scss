@@ -1,0 +1,45 @@
+.panel {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  min-width: 0;
+  h2 {
+    font-size: 18px;
+    margin: 0 0 8px;
+  }
+}
+.muted {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #626b78;
+}
+// if one photo then it will fill the panel, if more, then will display the photos in a grid
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  a,
+  img {
+    display: block;
+    width: 100%;
+  }
+  img {
+    max-height: 360px;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: 8px;
+    background: #f6f8fb;
+  }
+}
+.retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #2864cf;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

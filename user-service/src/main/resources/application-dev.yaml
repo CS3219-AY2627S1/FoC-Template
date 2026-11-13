@@ -1,0 +1,20 @@
+auth:
+  refresh-cookie-secure: false
+
+events:
+  messaging:
+    topic-arn: arn:aws:sns:${AWS_REGION:ap-southeast-1}:000000000000:foc-dev-user-events
+
+spring:
+  cloud:
+    aws:
+      region:
+        static: ${AWS_REGION:ap-southeast-1}
+      sns:
+        endpoint: http://localhost:4566
+      credentials:
+        access-key: test
+        secret-key: test
+      s3:
+        endpoint: http://localhost:4566
+        path-style-access-enabled: true

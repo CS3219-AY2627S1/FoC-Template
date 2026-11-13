@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 10000
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${FOC_JWKS_URI}
+server:
+  forward-headers-strategy: framework
+events:
+  messaging:
+    topic-arn: ${EVENTS_MESSAGING_TOPIC_ARN}
+    queue-name: ${EVENTS_MESSAGING_QUEUE_NAME}
+management:
+  opentelemetry:
+    resource-attributes:
+      "[service.instance.id]": ${HOSTNAME}

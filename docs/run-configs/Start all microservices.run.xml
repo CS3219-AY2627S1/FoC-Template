@@ -1,0 +1,10 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Start all microservices" type="CompoundRunConfigurationType">
+    <toRun name="CreditServiceApplication" type="SpringBootApplicationConfigurationType" />
+    <toRun name="OrderServiceApplication" type="SpringBootApplicationConfigurationType" />
+    <toRun name="RealtimeService" type="js.build_tools.npm" />
+    <toRun name="SupplierServiceApplication" type="SpringBootApplicationConfigurationType" />
+    <toRun name="UserServiceApplication" type="SpringBootApplicationConfigurationType" />
+    <method v="2" />
+  </configuration>
+</component>

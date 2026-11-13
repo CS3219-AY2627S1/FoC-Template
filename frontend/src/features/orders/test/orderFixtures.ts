@@ -1,0 +1,27 @@
+import type { Errand } from '../types/errand.types'
+
+export const orderFixture = (overrides: Partial<Errand> = {}): Errand => ({
+  id: '8e1f0000-0000-4000-8000-000000000001',
+  requester: { id: 'requester', name: 'Alex' },
+  courier: null,
+  supplierId: '8e1f0000-0000-4000-8000-000000000002',
+  pickup: { name: 'Campus Cafe', address: 'COM1, Lobby' },
+  deliveryLocation: 'Library',
+  description: 'Lunch',
+  notes: '',
+  creditReward: 5,
+  status: 'OPEN',
+  creditState: 'RESERVED',
+  creationFailureCode: null,
+  createdAt: '2030-01-01T00:00:00Z',
+  updatedAt: '2030-01-01T00:00:00Z',
+  expiresAt: '2030-01-01T01:00:00Z',
+  acceptedAt: null,
+  pickedUpAt: null,
+  endedAt: null,
+  createRequestId: null,
+  deliveredAt: null,
+  hasDeliveryPhoto: false,
+  dispute: null,
+  ...overrides,
+})

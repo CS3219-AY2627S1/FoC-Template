@@ -1,0 +1,17 @@
+spring:
+  cloud:
+    aws:
+      region:
+        static: ${AWS_REGION:ap-southeast-1}
+      credentials:
+        access-key: test
+        secret-key: test
+      sns:
+        endpoint: http://localhost:4566
+      s3:
+        endpoint: http://localhost:4566
+        path-style-access-enabled: true
+
+events:
+  messaging:
+    topic-arn: arn:aws:sns:${AWS_REGION:ap-southeast-1}:000000000000:foc-dev-supplier-events

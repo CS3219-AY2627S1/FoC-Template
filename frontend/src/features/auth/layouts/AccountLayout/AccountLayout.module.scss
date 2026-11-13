@@ -1,0 +1,17 @@
+.layout {
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--color-page-background);
+}
+
+.content {
+  min-width: 0;
+  padding: 12px 32px 64px;
+}
+
+@media (max-width: 700px) {
+  .content {
+    padding: 16px 20px 40px;
+  }
+}

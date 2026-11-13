@@ -1,0 +1,183 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [{ "expr": "sum by (service_name, service_instance_id) (jvm_memory_used_bytes{area=\"heap\",service_name=~\"${service:regex}\"})", "legendFormat": "{{service_name}} {{service_instance_id}}", "refId": "A" }],
+      "title": "Heap used",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "targets": [{ "expr": "sum by (service_name, service_instance_id) (jvm_memory_committed_bytes{area=\"heap\",service_name=~\"${service:regex}\"})", "legendFormat": "{{service_name}} {{service_instance_id}}", "refId": "A" }],
+      "title": "Heap committed",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "targets": [{ "expr": "sum by (service_name, service_instance_id) (rate(jvm_gc_pause_seconds_sum{service_name=~\"${service:regex}\"}[5m]))", "legendFormat": "{{service_name}} {{service_instance_id}}", "refId": "A" }],
+      "title": "GC time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "targets": [{ "expr": "process_cpu_usage{service_name=~\"${service:regex}\"}", "legendFormat": "{{service_name}} {{service_instance_id}}", "refId": "A" }],
+      "title": "Process CPU",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 5,
+      "targets": [{ "expr": "sum by (service_name, service_instance_id) (rate(http_server_requests_seconds_count{service_name=~\"${service:regex}\"}[5m]))", "legendFormat": "{{service_name}} {{service_instance_id}}", "refId": "A" }],
+      "title": "HTTP rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 6,
+      "targets": [{ "expr": "sum by (service_name, service_instance_id) (rate(http_server_requests_seconds_sum{service_name=~\"${service:regex}\"}[5m])) / sum by (service_name, service_instance_id) (rate(http_server_requests_seconds_count{service_name=~\"${service:regex}\"}[5m]))", "legendFormat": "{{service_name}} {{service_instance_id}}", "refId": "A" }],
+      "title": "HTTP average latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 7,
+      "targets": [{ "expr": "hikaricp_connections_active{service_name=~\"${service:regex}\"}", "legendFormat": "{{service_name}} {{service_instance_id}}", "refId": "A" }],
+      "title": "Hikari active connections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "id": 8,
+      "targets": [{ "expr": "hikaricp_connections_pending{service_name=~\"${service:regex}\"}", "legendFormat": "{{service_name}} {{service_instance_id}}", "refId": "A" }],
+      "title": "Hikari pending connections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "id": 9,
+      "targets": [{ "dimensions": { "ClusterName": "$cluster" }, "matchExact": false, "metricEditorMode": 0, "metricName": "CPUUtilization", "metricQueryType": 0, "namespace": "AWS/ECS", "period": "60", "queryMode": "Metrics", "refId": "A", "region": "$region", "statistic": "Average" }],
+      "title": "ECS service CPU",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "id": 10,
+      "targets": [{ "dimensions": { "ClusterName": "$cluster" }, "matchExact": false, "metricEditorMode": 0, "metricName": "MemoryUtilization", "metricQueryType": 0, "namespace": "AWS/ECS", "period": "60", "queryMode": "Metrics", "refId": "A", "region": "$region", "statistic": "Average" }],
+      "title": "ECS service memory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 40 },
+      "id": 11,
+      "targets": [{ "dimensions": {}, "matchExact": false, "metricEditorMode": 0, "metricName": "CPUCreditBalance", "metricQueryType": 0, "namespace": "AWS/EC2", "period": "300", "queryMode": "Metrics", "refId": "A", "region": "$region", "statistic": "Average" }],
+      "title": "EC2 CPU credit balance",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 40 },
+      "id": 12,
+      "targets": [{ "dimensions": {}, "matchExact": false, "metricEditorMode": 0, "metricName": "CPUUtilization", "metricQueryType": 0, "namespace": "AWS/RDS", "period": "60", "queryMode": "Metrics", "refId": "A", "region": "$region", "statistic": "Average" }],
+      "title": "RDS CPU",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 40 },
+      "id": 13,
+      "targets": [{ "dimensions": {}, "matchExact": false, "metricEditorMode": 0, "metricName": "DatabaseConnections", "metricQueryType": 0, "namespace": "AWS/RDS", "period": "60", "queryMode": "Metrics", "refId": "A", "region": "$region", "statistic": "Average" }],
+      "title": "RDS connections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
+      "id": 14,
+      "targets": [{ "dimensions": {}, "matchExact": false, "metricEditorMode": 0, "metricName": "FreeableMemory", "metricQueryType": 0, "namespace": "AWS/RDS", "period": "60", "queryMode": "Metrics", "refId": "A", "region": "$region", "statistic": "Average" }],
+      "title": "RDS free memory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
+      "id": 15,
+      "targets": [{ "dimensions": {}, "matchExact": false, "metricEditorMode": 0, "metricName": "FreeStorageSpace", "metricQueryType": 0, "namespace": "AWS/RDS", "period": "60", "queryMode": "Metrics", "refId": "A", "region": "$region", "statistic": "Average" }],
+      "title": "RDS free storage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 56 },
+      "id": 16,
+      "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [{
+        "expression": "fields @timestamp, @logStream, @message | sort @timestamp desc | limit 200",
+        "logGroups": [
+          { "accountId": "all", "arn": "", "name": "/ecs/$cluster/user" },
+          { "accountId": "all", "arn": "", "name": "/ecs/$cluster/supplier" },
+          { "accountId": "all", "arn": "", "name": "/ecs/$cluster/order" },
+          { "accountId": "all", "arn": "", "name": "/ecs/$cluster/credit" },
+          { "accountId": "all", "arn": "", "name": "/ecs/$cluster/gateway" },
+          { "accountId": "all", "arn": "", "name": "/ecs/$cluster/database-bootstrap" }
+        ],
+        "queryMode": "Logs",
+        "refId": "A",
+        "region": "$region"
+      }],
+      "title": "Application logs",
+      "type": "logs"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": ["foc"],
+  "templating": {
+    "list": [
+      { "current": {}, "name": "DS_PROMETHEUS", "query": "prometheus", "refresh": 1, "type": "datasource" },
+      { "current": {}, "name": "DS_CLOUDWATCH", "query": "cloudwatch", "refresh": 1, "type": "datasource" },
+      { "current": { "text": "foc-prod", "value": "foc-prod" }, "label": "Cluster", "name": "cluster", "query": "foc-prod", "type": "textbox" },
+      { "current": { "text": "ap-southeast-1", "value": "ap-southeast-1" }, "label": "Region", "name": "region", "query": "ap-southeast-1", "type": "textbox" },
+      { "allValue": ".*", "current": { "text": "All", "value": "$__all" }, "includeAll": true, "label": "Service", "multi": true, "name": "service", "query": "user,supplier,order,credit", "type": "custom" }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "FoC",
+  "uid": "foc-overview",
+  "version": 1
+}

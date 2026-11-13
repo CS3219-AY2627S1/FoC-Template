@@ -1,0 +1,75 @@
+spring:
+  servlet:
+    multipart:
+      # One file: a chat video up to 20 MB (photos are held to 5 MB and AI voice
+      # recordings to their own limit in code). One request: up to 5 delivery photos.
+      max-file-size: 20MB
+      max-request-size: 26MB
+  jackson:
+    deserialization:
+      accept-float-as-int: false
+  application:
+    name: order-service
+  cloud:
+    aws:
+      s3:
+        region: ${AWS_REGION:ap-southeast-1}
+        endpoint: ${FOC_S3_ENDPOINT:}
+        path-style-access-enabled: ${FOC_S3_PATH_STYLE:false}
+      sqs:
+        queue-not-found-strategy: fail
+        listener:
+          poll-timeout: 20s
+  modulith:
+    events:
+      registry-trigger-annotation: org.springframework.modulith.events.ApplicationModuleListener
+      completion-mode: delete
+      republish-outstanding-events-on-restart: true
+      jdbc:
+        schema-initialization:
+          enabled: false
+      staleness:
+        published: 1m
+        processing: 1m
+        resubmitted: 1m
+        check-interval: 30s
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  threads:
+    virtual:
+      enabled: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://localhost:8080/api/.well-known/jwks.json
+          jws-algorithms: ES256
+server:
+  servlet:
+    context-path: /api
+  port: 8082
+storage:
+  delivery-photos:
+    bucket: ${FOC_ORDER_BUCKET:foc-dev-order}
+    read-url-ttl: 10m
+orders:
+  ai:
+    enabled: ${FOC_ORDER_AI_ENABLED:false}
+    api-key: ${OPENAI_API_KEY:}
+    model: ${FOC_ORDER_AI_MODEL:gpt-6.1-terra}
+    transcription-model: ${FOC_ORDER_AI_TRANSCRIPTION_MODEL:gpt-transcribe}
+    timeout: 30s
+    max-audio-bytes: 8388608
+  expiry-scan-delay: 10s
+  expiry-batch-size: 100
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
+
+logging:
+  level:
+    org.springframework.modulith.events.core.DefaultEventPublicationRegistry: WARN

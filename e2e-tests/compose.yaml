@@ -1,0 +1,143 @@
+x-application: &application
+  restart: "no"
+  environment: &application-env
+    SPRING_CONFIG_ADDITIONAL_LOCATION: file:/test-config/application-test.yaml
+  volumes:
+    - ./src/test/resources/application-test.yaml:/test-config/application-test.yaml:ro
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: foc
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    volumes:
+      - ../infra/docker/postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d foc"]
+      interval: 1s
+      timeout: 3s
+      retries: 60
+
+  floci:
+    image: floci/floci:2.3.0-compat
+    environment:
+      AWS_REGION: ap-southeast-1
+      FOC_NAME_PREFIX: foc-e2e
+      FOC_USER_BUCKET: foc-e2e-user
+      FOC_SUPPLIER_BUCKET: foc-e2e-supplier
+      FOC_ORDER_BUCKET: foc-e2e-order
+      FLOCI_SERVICES_S3_ENFORCE_AUTH: "true"
+      FLOCI_INIT_HOOKS_TIMEOUT_SECONDS: "180"
+    volumes:
+      - ../infra/docker/floci/init-resources.sh:/etc/localstack/init/ready.d/10-foc-resources.sh:ro
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/foc-resources-ready"]
+      interval: 2s
+      timeout: 5s
+      retries: 90
+      start_period: 60s
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.13.0
+    command: ["-host", "0.0.0.0", "-config", "/config/proxies.json"]
+    volumes:
+      - ./src/test/resources/proxies.json:/config/proxies.json:ro
+    depends_on:
+      floci: { condition: service_healthy }
+
+  mailpit:
+    image: axllent/mailpit:v1.31.6
+
+  user-service:
+    <<: *application
+    build:
+      context: ..
+      target: user-service
+    environment:
+      <<: *application-env
+      SPRING_PROFILES_ACTIVE: test,user-e2e
+    volumes:
+      - ./src/test/resources/application-test.yaml:/test-config/application-test.yaml:ro
+      - ./src/test/resources/keys:/test-keys:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      floci: { condition: service_healthy }
+      toxiproxy: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/api/actuator/health"]
+      interval: 1s
+      timeout: 3s
+      retries: 90
+      start_period: 20s
+
+  supplier-service:
+    <<: *application
+    build:
+      context: ..
+      target: supplier-service
+    environment:
+      <<: *application-env
+      SPRING_PROFILES_ACTIVE: test,supplier-e2e
+    depends_on:
+      postgres: { condition: service_healthy }
+      floci: { condition: service_healthy }
+      toxiproxy: { condition: service_started }
+      user-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8081/api/actuator/health"]
+      interval: 1s
+      timeout: 3s
+      retries: 90
+      start_period: 20s
+
+  order-service:
+    <<: *application
+    build:
+      context: ..
+      target: order-service
+    environment:
+      <<: *application-env
+      SPRING_PROFILES_ACTIVE: test,order-e2e
+    depends_on:
+      postgres: { condition: service_healthy }
+      floci: { condition: service_healthy }
+      toxiproxy: { condition: service_started }
+      user-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8082/api/actuator/health"]
+      interval: 1s
+      timeout: 3s
+      retries: 90
+      start_period: 20s
+
+  credit-service:
+    <<: *application
+    build:
+      context: ..
+      target: credit-service
+    environment:
+      <<: *application-env
+      SPRING_PROFILES_ACTIVE: test,credit-e2e
+    depends_on:
+      postgres: { condition: service_healthy }
+      floci: { condition: service_healthy }
+      toxiproxy: { condition: service_started }
+      user-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8083/api/actuator/health"]
+      interval: 1s
+      timeout: 3s
+      retries: 90
+      start_period: 20s
+
+  api-gateway:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      user-service: { condition: service_healthy }
+      supplier-service: { condition: service_healthy }
+      order-service: { condition: service_healthy }
+      credit-service: { condition: service_healthy }
