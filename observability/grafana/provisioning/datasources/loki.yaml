@@ -1,0 +1,15 @@
+# AI assistance disclosure:
+# Tool: ChatGPT (model: GPT-6.1 Sol), date: 2026-10-20
+# Scope: Assisted with provisioning Loki as a Grafana datasource
+# Author review: I reviewed correctness and edited the changes to fit the project
+
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: true
+    editable: false

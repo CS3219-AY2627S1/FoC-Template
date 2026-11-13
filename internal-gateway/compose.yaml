@@ -1,0 +1,36 @@
+services:
+  internal-gateway:
+    build:
+      context: .
+    environment:
+      USER_SERVICE_UPSTREAM: ${USER_SERVICE_UPSTREAM:-http://user-service:5005}
+      SUPPLIER_SERVICE_UPSTREAM: ${SUPPLIER_SERVICE_UPSTREAM:-http://supplier-service:3001}
+      ORDER_SERVICE_UPSTREAM: ${ORDER_SERVICE_UPSTREAM:-http://order-service:3002}
+      CREDIT_SERVICE_UPSTREAM: ${CREDIT_SERVICE_UPSTREAM:-http://credit-service:3002}
+      NGINX_DNS_RESOLVER: ${NGINX_DNS_RESOLVER:-127.0.0.11}
+    volumes:
+      - gateway-demo-state:/var/run/gateway-demo:ro
+    # Internal only: callers use the shared Docker network, not a host port.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  gateway-demo:
+    image: python:3.14-alpine
+    command: ["python", "/app/server.py"]
+    environment:
+      STATE_DIR: /var/run/gateway-demo
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./demo:/app:ro
+      - gateway-demo-state:/var/run/gateway-demo
+    ports:
+      - "127.0.0.1:4180:8080"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  gateway-demo-state:

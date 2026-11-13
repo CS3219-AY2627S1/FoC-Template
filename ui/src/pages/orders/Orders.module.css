@@ -1,0 +1,92 @@
+.page { max-width: 1180px; margin: 0 auto; padding: 52px 32px 80px; }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 30px; }
+.eyebrow { text-transform: uppercase; letter-spacing: .16em; font-size: 11px; font-weight: 700; color: #607466; }
+.heading h1 { font-family: Georgia, serif; font-size: clamp(38px, 6vw, 58px); font-weight: 400; margin: 12px 0; letter-spacing: -.04em; }
+.heading p:last-child { color: #617065; line-height: 1.6; }
+.page button { border: 1px solid #ced7ca; border-radius: 7px; padding: 10px 15px; background: #fff; color: #284b37; font-weight: 600; cursor: pointer; }
+.page button:hover:not(:disabled) { background: #eaf0e4; }
+.page button:disabled { opacity: .5; cursor: not-allowed; }
+.page button.primary { background: #2d563b; color: #fff; border-color: #2d563b; }
+.page button.primary:hover:not(:disabled) { background: #20462d; }
+.wallet { display: flex; align-items: center; gap: 36px; padding: 24px 28px; background: #eaf0e2; border: 1px solid #dce4d5; border-radius: 12px; margin-bottom: 30px; }
+.wallet div { flex-shrink: 0; }
+.wallet span { display: block; font-size: 12px; color: #536b56; }
+.wallet strong { display: block; margin-top: 7px; font-size: 30px; font-family: Georgia, serif; font-weight: 400; }
+.wallet p { margin: 0 0 0 auto; max-width: 440px; font-size: 13px; line-height: 1.7; color: #536b56; }
+.formPanel { background: #fff; padding: 28px; }
+.formHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.formHeading h2 { margin: 0; font-family: Georgia, serif; font-weight: 400; font-size: 27px; }
+.formHeading button { flex-shrink: 0; }
+.formPanel > p { color: #637365; font-size: 14px; }
+.formGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 22px 0; }
+.page label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; font-weight: 600; }
+.page input, .page select, .page textarea { min-width: 0; width: 100%; padding: 11px 12px; border: 1px solid #cdd7c9; background: #fdfefb; color: #283a31; border-radius: 6px; font-size: 14px; }
+.page textarea { resize: vertical; }
+.page small { font-size: 12px; font-weight: 400; line-height: 1.6; color: #627165; }
+.formPanel fieldset { border: 1px solid #dce2d7; border-radius: 8px; padding: 16px; }
+.formPanel legend { font-size: 13px; font-weight: 700; padding: 0 6px; }
+.itemRow { display: grid; grid-template-columns: 1fr 95px auto; align-items: end; gap: 12px; margin-bottom: 14px; }
+.views { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 20px; border-bottom: 1px solid #dce2d7; }
+.views button { background: transparent; border-color: transparent; }
+.views button[aria-pressed='true'] { background: #2d563b; color: white; }
+.filters { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 16px; margin: 24px 0; }
+.listHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 26px 0 18px; }
+.listHeading h2 { font-family: Georgia, serif; font-weight: 400; font-size: 25px; margin: 0; }
+.listHeading span { font-size: 12px; color: #68796c; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.card { min-width: 0; background: #fff; border: 1px solid #dce2d7; border-radius: 12px; padding: 24px; overflow-wrap: anywhere; }
+.disputed { border: 2px solid #b55c27; }
+.disputed .status { background: #ffe5cf; color: #79370e; }
+.disputeReason { background: #fff5ea; border-left: 3px solid #b55c27; border-radius: 4px; padding: 14px; margin-top: 18px; color: #713c1c; font-size: 14px; line-height: 1.6; }
+.disputeReason p { white-space: pre-wrap; margin: 8px 0 0; }
+.resolvedDispute { background: #eef3ed; border-left-color: #53715c; color: #34513d; }
+.cardTop { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.status { background: #edf2e8; border-radius: 20px; padding: 6px 10px; font-size: 11px; font-weight: 700; }
+.cardTop strong { font-size: 23px; color: #31553c; }
+.card h3 { font-family: Georgia, serif; font-size: 25px; font-weight: 400; margin: 20px 0 8px; }
+.pickup { color: #657366; font-size: 13px; }
+.card ul { padding-left: 20px; font-size: 14px; line-height: 1.8; }
+.notes { white-space: pre-wrap; font-size: 13px; line-height: 1.7; background: #f7f8f2; padding: 12px; border-radius: 6px; }
+.countdown { color: #946521; font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.cardActions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+.empty { text-align: center; padding: 50px 20px; border: 1px dashed #cdd7c9; border-radius: 10px; color: #627165; }
+.empty h3 { color: #354d3b; }
+.error { background: #fff2eb; border: 1px solid #e8c9b7; color: #7d3e27; padding: 16px; border-radius: 8px; margin-bottom: 24px; font-size: 14px; }
+.notice { background: #f7f6ed; border: 1px solid #e1ddc8; color: #5d5942; padding: 18px 20px; border-radius: 10px; margin: 0 0 20px; font-size: 14px; line-height: 1.6; }
+.notice strong { display: block; font-size: 14px; font-family: inherit; font-weight: 600; margin: 0; }
+.notice p { margin: 6px 0 12px; max-width: none; color: inherit; }
+.wallet .notice { flex: 1 1 280px; min-width: 0; margin: 0; }
+.wallet .notice strong { font-size: 14px; font-family: inherit; font-weight: 600; margin: 0; }
+.wallet .notice p { margin: 6px 0 12px; max-width: none; color: inherit; }
+@media (max-width: 700px) {
+  .page { padding: 30px 18px 60px; }
+  .heading { align-items: flex-start; flex-direction: column; }
+  .wallet { flex-wrap: wrap; gap: 20px; padding: 20px; }
+  .wallet p { max-width: none; width: 100%; margin: 0; }
+  .grid, .formGrid { grid-template-columns: 1fr; }
+  .filters { grid-template-columns: 1fr 1fr; }
+  .filters label:first-child { grid-column: 1 / -1; }
+  .listHeading { align-items: flex-start; flex-direction: column; }
+  .formPanel { padding: 18px; }
+  .itemRow { grid-template-columns: 1fr 80px; }
+  .itemRow button { grid-column: 1 / -1; justify-self: start; }
+}
+.historyLink {
+  display: inline-block;
+  border: 1px solid #ced7ca;
+  border-radius: 7px;
+  padding: 10px 15px;
+  background: #fff;
+  color: #284b37;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  text-align: center;
+}
+.historyLink:hover {
+  background: #eaf0e4;
+}
+.templates { margin-bottom: 30px; }
+.templateSave { margin: 22px 0; padding: 18px; border: 1px solid #dce2d7; border-radius: 8px; }
+.templateSave button { margin: 12px 8px 0 0; }
+.templateSave p { font-size: 13px; line-height: 1.6; }

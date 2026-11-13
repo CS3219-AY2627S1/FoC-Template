@@ -1,0 +1,64 @@
+/*
+AI Assistance Disclosure:
+Tool: ChatGPT (model: GPT-5.6 Sol High), date: 2026-09-19
+Scope: Updated supplier-page styling for the shared account header
+Author review: I reviewed correctness and edited the changes to fit the project
+*/
+
+.page { flex: 1; display: flex; flex-direction: column; background: #f7f8f2; }
+.main, .footer { width: min(1120px, calc(100% - 48px)); margin-inline: auto; }
+.main { flex: 1; padding: 64px 0 84px; }
+.heading { display: flex; align-items: end; justify-content: space-between; gap: 32px; }
+.eyebrow { margin: 0; color: #626e63; font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+.heading h1 { margin: 14px 0 14px; font-family: 'Iowan Old Style', Georgia, serif; font-size: clamp(3rem, 6vw, 5rem); font-weight: 400; letter-spacing: -.055em; line-height: 1; }
+.heading > div > p:last-child { max-width: 52ch; margin: 0; color: #626e63; line-height: 1.7; }
+.primaryButton { min-height: 44px; padding: 0 18px; color: white; background: #286749; border: 1px solid #286749; border-radius: 5px; font-weight: 700; cursor: pointer; }
+.filters { margin: 52px 0 18px; padding: 20px 0; display: grid; grid-template-columns: minmax(220px, 1fr) minmax(180px, 260px) auto; gap: 18px; align-items: end; border-top: 1px solid #bfcab7; }
+.filters label, .editor label { display: grid; gap: 7px; color: #526257; font-size: .76rem; font-weight: 700; }
+.filters input, .filters select, .editor input, .editor select, .editor textarea { width: 100%; min-height: 44px; padding: 10px 12px; color: #283a31; background: white; border: 1px solid #bcc7b6; border-radius: 5px; }
+.filters span { padding-bottom: 13px; color: #626e63; font-size: .75rem; white-space: nowrap; }
+.error { margin: 18px 0; padding: 14px 16px; display: flex; justify-content: space-between; gap: 20px; align-items: center; color: #7f3325; background: #fbefeb; border: 1px solid #d5a89d; border-radius: 5px; }
+.error button { color: inherit; background: transparent; border: 0; font-weight: 700; cursor: pointer; }
+.state { padding: 44px 0; color: #626e63; border-top: 1px solid #ccd5c5; }
+.list { border-top: 1px solid #ccd5c5; }
+.supplier { padding: 28px 0; display: grid; grid-template-columns: 36px minmax(0, 1fr) 220px auto; gap: 26px; align-items: center; border-bottom: 1px solid #d8dfd1; }
+.number { align-self: start; padding-top: 3px; color: #7a8576; font-family: Georgia, serif; }
+.supplierCopy h2 { margin: 7px 0 8px; font-size: 1.2rem; }
+.supplierCopy > p:last-child { max-width: 54ch; margin: 0; color: #626e63; font-size: .86rem; line-height: 1.6; }
+.meta { margin: 0; display: grid; gap: 11px; font-size: .76rem; }
+.meta div { display: grid; gap: 2px; }
+.meta dt { color: #737d73; }
+.meta dd { margin: 0; }
+.adminTools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.actions button, .editorHeading button, .formActions > button:first-child { min-height: 40px; padding: 0 12px; color: #286749; background: transparent; border: 1px solid #bfcab7; border-radius: 5px; cursor: pointer; }
+.actions button:last-child { color: #994532; border-color: #d0aaa0; }
+.editor { padding: 24px; background: #fff; border-top: 4px solid var(--admin-accent); }
+.editorHeading { margin-top: 16px; }
+.editorHeading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.editorHeading h2 { margin: 0; font-family: 'Iowan Old Style', Georgia, serif; font-size: 2rem; font-weight: 400; }
+.editor form { margin-top: 24px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.editor textarea { resize: vertical; }
+.editor label span { font-weight: 400; }
+.fullWidth, .formActions { grid-column: 1 / -1; }
+.formActions { display: flex; justify-content: flex-end; gap: 10px; }
+.footer { padding: 22px 0 28px; color: #6c776d; border-top: 1px solid #d5ddce; font-size: .72rem; }
+button:disabled { cursor: not-allowed; opacity: .58; }
+
+@media (max-width: 820px) {
+  .supplier { grid-template-columns: 30px minmax(0, 1fr) auto; }
+  .meta { grid-column: 2; }
+  .actions { grid-column: 2 / -1; }
+}
+
+@media (max-width: 620px) {
+  .main, .footer { width: min(100% - 32px, 1120px); }
+  .main { padding: 46px 0 60px; }
+  .heading { align-items: flex-start; flex-direction: column; }
+  .filters { margin-top: 38px; grid-template-columns: 1fr; }
+  .filters span { padding: 0; }
+  .supplier { grid-template-columns: 24px minmax(0, 1fr); gap: 14px; }
+  .meta, .actions { grid-column: 2; }
+  .editor form { grid-template-columns: 1fr; }
+  .fullWidth, .formActions { grid-column: auto; }
+}

@@ -1,0 +1,144 @@
+.form {
+  display: grid;
+  gap: 18px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field label {
+  color: #34463c;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.field input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  color: #283a31;
+  background: #fff;
+  border: 1px solid #c8d1c2;
+  border-radius: 5px;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.field input::placeholder {
+  color: #7b847b;
+}
+
+.field input:focus {
+  border-color: #286749;
+  box-shadow: 0 0 0 3px rgb(40 103 73 / 13%);
+}
+
+.field input[aria-invalid='true'] {
+  border-color: #a54c38;
+}
+
+.passwordInput {
+  position: relative;
+}
+
+.passwordInput input {
+  padding-right: 70px;
+}
+
+.visibilityButton {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  min-width: 48px;
+  min-height: 40px;
+  padding: 0 8px;
+  color: #426549;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.hint,
+.footer {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.hint {
+  color: #687369;
+}
+
+.error {
+  margin: 0;
+  padding: 12px 14px;
+  color: #794b30;
+  background: #f7eee0;
+  border: 1px solid #dfceb4;
+  border-radius: 5px;
+  font-size: .85rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.welcomeCredits {
+  margin: 0;
+  padding: 12px 14px;
+  color: #24573f;
+  background: #eaf0e3;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.submit {
+  min-height: 48px;
+  padding: 0 18px;
+  color: #fff;
+  background: #286749;
+  border: 1px solid #286749;
+  border-radius: 5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 160ms ease, transform 160ms ease;
+}
+
+.submit:hover:not(:disabled) {
+  background: #1f573d;
+}
+
+.submit:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.submit:disabled,
+.visibilityButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.footer {
+  margin-top: 24px;
+  color: #687369;
+}
+
+.footer a {
+  color: #286749;
+  font-weight: 700;
+  text-underline-offset: 4px;
+}
+
+.footer a:hover {
+  text-decoration-thickness: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field input,
+  .submit {
+    transition: none;
+  }
+}

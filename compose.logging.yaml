@@ -1,0 +1,62 @@
+# Optional local logging stack: docker compose -f compose.yaml -f compose.logging.yaml up --build -d
+x-container-logging: &container-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  user-service:
+    logging: *container-logging
+  supplier-service:
+    logging: *container-logging
+  order-service:
+    logging: *container-logging
+  credit-service:
+    logging: *container-logging
+  internal-gateway:
+    logging: *container-logging
+  ui:
+    logging: *container-logging
+  rabbitmq:
+    logging: *container-logging
+  gateway-demo:
+    logging: *container-logging
+
+  alloy:
+    image: grafana/alloy:v1.16.3
+    restart: unless-stopped
+    command: [run, --storage.path=/var/lib/alloy, /etc/alloy/config.alloy]
+    environment:
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-foc-template}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy
+    logging: *container-logging
+
+  loki:
+    image: grafana/loki:3.7.7
+    restart: unless-stopped
+    command: [-config.file=/etc/loki/loki.yaml]
+    volumes:
+      - ./observability/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    logging: *container-logging
+
+  grafana:
+    image: grafana/grafana:13.2.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    logging: *container-logging
+
+volumes:
+  alloy-data:
+  loki-data:
+  grafana-data:

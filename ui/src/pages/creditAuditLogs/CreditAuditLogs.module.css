@@ -1,0 +1,269 @@
+/*
+AI Assistance Disclosure:
+Tool: ChatGPT (model: GPT-5.6 Sol High), date: 2026-10-27
+Scope: Styled the responsive credit audit-log page and its empty/error states
+Author review: I reviewed correctness and edited the changes to fit the project
+*/
+
+.page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.main,
+.footer {
+  width: min(880px, calc(100% - 48px));
+  margin-inline: auto;
+}
+
+.main {
+  flex: 1;
+  padding: 64px 0 84px;
+}
+
+.heading {
+  padding-bottom: 30px;
+  border-bottom: 1px solid #bfcab7;
+}
+
+.heading h1 {
+  margin: 0 0 14px;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: clamp(2.5rem, 6vw, 4rem);
+  font-weight: 400;
+  letter-spacing: -.04em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+.heading p {
+  margin: 0;
+  color: #626e63;
+  line-height: 1.7;
+}
+
+.button {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 10px 16px;
+  color: #286749;
+  background: #fff;
+  border: 1px solid #bfcab7;
+  border-radius: 5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: #eaf0e4;
+}
+
+.button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.history {
+  margin-top: 34px;
+  overflow-wrap: anywhere;
+}
+
+.listHeading,
+.entryHeading,
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.listHeading {
+  padding-bottom: 16px;
+}
+
+.listHeading h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.listHeading span,
+.pagination span {
+  color: #626e63;
+  font-size: .8rem;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid #ccd5c5;
+}
+
+.entry {
+  padding: 24px 0;
+  border-bottom: 1px solid #d8dfd1;
+}
+
+.entryHeading {
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.entry h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.amount {
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.amount span {
+  font-size: .8rem;
+  font-weight: 400;
+}
+
+.entry p {
+  margin: 8px 0;
+  color: #526257;
+  font-size: .88rem;
+  line-height: 1.6;
+}
+
+.entry time,
+.entry p.order {
+  color: #626e63;
+  font-size: .78rem;
+  line-height: 1.6;
+}
+
+.entry p.reason {
+  white-space: pre-wrap;
+}
+
+.adminDetails {
+  margin-top: 14px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #d8dfd1;
+  border-radius: 7px;
+}
+
+.adminDetails summary {
+  color: #286749;
+  font-size: .85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.adminDetails dl {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0;
+  font-size: .78rem;
+  line-height: 1.6;
+}
+
+.adminDetails dl > div {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.adminDetails dt {
+  color: #626e63;
+}
+
+.adminDetails dd {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.adminDetails table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.adminDetails caption {
+  padding-bottom: 10px;
+  color: #526257;
+  text-align: left;
+}
+
+.adminDetails th,
+.adminDetails td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #d8dfd1;
+  text-align: right;
+}
+
+.adminDetails th:first-child {
+  padding-left: 0;
+  text-align: left;
+  font-weight: 600;
+}
+
+.pagination {
+  margin-top: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  padding: 48px 16px;
+  margin: 0;
+  color: #626e63;
+  text-align: center;
+}
+
+.notice {
+  padding: 18px 20px;
+  color: #5d5942;
+  background: #f7f6ed;
+  border: 1px solid #e1ddc8;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.notice strong {
+  font-weight: 600;
+}
+
+.notice p {
+  margin: 6px 0 12px;
+}
+
+.footer {
+  padding: 22px 0 28px;
+  color: #6c776d;
+  border-top: 1px solid #d5ddce;
+  font-size: .72rem;
+}
+
+@media (max-width: 620px) {
+  .main,
+  .footer {
+    width: calc(100% - 32px);
+  }
+
+  .main {
+    padding: 46px 0 60px;
+  }
+
+  .adminDetails dl > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .pagination {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}

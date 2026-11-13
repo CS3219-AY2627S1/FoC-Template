@@ -1,0 +1,191 @@
+/*
+AI Assistance Disclosure:
+Tool: ChatGPT (model: GPT-5.6 Sol High), date: 2026-09-19
+Scope: Styled the initial prototype-inspired profile form
+Author review: I reviewed correctness and edited the changes to fit the project
+*/
+
+.page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  color: #283a31;
+  background:
+    radial-gradient(circle at 88% 20%, rgb(216 228 205 / 48%), transparent 24%),
+    #f7f8f2;
+}
+
+.main,
+.footer {
+  width: min(880px, calc(100% - 48px));
+  margin-inline: auto;
+}
+
+.main {
+  flex: 1;
+  padding: 64px 0 84px;
+}
+
+.heading {
+  padding-bottom: 30px;
+  border-bottom: 1px solid #bfcab7;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #626e63;
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.heading h1 {
+  margin: 14px 0 14px;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: clamp(3rem, 7vw, 5.2rem);
+  font-weight: 400;
+  letter-spacing: -.055em;
+  line-height: 1;
+}
+
+.heading > p:last-child {
+  max-width: 55ch;
+  margin: 0;
+  color: #626e63;
+  line-height: 1.7;
+}
+
+.profileCard {
+  margin-top: 34px;
+  padding: 30px;
+  background: rgb(255 255 255 / 82%);
+  border: 1px solid #ccd5c5;
+  border-radius: 7px;
+  box-shadow: 0 14px 38px rgb(40 58 49 / 6%);
+}
+
+.cardHeading {
+  padding-bottom: 24px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid #d8dfd1;
+}
+
+.cardHeading h2 {
+  margin: 7px 0 0;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: 2rem;
+  font-weight: 400;
+  letter-spacing: -.035em;
+}
+
+.cardHeading > span {
+  padding: 7px 10px;
+  color: #286749;
+  background: #e8efe2;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 800;
+}
+
+.profileCard form {
+  margin-top: 26px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.profileCard label {
+  display: grid;
+  gap: 8px;
+  color: #526257;
+  font-size: .76rem;
+  font-weight: 800;
+}
+
+.profileCard input {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 13px;
+  color: #283a31;
+  background: #fff;
+  border: 1px solid #bcc7b6;
+  border-radius: 5px;
+  font-size: .95rem;
+}
+
+.profileCard input:focus {
+  border-color: #286749;
+}
+
+.formActions {
+  grid-column: 1 / -1;
+  padding-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.formActions p {
+  margin: 0;
+  color: #6c776d;
+  font-size: .78rem;
+}
+
+.formActions button {
+  min-height: 46px;
+  padding: 0 20px;
+  color: #fff;
+  background: #286749;
+  border: 1px solid #286749;
+  border-radius: 5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.formActions button:disabled {
+  color: #788178;
+  background: #e5e9e1;
+  border-color: #d2d8cc;
+  cursor: not-allowed;
+}
+
+.footer {
+  padding: 22px 0 28px;
+  color: #6c776d;
+  border-top: 1px solid #d5ddce;
+  font-size: .72rem;
+}
+
+@media (max-width: 620px) {
+  .main,
+  .footer {
+    width: min(100% - 32px, 880px);
+  }
+
+  .main {
+    padding: 46px 0 60px;
+  }
+
+  .profileCard {
+    padding: 22px;
+  }
+
+  .profileCard form {
+    grid-template-columns: 1fr;
+  }
+
+  .formActions {
+    grid-column: auto;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .formActions button {
+    width: 100%;
+  }
+}

@@ -1,0 +1,13 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #111827; color: #e5e7eb; }
+main { max-width: 960px; margin: 4rem auto; padding: 0 1rem; }
+h1 { font-size: 2.5rem; margin-bottom: .5rem; }
+p { line-height: 1.6; }
+#services { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; margin-top: 2rem; }
+article { background: #1f2937; border: 1px solid #4b5563; border-radius: .75rem; padding: 1.25rem; }
+h2 { font-size: 1.2rem; }
+.enabled { color: #86efac; }
+.disabled { color: #fca5a5; }
+button { font: inherit; cursor: pointer; background: #dbeafe; color: #111827; border: 0; border-radius: .4rem; padding: .7rem; }
+button:disabled { opacity: .5; cursor: wait; }
+button:focus-visible { outline: 3px solid #60a5fa; outline-offset: 3px; }
+#message { min-height: 1.6rem; }

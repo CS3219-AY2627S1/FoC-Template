@@ -1,0 +1,164 @@
+.layout {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(420px, 0.92fr);
+  background: #f8f9f3;
+}
+
+.story {
+  min-height: 100%;
+  padding: 50px 11%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 64px;
+  background:
+    radial-gradient(circle at 15% 18%, rgb(255 255 255 / 42%), transparent 28%),
+    #e5ebdb;
+  border-right: 1px solid #d5ddce;
+}
+
+.wordmark {
+  width: fit-content;
+  display: flex;
+  flex-direction: column;
+  color: #283a31;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 0.88;
+  letter-spacing: -0.055em;
+  text-decoration: none;
+}
+
+.wordmark span {
+  margin-left: 24px;
+  font-style: italic;
+  font-weight: 400;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #647066;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.storyContent h1 {
+  margin: 22px 0;
+  color: #283a31;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: clamp(2.8rem, 4.6vw, 4.9rem);
+  font-weight: 400;
+  letter-spacing: -0.05em;
+  line-height: 1.08;
+}
+
+.storyContent h1 em {
+  color: #426549;
+  font-weight: 400;
+}
+
+.storyDescription {
+  max-width: 38ch;
+  margin: 0;
+  color: #626e63;
+  font-size: 0.92rem;
+  line-height: 1.8;
+}
+
+.steps {
+  margin: 0;
+  padding: 24px 0 0;
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid #bdc8b7;
+  color: #626e63;
+  font-size: 0.74rem;
+  list-style: none;
+}
+
+.steps li {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 8px;
+}
+
+.steps span {
+  color: #426549;
+  font-variant-numeric: tabular-nums;
+}
+
+.formSection {
+  padding: 56px 10%;
+  display: grid;
+  align-items: center;
+}
+
+.formInner {
+  width: 100%;
+  max-width: 400px;
+  margin: auto;
+}
+
+.formInner h2 {
+  margin: 14px 0 30px;
+  color: #283a31;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: clamp(2.35rem, 4vw, 2.9rem);
+  font-weight: 400;
+  letter-spacing: -0.045em;
+  line-height: 1.1;
+}
+
+@media (max-width: 760px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .story {
+    min-height: auto;
+    padding: 28px 24px;
+    gap: 30px;
+    border-right: 0;
+    border-bottom: 1px solid #d5ddce;
+  }
+
+  .storyContent h1 {
+    margin: 14px 0;
+    font-size: 2.65rem;
+  }
+
+  .storyDescription,
+  .steps {
+    display: none;
+  }
+
+  .formSection {
+    padding: 38px 24px 48px;
+    align-items: start;
+  }
+}
+
+@media (max-width: 420px) {
+  .storyContent {
+    display: none;
+  }
+
+  .story {
+    padding: 24px;
+  }
+
+  .formSection {
+    padding: 30px 20px 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layout * {
+    scroll-behavior: auto;
+  }
+}

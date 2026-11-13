@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gateway demo controls</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/dashboard.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>Internal gateway</h1>
+    <p>Demo routing controls · NGINX</p>
+    <p>Disable a route to return <strong>503 Service Unavailable</strong>. Containers keep running. These indicators show configured routing, not backend health.</p>
+    <section id="services" aria-label="Service routing"></section>
+    <p id="message" role="status" aria-live="polite"></p>
+    <p>Only requests passing through this gateway are affected. Database and RabbitMQ traffic is unchanged.</p>
+  </main>
+</body>
+</html>

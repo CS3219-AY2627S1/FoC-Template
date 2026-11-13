@@ -1,0 +1,76 @@
+# Isolated routing tests: no application databases, credentials, or RabbitMQ.
+services:
+  internal-gateway:
+    extends:
+      file: ../compose.yaml
+      service: internal-gateway
+    environment:
+      USER_SERVICE_UPSTREAM: http://user-service:5005
+      SUPPLIER_SERVICE_UPSTREAM: http://supplier-service:3001
+      ORDER_SERVICE_UPSTREAM: http://order-service:3002
+      CREDIT_SERVICE_UPSTREAM: http://credit-service:3002
+      NGINX_DNS_RESOLVER: 127.0.0.11
+    volumes:
+      - gateway-demo-state:/var/run/gateway-demo:ro
+
+  gateway-demo:
+    image: python:3.14-alpine
+    command: ["python", "/app/server.py"]
+    environment:
+      STATE_DIR: /var/run/gateway-demo
+    volumes:
+      - ../demo:/app:ro
+      - gateway-demo-state:/var/run/gateway-demo
+    ports:
+      - "127.0.0.1::8080"
+
+  ui:
+    image: nginx:stable-alpine
+    environment:
+      # A trailing slash in the shared origin must not drop the API path.
+      INTERNAL_GATEWAY_URL: http://internal-gateway/
+      NGINX_DNS_RESOLVER: 127.0.0.11
+    volumes:
+      - ../../ui/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ../../ui/check-env.sh:/docker-entrypoint.d/19-check-env.sh:ro
+    ports:
+      - "127.0.0.1::80"
+
+  user-service:
+    image: python:3.14-slim
+    environment:
+      SERVICE: user-service
+      PORT: "5005"
+    volumes:
+      - ./upstream.py:/upstream.py:ro
+    command: ["python", "/upstream.py"]
+
+  supplier-service:
+    image: python:3.14-slim
+    environment:
+      SERVICE: supplier-service
+      PORT: "3001"
+    volumes:
+      - ./upstream.py:/upstream.py:ro
+    command: ["python", "/upstream.py"]
+
+  order-service:
+    image: python:3.14-slim
+    environment:
+      SERVICE: order-service
+      PORT: "3002"
+    volumes:
+      - ./upstream.py:/upstream.py:ro
+    command: ["python", "/upstream.py"]
+
+  credit-service:
+    image: python:3.14-slim
+    environment:
+      SERVICE: credit-service
+      PORT: "3002"
+    volumes:
+      - ./upstream.py:/upstream.py:ro
+    command: ["python", "/upstream.py"]
+
+volumes:
+  gateway-demo-state:

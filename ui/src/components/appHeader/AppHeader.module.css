@@ -1,0 +1,294 @@
+/*
+AI Assistance Disclosure:
+Tool: ChatGPT (model: GPT-5.6 Sol High), date: 2026-09-19
+Scope: Styled the initial prototype-inspired account drawer
+Author review: I reviewed correctness and edited the changes to fit the project
+*/
+
+.header {
+  width: min(1120px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 24px 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  border-bottom: 1px solid #ccd5c5;
+}
+
+.wordmark {
+  display: flex;
+  flex-direction: column;
+  color: #283a31;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: .88;
+  letter-spacing: -.055em;
+  text-decoration: none;
+}
+
+.wordmark em {
+  margin-left: 22px;
+  font-weight: 400;
+}
+
+.navigation {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.navigation > a {
+  padding: 10px 0;
+  color: #526257;
+  font-size: .86rem;
+  text-decoration: none;
+}
+
+.navigation > a[aria-current='page'] {
+  color: #283a31;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 7px;
+}
+
+.navigation > a.adminLink {
+  color: var(--admin-accent);
+  font-weight: 700;
+}
+
+.accountButton {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  color: #283a31;
+  background: #eef2e8;
+  border: 1px solid #bfcab7;
+  border-radius: 50%;
+  font-size: .74rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  cursor: pointer;
+}
+
+.accountButton:hover {
+  background: #e3eadb;
+  border-color: #91a389;
+}
+
+.drawer {
+  width: min(430px, 100%);
+  height: 100dvh;
+  max-width: 100%;
+  max-height: 100dvh;
+  margin: 0 0 0 auto;
+  padding: 0;
+  color: #283a31;
+  background: #f7f8f2;
+  border: 0;
+  border-left: 1px solid #ccd5c5;
+  box-shadow: -24px 0 60px rgb(31 48 35 / 12%);
+}
+
+.drawer::backdrop {
+  background: rgb(31 48 35 / 34%);
+}
+
+.drawer[open] {
+  animation: drawer-in 180ms ease-out;
+}
+
+.drawerContent {
+  min-height: 100%;
+  padding: 34px 32px max(32px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+}
+
+.drawerHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: #626e63;
+  font-size: .66rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.drawerHeading h2 {
+  margin: 0;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: 2.1rem;
+  font-weight: 400;
+  letter-spacing: -.04em;
+}
+
+.closeButton {
+  min-height: 40px;
+  padding: 0 4px;
+  color: #526257;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.identity {
+  margin-top: 44px;
+  padding: 22px 0;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  border-top: 1px solid #ccd5c5;
+  border-bottom: 1px solid #ccd5c5;
+}
+
+.identity > span {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  background: #e3eadb;
+  border-radius: 50%;
+  font-size: .78rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+.identity strong,
+.identity p {
+  overflow-wrap: anywhere;
+}
+
+.identity strong {
+  display: block;
+  font-size: .95rem;
+}
+
+.identity p {
+  margin: 4px 0 0;
+  color: #626e63;
+  font-size: .8rem;
+}
+
+.capabilities {
+  margin: 24px 0 0;
+  color: #6c776d;
+  font-size: .8rem;
+  line-height: 1.6;
+}
+
+.accountLinks {
+  margin-top: 32px;
+  border-top: 1px solid #ccd5c5;
+}
+
+.accountLinks a {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #283a31;
+  border-bottom: 1px solid #ccd5c5;
+  font-size: .88rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.accountLinks a span:last-child {
+  color: #286749;
+  font-size: 1.15rem;
+}
+
+.accountLinks a.adminLink {
+  margin-top: 10px;
+  padding-inline: 12px;
+  color: var(--admin-accent);
+  background: var(--admin-tint);
+  border: 1px solid #d9c4ed;
+  border-radius: 6px;
+}
+
+.accountLinks a.adminLink span:last-child { color: var(--admin-accent); }
+
+.signOutArea {
+  margin-top: auto;
+  padding-top: 24px;
+}
+
+.signOutError {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  color: #794b30;
+  background: #f7eee0;
+  border: 1px solid #dfceb4;
+  border-radius: 5px;
+  font-size: .85rem;
+  line-height: 1.55;
+}
+
+.signOutButton {
+  width: 100%;
+  min-height: 46px;
+  color: #286749;
+  background: transparent;
+  border: 1px solid #bfcab7;
+  border-radius: 5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.signOutButton:hover:not(:disabled) {
+  background: #e8ede2;
+}
+
+.signOutButton:disabled {
+  cursor: not-allowed;
+  opacity: .58;
+}
+
+@keyframes drawer-in {
+  from { transform: translateX(28px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@media (max-width: 620px) {
+  .header {
+    width: min(100% - 32px, 1120px);
+    align-items: flex-start;
+    gap: 18px;
+  }
+
+  .navigation {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px 13px;
+  }
+
+  .navigation > a {
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+  }
+
+  .accountButton {
+    width: 44px;
+    height: 44px;
+  }
+
+  .drawerContent {
+    padding: max(28px, env(safe-area-inset-top)) 24px max(28px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer[open] { animation: none; }
+}
