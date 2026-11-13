@@ -1,0 +1,101 @@
+syntax = "proto3";
+
+package order.v1;
+
+import "buf/validate/validate.proto";
+import "google/type/date.proto";
+import "order/v1/shared_types.proto";
+
+// Administrator-only Order operations. Admins read single orders through
+// OrderService.GetOrder.
+service OrderAdminService {
+  rpc ListUserOrders(ListUserOrdersRequest) returns (ListUserOrdersResponse) { option idempotency_level = NO_SIDE_EFFECTS; }
+
+  rpc AdminCancelOrder(AdminCancelOrderRequest) returns (AdminCancelOrderResponse) { option idempotency_level = IDEMPOTENT; }
+
+  rpc UnassignCourier(UnassignCourierRequest) returns (UnassignCourierResponse) {}
+
+  rpc GetOrderStats(GetOrderStatsRequest) returns (GetOrderStatsResponse) { option idempotency_level = NO_SIDE_EFFECTS; }
+
+  rpc GetDailyOrderCounts(GetDailyOrderCountsRequest) returns (GetDailyOrderCountsResponse) { option idempotency_level = NO_SIDE_EFFECTS; }
+}
+
+// One user's orders as requester, courier or either, newest first.
+message ListUserOrdersRequest {
+  string user_id = 1 [(buf.validate.field).string.uuid = true];
+  ParticipantRole role = 2 [(buf.validate.field).enum.defined_only = true];
+  OrderStatus status = 3 [(buf.validate.field).enum.defined_only = true];
+  // One-based; zero means 1.
+  int32 page = 4 [(buf.validate.field).int32.gte = 0];
+  // Zero means 20; maximum 100.
+  int32 page_size = 5 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+}
+
+// Cancels an order before pickup, for example when a participant's suspension
+// is deferred. The reservation is released.
+message AdminCancelOrderRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string reason = 2 [(buf.validate.field).cel = {
+    id: "admin_cancel_order.reason_length"
+    message: "reason must be 1-500 characters excluding leading and trailing whitespace"
+    expression: "size(this.trim()) >= 1 && size(this.trim()) <= 500"
+  }];
+}
+
+// Removes the courier from an Awaiting Pickup order, which returns to Awaiting
+// Courier.
+message UnassignCourierRequest {
+  string order_id = 1 [(buf.validate.field).string.uuid = true];
+  string reason = 2 [(buf.validate.field).cel = {
+    id: "unassign_courier.reason_length"
+    message: "reason must be 1-500 characters excluding leading and trailing whitespace"
+    expression: "size(this.trim()) >= 1 && size(this.trim()) <= 500"
+  }];
+}
+
+message GetOrderStatsRequest {}
+
+// The number of orders currently in one status.
+message OrderStatusCount {
+  OrderStatus status = 1;
+  int64 count = 2;
+}
+
+// Counts across all orders, with one entry for every defined status in enum
+// order, including statuses with no orders.
+message GetOrderStatsResponse {
+  repeated OrderStatusCount status_counts = 1;
+}
+
+// An inclusive range of Asia/Singapore calendar days. The end must not precede
+// the start, and the range covers at most 366 days.
+message GetDailyOrderCountsRequest {
+  google.type.Date start_date = 1 [(buf.validate.field).required = true];
+  google.type.Date end_date = 2 [(buf.validate.field).required = true];
+}
+
+// Orders created on one Asia/Singapore calendar day.
+message DailyOrderCount {
+  google.type.Date date = 1;
+  int64 count = 2;
+}
+
+// One entry for every day in the requested range, oldest first, including days
+// with no orders.
+message GetDailyOrderCountsResponse {
+  repeated DailyOrderCount days = 1;
+}
+
+message ListUserOrdersResponse {
+  repeated Order orders = 1;
+  PageInfo page_info = 2;
+}
+message AdminCancelOrderResponse {
+  Order order = 1;
+}
+message UnassignCourierResponse {
+  Order order = 1;
+}

@@ -1,0 +1,190 @@
+# User Service – Database Schema
+
+PostgreSQL 18. Source of truth: `migrations/*.sql` (goose). GORM entities: `internal/models`.
+
+Every table with a single `id` embeds `models.BaseModel` plus userstamps:
+`id UUID`, `created_at`, `updated_at`, `deleted_at` (soft delete),
+`created_by` and `updated_by` (FK to `users.id`, `NULL` = system). The diagram
+leaves these columns out.
+
+```mermaid
+erDiagram
+    roles ||--o{ users : "users.role"
+    users ||--o{ sessions : has
+    users ||--o{ auth_tokens : "login links"
+    users ||--o| admin_bootstrap : "first super_admin"
+    users ||--o{ role_changes : "promote/suspend/..."
+    roles ||--o{ role_changes : "from/to"
+    users ||--o{ account_warnings : receives
+    users ||--o{ favourite_suppliers : saves
+    review_removals ||--o| review_restorations : "undone by"
+    users ||--o{ profile_pictures : owns
+    users ||--o| profile_pictures : "current picture"
+
+    users {
+        uuid id PK
+        citext email UK "among live rows"
+        text display_name "1-100 chars"
+        text description "max 500"
+        text phone_number "max 20"
+        uuid profile_picture_id FK "active picture"
+        text role FK "roles.name"
+    }
+    profile_pictures {
+        uuid id PK "application reference"
+        uuid user_id FK
+        text object_key UK "storage key"
+        text content_type "jpeg|png|webp|heic|heif"
+        bigint size_bytes "1-10000000"
+        text state "pending|active|deleting"
+        timestamptz created_at
+    }
+    roles {
+        text name PK "super_admin|admin|user|suspended"
+        text description
+    }
+    admin_bootstrap {
+        bool singleton PK
+        uuid user_id FK
+    }
+    allowed_email_domains {
+        uuid id PK
+        citext domain UK "across all rows"
+    }
+    auth_tokens {
+        uuid id PK
+        bytea token_hash UK "sha256"
+        text purpose "register|login"
+        citext email
+        uuid user_id FK
+        inet requested_ip
+        timestamptz expires_at
+        timestamptz used_at
+    }
+    sessions {
+        uuid id PK
+        bytea token_hash UK "sha256"
+        uuid user_id FK
+        timestamptz expires_at
+        timestamptz revoked_at
+    }
+    role_changes {
+        uuid id PK
+        uuid user_id FK
+        text from_role FK
+        text to_role FK
+        text reason
+        uuid report_id "Moderation report, no FK"
+    }
+    account_warnings {
+        uuid id PK
+        uuid user_id FK
+        uuid request_id "no FK"
+        text reason
+        text status "active|removed"
+        uuid source_event_id UK
+        uuid appeal_id "Moderation appeal, no FK"
+    }
+    favourite_suppliers {
+        uuid user_id PK
+        uuid supplier_id PK "no FK"
+    }
+    review_restorations {
+        uuid id PK
+        uuid removal_id FK,UK
+        uuid review_id FK
+        uuid appeal_id "Moderation appeal, no FK"
+        text reason
+    }
+    moderation_outcome_events {
+        uuid event_id PK
+        text outcome "applied|rejected"
+    }
+```
+
+## Tables
+
+| Migration | Table | Backlog | Notes |
+|---|---|---|---|
+| 00001 | `users` | U1, U3 | `citext` email = case-insensitive unique |
+| 00002 | `allowed_email_domains` | U1.1.2 | empty table blocks non-super-admin authentication; super-admins bypass the domain policy |
+| 00002 | `auth_tokens` | U1.2, U2.1 | hash only; atomic consume (below); `requested_ip` used for rate limiting |
+| 00002 | `sessions` | U2.2, NFR-05.4 | opaque token hash; `revoked_at` for logout / logout-all |
+| 00003 | `roles` + `users.role` | U4, U5, U6 | one role per user; suspension is a role, so there's no status column |
+| 00003 | `admin_bootstrap` | U4.2 | singleton row; written once by the startup bootstrap (`BOOTSTRAP_SUPERADMIN_EMAIL`), whose user becomes `super_admin` |
+| 00004 | `role_changes` | U4, U6 | append-only history; reason required when suspending/reinstating |
+| 00004 | `account_warnings` | U7 | `source_event_id` unique = idempotent; removed ⇔ `removed_at` set |
+| 00005 | `favourite_suppliers` | U3.4 | `supplier_id` has no FK (other service) |
+| 00006 | drops `users.telegram_handle` | U1.4 | Telegram is linked in the Communication Service (#126) |
+| 00007 | `user_created_outbox` | Credit | durable, lease-based queue of user-created events; published to Kafka and consumed by the Credit service |
+| 00008 | `allowed_email_domains` | U1.1.2 | domain is case-insensitive unique across all rows |
+| 00014 | `user_reports`, `user_report_responses` | RP1–RP5 | exactly one of `review_id` / `order_id`; one unclosed report per reporter and target; closed ⇔ outcome, reason and `closed_at`; review removal only for review targets; adds `report_id` FKs on `role_changes` and `account_warnings`. Numbered after profile pictures (00012) and review moderation (00013) |
+| 00015 | `user_appeals`, `user_appeal_decisions`, `user_appeal_responses` | RP7–RP12 | `(appellant_id, idempotency_key)` unique; one target column per decision, matching `kind`; a decision is in at most one unclosed appeal (`active` partial unique index); outcome and reason set exactly when the decision is no longer active; `credit_adjustment` rejected until #302; adds the `appeal_id` FK on `account_warnings` |
+| 00016 | `review_restorations` | RP12.3 | one restoration per removal; drops the unique `review_removals.review_id`, so a restored review can be removed again |
+| 00017 | `evidence_attachments` | RP1.6, RP2.2, RP8.2, RP9.4 | staged while uploading, then attached to exactly one report, appeal or response; at most five per parent; same content types and size cap as review photos; unattached rows are reaped |
+| 00018 | drops the moderation tables; `review_removals.report_id`; `moderation_outcome_events` | #336 | reports, appeals and evidence moved to Moderation Service; the `report_id`/`appeal_id` foreign keys on `role_changes`, `account_warnings` and `review_restorations` are dropped, keeping opaque IDs; `review_removals.report_id` marks a removal a report made; each applied outcome event is recorded once |
+
+## Soft delete
+
+GORM adds `deleted_at IS NULL` to every query on a model with `BaseModel`,
+and `Delete` only sets `deleted_at`. So database `ON DELETE CASCADE` fires only
+for `Unscoped()` (hard) deletes. `store.Users.Delete` cascades in the
+application instead: it soft-deletes the user's sessions and auth tokens and
+removes their favourites. Warnings and role changes stay as history. A user
+still referenced by `admin_bootstrap` cannot be deleted.
+
+`users.email` is unique only among rows that are not soft-deleted.
+`allowed_email_domains.domain` is case-insensitive unique across all rows;
+the sqlc removal query hard-deletes domains. `account_warnings.source_event_id` stays unique
+across all rows so event replays remain idempotent. `role_changes.created_by`
+is the actor who made the change.
+
+## Key queries
+
+```sql
+-- Consume magic link (0 rows => invalid / expired / used)
+UPDATE auth_tokens SET used_at = $now, updated_at = $now
+WHERE token_hash = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > $now
+  AND deleted_at IS NULL
+RETURNING *;
+
+-- Admin bootstrap (one tx): serialise instances, then no-op if already done;
+-- otherwise create or promote the user to 'super_admin' and claim the row
+LOCK TABLE admin_bootstrap IN EXCLUSIVE MODE;
+SELECT count(*) FROM admin_bootstrap;
+INSERT INTO admin_bootstrap (user_id) VALUES ($1);
+
+-- Change role (same tx), optimistic on current role
+UPDATE users SET role = $to, updated_at = now() WHERE id = $1 AND role = $from AND deleted_at IS NULL;
+INSERT INTO role_changes (user_id, from_role, to_role, reason, created_by) VALUES (...);
+
+-- Logout all devices
+UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL AND deleted_at IS NULL;
+
+-- Idempotent warning from an event
+INSERT INTO account_warnings (...) VALUES (...) ON CONFLICT (source_event_id) DO NOTHING;
+```
+
+## Roles & authorisation
+
+No permissions table. Protected Connect routes verify the access token at the
+HTTP boundary; Connect interceptors read the caller's current database role.
+The role service rechecks the actor under a row lock before writing:
+
+| Caller | Allowed targets | Allowed destination roles |
+|---|---|---|
+| `super_admin` | `admin`, `user`, `suspended` | anything among those three, incl. promote user → admin, demote admin |
+| `admin` | `user`, `suspended` | user ↔ suspended (suspend / reinstate) |
+| `user` | – | – |
+| `suspended` | – | – |
+
+Nobody can change their own role or a `super_admin` role. The startup admin
+bootstrap grants the first `super_admin` role. A reason is required when a role
+change enters or leaves `suspended`.
+
+## Conventions
+
+- Migrations use goose: one `0000N_name.sql` per change with `-- +goose Up` / `-- +goose Down`. Never edit an applied migration.
+- Text columns are `TEXT`; length and format limits are `CHECK` constraints.
+- Cross-service IDs (`supplier_id`, `request_id`, `order_id`, `credit_entry_id`) are plain UUIDs, no FK. `report_id` and `appeal_id` name Moderation Service reports and appeals, also without a FK (see `docs/adr/moderation-service.md`).
+- Tokens are never stored raw, only `sha256`.

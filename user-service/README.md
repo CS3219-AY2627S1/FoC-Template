@@ -1,0 +1,270 @@
+# User Service
+
+This is the user service for [Friend on Campus (FoC)](../README.md). It
+provides email magic-link authentication and ES256 access and refresh tokens.
+
+## Setup
+
+1. Configure the environment.
+
+   For Compose, copy the root environment example and fill in the database
+   settings:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   `APP_ENV=local` enables local development behavior. The user-service
+   container creates `.local/secrets/auth/jwt-signing-private.pem` if it is
+   missing, before starting Goose and Air. Compose mounts this directory so
+   the key persists across container restarts. The service derives its public
+   key and publishes it through `user.v1.PublicKeyService.GetPublicKeys`.
+
+   The signing key must be an unencrypted P-256 private key in PKCS#8 PEM
+   format (`-----BEGIN PRIVATE KEY-----`). The dev container generates this
+   format automatically. For host development, run this from the repository
+   root when no key exists:
+
+   ```bash
+   umask 077
+   mkdir -p .local/secrets/auth
+   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out .local/secrets/auth/jwt-signing-private.pem
+   ```
+
+   If an existing dev key begins with `-----BEGIN EC PRIVATE KEY-----`,
+   convert it to PKCS#8 before restarting. This preserves the key material:
+
+   ```bash
+   umask 077
+   openssl pkcs8 -topk8 -nocrypt -in .local/secrets/auth/jwt-signing-private.pem -out .local/secrets/auth/jwt-signing-private.pkcs8.pem
+   mv .local/secrets/auth/jwt-signing-private.pkcs8.pem .local/secrets/auth/jwt-signing-private.pem
+   ```
+
+   Signing key rotation and live key reload are not supported. Replacing the
+   configured key invalidates tokens signed by the old key.
+
+   `JWT_ACCESS_TOKEN_TTL` and `JWT_REFRESH_TOKEN_TTL` accept Go duration
+   values. Their defaults are `10m` and `720h` (30 days).
+
+   Communication Service sends magic links. `COMMUNICATION_SERVICE_BASE_URL`
+   is its internal listener and is required outside local mode. With
+   `APP_ENV=local` it defaults to `http://communication-service:8081`, the
+   Compose address, so a host run must set it. SMTP settings belong to
+   Communication Service.
+
+   Courier warning requests are consumed from Kafka. `KAFKA_BROKERS` accepts
+   a comma-separated broker list; it defaults to `localhost:9092` in local
+   mode, and must be configured in other environments. Compose sets it to
+   `kafka:9092` for the service container.
+
+2. Set up the database.
+
+   The service uses PostgreSQL 18 and
+   [Goose](https://github.com/pressly/goose) migrations. Compose waits for
+   PostgreSQL and applies migrations before
+   [Air](https://github.com/air-verse/air) starts. To run the service
+   directly, copy `.env.template` to `.env`, set `DATABASE_URL` and
+   `JWT_PRIVATE_KEY_FILE`, then run `make migrate-up` from this directory.
+
+3. Start the service.
+
+   From the repository root, run:
+
+   ```bash
+   docker compose up -d kafka-init
+   docker compose up --build user-service
+   ```
+
+   Compose also starts [Mailpit](https://mailpit.axllent.org/), which
+   catches every email the service sends. Open http://localhost:8025 to
+   read login and registration links. For host development, run
+   `docker compose up -d mailpit kafka-init`, set
+   `KAFKA_BROKERS=localhost:9092` in `.env`, then run `make run` from this
+   directory after setting up the environment and database.
+
+## Authentication
+
+The generated `user.v1.AuthService` provides `RequestLink`, `Login`,
+`Register`, `Refresh`, `Logout`, and `LogoutAll`. `user.v1.PublicKeyService.GetPublicKeys`
+publishes the signing key set, and `user.v1.HealthService.Check` reports
+service health. These services use ConnectRPC; the former REST auth, health,
+and JWKS routes are no longer served.
+
+`user.warning.v1.WarningService.ListMyWarnings` returns the authenticated caller's
+warnings. Both warning list RPCs use shared offset pagination and include page
+metadata. `ListWarningsForUser` and `MarkWarningAsRemoved` are restricted to
+admins; marking a warning as removed records the admin, removal reason and appeal ID.
+
+Login, registration, and refresh return an access token in their typed
+response. Clients hold it in memory and send it in the `Authorization: Bearer`
+header. The refresh token is only sent as a `foc-refresh-token` cookie with
+Secure, HttpOnly, SameSite=Strict and Path=/user.v1.AuthService/. Refresh and
+both logouts read that cookie and the logouts clear it. `LogoutAll` revokes
+every session of the cookie's user (sign out of all devices) and, unlike
+`Logout`, returns `Unauthenticated` when the cookie is not a live session.
+Access tokens already issued remain valid until they expire. Browser clients must send credentials
+so the cookie can be stored and sent. Requests with an `Origin` must match the
+configured frontend origin; service-to-service requests without an `Origin`
+are permitted. The access and refresh lifetimes come from the two JWT TTL
+environment variables. Link requests return an empty typed response; the magic
+link is only emailed, through Communication Service's internal
+`EmailService.SendMagicLink`. If Communication can't send it, `RequestLink`
+returns `Unavailable` and logs the error. An existing
+account receives a `/login?token=` link and a new address a
+`/register?token=` link; both expire after ten minutes and work once.
+
+Registration only accepts addresses whose domain is in
+`allowed_email_domains`; an empty table rejects every registration. For local
+testing, add a domain, for example
+`INSERT INTO allowed_email_domains (domain) VALUES ('u.nus.edu');`. The
+bootstrapped admin can log in without one.
+
+`RegisterRequest` requires a display name and a phone number. Display names are
+trimmed and must be 1 to 100 characters. Phone numbers are validated with
+libphonenumber (`nyaruka/phonenumbers`), reading numbers without a country code
+as Singapore numbers, and stored in E.164 form such as `+6591234567`. The phone
+number is the contact fallback for users who haven't linked Telegram; Telegram
+is linked through the Communication Service, so User Service stores no Telegram
+details. Registration, login, and refresh return these saved fields in the
+`User` message. The bootstrapped admin has no phone number until they add one.
+
+
+## First super admin
+
+Set `BOOTSTRAP_SUPERADMIN_EMAIL` (and optionally
+`BOOTSTRAP_SUPERADMIN_DISPLAY_NAME`, default `Admin`) before starting the
+service. After migrations, startup creates that user as `super_admin`, or
+promotes an existing user with that email and records the role change. The
+admin then signs in with the normal magic-link login. The registration domain
+whitelist does not apply.
+
+The bootstrap runs once. It records the admin in the `admin_bootstrap` table,
+and later starts log that it was already done and ignore the variables, even if
+the email changes or the admin was demoted. Concurrent instances are serialised
+by a table lock, so only one bootstrap succeeds. An invalid email or display
+name stops startup. To bootstrap again, delete the `admin_bootstrap` row by
+hand.
+
+Other Go services set `USER_SERVICE_BASE_URL` to the Connect server base URL
+and initialize one authenticator at startup. The authenticator fetches keys
+through `PublicKeyService.GetPublicKeys`. Register its `Authenticate` method on protected routes and
+read `AccessClaims` with `ClaimsFromContext`. The
+authenticator fetches keys at startup, refreshes its cache every hour,
+and fetches early when a token names an unknown key ID. The base URL must use
+HTTPS unless `APP_ENV=local`; local mode permits the Compose network's HTTP URL.
+
+```go
+import authmiddleware "github.com/AY2627S1-CS3219-P1/FoC/user-service/pkg/middleware"
+
+authenticator, err := authmiddleware.NewUserServiceAuthenticator(ctx)
+if err != nil {
+    return err
+}
+protectedRouter.Use(authenticator.Authenticate)
+```
+
+## Profile and role APIs
+
+The generated Connect services below require an access token in the
+`Authorization: Bearer` header. The User Service verifies it with its loaded
+signing key and checks the caller's current role in the database.
+
+| RPC | Request | Response | Access |
+| --- | --- | --- | --- |
+| `ProfileService.GetMyProfile` | Empty | Profile with ID, email, display name, description, phone number, and role | Every authenticated user |
+| `ProfileService.UpdateMyProfile` | Complete editable profile: `display_name`, `description`, `phone_number` | Updated profile | All authenticated roles except `suspended_user` |
+| `UserAdminService.GetUserByEmail` | `email` | User ID, email, display name, role | `admin`, `super_admin` |
+| `UserAdminService.ChangeUserRole` | `user_id`, `to_role`, optional `reason` | Updated user | `admin`, `super_admin`, subject to the policy below |
+
+`UpdateMyProfile` replaces all three editable fields. An omitted description
+becomes empty. A display name must be nonblank after trimming and at most 100
+characters, and a phone number is required and validated as at registration.
+The description limit is 500 characters. The request cannot update email, ID,
+role, or account status.
+
+`super_admin` may change another user's role among `admin`, `user`, and
+`suspended_user`. `admin` may change another user's role only between `user`
+and `suspended_user`. Neither may change its own role or a `super_admin` role.
+If either the previous or new role is `suspended_user`, a nonblank reason of at
+most 2,000 characters is required. The role update and audit entry commit
+together. Clients should refresh affected users' access tokens to obtain the
+new role claim; previously issued access tokens remain valid until expiry.
+
+The `admin_bootstrap` table exists, but registration does not yet claim it.
+First-admin provisioning and account deletion APIs are separate work.
+
+## Credit account provisioning
+
+Successful registration writes a `UserCreated` fact to the transactional
+outbox in the same database transaction as the user and session. The relay
+publishes it to `users.create` using the user UUID as the Kafka key. Delivery
+is at least once; `event_id` remains stable across retries so consumers can
+deduplicate. A Kafka outage does not fail registration; pending facts are
+retried when the broker is available.
+
+`KAFKA_BROKERS` is required. Compose sets it to `kafka:9092`; host development
+uses `localhost:9092`. The `kafka-init` service provisions the topic. Credit
+owns the 100-credit starting grant. Existing users are not backfilled, and
+bootstrap-created administrators do not emit registration events.
+
+## Review domain layout
+
+Review is the first sqlc-backed domain in this service, so it lives under
+`internal/review` instead of `internal/handlers/<domain>` plus `internal/store`.
+The package keeps the adapter, business rules and persistence together:
+
+| File | Contents |
+| --- | --- |
+| `handler.go` | Connect adapter: request parsing, proto conversion |
+| `service.go` | Business rules: submit, list, remove and list removals |
+| `photos.go` | Review-photo lifecycle: upload grant and staging row, pre-submit inspection, in-transaction attachment, read-path URL minting, orphan reaper; declares the `PhotoStorage` port |
+| `errors.go` | Client-facing error vocabulary: contract reasons, `google.rpc` details, storage-fault classification, domain sentinels |
+| `models.go` | Persisted rows and repository projections |
+| `dto.go` | Data crossing the service boundary: submissions, inputs and read models with minted URLs |
+| `repository.go`, `postgres_repository.go` | Persistence interface and the sqlc/PostgreSQL implementation |
+| `authorization.go` | Method-level authorization interceptor |
+
+`photos.go` is a deliberate exception to keeping a domain's rules in
+`service.go`: the photo lifecycle has its own invariants (guarded attachment,
+staging cleanup, optional storage) and would otherwise dominate the service
+file. For the same reason the consumer-defined `PhotoStorage` port is declared
+in `photos.go` beside the code that uses it, rather than in `service.go`; only
+the composition root knows the adapter is S3. Without `USER_S3_BUCKET` the
+photo RPCs report unavailability and reviews submit without photos.
+
+### Review error contract
+
+`sentinel / uploadError → errorMappings (code + reason) → clientMessage → attachDetails`
+
+- Domain code returns a sentinel or an `uploadError` carrying a `cause`. Storage
+  faults are classified in `pkg/images`: retryable `ErrStorageUnavailable`
+  (→ `503`) and permanent `ErrStorageMisconfigured` (→ `500`). `412` is only for
+  upload states the client can fix.
+- `toConnectError` looks the sentinel up in `errorMappings`; anything else that
+  implements `api.ExternalError` goes through the shared `api.ToConnectError`;
+  unknown errors become a generic `500`.
+- `clientMessage` is the only source of client-facing text. Provider and
+  configuration detail stays in the cause and is logged by `logMappedError`.
+- Replies carry `google.rpc.ErrorInfo` (domain `user.review.v1`, stable reason)
+  and `common.v1.ErrorDetail` (reason, message, field violations such as the
+  failing `photo_ids`). Clients branch on the reason, never on the message.
+
+Demo seeding uses the same user/event provisioning logic as registration.
+See [seed commands and reset behavior](../data/seeds/README.md).
+
+### Removed review status
+
+Removal hides a review's content and photos but continues to block a replacement
+review for the same order. `ListMyReviewsForOrders` returns live reviews in
+`reviewed_order_ids` and removed reviews separately in `removed_order_ids`.
+`GetMyReviewForOrder` returns `NotFound` / `REVIEW_NOT_FOUND` for an unreviewed
+order and `FailedPrecondition` / `REVIEW_REMOVED` for a removed review, without
+returning its content. Clients show a removed notice rather than a submission
+form or a link to a live review. All lookups are scoped to the caller.
+
+Photo staging records use the upload grant's actual expiry. Cleanup waits for
+both that expiry and the 24-hour orphan age, including with custom upload TTLs.
+Transient grant-signing failures return `Unavailable` /
+`UPLOAD_TEMPORARILY_UNAVAILABLE`; other signing failures retain
+`Internal` / `UPLOAD_UNAVAILABLE`. Responses containing signed photo URLs use
+`Cache-Control: no-store`.

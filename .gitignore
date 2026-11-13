@@ -2,6 +2,7 @@
 dist/
 build/
 out/
+.tools/
 
 # Environment / secrets
 .env
@@ -9,7 +10,20 @@ out/
 .env.*.local
 *.pem
 *.key
+.local/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Agents
+.pi
+
+# IDE
+.idea
+
+# Local mounts may contain real workload credential paths.
+compose.override.yaml
+
+# Infrastructure tooling dependencies
+/node_modules/

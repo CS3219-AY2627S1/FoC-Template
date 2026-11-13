@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package user.v1;
+
+import "buf/validate/validate.proto";
+service AuthService {
+  rpc RequestLink(RequestLinkRequest) returns (RequestLinkResponse) {}
+  rpc Login(LoginRequest) returns (LoginResponse) {}
+  rpc Register(RegisterRequest) returns (RegisterResponse) {}
+  rpc Refresh(RefreshRequest) returns (RefreshResponse) {}
+  rpc Logout(LogoutRequest) returns (LogoutResponse) {}
+  rpc LogoutAll(LogoutAllRequest) returns (LogoutAllResponse) {}
+}
+
+service PublicKeyService {
+  rpc GetPublicKeys(GetPublicKeysRequest) returns (GetPublicKeysResponse) {}
+}
+
+message RequestLinkResponse {}
+
+message RequestLinkRequest {
+  string email = 1 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.email = true
+  ];
+}
+
+message LoginRequest {
+  string token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message RegisterRequest {
+  string token = 1 [(buf.validate.field).string.min_len = 1];
+  // The service trims the name and requires 1 to 100 characters afterward.
+  string display_name = 2;
+  // Telegram is connected through the Communication Service instead.
+  reserved 3;
+  reserved "telegram_handle";
+  // Required as the contact fallback when Telegram isn't linked. Validated with
+  // libphonenumber; numbers without a country code are read as Singapore
+  // numbers. Stored and returned in E.164 form, such as +6591234567.
+  string phone_number = 4;
+}
+
+message User {
+  string id = 1;
+  string email = 2;
+  string display_name = 3;
+  UserRole role = 4;
+  reserved 5;
+  reserved "telegram_handle";
+  // E.164. Absent only for the bootstrapped admin until they add one.
+  optional string phone_number = 6;
+}
+
+enum UserRole {
+  USER_ROLE_UNSPECIFIED = 0;
+  USER_ROLE_SUPER_ADMIN = 1;
+  USER_ROLE_ADMIN = 2;
+  USER_ROLE_USER = 3;
+  USER_ROLE_SUSPENDED_USER = 4;
+}
+
+message LoginResponse {
+  User user = 1;
+  string access_token = 2;
+}
+
+message RegisterResponse {
+  User user = 1;
+  string access_token = 2;
+}
+
+message RefreshRequest {}
+
+message RefreshResponse {
+  string access_token = 1;
+  User user = 2;
+}
+
+message LogoutRequest {}
+
+message LogoutResponse {}
+
+message LogoutAllRequest {}
+
+message LogoutAllResponse {}
+
+message GetPublicKeysRequest {}
+
+message GetPublicKeysResponse {
+  repeated JsonWebKey keys = 1;
+}
+
+message JsonWebKey {
+  string kty = 1;
+  string crv = 2;
+  string x = 3;
+  string y = 4;
+  string use = 5;
+  string alg = 6;
+  string kid = 7;
+}

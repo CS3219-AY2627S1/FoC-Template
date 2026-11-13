@@ -1,0 +1,86 @@
+package userdto
+
+import (
+	"context"
+	"time"
+
+	"github.com/AY2627S1-CS3219-P1/FoC/pkg/api/errs"
+	"github.com/AY2627S1-CS3219-P1/FoC/pkg/auth"
+	"github.com/AY2627S1-CS3219-P1/FoC/pkg/auth/tokenclaims"
+	userv1 "github.com/AY2627S1-CS3219-P1/FoC/pkg/gen/user/v1"
+	"github.com/AY2627S1-CS3219-P1/FoC/user-service/internal/models"
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/timestamppb"
+)
+
+var ErrMissingActor = errs.NewUnauthorizedError("invalid or missing access token")
+
+func ActorID(ctx context.Context) (uuid.UUID, error) {
+	caller, ok := auth.CallerFromContext(ctx)
+	if !ok {
+		return uuid.Nil, ErrMissingActor
+	}
+	id, err := uuid.Parse(caller.ID)
+	if err != nil || id == uuid.Nil {
+		return uuid.Nil, ErrMissingActor
+	}
+	return id, nil
+}
+
+// Caller is the verified request caller. Role semantics are exposed as
+// methods so call sites never compare the raw Role string.
+type Caller struct {
+	auth.Caller
+}
+
+func (c Caller) IsSuspended() bool {
+	return tokenclaims.Role(c.Role) == tokenclaims.RoleSuspendedUser
+}
+
+func Actor(ctx context.Context) (Caller, error) {
+	caller, ok := auth.CallerFromContext(ctx)
+	if !ok {
+		return Caller{}, ErrMissingActor
+	}
+	return Caller{Caller: caller}, nil
+}
+
+func Role(role models.RoleName) userv1.UserRole {
+	switch role {
+	case models.RoleSuperAdmin:
+		return userv1.UserRole_USER_ROLE_SUPER_ADMIN
+	case models.RoleAdmin:
+		return userv1.UserRole_USER_ROLE_ADMIN
+	case models.RoleUser:
+		return userv1.UserRole_USER_ROLE_USER
+	case models.RoleSuspended:
+		return userv1.UserRole_USER_ROLE_SUSPENDED_USER
+	default:
+		return userv1.UserRole_USER_ROLE_UNSPECIFIED
+	}
+}
+
+func User(user models.User) *userv1.User {
+	return &userv1.User{Id: user.ID.String(), Email: user.Email, DisplayName: user.DisplayName,
+		Role: Role(user.Role), PhoneNumber: user.PhoneNumber}
+}
+
+// UserSummary omits contact details when an administrator inspects another user.
+func UserSummary(user models.User) *userv1.UserSummary {
+	return &userv1.UserSummary{Id: user.ID.String(), Email: user.Email,
+		DisplayName: user.DisplayName, Role: Role(user.Role)}
+}
+
+// ProfileWithPicture adds a short-lived download grant to the profile.
+func ProfileWithPicture(user models.User, url string, expiresAt time.Time) *userv1.Profile {
+	profile := &userv1.Profile{Id: user.ID.String(), Email: user.Email, DisplayName: user.DisplayName,
+		Description: user.Description, PhoneNumber: user.PhoneNumber, Role: Role(user.Role),
+		ProfilePictureUrl: url}
+	if user.ProfilePictureID != nil {
+		profile.ProfilePictureId = user.ProfilePictureID.String()
+	}
+	if !expiresAt.IsZero() {
+		profile.ProfilePictureExpiresAt = timestamppb.New(expiresAt)
+	}
+	return profile
+}
