@@ -1,0 +1,261 @@
+FRIEND ON CAMPUS (FoC) - LOCAL SETUP
+=====================================
+How to run the whole stack on your machine after pulling. Takes about 10 minutes,
+most of it waiting for the first Docker build.
+
+
+1. WHAT YOU NEED
+----------------
+- Docker Desktop, running. This is the only thing needed to RUN the app.
+- Node.js 22+ and npm. Only needed to run the TESTS or to edit code outside Docker.
+- These ports free: 5173, 8080, 8025, 3001, 3002, 5433, 5434, 5435, 5436, 5438, 5672, 15672
+
+All commands below are run from the FOC/ folder.
+
+
+2. CREATE YOUR .env
+-------------------
+    cp .env.example .env
+
+  Windows PowerShell:  Copy-Item .env.example .env
+
+Open .env and replace every "change-me-..." value with any random string.
+Nothing has to match what a teammate uses - everyone runs their own Keycloak and
+their own databases. These are local-only secrets.
+
+Two values you must actually think about:
+
+  BOOTSTRAP_ADMIN_EMAIL          any @u.nus.edu address - this becomes the first admin
+  BOOTSTRAP_ADMIN_TEMP_PASSWORD  8+ characters with an uppercase, a lowercase and a digit
+                                 (e.g. ChangeMe123) - you must change it at first login
+  BOOTSTRAP_ADMIN_2_*            the same for the second admin (a different email)
+
+Two more values come from real providers and are REQUIRED by the FAQ chatbot (faq-service). The
+service now fails its startup without them (same rule as the other services: exit 1, so a bad
+deploy rolls back instead of serving a FAQ that cannot answer). The gateway waits for faq-service
+to be healthy, so the stack will not come up until these are set - free tiers are fine:
+
+  GEMINI_API_KEY                 from https://aistudio.google.com/apikey (free tier is fine locally)
+  OPENROUTER_API_KEY             from https://openrouter.ai/keys
+
+FAQ_DB_PASSWORD can stay any random string. It is the local Postgres password for faq-db (the
+FAQ service's ticket database).
+
+.env is git-ignored. Never commit it.
+
+
+3. START EVERYTHING
+-------------------
+    docker compose up -d --build
+
+First run pulls images and builds, so give it a few minutes. Keycloak alone takes
+about a minute to become healthy. Check progress with:
+
+    docker compose ps
+
+Wait until every service says "healthy". mailpit has no healthcheck,
+so it just says "running" - that is fine. If something says "unhealthy", jump to
+section 9.
+
+
+4. URLS
+-------
+Web app                       http://localhost:5173
+Keycloak admin console        http://localhost:8080   (KC_BOOTSTRAP_ADMIN_USERNAME / _PASSWORD from .env)
+Fake email inbox (Mailpit)    http://localhost:8025   (ALL verification + reset emails land here)
+User Service API docs         http://localhost:3001/v1/docs
+Supplier Service API docs     http://localhost:3002/v1/docs
+RabbitMQ management UI        http://localhost:15672  (RABBITMQ_USER / RABBITMQ_PASSWORD from .env)
+
+The gateway container serves the web app and routes API calls, so the browser only ever talks to
+localhost:5173 and localhost:8080.
+
+
+5. FIRST LOGIN
+--------------
+As the admin:
+  1. Go to http://localhost:5173 and log in with BOOTSTRAP_ADMIN_USERNAME and
+     BOOTSTRAP_ADMIN_TEMP_PASSWORD from your .env.
+  2. Keycloak makes you set a new password immediately.
+  3. You now have the admin pages: Admin users, Admin role changes, and the
+     create/edit/delete buttons on suppliers.
+
+Each admin is created ONCE, on the first start, and never again. The second
+admin (BOOTSTRAP_ADMIN_2_*) logs in the same way.
+
+As a normal user:
+  1. Sign up on the web app with any @u.nus.edu email.
+  2. Open Mailpit (http://localhost:8025) and click the "Verify email" link.
+     No real email is ever sent.
+  3. Log in. You can browse suppliers but not edit them.
+
+To test suspension: log in as admin, suspend the normal user, then use the normal
+user's tab. Within about 5 seconds every action returns "account suspended".
+
+
+6. RUN THE TESTS
+----------------
+The stack from section 3 must be running first - the tests use the real Keycloak
+and the real databases.
+
+    npm install
+    npm test
+
+They read your .env, create their own test databases (users_test, suppliers_test),
+and clean up the Keycloak users they create. Your app data is not touched.
+
+If you only want one service, build the shared packages first - the services import
+them as compiled code:
+
+    npm run build:packages
+    npm test -w user-service
+
+Supplier Service is its own npm project (own package-lock.json, not part of the root
+workspace), so it installs and tests on its own:
+
+    cd supplier-service && npm ci && npm test
+
+Order Service tests need an admin connection to create their own "orders_test"
+database. The compose orders-db uses the "orders" role, so point the tests at a
+throwaway Postgres instead:
+
+    docker run -d --rm --name orders-test-db -e POSTGRES_PASSWORD=test -p 5437:5432 postgres:16-alpine
+    ORDERS_TEST_ADMIN_URL='postgres://postgres:test@localhost:5437/postgres' npm test -w order-service
+    docker rm -f orders-test-db
+
+The Supplier Service suite that touches real SQL needs a database. Point it at the
+suppliers-db container (it creates and wipes its own suppliers_test database):
+
+    cd supplier-service
+    SUPPLIERS_TEST_ADMIN_URL="postgres://suppliers:$SUPPLIERS_DB_PASSWORD@localhost:5434/postgres" npm test
+
+Without that variable the SQL suite is skipped and the rest of the tests still run.
+
+
+7. GET A TOKEN FOR CURL / POSTMAN
+---------------------------------
+Dev only, and the account must have a verified email.
+
+    curl -X POST http://localhost:8080/realms/campuserrand/protocol/openid-connect/token \
+      -d grant_type=password -d client_id=campuserrand-test \
+      -d username=<username> -d password=<password>
+
+Take "access_token" from the response and send it as:
+
+    Authorization: Bearer <access_token>
+
+Tokens last 5 minutes. Get a new one when you start seeing 401 TOKEN_EXPIRED.
+
+
+8. EVERYDAY COMMANDS
+--------------------
+Stop, keep data                  docker compose down
+Start again                      docker compose up -d
+Rebuild after pulling new code   docker compose up -d --build
+Logs for one service             docker compose logs -f user-service
+Logs for everything              docker compose logs -f
+Reset EVERYTHING (wipes data)    docker compose down -v
+
+"docker compose down -v" deletes the databases, so you lose all users, suppliers
+and the admin. The next start re-creates the admin and re-seeds the suppliers.
+
+
+9. TROUBLESHOOTING
+------------------
+Changed the Keycloak realm, the client secret or the bootstrap admin, and nothing
+happened?
+  These are only applied when the databases are EMPTY. Run:
+      docker compose down -v
+      docker compose up -d --build
+
+"port is already allocated"
+  Something else is on that port (often an old stack, or Postgres installed on your
+  machine using 5432/5433). Stop it, or run "docker compose down" in the other project.
+
+A service stays "unhealthy"
+  docker compose logs <service-name>
+  Almost always a missing or malformed value in .env.
+
+faq-service keeps restarting, or the gateway never starts
+  faq-service requires GEMINI_API_KEY and OPENROUTER_API_KEY. With a missing or invalid key it
+  retries ingestion 3 times, logs "Corpus ingestion failed after retries" and exits 1. The gateway
+  depends on faq-service being healthy, so nothing else starts either. Set both keys in .env, then:
+      docker compose up -d --build faq-service gateway
+  "Corpus already ingested, skipping" in the logs is normal - the knowledge base is already built.
+
+Never got the verification email
+  It is in Mailpit at http://localhost:8025, not in your real inbox.
+
+Everything returns 401 right after logging in
+  Your browser and the containers must agree on the Keycloak URL. Use
+  http://localhost:5173 exactly - not 127.0.0.1, not your machine's LAN IP. The token's
+  issuer is fixed to http://localhost:8080 and the services check it.
+
+Supplier pages return 503
+  The Supplier Service cannot reach the User Service to check your session. Confirm
+  user-service is healthy: docker compose ps
+
+supplier-service keeps restarting, logs say relation "suppliers" already exists
+  Your suppliers-db volume is from the old (pre-Drizzle) Supplier Service. Reset only it:
+      docker compose rm -sf supplier-service suppliers-db
+      docker volume rm foc_suppliers-db-data
+      docker compose up -d --build
+
+Edited the Keycloak theme or the supplier seed data/photos and nothing changed?
+  They are baked into the keycloak and supplier-service images (no bind mounts, same as
+  on AWS). Rebuild: docker compose up -d --build keycloak supplier-service
+  (Realm changes still also need an empty Keycloak database - see the first item.)
+
+A bad event is stuck in RabbitMQ
+  Consumers retry a failed event 5 times, then move it to a dead-letter queue
+  (credit-service.events.dlq, order-service.credit-events.dlq). Malformed events go there
+  at once. Look at it in the RabbitMQ UI (http://localhost:15672, Queues tab).
+
+"npm test" fails with a connection error
+  The stack is not running, or it is still starting. Check "docker compose ps" first.
+
+Docker build fails on "npm ci"
+  Delete node_modules and try again. node_modules is git-ignored and is never shared
+  between machines - each person installs their own.
+
+
+10. WHAT IS RUNNING
+-------------------
+  gateway           API gateway (nginx), public entry point    port 5173
+  frontend          React web app (static files)               internal only (via gateway /)
+  user-service      accounts, profiles, admin, audit           port 3001
+  supplier-service  supplier directory                         port 3002
+  order-service     errand orders and their lifecycle          internal only (via frontend /v1/orders)
+  credit-service    wallets, reservations, ledger              internal only (via frontend /v1/credits)
+  keycloak          login, passwords, sessions, tokens         port 8080
+  users-db          Postgres for the User Service              port 5433
+  suppliers-db      Postgres for the Supplier Service          port 5434
+  credits-db        Postgres for the Credit Service            port 5435
+  orders-db         Postgres for the Order Service             port 5436
+  keycloak-db       Postgres for Keycloak                      internal only
+  rabbitmq          events between services                    ports 5672 / 15672
+  mailpit           catches outgoing email                     port 8025
+
+Order and Credit Services have no host port on purpose: the frontend nginx proxies /v1/orders
+and /v1/credits to them, and it returns 404 for /v1/internal/* so service-to-service routes
+are never reachable from the browser.
+
+  faq-service      RAG FAQ chatbot (F28)                      internal only (via frontend /v1/faq)
+  faq-db           Postgres for FAQ support tickets            port 5438
+  chroma           vector database for the FAQ knowledge base  internal only
+
+Editing the FAQ corpus (faq-service/corpus/faq.md)? It is baked into the image, so just rebuild —
+the service re-ingests on startup:
+
+    docker compose up -d --build faq-service
+
+Ingestion is idempotent (deterministic chunk ids), so every boot upserts in place and never
+duplicates. Check the faq-service logs for "Corpus ingested". It needs the model keys
+(GEMINI_API_KEY) — without them the service starts but logs a warning and can't answer.
+
+Support tickets live in faq-db (Postgres), not in Chroma. Migrations run automatically when
+faq-service starts. "docker compose down -v" wipes them along with everything else.
+
+More detail:
+  README.md   - overview, structure, how to run
+  AGENTS.md   - repo conventions for coding agents

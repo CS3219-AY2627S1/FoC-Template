@@ -1,0 +1,541 @@
+openapi: 3.0.3
+info:
+  title: FoC Credit Service
+  description: Manages the closed credit economy for the Friend on Campus platform.
+  version: 0.1.0
+
+servers:
+  - url: http://localhost:3003
+    description: Local development
+
+paths:
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: UP
+
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [UP, DOWN]
+                  checks:
+                    type: object
+                    properties:
+                      db:
+                        type: boolean
+        '503':
+          description: Service is not ready
+
+  /v1/credits/wallet:
+    get:
+      tags: [Credits]
+      summary: Get current wallet balance
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Wallet balance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Wallet'
+        '401':
+          description: Not authenticated
+
+  /v1/credits/reservations:
+    get:
+      tags: [Credits]
+      summary: List credit reservations for current user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [HELD, SETTLED, RELEASED]
+      responses:
+        '200':
+          description: Paginated list of reservations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReservationDetail'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          description: Not authenticated
+
+  /v1/credits/history:
+    get:
+      tags: [Credits]
+      summary: Credit transaction history for current user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [ISSUANCE, RESERVE, SETTLE_DEBIT, SETTLE_CREDIT, RELEASE, ADJUSTMENT]
+      responses:
+        '200':
+          description: Paginated ledger entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LedgerEntry'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          description: Not authenticated
+
+  /v1/admin/credits/summary:
+    get:
+      tags: [Admin]
+      summary: Credit economy summary
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Total credits in circulation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Summary'
+        '403':
+          description: Admin role required
+
+  /v1/admin/credits/users/{userId}/history:
+    get:
+      tags: [Admin]
+      summary: View a user's credit history
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [ISSUANCE, RESERVE, SETTLE_DEBIT, SETTLE_CREDIT, RELEASE, ADJUSTMENT]
+      responses:
+        '200':
+          description: Paginated ledger entries for the user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminLedgerEntry'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '403':
+          description: Admin role required
+
+  /v1/admin/credits/adjustments:
+    post:
+      tags: [Admin]
+      summary: Manual credit adjustment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdjustmentRequest'
+      responses:
+        '201':
+          description: Adjustment applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdjustmentResponse'
+        '403':
+          description: Admin role required
+        '404':
+          description: Wallet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Insufficient credits for negative adjustment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/admin/credits/reconciliation:
+    get:
+      tags: [Admin]
+      summary: Reconciliation report
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Reconciliation health check
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Reconciliation'
+        '403':
+          description: Admin role required
+
+  /v1/admin/credits/users/{userId}/balance-at:
+    get:
+      tags: [Admin]
+      summary: Historical balance at a point in time
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: ts
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Balance at the given timestamp
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BalanceAt'
+        '403':
+          description: Admin role required
+
+  /v1/internal/credits/reserve:
+    post:
+      tags: [Internal]
+      summary: Reserve credits for an order (service-to-service)
+      description: Idempotent on orderId. Called by Order Service via X-Internal-Auth.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReserveRequest'
+      responses:
+        '201':
+          description: Reservation created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Reservation'
+        '200':
+          description: Reservation already exists (idempotent)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Reservation'
+        '401':
+          description: Missing or invalid internal auth
+        '404':
+          description: Wallet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Insufficient credits
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Wallet:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        availableBalance:
+          type: integer
+        reservedBalance:
+          type: integer
+        totalBalance:
+          type: integer
+
+    Reservation:
+      type: object
+      properties:
+        reservationId:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+        status:
+          type: string
+          enum: [HELD, SETTLED, RELEASED]
+
+    ReservationDetail:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_id:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+        status:
+          type: string
+          enum: [HELD, SETTLED, RELEASED]
+        created_at:
+          type: string
+          format: date-time
+        settled_at:
+          type: string
+          format: date-time
+          nullable: true
+        released_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    LedgerEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        reservation_id:
+          type: string
+          format: uuid
+          nullable: true
+        type:
+          type: string
+          enum: [ISSUANCE, RESERVE, SETTLE_DEBIT, SETTLE_CREDIT, RELEASE, ADJUSTMENT]
+        amount:
+          type: integer
+        balance_after:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    AdminLedgerEntry:
+      allOf:
+        - $ref: '#/components/schemas/LedgerEntry'
+        - type: object
+          properties:
+            reason:
+              type: string
+              nullable: true
+              description: Why an admin made an ADJUSTMENT. Null for other types.
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+
+    Summary:
+      type: object
+      properties:
+        totalWallets:
+          type: integer
+        totalAvailable:
+          type: integer
+        totalReserved:
+          type: integer
+        totalCredits:
+          type: integer
+
+    Reconciliation:
+      type: object
+      properties:
+        walletTotal:
+          type: integer
+        ledgerTotal:
+          type: integer
+        healthy:
+          type: boolean
+
+    BalanceAt:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        availableBalance:
+          type: integer
+
+    AdjustmentResponse:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+        reason:
+          type: string
+        balanceAfter:
+          type: integer
+
+    ReserveRequest:
+      type: object
+      required: [orderId, requesterId, amount]
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        requesterId:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+          minimum: 1
+
+    AdjustmentRequest:
+      type: object
+      required: [userId, amount, reason]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+        reason:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
