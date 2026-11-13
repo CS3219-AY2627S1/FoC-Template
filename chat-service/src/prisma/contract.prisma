@@ -1,0 +1,55 @@
+// use prisma-8
+
+// What kind of content a message holds
+enum MessageType {
+    TEXT
+    IMAGE
+}
+
+// One chat per errand, between its requester and its courier.
+//
+// It is built from order events, which can arrive in either order, so both user ids start
+// empty and are filled in as events arrive: order.created gives the requester, order.accepted
+// gives the courier. The chat is usable (and shown to the users) once both are known.
+// The user ids come from the user service, not foreign keys since they live in another database.
+model ChatSession {
+    // the order's id (a UUID made by the order service)
+    errandId String @id
+    requesterId Int?
+    courierId Int?
+    // why the errand ended: DELIVERED, or CANCELLED (which includes expired). null while in progress
+    endReason String?
+    // when the chat and its messages are deleted: set when the errand ends, null until then
+    deleteAt TimestamptzString?
+    // the id of the newest message each person has seen; messages after it are "unread"
+    requesterLastReadId Int @default(0)
+    courierLastReadId Int @default(0)
+    createdAt TimestamptzString @default(now())
+    updatedAt TimestamptzString @default(now())
+
+    @@index([deleteAt])
+    @@map("chat_sessions")
+}
+
+// A message in a chat. Not a foreign key to the session: both are deleted together by the
+// retention job, in one statement.
+model ChatMessage {
+    // only goes up, so it orders messages and works as a paging cursor
+    id Int @id @default(autoincrement())
+    errandId String
+    senderId Int
+    type MessageType @default(TEXT)
+    // the text; null for an image
+    body String?
+    // the image, kept in the database so it is deleted together with the chat: its type
+    // (image/jpeg, image/png, image/webp) and its bytes as base64 text. Both null for text
+    imageMime String?
+    imageData String?
+    // made by the sender's app for each message; a repeated send with the same id (a retry
+    // after a dropped connection) returns the first message instead of saving a second one
+    clientMessageId String @unique
+    createdAt TimestamptzString @default(now())
+
+    @@index([errandId, id])
+    @@map("chat_messages")
+}

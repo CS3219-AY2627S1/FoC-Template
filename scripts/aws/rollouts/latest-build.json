@@ -1,0 +1,82 @@
+{
+  "tag": "refresh-20261111-000648",
+  "images": {
+    "user-service": {
+      "built": true,
+      "log": "C:\\Users\\JUNYIL~1\\AppData\\Local\\Temp\\campusgo-build-user-service.log",
+      "digest": "sha256:4db7e2bd9d9e3b4ab26ac32dfc2df5e9452f3855ab92fb289ac2c17cc181ddd3"
+    },
+    "supplier-service": {
+      "built": true,
+      "log": "C:\\Users\\JUNYIL~1\\AppData\\Local\\Temp\\campusgo-build-supplier-service.log",
+      "digest": "sha256:5950fd918d48a4927a4b97dfdec3a8aeb68f033904345d4d9c38e72289ebed94"
+    },
+    "order-service": {
+      "built": true,
+      "log": "C:\\Users\\JUNYIL~1\\AppData\\Local\\Temp\\campusgo-build-order-service.log",
+      "digest": "sha256:11d8ad8be1884b5ba4b5f60d29ffa62ce4541cd11a0b1fc2f79ce126b8a0a4b6"
+    },
+    "credit-service": {
+      "built": true,
+      "log": "C:\\Users\\JUNYIL~1\\AppData\\Local\\Temp\\campusgo-build-credit-service.log",
+      "digest": "sha256:4988e93935aacf53f8874121df4e0c1998c4f26cd99a07e55dc4908f15ec2c64"
+    },
+    "chat-service": {
+      "built": true,
+      "log": "C:\\Users\\JUNYIL~1\\AppData\\Local\\Temp\\campusgo-build-chat-service.log",
+      "digest": "sha256:984b52495b46e501d357ec636c72f945d82bbf4bf8083c92889e902563ce2a97"
+    },
+    "frontend": {
+      "built": true,
+      "log": "C:\\Users\\JUNYIL~1\\AppData\\Local\\Temp\\campusgo-build-frontend.log",
+      "digest": "sha256:61ec5e5244b5cd5519402e131d720ed416f4cd275caff92ff9431499514829bc"
+    },
+    "api-gateway": {
+      "built": true,
+      "log": "C:\\Users\\JUNYIL~1\\AppData\\Local\\Temp\\campusgo-build-api-gateway.log",
+      "digest": "sha256:d2134f89f4c51340b02cfcad80f6e3bda07292103f12414d9352134374b3cce3"
+    }
+  },
+  "services": [
+    {
+      "service": "user-service",
+      "previous": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-user:4",
+      "new": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-user:5",
+      "initTask": "arn:aws:ecs:ap-southeast-1:807733922601:task/campusgo/003ad515ae2a472a814a9aa1f7396e68",
+      "rolloutStarted": true
+    },
+    {
+      "service": "supplier-service",
+      "previous": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-supplier:6",
+      "new": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-supplier:7",
+      "initTask": "arn:aws:ecs:ap-southeast-1:807733922601:task/campusgo/a9365fd8e7bd4738a067280abe18479a",
+      "rolloutStarted": true
+    },
+    {
+      "service": "order-service",
+      "previous": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-order:3",
+      "new": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-order:4",
+      "initTask": "arn:aws:ecs:ap-southeast-1:807733922601:task/campusgo/296e69b76b5546af81b38b364e3eb973",
+      "rolloutStarted": true
+    },
+    {
+      "service": "credit-service",
+      "previous": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-credit:3",
+      "new": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-credit:4",
+      "initTask": "arn:aws:ecs:ap-southeast-1:807733922601:task/campusgo/d3b73bc2834c4001ad05499aacf51bc2",
+      "rolloutStarted": true
+    },
+    {
+      "service": "frontend-service",
+      "previous": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-frontend:3",
+      "new": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-frontend:4",
+      "rolloutStarted": true
+    },
+    {
+      "service": "api-gateway-service",
+      "previous": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-api-gateway:3",
+      "new": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-api-gateway:4",
+      "rolloutStarted": true
+    }
+  ]
+}

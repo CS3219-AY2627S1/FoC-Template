@@ -1,0 +1,3618 @@
+{
+  "id": null,
+  "uid": "campusgo-overview",
+  "title": "CampusGo / Overview",
+  "description": "Business activity, service performance, and durable event delivery. Fresh telemetry describes reporting freshness, not application availability.",
+  "tags": [
+    "campusgo",
+    "overview"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 5,
+  "editable": false,
+  "refresh": "15s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "CampusGo overview",
+      "type": "link",
+      "url": "/grafana/d/campusgo-overview?from=${__from}&to=${__to}&var-environment=${environment:percentencode}",
+      "targetBlank": false
+    },
+    {
+      "title": "User",
+      "type": "link",
+      "url": "/grafana/d/campusgo-user-metrics?from=${__from}&to=${__to}&var-environment=${environment:percentencode}",
+      "targetBlank": false
+    },
+    {
+      "title": "Credit",
+      "type": "link",
+      "url": "/grafana/d/campusgo-credit-metrics?from=${__from}&to=${__to}&var-environment=${environment:percentencode}",
+      "targetBlank": false
+    },
+    {
+      "title": "Order",
+      "type": "link",
+      "url": "/grafana/d/campusgo-order-metrics?from=${__from}&to=${__to}&var-environment=${environment:percentencode}",
+      "targetBlank": false
+    },
+    {
+      "title": "Supplier",
+      "type": "link",
+      "url": "/grafana/d/campusgo-supplier-metrics?from=${__from}&to=${__to}&var-environment=${environment:percentencode}",
+      "targetBlank": false
+    },
+    {
+      "title": "RabbitMQ queues & alarms",
+      "type": "link",
+      "url": "/grafana/d/campusgo-rabbitmq?from=${__from}&to=${__to}",
+      "targetBlank": false
+    },
+    {
+      "title": "Explore traces",
+      "type": "link",
+      "url": "/grafana/explore?schemaVersion=1&panes=%7B%22traces%22%3A%7B%22datasource%22%3A%22campusgo-tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%22%7B%20resource.service.name%20%3D~%20%5C%22%28user%7Ccredit%7Corder%7Csupplier%29-service%5C%22%20%26%26%20resource.deployment.environment.name%20%3D%20%5C%22${environment:percentencode}%5C%22%20%7D%22%2C%22tableType%22%3A%22traces%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+      "targetBlank": false
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "label": "Environment",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "campusgo-prometheus"
+        },
+        "definition": "label_values(campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\"}, deployment_environment_name)",
+        "query": {
+          "query": "label_values(campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\"}, deployment_environment_name)",
+          "refId": "Environment"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "text": "development",
+          "value": "development"
+        },
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Accounts & authentication",
+      "collapsed": false,
+      "panels": [],
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "Current accounts",
+      "description": "Current durable account rows. Suspension state does not measure recent activity or distinct active users.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (service_name) (max by (service_name,state) (campusgo_user_accounts{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}))) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) < 45) and on(service_name) (max by (service_name) (campusgo_user_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) == 1) and on(service_name) (((time() - max by (service_name) (campusgo_user_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"})) and on(service_name) (max by (service_name) (campusgo_user_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) > 0)) <= 90))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 2,
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 8,
+        "h": 4
+      }
+    },
+    {
+      "title": "Not suspended",
+      "description": "Current durable account rows. Suspension state does not measure recent activity or distinct active users.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (service_name) (max by (service_name,state) (campusgo_user_accounts{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\",state=\"not_suspended\"}))) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) < 45) and on(service_name) (max by (service_name) (campusgo_user_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) == 1) and on(service_name) (((time() - max by (service_name) (campusgo_user_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"})) and on(service_name) (max by (service_name) (campusgo_user_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) > 0)) <= 90))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 3,
+      "gridPos": {
+        "x": 8,
+        "y": 1,
+        "w": 8,
+        "h": 4
+      }
+    },
+    {
+      "title": "Suspended",
+      "description": "Current durable account rows. Suspension state does not measure recent activity or distinct active users.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (service_name) (max by (service_name,state) (campusgo_user_accounts{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\",state=\"suspended\"}))) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) < 45) and on(service_name) (max by (service_name) (campusgo_user_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) == 1) and on(service_name) (((time() - max by (service_name) (campusgo_user_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"})) and on(service_name) (max by (service_name) (campusgo_user_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) > 0)) <= 90))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 4,
+      "gridPos": {
+        "x": 16,
+        "y": 1,
+        "w": 8,
+        "h": 4
+      }
+    },
+    {
+      "title": "Successful registration responses \u00b7 selected range",
+      "description": "Estimated completed 2xx POST responses in the selected range. Retries count again; this is not an audit total. Missing outcomes remain unavailable.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (service_name) (increase(campusgo_user_auth_requests_total{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\",operation=\"register\",outcome=\"success\"}[$__range]))) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) < 45))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 5,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 8,
+        "h": 4
+      }
+    },
+    {
+      "title": "Successful login responses \u00b7 selected range",
+      "description": "Estimated completed 2xx POST responses in the selected range. Retries count again; this is not an audit total. Missing outcomes remain unavailable.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (service_name) (increase(campusgo_user_auth_requests_total{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\",operation=\"login\",outcome=\"success\"}[$__range]))) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) < 45))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 6,
+      "gridPos": {
+        "x": 8,
+        "y": 5,
+        "w": 8,
+        "h": 4
+      }
+    },
+    {
+      "title": "Successful refresh responses \u00b7 selected range",
+      "description": "Estimated completed 2xx POST responses in the selected range. Retries count again; this is not an audit total. Missing outcomes remain unavailable.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (service_name) (increase(campusgo_user_auth_requests_total{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\",operation=\"refresh\",outcome=\"success\"}[$__range]))) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) < 45))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 7,
+      "gridPos": {
+        "x": 16,
+        "y": 5,
+        "w": 8,
+        "h": 4
+      }
+    },
+    {
+      "title": "Accounts by suspension state",
+      "description": "Independent account snapshot; counts are deduplicated per state before totals are calculated.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisCenteredZero": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*(error|failed|exhausted|timeout|failure|disconnect|malformed|closure|unavailable|redelivered).*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*(retry|rejected|capacity|4[0-9][0-9]).*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*5[0-9][0-9].*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(max by (service_name,state) (campusgo_user_accounts{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"})) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) < 45) and on(service_name) (max by (service_name) (campusgo_user_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) == 1) and on(service_name) (((time() - max by (service_name) (campusgo_user_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"})) and on(service_name) (max by (service_name) (campusgo_user_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) > 0)) <= 90))",
+          "legendFormat": "{{state}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 8,
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Authentication responses by operation & outcome",
+      "description": "Final HTTP response classes: success=2xx, rejected=4xx, error=5xx. They do not identify the rejection's root cause.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "Unavailable",
+          "decimals": 2,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisCenteredZero": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*(error|failed|exhausted|timeout|failure|disconnect|malformed|closure|unavailable|redelivered).*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*(retry|rejected|capacity|4[0-9][0-9]).*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*5[0-9][0-9].*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (service_name,operation,outcome) (rate(campusgo_user_auth_requests_total{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}[$__rate_interval]))) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"user-service\"}) < 45))",
+          "legendFormat": "{{operation}} \u00b7 {{outcome}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 9,
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "row",
+      "title": "Credits \u00b7 current snapshot",
+      "collapsed": false,
+      "panels": [],
+      "id": 19,
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "Available credits",
+      "description": "Sum of all stored UserCredits balances, including accounts whose users may be suspended/deleted. Whole application credits; signed stored totals are preserved.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: credits",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(max by (service_name,deployment_environment_name) (campusgo_credit_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"})) and on(service_name,deployment_environment_name) ((time() - max by (service_name,deployment_environment_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) < 45) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_credit_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) == 1) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_credit_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) > 0) and on(service_name,deployment_environment_name) (time() - max by (service_name,deployment_environment_name) (campusgo_credit_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) <= 90))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "links": [
+        {
+          "title": "Credit service details",
+          "url": "/grafana/d/campusgo-credit-metrics?from=${__from}&to=${__to}&var-environment=${environment:percentencode}",
+          "targetBlank": false
+        }
+      ],
+      "id": 20,
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "title": "Held credits",
+      "description": "Sum of HELD amounts, including holds without a courier. RELEASED/REFUNDED rows are excluded; signed stored amounts are preserved.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: credits",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(max by (service_name,deployment_environment_name) (campusgo_credit_held{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"})) and on(service_name,deployment_environment_name) ((time() - max by (service_name,deployment_environment_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) < 45) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_credit_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) == 1) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_credit_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) > 0) and on(service_name,deployment_environment_name) (time() - max by (service_name,deployment_environment_name) (campusgo_credit_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) <= 90))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "links": [
+        {
+          "title": "Credit service details",
+          "url": "/grafana/d/campusgo-credit-metrics?from=${__from}&to=${__to}&var-environment=${environment:percentencode}",
+          "targetBlank": false
+        }
+      ],
+      "id": 21,
+      "gridPos": {
+        "x": 6,
+        "y": 18,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "title": "Credit circulation",
+      "description": "Available + held from the same successful snapshot. Current stored-state total, not issued-minus-burned reconciliation, transfer volume, or proof of conservation.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: credits",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(max by (service_name,deployment_environment_name) (campusgo_credit_circulation{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"})) and on(service_name,deployment_environment_name) ((time() - max by (service_name,deployment_environment_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) < 45) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_credit_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) == 1) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_credit_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) > 0) and on(service_name,deployment_environment_name) (time() - max by (service_name,deployment_environment_name) (campusgo_credit_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) <= 90))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "links": [
+        {
+          "title": "Credit service details",
+          "url": "/grafana/d/campusgo-credit-metrics?from=${__from}&to=${__to}&var-environment=${environment:percentencode}",
+          "targetBlank": false
+        }
+      ],
+      "id": 22,
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "title": "Active credit holds",
+      "description": "Count of HELD rows only, including unassigned holds. Terminal RELEASED/REFUNDED rows do not count.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(max by (service_name,deployment_environment_name) (campusgo_credit_holds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"})) and on(service_name,deployment_environment_name) ((time() - max by (service_name,deployment_environment_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) < 45) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_credit_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) == 1) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_credit_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) > 0) and on(service_name,deployment_environment_name) (time() - max by (service_name,deployment_environment_name) (campusgo_credit_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"credit-service\"}) <= 90))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "links": [
+        {
+          "title": "Credit service details",
+          "url": "/grafana/d/campusgo-credit-metrics?from=${__from}&to=${__to}&var-environment=${environment:percentencode}",
+          "targetBlank": false
+        }
+      ],
+      "id": 23,
+      "gridPos": {
+        "x": 18,
+        "y": 18,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "row",
+      "title": "Orders \u00b7 current snapshot",
+      "collapsed": false,
+      "panels": [],
+      "id": 24,
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "Pending orders",
+      "description": "Current PENDING population waiting for credit approval; distinct from the order-service outbox backlog.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (service_name,deployment_environment_name) (max by (service_name,deployment_environment_name,status) (campusgo_order_orders{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\",status=~\"PENDING\"}))) and on(service_name,deployment_environment_name) ((time() - max by (service_name,deployment_environment_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) < 45) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_order_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) == 1) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_order_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) > 0) and on(service_name,deployment_environment_name) (time() - max by (service_name,deployment_environment_name) (campusgo_order_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) <= 90))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "links": [
+        {
+          "title": "Order service details",
+          "url": "/grafana/d/campusgo-order-metrics?from=${__from}&to=${__to}&var-environment=${environment:percentencode}",
+          "targetBlank": false
+        }
+      ],
+      "id": 25,
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "title": "Active orders",
+      "description": "Current OPEN + ACCEPTED + COLLECTED population. PENDING and all terminal states are excluded.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (service_name,deployment_environment_name) (max by (service_name,deployment_environment_name,status) (campusgo_order_orders{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\",status=~\"OPEN|ACCEPTED|COLLECTED\"}))) and on(service_name,deployment_environment_name) ((time() - max by (service_name,deployment_environment_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) < 45) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_order_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) == 1) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_order_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) > 0) and on(service_name,deployment_environment_name) (time() - max by (service_name,deployment_environment_name) (campusgo_order_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) <= 90))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "links": [
+        {
+          "title": "Order service details",
+          "url": "/grafana/d/campusgo-order-metrics?from=${__from}&to=${__to}&var-environment=${environment:percentencode}",
+          "targetBlank": false
+        }
+      ],
+      "id": 26,
+      "gridPos": {
+        "x": 6,
+        "y": 23,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "title": "Overdue orders",
+      "description": "Existing-deadline breaches: PENDING created before the configured pending timeout (currently 2 minutes, strict comparison); OPEN/ACCEPTED/COLLECTED with expiresAt <= now. Membership updates on the next snapshot poll.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (service_name,deployment_environment_name) (max by (service_name,deployment_environment_name,status) (campusgo_order_overdue{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}))) and on(service_name,deployment_environment_name) ((time() - max by (service_name,deployment_environment_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) < 45) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_order_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) == 1) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_order_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) > 0) and on(service_name,deployment_environment_name) (time() - max by (service_name,deployment_environment_name) (campusgo_order_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) <= 90))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "links": [
+        {
+          "title": "Order service details",
+          "url": "/grafana/d/campusgo-order-metrics?from=${__from}&to=${__to}&var-environment=${environment:percentencode}",
+          "targetBlank": false
+        }
+      ],
+      "id": 27,
+      "gridPos": {
+        "x": 12,
+        "y": 23,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "title": "Oldest pending order age",
+      "description": "Age since creation of the oldest PENDING order. Zero only for a fresh successfully observed empty pending population; this is not time since entry into a state.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Unavailable",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(max by (service_name,deployment_environment_name) (campusgo_order_oldest_pending_age_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"})) and on(service_name,deployment_environment_name) ((time() - max by (service_name,deployment_environment_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) < 45) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_order_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) == 1) and on(service_name,deployment_environment_name) (max by (service_name,deployment_environment_name) (campusgo_order_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) > 0) and on(service_name,deployment_environment_name) (time() - max by (service_name,deployment_environment_name) (campusgo_order_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=\"order-service\"}) <= 90))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "links": [
+        {
+          "title": "Order service details",
+          "url": "/grafana/d/campusgo-order-metrics?from=${__from}&to=${__to}&var-environment=${environment:percentencode}",
+          "targetBlank": false
+        }
+      ],
+      "id": 28,
+      "gridPos": {
+        "x": 18,
+        "y": 23,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "row",
+      "title": "Service performance",
+      "collapsed": false,
+      "panels": [],
+      "id": 10,
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "Service telemetry & current load",
+      "type": "table",
+      "description": "All four expected services remain visible. Fresh means heartbeat age <45s, Stale means an older heartbeat, and Unavailable means no heartbeat. Request rate and active requests are current. Rolling request/latency summaries are in the separate HTTP service comparison table.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"user-service|credit-service|order-service|supplier-service\"})) < bool 45) or on(service_name) ((label_replace(vector(0), \"service_name\", \"user-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"credit-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"order-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"supplier-service\", \"\", \"\")) - 1)) or on(service_name) ((label_replace(vector(0), \"service_name\", \"user-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"credit-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"order-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"supplier-service\", \"\", \"\")) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "expr": "((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"})) and on(service_name) (max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) > 0)) or on(service_name) ((label_replace(vector(0), \"service_name\", \"user-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"credit-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"order-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"supplier-service\", \"\", \"\")) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "C",
+          "expr": "((sum by (service_name) (rate(campusgo_http_server_request_duration_seconds_count{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__rate_interval]))) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) < 45))) or on(service_name) ((label_replace(vector(0), \"service_name\", \"user-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"credit-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"order-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"supplier-service\", \"\", \"\")) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "F",
+          "expr": "((sum by (service_name) (campusgo_http_server_active_requests{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"})) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) < 45))) or on(service_name) ((label_replace(vector(0), \"service_name\", \"user-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"credit-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"order-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"supplier-service\", \"\", \"\")) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "A"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #A"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "B"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #B"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "C"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #C"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "F"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #F"
+          }
+        },
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "service_name",
+            "mode": "outerTabular"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "includeByName": {
+              "service_name": true,
+              "Value #A": true,
+              "Value #B": true,
+              "Value #C": true,
+              "Value #F": true
+            },
+            "indexByName": {
+              "service_name": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #F": 4
+            },
+            "renameByName": {
+              "service_name": "Service",
+              "Value #A": "Telemetry",
+              "Value #B": "Telemetry age",
+              "Value #C": "Requests / s",
+              "Value #F": "Active requests"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "color-text"
+            }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Telemetry"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "-1": {
+                        "text": "Unavailable",
+                        "color": "gray"
+                      },
+                      "0": {
+                        "text": "Stale",
+                        "color": "yellow"
+                      },
+                      "1": {
+                        "text": "Fresh",
+                        "color": "green"
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "Unavailable",
+                        "color": "gray"
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "nan",
+                      "result": {
+                        "text": "Unavailable",
+                        "color": "gray"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Telemetry age"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Requests / s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "reqps"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Active requests"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Service"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "user-service": {
+                        "text": "user",
+                        "color": "blue"
+                      },
+                      "credit-service": {
+                        "text": "credit",
+                        "color": "purple"
+                      },
+                      "order-service": {
+                        "text": "order",
+                        "color": "green"
+                      },
+                      "supplier-service": {
+                        "text": "supplier",
+                        "color": "orange"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open service drilldown",
+                    "url": "/grafana/d/campusgo-${__value.text}-metrics?from=${__from}&to=${__to}&var-environment=${environment:percentencode}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Service",
+            "desc": false
+          }
+        ],
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 11,
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 9
+      }
+    },
+    {
+      "title": "HTTP service comparison \u00b7 selected range",
+      "type": "table",
+      "description": "Rolling summary of requests within the selected dashboard time range, evaluated at its end and recalculated on refresh. Counts, average requests/s, HTTP 5xx fraction, and p50/p95/p99 all use the same range. Only entries with positive observed request increases and finite values for every column are shown; incomplete entries are omitted. Historical requests remain measurable during idle periods and telemetry outages until they leave the selected range. Health routes are excluded. Current telemetry freshness is shown separately.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(((sum by (service_name) (increase(campusgo_http_server_request_duration_seconds_count{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range]))) >= 0) < +Inf) and on(service_name) ((sum by (service_name) (increase(campusgo_http_server_request_duration_seconds_count{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])) > 0) and on(service_name) (((histogram_quantile(0.5, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf) and on(service_name) (((histogram_quantile(0.95, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf) and on(service_name) (((histogram_quantile(0.99, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "expr": "((((sum by (service_name) (increase(campusgo_http_server_request_duration_seconds_count{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range]))) / $__range_s) >= 0) < +Inf) and on(service_name) ((sum by (service_name) (increase(campusgo_http_server_request_duration_seconds_count{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])) > 0) and on(service_name) (((histogram_quantile(0.5, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf) and on(service_name) (((histogram_quantile(0.95, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf) and on(service_name) (((histogram_quantile(0.99, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "C",
+          "expr": "(((((sum by (service_name) (increase(campusgo_http_server_request_duration_seconds_count{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\",http_response_status_code=~\"5..\"}[$__range]))) or on(service_name) (0 * (sum by (service_name) (increase(campusgo_http_server_request_duration_seconds_count{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range]))))) / on(service_name) (sum by (service_name) (increase(campusgo_http_server_request_duration_seconds_count{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])) > 0)) >= 0) < +Inf) and on(service_name) ((sum by (service_name) (increase(campusgo_http_server_request_duration_seconds_count{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])) > 0) and on(service_name) (((histogram_quantile(0.5, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf) and on(service_name) (((histogram_quantile(0.95, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf) and on(service_name) (((histogram_quantile(0.99, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "D",
+          "expr": "(((histogram_quantile(0.5, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf) and on(service_name) ((sum by (service_name) (increase(campusgo_http_server_request_duration_seconds_count{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])) > 0) and on(service_name) (((histogram_quantile(0.5, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf) and on(service_name) (((histogram_quantile(0.95, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf) and on(service_name) (((histogram_quantile(0.99, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "E",
+          "expr": "(((histogram_quantile(0.95, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf) and on(service_name) ((sum by (service_name) (increase(campusgo_http_server_request_duration_seconds_count{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])) > 0) and on(service_name) (((histogram_quantile(0.5, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf) and on(service_name) (((histogram_quantile(0.95, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf) and on(service_name) (((histogram_quantile(0.99, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "F",
+          "expr": "(((histogram_quantile(0.99, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf) and on(service_name) ((sum by (service_name) (increase(campusgo_http_server_request_duration_seconds_count{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])) > 0) and on(service_name) (((histogram_quantile(0.5, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf) and on(service_name) (((histogram_quantile(0.95, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf) and on(service_name) (((histogram_quantile(0.99, sum by (service_name,le) (increase(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__range])))) >= 0) < +Inf))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "A"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #A"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "B"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #B"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "C"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #C"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "D"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #D"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "E"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #E"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "F"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #F"
+          }
+        },
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "service_name",
+            "mode": "inner"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "includeByName": {
+              "service_name": true,
+              "Value #A": true,
+              "Value #B": true,
+              "Value #C": true,
+              "Value #D": true,
+              "Value #E": true,
+              "Value #F": true
+            },
+            "indexByName": {
+              "service_name": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #D": 4,
+              "Value #E": 5,
+              "Value #F": 6
+            },
+            "renameByName": {
+              "service_name": "Service",
+              "Value #A": "Estimated requests",
+              "Value #B": "Avg requests / s",
+              "Value #C": "HTTP 5xx",
+              "Value #D": "HTTP p50",
+              "Value #E": "HTTP p95",
+              "Value #F": "HTTP p99"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "color-text"
+            }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Estimated requests"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Avg requests / s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "reqps"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "HTTP 5xx"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "HTTP p50"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "HTTP p95"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "HTTP p99"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Service"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "user-service": {
+                        "text": "user",
+                        "color": "blue"
+                      },
+                      "credit-service": {
+                        "text": "credit",
+                        "color": "purple"
+                      },
+                      "order-service": {
+                        "text": "order",
+                        "color": "green"
+                      },
+                      "supplier-service": {
+                        "text": "supplier",
+                        "color": "orange"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open service drilldown",
+                    "url": "/grafana/d/campusgo-${__value.text}-metrics?from=${__from}&to=${__to}&var-environment=${environment:percentencode}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Service",
+            "desc": false
+          }
+        ],
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 18,
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 24,
+        "h": 10
+      }
+    },
+    {
+      "title": "HTTP request rate by service",
+      "description": "Completed application HTTP requests; public/private health routes excluded. Connect null values: Threshold, 5 minutes; this affects line rendering only.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "Unavailable",
+          "decimals": 2,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": 300000,
+            "axisCenteredZero": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*user-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*credit-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*order-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*supplier-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (service_name) (rate(campusgo_http_server_request_duration_seconds_count{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__rate_interval]))) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) < 45))",
+          "legendFormat": "{{service_name}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 12,
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "HTTP p95 by service",
+      "description": "Histogram percentile estimates over the current rate window. Connect null values is set to Threshold, 5 minutes (custom.spanNulls=300000ms). Short gaps between observed points are connected visually; no samples are held or invented, and longer gaps remain disconnected. See the rolling selected-range table for persistent request summaries.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Unavailable",
+          "decimals": 2,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": 300000,
+            "axisCenteredZero": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*user-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*credit-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*order-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*supplier-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(histogram_quantile(0.95, sum by (service_name,le) (rate(campusgo_http_server_request_duration_seconds_bucket{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",http_route!~\"/(public|private)/health\"}[$__rate_interval])))) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) < 45))",
+          "legendFormat": "{{service_name}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 13,
+      "gridPos": {
+        "x": 12,
+        "y": 47,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "row",
+      "title": "Durable event delivery",
+      "collapsed": false,
+      "panels": [],
+      "id": 14,
+      "gridPos": {
+        "x": 0,
+        "y": 55,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "Delivery health \u00b7 user, credit & order",
+      "type": "table",
+      "description": "Pending = ready + delayed. Snapshot counts require fresh telemetry, availability=1, and a successful read within 90s. Broker queues and DLQs are in the RabbitMQ drilldown. Supplier has no outbox.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"user-service|credit-service|order-service\"})) < bool 45) or on(service_name) ((label_replace(vector(0), \"service_name\", \"user-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"credit-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"order-service\", \"\", \"\")) - 1)) or on(service_name) ((label_replace(vector(0), \"service_name\", \"user-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"credit-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"order-service\", \"\", \"\")) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "expr": "((max by (service_name) (campusgo_rabbitmq_connection_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"})) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) < 45))) or on(service_name) ((label_replace(vector(0), \"service_name\", \"user-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"credit-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"order-service\", \"\", \"\")) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "C",
+          "expr": "((max by (service_name) (campusgo_outbox_worker_running{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"})) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) < 45))) or on(service_name) ((label_replace(vector(0), \"service_name\", \"user-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"credit-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"order-service\", \"\", \"\")) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "D",
+          "expr": "(((time() - max by (service_name) (campusgo_outbox_worker_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"})) and on(service_name) (max by (service_name) (campusgo_outbox_worker_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) > 0)) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) < 45))) or on(service_name) ((label_replace(vector(0), \"service_name\", \"user-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"credit-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"order-service\", \"\", \"\")) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "E",
+          "expr": "((sum by (service_name) (max by (service_name,state) (campusgo_outbox_backlog{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",state=~\"ready|delayed\"}))) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) < 45) and on(service_name) (max by (service_name) (campusgo_outbox_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) == 1) and on(service_name) (((time() - max by (service_name) (campusgo_outbox_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"})) and on(service_name) (max by (service_name) (campusgo_outbox_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) > 0)) <= 90))) or on(service_name) ((label_replace(vector(0), \"service_name\", \"user-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"credit-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"order-service\", \"\", \"\")) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "F",
+          "expr": "((max by (service_name) (campusgo_outbox_oldest_pending_age_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"})) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) < 45) and on(service_name) (max by (service_name) (campusgo_outbox_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) == 1) and on(service_name) (((time() - max by (service_name) (campusgo_outbox_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"})) and on(service_name) (max by (service_name) (campusgo_outbox_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) > 0)) <= 90))) or on(service_name) ((label_replace(vector(0), \"service_name\", \"user-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"credit-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"order-service\", \"\", \"\")) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "G",
+          "expr": "((max by (service_name) (campusgo_outbox_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"})) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) < 45))) or on(service_name) ((label_replace(vector(0), \"service_name\", \"user-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"credit-service\", \"\", \"\") or label_replace(vector(0), \"service_name\", \"order-service\", \"\", \"\")) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "A"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #A"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "B"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #B"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "C"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #C"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "D"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #D"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "E"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #E"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "F"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #F"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "G"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #G"
+          }
+        },
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "service_name",
+            "mode": "outerTabular"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "includeByName": {
+              "service_name": true,
+              "Value #A": true,
+              "Value #B": true,
+              "Value #C": true,
+              "Value #D": true,
+              "Value #E": true,
+              "Value #F": true,
+              "Value #G": true
+            },
+            "indexByName": {
+              "service_name": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #D": 4,
+              "Value #E": 5,
+              "Value #F": 6,
+              "Value #G": 7
+            },
+            "renameByName": {
+              "service_name": "Service",
+              "Value #A": "Telemetry",
+              "Value #B": "Broker connection",
+              "Value #C": "Worker",
+              "Value #D": "Last poll age",
+              "Value #E": "Pending events",
+              "Value #F": "Oldest pending age",
+              "Value #G": "Snapshot"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "color-text"
+            }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Telemetry"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "-1": {
+                        "text": "Unavailable",
+                        "color": "gray"
+                      },
+                      "0": {
+                        "text": "Stale",
+                        "color": "yellow"
+                      },
+                      "1": {
+                        "text": "Fresh",
+                        "color": "green"
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "Unavailable",
+                        "color": "gray"
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "nan",
+                      "result": {
+                        "text": "Unavailable",
+                        "color": "gray"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Broker connection"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "Down",
+                        "color": "red"
+                      },
+                      "1": {
+                        "text": "Up",
+                        "color": "green"
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "Unavailable",
+                        "color": "gray"
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "nan",
+                      "result": {
+                        "text": "Unavailable",
+                        "color": "gray"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Worker"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "Stopped",
+                        "color": "red"
+                      },
+                      "1": {
+                        "text": "Running",
+                        "color": "green"
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "Unavailable",
+                        "color": "gray"
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "nan",
+                      "result": {
+                        "text": "Unavailable",
+                        "color": "gray"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last poll age"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pending events"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Oldest pending age"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Snapshot"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "Unavailable",
+                        "color": "gray"
+                      },
+                      "1": {
+                        "text": "Available",
+                        "color": "green"
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "Unavailable",
+                        "color": "gray"
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "nan",
+                      "result": {
+                        "text": "Unavailable",
+                        "color": "gray"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Service",
+            "desc": false
+          }
+        ],
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 15,
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 24,
+        "h": 9
+      },
+      "links": [
+        {
+          "title": "Open RabbitMQ queues & alarms",
+          "type": "link",
+          "url": "/grafana/d/campusgo-rabbitmq?from=${__from}&to=${__to}",
+          "targetBlank": false
+        }
+      ]
+    },
+    {
+      "title": "Pending outbox events by service",
+      "description": "Shared database snapshots are deduplicated per service/state. Gaps indicate unavailable observations, not empty backlogs.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisCenteredZero": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*user-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*credit-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*order-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*supplier-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (service_name) (max by (service_name,state) (campusgo_outbox_backlog{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\",state=~\"ready|delayed\"}))) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) < 45) and on(service_name) (max by (service_name) (campusgo_outbox_snapshot_available{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) == 1) and on(service_name) (((time() - max by (service_name) (campusgo_outbox_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"})) and on(service_name) (max by (service_name) (campusgo_outbox_snapshot_last_success_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) > 0)) <= 90))",
+          "legendFormat": "{{service_name}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 16,
+      "gridPos": {
+        "x": 0,
+        "y": 65,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Outbox publication outcomes",
+      "description": "Publication attempts include completion bookkeeping. User/credit can exhaust; order retries indefinitely. These are not business event totals.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "Unavailable",
+          "decimals": 2,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisCenteredZero": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*user-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*credit-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*order-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*supplier-service.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*(error|failed|exhausted|timeout|failure|disconnect|malformed|closure|unavailable|redelivered).*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*(retry|rejected|capacity|4[0-9][0-9]).*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*5[0-9][0-9].*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (service_name,outcome) (rate(campusgo_outbox_publish_attempts_total{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}[$__rate_interval]))) and on(service_name) ((time() - max by (service_name) (campusgo_telemetry_heartbeat_seconds{service_namespace=\"campusgo\",deployment_environment_name=\"${environment}\",service_name=~\"(user|credit|order|supplier)-service\"}) < 45))",
+          "legendFormat": "{{service_name}} \u00b7 {{outcome}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 17,
+      "gridPos": {
+        "x": 12,
+        "y": 65,
+        "w": 12,
+        "h": 8
+      }
+    }
+  ]
+}

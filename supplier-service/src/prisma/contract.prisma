@@ -1,0 +1,89 @@
+// use prisma-8
+
+enum SupplierType {
+    @@type("pg/text@1")
+    Food = "food"
+    Shopping = "shopping"
+    Printing = "printing"
+    Coffee = "coffee"
+}
+
+enum SupplierAuditAction {
+    @@type("pg/text@1")
+    Create = "create"
+    Update = "update"
+    Delete = "delete"
+}
+
+// Intended CSV seed mapping (source column -> model field):
+//   Name                 -> name (trim whitespace)
+//   Type                 -> type (SupplierType array; Food/Coffee -> [food, coffee])
+//   Building             -> Location.name (normalize, then look up or create the location)
+//   Floor                -> floor (integer; blank -> null)
+//   Location Description -> description (trim whitespace; blank -> null)
+//   StartingTime         -> opensAt (0900hrs -> 09:00)
+//   ClosingTime          -> closesAt (1800hrs -> 18:00; overnight hours allowed)
+//   ImageURL             -> imageUrl (direct image URL; blank -> null)
+//   Latitude, Longitude  -> omitted
+// Categories: food, shopping, printing, coffee. Split CSV Type on "/" and lowercase.
+// Normalize building aliases (e.g. Com2 -> Com 2) before looking up locations.
+// Set Supplier.locationId to the ID of the matching Location.
+// Opening and closing times must either both be provided or both be null.
+model Supplier {
+    id Int @id @default(autoincrement())
+    name String
+    type SupplierType[]
+    floor Int?
+    imageUrl String?
+    description String?
+
+    // each supplier belongs to a building or location
+    locationId Int
+    location Location @relation(fields: [locationId], references: [id])
+
+    // local campus time "HH:MM[:SS]"; both null when there are no opening hours.
+    // closesAt < opensAt means the supplier is open past midnight
+    opensAt TimeString?
+    closesAt TimeString?
+
+    // user ids from the user service, not a foreign key since it lives in another database
+    createdBy Int
+    updatedBy Int
+    createdAt TimestamptzString @default(now())
+    updatedAt TimestamptzString @default(now())
+    // soft delete so that ids referenced by past errands stay resolvable (FR 5.9)
+    deletedAt TimestamptzString?
+
+    auditLogs SupplierAuditLog[]
+
+    @@check(expression: "(\"opensAt\" IS NULL) = (\"closesAt\" IS NULL)", name: "supplier_hours_paired")
+    @@check(expression: "length(btrim(name)) > 0", name: "supplier_name_not_blank") // prevents empty string as supplier name
+    // names are unique among active suppliers only, so a deleted supplier's name can be reused
+    @@index([name], where: "(\"deletedAt\" IS NULL)", unique: true, name: "supplier_name_active")
+}
+
+model Location {
+    id Int @id @default(autoincrement())
+    name String
+
+    deletedAt TimestamptzString?
+    suppliers Supplier[]
+
+    // names are unique among active locations only, so a deleted location's name can be reused
+    @@index([name], where: "(\"deletedAt\" IS NULL)", unique: true, name: "location_name_active")
+}
+
+// append-only history of supplier changes (FR 5.12)
+model SupplierAuditLog {
+    id Int @id @default(autoincrement())
+    supplierId Int
+    action SupplierAuditAction
+    actorUserId Int
+    // full supplier row after the change (before it, for deletes)
+    snapshot Json
+    createdAt TimestamptzString @default(now())
+
+    supplier Supplier @relation(fields: [supplierId], references: [id])
+
+    @@index([supplierId])
+}

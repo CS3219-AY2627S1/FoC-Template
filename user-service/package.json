@@ -1,0 +1,38 @@
+{
+  "name": "my-deno-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "deno check src/index.ts",
+    "contract:emit": "deno run -A npm:prisma@8.0.0-rc.15 contract emit",
+    "db:init": "deno run -A --env-file=.env npm:prisma@8.0.0-rc.15 db init",
+    "db:update": "deno run -A --env-file=.env npm:prisma@8.0.0-rc.15 db update",
+    "db:update_dev": "deno run -A --env-file=.env npm:prisma@8.0.0-rc.15 db update --no-interactive --confirm users",
+    "db:verify": "deno run -A --env-file=.env npm:prisma@8.0.0-rc.15 db verify",
+    "dev": "deno run -A --env-file=.env --watch src/index.ts",
+    "migrate": "deno run -A --env-file=.env npm:prisma@8.0.0-rc.15 db migrate",
+    "migration:plan": "deno run -A --env-file=.env npm:prisma@8.0.0-rc.15 migration plan",
+    "migration:show": "deno run -A --env-file=.env npm:prisma@8.0.0-rc.15 migration show",
+    "migration:status": "deno run -A --env-file=.env npm:prisma@8.0.0-rc.15 migration status",
+    "admin:gen-invite": "deno run -A --env-file=.env src/index.ts --gen-invite",
+    "start": "deno run -A --env-file=.env src/index.ts"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "1.9.0",
+    "@prisma/orm-postgres": "8.0.0-rc.11",
+    "amqplib": "^2.2.0",
+    "argon2": "^0.45.1",
+    "dotenv": "^17.4.2",
+    "jose": "^6.2.12",
+    "winston": "^3.19.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@opentelemetry/context-async-hooks": "^2.12.0",
+    "@opentelemetry/core": "^2.12.0",
+    "@opentelemetry/sdk-metrics": "^2.12.0",
+    "@opentelemetry/sdk-trace": "2.12.0",
+    "@types/node": "^25.6.2",
+    "prisma": "8.0.0-rc.15"
+  }
+}

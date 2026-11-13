@@ -1,0 +1,1690 @@
+{
+  "id": null,
+  "uid": "campusgo-rabbitmq",
+  "title": "CampusGo / RabbitMQ",
+  "description": "Broker alarms, durable queue progress, and dead letters. Vhost scope is independent of application environments; missing queues remain unavailable.",
+  "tags": [
+    "campusgo",
+    "rabbitmq"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "editable": false,
+  "refresh": "15s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "CampusGo overview",
+      "type": "link",
+      "url": "/grafana/d/campusgo-overview?from=${__from}&to=${__to}",
+      "targetBlank": false
+    },
+    {
+      "title": "User",
+      "type": "link",
+      "url": "/grafana/d/campusgo-user-metrics?from=${__from}&to=${__to}",
+      "targetBlank": false
+    },
+    {
+      "title": "Credit",
+      "type": "link",
+      "url": "/grafana/d/campusgo-credit-metrics?from=${__from}&to=${__to}",
+      "targetBlank": false
+    },
+    {
+      "title": "Order",
+      "type": "link",
+      "url": "/grafana/d/campusgo-order-metrics?from=${__from}&to=${__to}",
+      "targetBlank": false
+    },
+    {
+      "title": "Supplier",
+      "type": "link",
+      "url": "/grafana/d/campusgo-supplier-metrics?from=${__from}&to=${__to}",
+      "targetBlank": false
+    },
+    {
+      "title": "RabbitMQ queues & alarms",
+      "type": "link",
+      "url": "/grafana/d/campusgo-rabbitmq?from=${__from}&to=${__to}",
+      "targetBlank": false
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "vhost",
+        "label": "RabbitMQ vhost",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "campusgo-prometheus"
+        },
+        "query": {
+          "query": "label_values(rabbitmq_detailed_queue_messages{job=\"rabbitmq-queues\"}, vhost)",
+          "refId": "Vhost"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "text": "/",
+          "value": "/"
+        },
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Broker & scrape health \u00b7 all vhosts",
+      "collapsed": false,
+      "panels": [],
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "Broker scrape",
+      "description": "Broker-wide state; the vhost selector does not apply to broker alarms or scrape transport.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Down",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "Up",
+                  "color": "green"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"rabbitmq\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 2,
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "title": "Queue scrape",
+      "description": "Broker-wide state; the vhost selector does not apply to broker alarms or scrape transport.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Down",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "Up",
+                  "color": "green"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"rabbitmq-queues\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 3,
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "title": "Memory alarm",
+      "description": "Broker-wide state; the vhost selector does not apply to broker alarms or scrape transport.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Clear",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "Alarm",
+                  "color": "red"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(rabbitmq_alarms_memory_used_watermark{job=\"rabbitmq\"}) and on(job,instance) (up{job=\"rabbitmq\"} == 1)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 4,
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "title": "Disk alarm",
+      "description": "Broker-wide state; the vhost selector does not apply to broker alarms or scrape transport.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Clear",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "Alarm",
+                  "color": "red"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "last"
+          ]
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(rabbitmq_alarms_free_disk_space_watermark{job=\"rabbitmq\"}) and on(job,instance) (up{job=\"rabbitmq\"} == 1)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 5,
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "type": "row",
+      "title": "Durable work queues \u00b7 selected vhost",
+      "collapsed": false,
+      "panels": [],
+      "id": 6,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "Work queue progress",
+      "type": "table",
+      "description": "Ready backlog with no consumers can indicate a consumer outage. Increasing unacknowledged messages suggests slow/stuck processing. DLQs are excluded: they normally have no consumers. Only existing user/credit/order durable queues are scraped.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "((sum by (queue) (rabbitmq_detailed_queue_messages_ready{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1))) or on(queue) ((0 * ((sum by (queue) (rabbitmq_detailed_queue_messages{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1)))) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "expr": "((sum by (queue) (rabbitmq_detailed_queue_messages_unacked{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1))) or on(queue) ((0 * ((sum by (queue) (rabbitmq_detailed_queue_messages{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1)))) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "C",
+          "expr": "((sum by (queue) (rabbitmq_detailed_queue_messages{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1))) or on(queue) ((0 * ((sum by (queue) (rabbitmq_detailed_queue_messages{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1)))) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "D",
+          "expr": "((sum by (queue) (rabbitmq_detailed_queue_consumers{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1))) or on(queue) ((0 * ((sum by (queue) (rabbitmq_detailed_queue_messages{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1)))) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "E",
+          "expr": "(((sum by (queue) (rate(rabbitmq_detailed_queue_messages_delivered_ack_total{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"}[$__rate_interval]))) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1))) + on(queue) ((sum by (queue) (rate(rabbitmq_detailed_queue_messages_delivered_total{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"}[$__rate_interval]))) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1)))) or on(queue) ((0 * ((sum by (queue) (rabbitmq_detailed_queue_messages{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1)))) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "F",
+          "expr": "((sum by (queue) (rate(rabbitmq_detailed_queue_messages_acked_total{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"}[$__rate_interval]))) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1))) or on(queue) ((0 * ((sum by (queue) (rabbitmq_detailed_queue_messages{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1)))) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        },
+        {
+          "refId": "G",
+          "expr": "((sum by (queue) (rate(rabbitmq_detailed_queue_messages_redelivered_total{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"}[$__rate_interval]))) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1))) or on(queue) ((0 * ((sum by (queue) (rabbitmq_detailed_queue_messages{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1)))) / 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "editorMode": "code"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "A"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #A"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "B"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #B"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "C"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #C"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "D"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #D"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "E"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #E"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "F"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #F"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "filter": {
+            "id": "byRefId",
+            "options": "G"
+          },
+          "options": {
+            "regex": "^Value$",
+            "renamePattern": "Value #G"
+          }
+        },
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "queue",
+            "mode": "outerTabular"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "includeByName": {
+              "queue": true,
+              "Value #A": true,
+              "Value #B": true,
+              "Value #C": true,
+              "Value #D": true,
+              "Value #E": true,
+              "Value #F": true,
+              "Value #G": true
+            },
+            "indexByName": {
+              "queue": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #D": 4,
+              "Value #E": 5,
+              "Value #F": 6,
+              "Value #G": 7
+            },
+            "renameByName": {
+              "queue": "Queue",
+              "Value #A": "Ready",
+              "Value #B": "Unacknowledged",
+              "Value #C": "Total",
+              "Value #D": "Consumers",
+              "Value #E": "Deliveries / s",
+              "Value #F": "Acknowledgements / s",
+              "Value #G": "Redeliveries / s"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Unavailable",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "color-text"
+            }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ready"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Unacknowledged"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Total"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Consumers"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "No consumers",
+                        "color": "yellow"
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "Unavailable",
+                        "color": "gray"
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "nan",
+                      "result": {
+                        "text": "Unavailable",
+                        "color": "gray"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Deliveries / s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ops"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Acknowledgements / s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ops"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Redeliveries / s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ops"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Queue",
+            "desc": false
+          }
+        ],
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 10
+      }
+    },
+    {
+      "title": "Ready messages",
+      "description": "",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisCenteredZero": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (queue) (rabbitmq_detailed_queue_messages_ready{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1))",
+          "legendFormat": "{{queue}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 8,
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Unacknowledged messages",
+      "description": "",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisCenteredZero": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (queue) (rabbitmq_detailed_queue_messages_unacked{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1))",
+          "legendFormat": "{{queue}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 9,
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Total work queue depth",
+      "description": "Ready + unacknowledged. Missing queues are not zero-depth queues.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisCenteredZero": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (queue) (rabbitmq_detailed_queue_messages{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1))",
+          "legendFormat": "{{queue}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 10,
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Consumers",
+      "description": "",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisCenteredZero": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (queue) (rabbitmq_detailed_queue_consumers{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1))",
+          "legendFormat": "{{queue}}",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 11,
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Delivery & acknowledgement throughput",
+      "description": "",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "Unavailable",
+          "decimals": 2,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisCenteredZero": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "((sum by (queue) (rate(rabbitmq_detailed_queue_messages_delivered_ack_total{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"}[$__rate_interval]))) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1))) + on(queue) ((sum by (queue) (rate(rabbitmq_detailed_queue_messages_delivered_total{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"}[$__rate_interval]))) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1)))",
+          "legendFormat": "{{queue}} \u00b7 delivered",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "editorMode": "code"
+        },
+        {
+          "refId": "B",
+          "expr": "(sum by (queue) (rate(rabbitmq_detailed_queue_messages_acked_total{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"}[$__rate_interval]))) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1))",
+          "legendFormat": "{{queue}} \u00b7 acknowledged",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 12,
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "Redelivery rate",
+      "description": "Repeated deliveries can indicate processing failures or lost connections; they are not additional business events.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "Unavailable",
+          "decimals": 2,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisCenteredZero": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*(error|failed|exhausted|timeout|failure|disconnect|malformed|closure|unavailable|redelivered).*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*(retry|rejected|capacity|4[0-9][0-9]).*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*5[0-9][0-9].*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (queue) (rate(rabbitmq_detailed_queue_messages_redelivered_total{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue!~\".*[.]dlq\"}[$__rate_interval]))) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1))",
+          "legendFormat": "{{queue}} \u00b7 redelivered",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 13,
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "row",
+      "title": "Dead-letter queues",
+      "collapsed": false,
+      "panels": [],
+      "id": 14,
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "Existing DLQ messages",
+      "description": "Broker-owned dead letters, separate from failed application outbox rows. User-service has no DLQ. Missing queues remain unavailable; this dashboard never creates or requeues queues.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "campusgo-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "Unavailable",
+                  "color": "gray"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisCenteredZero": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*(error|failed|exhausted|timeout|failure|disconnect|malformed|closure|unavailable|redelivered).*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*(retry|rejected|capacity|4[0-9][0-9]).*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*5[0-9][0-9].*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (queue) (rabbitmq_detailed_queue_messages{job=\"rabbitmq-queues\",vhost=\"${vhost}\",queue=~\".*[.]dlq\"})) and on() ((min(up{job=\"rabbitmq\"}) == 1) and on() (min(up{job=\"rabbitmq-queues\"}) == 1))",
+          "legendFormat": "{{queue}} \u00b7 failed delivery",
+          "instant": false,
+          "range": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "id": 15,
+      "gridPos": {
+        "x": 0,
+        "y": 41,
+        "w": 24,
+        "h": 8
+      }
+    }
+  ]
+}

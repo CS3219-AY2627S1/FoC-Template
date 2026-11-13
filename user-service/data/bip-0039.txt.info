@@ -1,0 +1,11 @@
+BIP: 39
+  Layer: Applications
+  Title: Mnemonic code for generating deterministic keys
+  Authors: Marek Palatinus <slush@satoshilabs.com>
+           Pavol Rusnak <stick@satoshilabs.com>
+           Aaron Voisine <voisine@gmail.com>
+           Sean Bowe <ewillbefull@gmail.com>
+  Status: Deployed
+  Type: Specification
+  Assigned: 2013-09-10
+  License: MIT (https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki)

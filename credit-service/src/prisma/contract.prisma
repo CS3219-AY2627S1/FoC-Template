@@ -1,0 +1,44 @@
+// use prisma-8
+
+model UserCredits {
+  userId      Int @id
+  balance Int
+}
+
+model CreditsOnHold {
+  errandId    String @id
+  requestorId Int
+  courierId  Int?
+  amount      Int
+  status      CreditHoldStatus
+}
+
+enum CreditHoldStatus {
+  @@type("pg/text@1")
+
+  HELD     = "HELD"
+  RELEASED = "RELEASED"
+  REFUNDED = "REFUNDED"
+}
+
+enum OutboxStatus {
+    PENDING
+    FAILED
+    COMPLETED
+}
+
+model Outbox {
+    id Int @id @default(autoincrement())
+    type String
+    topic String
+    payload Json
+    metadata Json? // Allowlisted W3C context, separate from business payload
+    status OutboxStatus @default(PENDING)
+    retryCount Int @default(0)
+    errorMessage String?
+    nextRetryAt DateTime?
+    createdAt DateTime @default(now())
+
+    @@index([status, createdAt])
+    @@map("outbox")
+}

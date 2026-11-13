@@ -1,0 +1,27 @@
+# AI assistance: OpenAI Codex, 2026-11-06. Public entry security group reused by the separate gateway.
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Public HTTP entry point for the CampusGo gateway demo
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@3
+Parameters:
+  Vpc:
+    Type: AWS::EC2::VPC::Id
+Resources:
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: User selected public task IP for the university demo
+        must: [Expose only the Nginx listener, Never expose backend ports or database ports]
+    Properties:
+      GroupDescription: CampusGo demo HTTP entry point
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+Outputs:
+  WebSecurityGroup:
+    Value: !Ref WebSecurityGroup

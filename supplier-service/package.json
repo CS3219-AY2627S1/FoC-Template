@@ -1,0 +1,28 @@
+{
+  "name": "supplier-service",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "seed": "deno run -A --env-file=.env src/tasks/seedSuppliers.ts",
+    "build": "deno check src/index.ts",
+    "contract:emit": "deno run -A npm:prisma@8.0.0-rc.15 contract emit",
+    "db:init": "deno run -A --env-file=.env npm:prisma@8.0.0-rc.15 db init",
+    "db:update": "deno run -A --env-file=.env npm:prisma@8.0.0-rc.15 db update",
+    "db:update_dev": "deno task contract:emit && deno run -A --env-file=.env npm:prisma@8.0.0-rc.15 db update --no-interactive --confirm suppliers",
+    "db:verify": "deno run -A --env-file=.env npm:prisma@8.0.0-rc.15 db verify",
+    "dev": "deno run -A --env-file=.env --watch src/index.ts",
+    "start": "deno run -A --env-file=.env src/index.ts"
+  },
+  "dependencies": {
+    "@prisma/orm-postgres": "8.0.0-rc.11",
+    "dotenv": "^17.4.2",
+    "jose": "^6.2.12",
+    "winston": "^3.19.0",
+    "zod": "^4.6.5",
+    "@opentelemetry/api": "1.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "prisma": "8.0.0-rc.15"
+  }
+}

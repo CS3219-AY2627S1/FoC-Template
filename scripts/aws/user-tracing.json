@@ -1,0 +1,8 @@
+{
+  "OTEL_DENO": "true",
+  "OTEL_SERVICE_NAME": "user-service",
+  "OTEL_PROPAGATORS": "tracecontext",
+  "OTEL_TRACES_SAMPLER": "parentbased_always_on",
+  "OTEL_EXPORTER_OTLP_PROTOCOL": "console",
+  "OTEL_DENO_CONSOLE": "ignore"
+}

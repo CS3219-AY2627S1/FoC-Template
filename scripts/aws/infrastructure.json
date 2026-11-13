@@ -1,0 +1,480 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "CampusGo demo internal DNS, security groups, and persistent RabbitMQ",
+  "Metadata": {
+    "AWSToolsMetrics": {
+      "AWSAgentToolkit": "aws-cloudformation@3"
+    }
+  },
+  "Parameters": {
+    "Ami": {
+      "Type": "AWS::EC2::Image::Id"
+    },
+    "Vpc": {
+      "Type": "AWS::EC2::VPC::Id"
+    },
+    "Subnet": {
+      "Type": "AWS::EC2::Subnet::Id"
+    }
+  },
+  "Resources": {
+    "Namespace": {
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "must": [],
+          "why": "Stable private service addresses across task replacements"
+        }
+      },
+      "Properties": {
+        "Vpc": {
+          "Ref": "Vpc"
+        },
+        "Name": "campusgo.local"
+      },
+      "Type": "AWS::ServiceDiscovery::PrivateDnsNamespace"
+    },
+    "userDiscovery": {
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "must": [],
+          "why": "ECS maintains task IP records"
+        }
+      },
+      "Properties": {
+        "HealthCheckCustomConfig": {
+          "FailureThreshold": 1
+        },
+        "Name": "user",
+        "DnsConfig": {
+          "RoutingPolicy": "MULTIVALUE",
+          "DnsRecords": [
+            {
+              "TTL": 10,
+              "Type": "A"
+            }
+          ],
+          "NamespaceId": {
+            "Ref": "Namespace"
+          }
+        }
+      },
+      "Type": "AWS::ServiceDiscovery::Service"
+    },
+    "supplierDiscovery": {
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "must": [],
+          "why": "ECS maintains task IP records"
+        }
+      },
+      "Properties": {
+        "HealthCheckCustomConfig": {
+          "FailureThreshold": 1
+        },
+        "Name": "supplier",
+        "DnsConfig": {
+          "RoutingPolicy": "MULTIVALUE",
+          "DnsRecords": [
+            {
+              "TTL": 10,
+              "Type": "A"
+            }
+          ],
+          "NamespaceId": {
+            "Ref": "Namespace"
+          }
+        }
+      },
+      "Type": "AWS::ServiceDiscovery::Service"
+    },
+    "orderDiscovery": {
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "must": [],
+          "why": "ECS maintains task IP records"
+        }
+      },
+      "Properties": {
+        "HealthCheckCustomConfig": {
+          "FailureThreshold": 1
+        },
+        "Name": "order",
+        "DnsConfig": {
+          "RoutingPolicy": "MULTIVALUE",
+          "DnsRecords": [
+            {
+              "TTL": 10,
+              "Type": "A"
+            }
+          ],
+          "NamespaceId": {
+            "Ref": "Namespace"
+          }
+        }
+      },
+      "Type": "AWS::ServiceDiscovery::Service"
+    },
+    "creditDiscovery": {
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "must": [],
+          "why": "ECS maintains task IP records"
+        }
+      },
+      "Properties": {
+        "HealthCheckCustomConfig": {
+          "FailureThreshold": 1
+        },
+        "Name": "credit",
+        "DnsConfig": {
+          "RoutingPolicy": "MULTIVALUE",
+          "DnsRecords": [
+            {
+              "TTL": 10,
+              "Type": "A"
+            }
+          ],
+          "NamespaceId": {
+            "Ref": "Namespace"
+          }
+        }
+      },
+      "Type": "AWS::ServiceDiscovery::Service"
+    },
+    "apigatewayDiscovery": {
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "must": [],
+          "why": "ECS maintains task IP records"
+        }
+      },
+      "Properties": {
+        "HealthCheckCustomConfig": {
+          "FailureThreshold": 1
+        },
+        "Name": "api-gateway",
+        "DnsConfig": {
+          "RoutingPolicy": "MULTIVALUE",
+          "DnsRecords": [
+            {
+              "TTL": 10,
+              "Type": "A"
+            }
+          ],
+          "NamespaceId": {
+            "Ref": "Namespace"
+          }
+        }
+      },
+      "Type": "AWS::ServiceDiscovery::Service"
+    },
+    "frontendDiscovery": {
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "must": [],
+          "why": "ECS maintains task IP records"
+        }
+      },
+      "Properties": {
+        "HealthCheckCustomConfig": {
+          "FailureThreshold": 1
+        },
+        "Name": "frontend",
+        "DnsConfig": {
+          "RoutingPolicy": "MULTIVALUE",
+          "DnsRecords": [
+            {
+              "TTL": 10,
+              "Type": "A"
+            }
+          ],
+          "NamespaceId": {
+            "Ref": "Namespace"
+          }
+        }
+      },
+      "Type": "AWS::ServiceDiscovery::Service"
+    },
+    "InternalSecurityGroup": {
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "must": [],
+          "why": "Restrict application listeners to project callers"
+        }
+      },
+      "Properties": {
+        "VpcId": {
+          "Ref": "Vpc"
+        },
+        "GroupDescription": "CampusGo internal application traffic"
+      },
+      "Type": "AWS::EC2::SecurityGroup"
+    },
+    "Internal80": {
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "must": [],
+          "why": "Application communication within the shared group"
+        }
+      },
+      "Properties": {
+        "ToPort": 80,
+        "GroupId": {
+          "Ref": "InternalSecurityGroup"
+        },
+        "SourceSecurityGroupId": {
+          "Ref": "InternalSecurityGroup"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": 80
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress"
+    },
+    "Internal3000": {
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "must": [],
+          "why": "Application communication within the shared group"
+        }
+      },
+      "Properties": {
+        "ToPort": 3000,
+        "GroupId": {
+          "Ref": "InternalSecurityGroup"
+        },
+        "SourceSecurityGroupId": {
+          "Ref": "InternalSecurityGroup"
+        },
+        "IpProtocol": "tcp",
+        "FromPort": 3000
+      },
+      "Type": "AWS::EC2::SecurityGroupIngress"
+    },
+    "BrokerSecurityGroup": {
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "must": [
+            "Never expose AMQP or management UI publicly"
+          ],
+          "why": "RabbitMQ is reachable only from application tasks"
+        }
+      },
+      "Properties": {
+        "GroupDescription": "CampusGo broker clients",
+        "SecurityGroupIngress": [
+          {
+            "SourceSecurityGroupId": {
+              "Ref": "InternalSecurityGroup"
+            },
+            "FromPort": 5672,
+            "IpProtocol": "tcp",
+            "ToPort": 5672
+          }
+        ],
+        "VpcId": {
+          "Ref": "Vpc"
+        }
+      },
+      "Type": "AWS::EC2::SecurityGroup"
+    },
+    "InstanceRole": {
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "must": [],
+          "why": "SSM management, image pulls and a single runtime password"
+        }
+      },
+      "Properties": {
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+          "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+        ],
+        "Policies": [
+          {
+            "PolicyName": "ReadBrokerPassword",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Action": "ssm:GetParameter",
+                  "Effect": "Allow",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/campusgo/rabbitmq/password"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Principal": {
+                "Service": "ec2.amazonaws.com"
+              },
+              "Effect": "Allow",
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        }
+      },
+      "Type": "AWS::IAM::Role"
+    },
+    "InstanceProfile": {
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "must": [],
+          "why": "Attach instance permissions"
+        }
+      },
+      "Properties": {
+        "Roles": [
+          {
+            "Ref": "InstanceRole"
+          }
+        ]
+      },
+      "Type": "AWS::IAM::InstanceProfile"
+    },
+    "Broker": {
+      "Metadata": {
+        "com.aws.cloudformation.Context": {
+          "must": [
+            "Never replace or terminate without preserving broker data"
+          ],
+          "why": "Persistent demo broker; encrypted disk survives stop/start"
+        }
+      },
+      "Properties": {
+        "IamInstanceProfile": {
+          "Ref": "InstanceProfile"
+        },
+        "BlockDeviceMappings": [
+          {
+            "Ebs": {
+              "Encrypted": true,
+              "VolumeSize": 16,
+              "DeleteOnTermination": false,
+              "VolumeType": "gp3"
+            },
+            "DeviceName": "/dev/xvda"
+          }
+        ],
+        "MetadataOptions": {
+          "HttpPutResponseHopLimit": 2,
+          "HttpTokens": "required"
+        },
+        "InstanceType": "t3.small",
+        "NetworkInterfaces": [
+          {
+            "SubnetId": {
+              "Ref": "Subnet"
+            },
+            "GroupSet": [
+              {
+                "Ref": "InternalSecurityGroup"
+              },
+              {
+                "Ref": "BrokerSecurityGroup"
+              }
+            ],
+            "DeviceIndex": "0",
+            "AssociatePublicIpAddress": true
+          }
+        ],
+        "CreditSpecification": {
+          "CPUCredits": "standard"
+        },
+        "UserData": {
+          "Fn::Base64": "#!/bin/bash\nset -eu\ndnf install -y docker\nsystemctl enable --now docker\ninstall -d -m 700 /opt/campusgo\numask 077\nprintf 'RABBITMQ_DEFAULT_USER=campusgo\\nRABBITMQ_DEFAULT_PASS=' > /opt/campusgo/rabbitmq.env\naws ssm get-parameter --name /campusgo/rabbitmq/password --with-decryption --region ap-southeast-1 --query Parameter.Value --output text >> /opt/campusgo/rabbitmq.env\naws ecr get-login-password --region ap-southeast-1 | docker login --username AWS --password-stdin 807733922601.dkr.ecr.ap-southeast-1.amazonaws.com\ndocker volume create campusgo-rabbitmq\ndocker run -d --name rabbitmq --hostname campusgo-rabbitmq --restart unless-stopped \\\n  --env-file /opt/campusgo/rabbitmq.env --log-opt max-size=10m --log-opt max-file=3 \\\n  -v campusgo-rabbitmq:/var/lib/rabbitmq -p 5672:5672 \\\n  807733922601.dkr.ecr.ap-southeast-1.amazonaws.com/campusgo/rabbitmq:deploy-20261106\n"
+        },
+        "ImageId": {
+          "Ref": "Ami"
+        },
+        "Tags": [
+          {
+            "Value": "campusgo-broker",
+            "Key": "Name"
+          }
+        ]
+      },
+      "UpdateReplacePolicy": "Retain",
+      "Type": "AWS::EC2::Instance",
+      "DeletionPolicy": "Retain"
+    }
+  },
+  "Outputs": {
+    "orderRegistry": {
+      "Value": {
+        "Fn::GetAtt": [
+          "orderDiscovery",
+          "Arn"
+        ]
+      }
+    },
+    "apigatewayRegistry": {
+      "Value": {
+        "Fn::GetAtt": [
+          "apigatewayDiscovery",
+          "Arn"
+        ]
+      }
+    },
+    "BrokerId": {
+      "Value": {
+        "Ref": "Broker"
+      }
+    },
+    "InternalSecurityGroup": {
+      "Value": {
+        "Ref": "InternalSecurityGroup"
+      }
+    },
+    "NamespaceId": {
+      "Value": {
+        "Ref": "Namespace"
+      }
+    },
+    "supplierRegistry": {
+      "Value": {
+        "Fn::GetAtt": [
+          "supplierDiscovery",
+          "Arn"
+        ]
+      }
+    },
+    "userRegistry": {
+      "Value": {
+        "Fn::GetAtt": [
+          "userDiscovery",
+          "Arn"
+        ]
+      }
+    },
+    "creditRegistry": {
+      "Value": {
+        "Fn::GetAtt": [
+          "creditDiscovery",
+          "Arn"
+        ]
+      }
+    },
+    "frontendRegistry": {
+      "Value": {
+        "Fn::GetAtt": [
+          "frontendDiscovery",
+          "Arn"
+        ]
+      }
+    },
+    "BrokerPrivateIp": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Broker",
+          "PrivateIp"
+        ]
+      }
+    }
+  }
+}

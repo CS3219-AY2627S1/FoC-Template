@@ -1,0 +1,12 @@
+{
+  "watcher": {
+    "interval": 1000,
+    "legacy": true,
+    "skip": ["**/.git/**", "**/node_modules/**"]
+  },
+  "scripts": {
+    "dev": {
+      "cmd": "deno run -A src/index.ts"
+    }
+  }
+}

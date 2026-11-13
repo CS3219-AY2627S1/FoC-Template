@@ -1,0 +1,12 @@
+{
+  "initializationTask": "arn:aws:ecs:ap-southeast-1:807733922601:task/campusgo/ddd93d2ce66d47e0a127a78290ec3b8b",
+  "initialTaskDefinition": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-chat-Task-yZLCf81LpWRo:1",
+  "previousServices": {
+    "api-gateway-service": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-api-gateway:2",
+    "frontend-service": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-frontend:2"
+  },
+  "newServices": {
+    "frontend-service": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-frontend:3",
+    "api-gateway-service": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-api-gateway:3"
+  }
+}

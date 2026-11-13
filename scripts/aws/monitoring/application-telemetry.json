@@ -1,0 +1,10 @@
+{
+  "OTEL_DENO": "true",
+  "OTEL_PROPAGATORS": "tracecontext",
+  "OTEL_TRACES_SAMPLER": "parentbased_always_on",
+  "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+  "OTEL_EXPORTER_OTLP_ENDPOINT": "http://monitoring.campusgo.local:4318",
+  "OTEL_RESOURCE_ATTRIBUTES": "service.namespace=campusgo,deployment.environment.name=production",
+  "OTEL_DENO_CONSOLE": "ignore",
+  "OTEL_METRIC_EXPORT_INTERVAL": "1000"
+}

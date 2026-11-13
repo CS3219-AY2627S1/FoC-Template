@@ -1,0 +1,22 @@
+[
+  {
+    "service": "user-service",
+    "previous": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-user:5",
+    "new": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-user:6"
+  },
+  {
+    "service": "supplier-service",
+    "previous": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-supplier:7",
+    "new": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-supplier:8"
+  },
+  {
+    "service": "order-service",
+    "previous": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-order:4",
+    "new": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-order:5"
+  },
+  {
+    "service": "credit-service",
+    "previous": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-credit:4",
+    "new": "arn:aws:ecs:ap-southeast-1:807733922601:task-definition/campusgo-credit:5"
+  }
+]

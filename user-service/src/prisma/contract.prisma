@@ -1,0 +1,99 @@
+// use prisma-8
+
+model User {
+    id Int @id @default(autoincrement())
+    email String @unique
+    hashedPassword String
+    isSuspended Boolean @default(false)
+
+    // TODO: profile picture, requires s3 presigned storage
+    // profilePictureFileHash String?
+    nickname String
+    contact String?
+
+    createdAt TimestamptzString @default(now())
+
+    roles Role[]
+    favourites Favourite[]
+}
+
+enum FavouriteKind {
+    @@type("pg/text@1")
+    Supplier = "SUPPLIER"
+    Location = "LOCATION"
+}
+
+// a supplier or building the user bookmarked; details always come live from the supplier service
+model Favourite {
+    id Int @id @default(autoincrement())
+    userId Int
+    kind FavouriteKind
+    // supplier id or location id in the supplier service; not a foreign key since it lives in another database.
+    // bookmarks of deleted suppliers/locations are removed the next time the list is read
+    targetId Int
+    // LOCATION: the floor to fill in (1 = ground, negative = basement). SUPPLIER: 0, as there is no floor 0
+    floor Int @default(0)
+    // LOCATION: optional room/unit, e.g. "#05-12". "" when there is none, so the unique rule has no NULLs
+    room String @default("")
+    // e.g. "Home", "Lab"
+    label String?
+    createdAt TimestamptzString @default(now())
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([userId, kind, targetId, floor, room])
+    @@index([userId])
+}
+
+model UserRole {
+    userId Int
+    roleId Int
+
+    assignedAt TimestamptzString @default(now())
+    sourceInviteId Int? @unique
+
+    user User @relation(fields: [userId], references: [id])
+    role Role  @relation(fields: [roleId], references: [id])
+    sourceInvite AdminInviteCode?  @relation(fields: [sourceInviteId], references: [id])
+    @@id([userId, roleId])
+}
+
+model Role {
+    id Int @id @default(autoincrement())
+    name String @unique
+
+    associatedUsers User[]
+}
+
+model AdminInviteCode {
+    id Int @id @default(autoincrement())
+    code String @unique
+    expiresAt  TimestamptzString
+    createdAt TimestamptzString @default(now())
+
+    acceptedByUserRole UserRole?
+}
+
+// outbox handles pending events bound for the event queue
+enum OutboxStatus {
+    PENDING
+    FAILED
+    COMPLETED
+}
+
+model Outbox {
+    id Int @id @default(autoincrement())
+    type String // e.g. userRegistered
+    topic String // e.g. "user.registered"
+    payload Json // serialised payload
+    metadata Json? // W3C trace context, separate from the event payload
+    status OutboxStatus @default(PENDING)
+    retryCount Int @default(0)
+    errorMessage String?
+    nextRetryAt DateTime?
+    createdAt DateTime @default(now())
+
+    @@index([status, createdAt]) // for background poller performance
+    @@map("outbox")
+}
+

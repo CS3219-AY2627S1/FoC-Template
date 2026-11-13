@@ -1,0 +1,7 @@
+node_modules
+.env
+logs
+AGENTS.md
+**/AGENTS.md
+README.md
+**/README.md
