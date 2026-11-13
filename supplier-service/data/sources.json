@@ -1,0 +1,27 @@
+[
+  {
+    "url": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/kent-ridge/",
+    "kind": "canteen-list",
+    "buildingHint": "Kent Ridge"
+  },
+  {
+    "url": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+    "kind": "canteen-list",
+    "buildingHint": "UTown"
+  },
+  {
+    "url": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/retail-outlets-in-kent-ridge-bukit-timah-and-university-town/",
+    "kind": "retail-list",
+    "buildingHint": "Kent Ridge"
+  },
+  {
+    "url": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+    "kind": "retail-list",
+    "buildingHint": "Geneo"
+  },
+  {
+    "url": "https://pgpr.nus.edu.sg/facilities-amenities/food-groceries-and-daily-necessities/",
+    "kind": "canteen-list",
+    "buildingHint": "PGP"
+  }
+]

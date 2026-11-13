@@ -1,0 +1,15 @@
+# used to manage non sensitive configuration data so they aren't hardcoded in image
+# after applying a change, run kubectl rollout restart deployment/credit-service -n foc
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: credit-config
+  namespace: foc
+  labels: { app.kubernetes.io/name: credit-service, app.kubernetes.io/part-of: foc }
+data: # ports here need to match containerPort and probes in *-service.yaml file
+  PGHOST: credit-db
+  PGPORT: "5432"
+  PGDATABASE: credit_service
+  GRPC_PORT: "50054"
+  HTTP_PORT: "3004"
+  CREDIT_JWT_PUBLIC_KEY_PATH: /run/credit/user-service-public.pem

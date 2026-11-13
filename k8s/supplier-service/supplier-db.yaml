@@ -1,0 +1,85 @@
+# holds two kubernetes objects, a service that gives the database a stable address and a stateful set that runs it and keeps data
+# in compose supplier-service and supplier-db are separate entries that reach each other by name, but Kubernetes needs service defined for each one
+# this service sends traffic to postgres pod, port 5432, used by supplier app and init scripts
+# init scripts and campus data come from ConfigMaps, create them before applying (run from repo root):
+#   kubectl -n foc create configmap supplier-db-init --from-file=supplier-service/db/init/
+#   kubectl -n foc create configmap supplier-db-seed --from-file=supplier-service/data/campus_suppliers.json
+# scripts only run when the volume is empty; to re-seed, delete the PVC data-supplier-db-0
+apiVersion: v1   # specifies API version, typically use v1 for services
+kind: Service    # defines resource type
+metadata:        # identifying information
+  name: supplier-db
+  namespace: foc      # standardised for all the services
+  labels: { app.kubernetes.io/name: supplier-db, app.kubernetes.io/part-of: foc }
+spec:
+  clusterIP: None
+  selector: { app.kubernetes.io/name: supplier-db }       # match criteria to link service with pods
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: apps/v1        # typically used for deployments and statefulsets
+kind: StatefulSet         # like deployment but each pod keeps a fixed name and its own storage
+metadata:
+  name: supplier-db
+  namespace: foc
+  labels: { app.kubernetes.io/name: supplier-db, app.kubernetes.io/part-of: foc }
+spec:
+  serviceName: supplier-db  # links to the service above, runs one pod and identifies which pods it merges
+  replicas: 1
+  selector:      # finds the pods, my pods have this label
+    matchLabels: { app.kubernetes.io/name: supplier-db }
+  template:      # blueprint for creating the pods, new pods have this label
+    metadata:
+      labels: { app.kubernetes.io/name: supplier-db, app.kubernetes.io/part-of: foc }
+    spec:
+      # nodeSelector: { role: supplier }   # enable on EC2; leave off for local k3d
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:     # variables required, only holds reference to secret
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: supplier-secrets, key: PGUSER } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: supplier-secrets, key: PGPASSWORD } }
+            - name: POSTGRES_DB
+              valueFrom: { configMapKeyRef: { name: supplier-config, key: PGDATABASE } }
+            - name: PGUSER
+              valueFrom: { secretKeyRef: { name: supplier-secrets, key: PGUSER } }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:   # runs pg_isgready every 5s, pod gets no traffic until it passes
+            exec: { command: ['sh', '-c', 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'] }
+            periodSeconds: 5
+          livenessProbe:   # runs same check every 10s after a 30s delay, restarts the container if it keeps failing
+            exec: { command: ['sh', '-c', 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'] }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:     # reserves the memory needed
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:      # postgres stores its files here
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+            - name: seed     # read by 04_import_campus.sh
+              mountPath: /seed
+              readOnly: true
+      volumes:
+        - name: init
+          configMap: { name: supplier-db-init, defaultMode: 0755 }
+        - name: seed
+          configMap: { name: supplier-db-seed }
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]   # only one node can mount the disk at a time, data survives restarts and deleting StatefulSet
+        resources:
+          requests: { storage: 2Gi }
+  

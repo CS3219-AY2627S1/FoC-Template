@@ -1,0 +1,207 @@
+id,name,code,category,campus,aliases,latitude,longitude,source,verified_on_interactive_map
+kr_001,COM1,COM1,Computing,Kent Ridge,COM 1,,,NUS campus map / published campus map PDF,False
+kr_002,COM2,COM2,Computing,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_003,COM3,COM3,Computing,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_004,I3,I3,Computing,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_005,School of Computing,,Computing,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_006,Innovation 4.0,,Computing,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_007,N-House,,Computing,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_008,BIZ1,BIZ1,Business,Kent Ridge,BIZ 1,,,NUS campus map / published campus map PDF,False
+kr_009,BIZ2,BIZ2,Business,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_010,Mochtar Riady Building,,Business,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_011,Hon Sui Sen Memorial Library,,Business,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_012,NUS Business School,,Business,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_013,AS1,AS1,Arts and Social Sciences,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_014,AS2,AS2,Arts and Social Sciences,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_015,AS3,AS3,Arts and Social Sciences,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_016,AS4,AS4,Arts and Social Sciences,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_017,AS5,AS5,Arts and Social Sciences,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_018,AS6,AS6,Arts and Social Sciences,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_019,AS7,AS7,Arts and Social Sciences,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_020,AS8,AS8,Arts and Social Sciences,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_021,Faculty of Arts and Social Sciences,,Arts and Social Sciences,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_022,Shaw Foundation Building,,Arts and Social Sciences,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_023,The Deck,,Arts and Social Sciences,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_024,Central Library,,Arts and Social Sciences,Kent Ridge,CLB,,,NUS campus map / published campus map PDF,False
+kr_025,Chinese Library,,Arts and Social Sciences,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_026,EA,EA,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_027,E1,E1,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_028,E1A,E1A,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_029,E2,E2,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_030,E2A,E2A,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_031,E3,E3,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_032,E3A,E3A,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_033,E4,E4,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_034,E4A,E4A,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_035,E5,E5,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_036,E6,E6,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_037,E7,E7,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_038,E8,E8,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_039,EW1,EW1,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_040,Engineering Auditorium,,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_041,Faculty of Engineering,,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_042,Techno Edge,,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_043,T-Lab,,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_044,Centre for Protective Technology,,Engineering,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_045,S1,S1,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_046,S1A,S1A,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_047,S2,S2,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_048,S2S,S2S,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_049,S3,S3,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_050,S4,S4,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_051,S4A,S4A,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_052,S5,S5,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_053,S6,S6,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_054,S7,S7,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_055,S8,S8,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_056,S9,S9,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_057,S11,S11,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_058,S12,S12,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_059,S13,S13,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_060,S14,S14,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_061,S15,S15,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_062,S16,S16,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_063,S17,S17,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_064,Faculty of Science,,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_065,Lee Wee Kheng Building,,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_066,Frontier,,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_067,Centre for Life Sciences,,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_068,Singapore Synchrotron Light Source,,Science,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_069,SDE1,SDE1,Design and Environment,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_070,SDE2,SDE2,Design and Environment,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_071,SDE3,SDE3,Design and Environment,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_072,SDE4,SDE4,Design and Environment,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_073,School of Design and Environment,,Design and Environment,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_074,Design Incubation Centre,,Design and Environment,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_075,MD1,MD1,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_076,MD2,MD2,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_077,MD3,MD3,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_078,MD4,MD4,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_079,MD6,MD6,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_080,MD7,MD7,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_081,MD9,MD9,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_082,MD10,MD10,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_083,MD11,MD11,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_084,Tahir Foundation Building,,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_085,Centre for Translational Medicine,,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_086,Saw Swee Hock School of Public Health,,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_087,Yong Loo Lin School of Medicine,,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_088,Faculty of Dentistry,,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_089,National University Centre for Oral Health,,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_090,NUH Main Building,,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_091,NUH Medical Centre,,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_092,NUH Kent Ridge Wing,,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_093,NUHS Tower Block,,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_094,NUH Service Block,,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_095,Brenner Centre for Molecular Medicine,,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_096,Medicine-Science Library,,Medicine and Healthcare,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_097,Yong Siew Toh Conservatory of Music,,Arts and Culture,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_098,Conservatory Music Library,,Arts and Culture,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_099,University Cultural Centre,,Arts and Culture,Kent Ridge,UCC,,,NUS campus map / published campus map PDF,False
+kr_100,NUS Museum,,Arts and Culture,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_101,Lee Kong Chian Natural History Museum,,Arts and Culture,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_102,Alice Lee Plaza,,Arts and Culture,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_103,Runme Shaw CFA Studios,,Arts and Culture,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_104,Raffles Hall,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_105,Eusoff Hall,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_106,Temasek Hall,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_107,Kent Ridge Hall,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_108,Sheares Hall,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_109,King Edward VII Hall,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_110,Prince George's Park Residences,,Residence,Kent Ridge,PGPR; PGP,,,NUS campus map / published campus map PDF,False
+kr_111,PGP House,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_112,Ridge View Residential College,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_113,Helix House,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_114,Pioneer House,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_115,LightHouse,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_116,Valour House,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_117,Kent Vale,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_118,UTown Residence,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_119,College of Alice & Peter Tan,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_120,Residential College 4,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_121,Tembusu College,,Residence,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_122,Yusof Ishak House,,Services and Administration,Kent Ridge,YIH,,,NUS campus map / published campus map PDF,False
+kr_123,University Hall,,Services and Administration,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_124,University Health Centre,,Services and Administration,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_125,NUS IT,,Services and Administration,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_126,NUS Staff Club,,Services and Administration,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_127,Kent Ridge Guild House,,Services and Administration,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_128,Shaw Foundation Alumni House,,Services and Administration,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_129,Ventus,,Services and Administration,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_130,Office of Campus Security HQ,,Services and Administration,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_131,Centre for Development of Teaching and Learning,,Services and Administration,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_132,Centre for English Language Communication,,Services and Administration,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_133,CELC,CELC,Services and Administration,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_134,NUS Coop - Forum,,Services and Administration,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_135,NUS Coop - Science,,Services and Administration,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_136,University Sports Centre,,Sports,Kent Ridge,USC,,,NUS campus map / published campus map PDF,False
+kr_137,Multi-Purpose Sports Hall 4,,Sports,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_138,Multi-Purpose Sports Hall 5,,Sports,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_139,Multi-Purpose Sports Hall 6,,Sports,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_140,Sports Fields,,Sports,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_141,Football Field,,Sports,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_142,Tennis Courts,,Sports,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_143,Basketball Courts,,Sports,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_144,Handball/Netball Courts,,Sports,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_145,Multi-Purpose Courts,,Sports,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_146,Running Track,,Sports,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_147,Institute for Mathematical Sciences,,Research,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_148,Temasek Life Sciences Laboratory,,Research,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_149,Tropical Marine Science Institute,,Research,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_150,Centre for Maritime Studies,,Research,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_151,Institute of Systems Science,,Research,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_152,Institute of South Asian Studies,,Research,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_153,Middle East Institute,,Research,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_154,Energy Studies Institute,,Research,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_155,Singapore Wind Tunnel Facility,,Research,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_156,Technology Centre for Offshore and Marine Singapore,,Research,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_157,Kent Ridge MRT,,Transport and Other,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_158,Kent Ridge Terminal,,Transport and Other,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_159,University Town,,Transport and Other,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_160,Stephen Riady Centre,,Transport and Other,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_161,Education Resource Centre,,Transport and Other,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_162,NUS Society,,Transport and Other,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_163,Lecture Theatre 1,,Lecture Theatre,Kent Ridge,LT1; LT 1,,,NUS campus map / published campus map PDF,False
+kr_164,Lecture Theatre 2,,Lecture Theatre,Kent Ridge,LT2; LT 2,,,NUS campus map / published campus map PDF,False
+kr_165,Lecture Theatre 3,,Lecture Theatre,Kent Ridge,LT3; LT 3,,,NUS campus map / published campus map PDF,False
+kr_166,Lecture Theatre 4,,Lecture Theatre,Kent Ridge,LT4; LT 4,,,NUS campus map / published campus map PDF,False
+kr_167,Lecture Theatre 5,,Lecture Theatre,Kent Ridge,LT5; LT 5,,,NUS campus map / published campus map PDF,False
+kr_168,Lecture Theatre 6,,Lecture Theatre,Kent Ridge,LT6; LT 6,,,NUS campus map / published campus map PDF,False
+kr_169,Lecture Theatre 7,,Lecture Theatre,Kent Ridge,LT7; LT 7,,,NUS campus map / published campus map PDF,False
+kr_170,Lecture Theatre 8,,Lecture Theatre,Kent Ridge,LT8; LT 8,,,NUS campus map / published campus map PDF,False
+kr_171,Lecture Theatre 9,,Lecture Theatre,Kent Ridge,LT9; LT 9,,,NUS campus map / published campus map PDF,False
+kr_172,Lecture Theatre 10,,Lecture Theatre,Kent Ridge,LT10; LT 10,,,NUS campus map / published campus map PDF,False
+kr_173,Lecture Theatre 11,,Lecture Theatre,Kent Ridge,LT11; LT 11,,,NUS campus map / published campus map PDF,False
+kr_174,Lecture Theatre 12,,Lecture Theatre,Kent Ridge,LT12; LT 12,,,NUS campus map / published campus map PDF,False
+kr_175,Lecture Theatre 13,,Lecture Theatre,Kent Ridge,LT13; LT 13,,,NUS campus map / published campus map PDF,False
+kr_176,Lecture Theatre 14,,Lecture Theatre,Kent Ridge,LT14; LT 14,,,NUS campus map / published campus map PDF,False
+kr_177,Lecture Theatre 15,,Lecture Theatre,Kent Ridge,LT15; LT 15,,,NUS campus map / published campus map PDF,False
+kr_178,Lecture Theatre 16,,Lecture Theatre,Kent Ridge,LT16; LT 16,,,NUS campus map / published campus map PDF,False
+kr_179,Lecture Theatre 17,,Lecture Theatre,Kent Ridge,LT17; LT 17,,,NUS campus map / published campus map PDF,False
+kr_180,Lecture Theatre 18,,Lecture Theatre,Kent Ridge,LT18; LT 18,,,NUS campus map / published campus map PDF,False
+kr_181,Lecture Theatre 19,,Lecture Theatre,Kent Ridge,LT19; LT 19,,,NUS campus map / published campus map PDF,False
+kr_182,Lecture Theatre 20,,Lecture Theatre,Kent Ridge,LT20; LT 20,,,NUS campus map / published campus map PDF,False
+kr_183,Lecture Theatre 21,,Lecture Theatre,Kent Ridge,LT21; LT 21,,,NUS campus map / published campus map PDF,False
+kr_184,Lecture Theatre 24,,Lecture Theatre,Kent Ridge,LT24; LT 24,,,NUS campus map / published campus map PDF,False
+kr_185,Lecture Theatre 25,,Lecture Theatre,Kent Ridge,LT25; LT 25,,,NUS campus map / published campus map PDF,False
+kr_186,Lecture Theatre 26,,Lecture Theatre,Kent Ridge,LT26; LT 26,,,NUS campus map / published campus map PDF,False
+kr_187,Lecture Theatre 27,,Lecture Theatre,Kent Ridge,LT27; LT 27,,,NUS campus map / published campus map PDF,False
+kr_188,Lecture Theatre 28,,Lecture Theatre,Kent Ridge,LT28; LT 28,,,NUS campus map / published campus map PDF,False
+kr_189,Lecture Theatre 29,,Lecture Theatre,Kent Ridge,LT29; LT 29,,,NUS campus map / published campus map PDF,False
+kr_190,Lecture Theatre 31,,Lecture Theatre,Kent Ridge,LT31; LT 31,,,NUS campus map / published campus map PDF,False
+kr_191,Lecture Theatre 32,,Lecture Theatre,Kent Ridge,LT32; LT 32,,,NUS campus map / published campus map PDF,False
+kr_192,Lecture Theatre 33,,Lecture Theatre,Kent Ridge,LT33; LT 33,,,NUS campus map / published campus map PDF,False
+kr_193,Lecture Theatre 34,,Lecture Theatre,Kent Ridge,LT34; LT 34,,,NUS campus map / published campus map PDF,False
+kr_194,Lecture Theatre 35,,Lecture Theatre,Kent Ridge,LT35; LT 35,,,NUS campus map / published campus map PDF,False
+kr_195,Lecture Theatre 36,,Lecture Theatre,Kent Ridge,LT36; LT 36,,,NUS campus map / published campus map PDF,False
+kr_196,Lecture Theatre 37,,Lecture Theatre,Kent Ridge,LT37; LT 37,,,NUS campus map / published campus map PDF,False
+kr_197,Lecture Theatre 50,,Lecture Theatre,Kent Ridge,LT50; LT 50,,,NUS campus map / published campus map PDF,False
+kr_198,Lecture Theatre 51,,Lecture Theatre,Kent Ridge,LT51; LT 51,,,NUS campus map / published campus map PDF,False
+kr_199,Lecture Theatre 52,,Lecture Theatre,Kent Ridge,LT52; LT 52,,,NUS campus map / published campus map PDF,False
+kr_200,Lecture Theatre 53,,Lecture Theatre,Kent Ridge,LT53; LT 53,,,NUS campus map / published campus map PDF,False
+kr_201,Lecture Theatre 7A,,Lecture Theatre,Kent Ridge,LT7A; LT 7A,,,NUS campus map / published campus map PDF,False
+kr_202,Hon Sui Sen Auditorium,,Lecture Theatre,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_203,Ngee Ann Kongsi Auditorium,,Lecture Theatre,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_204,UTown Auditorium 1,,Lecture Theatre,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_205,UTown Auditorium 2,,Lecture Theatre,Kent Ridge,,,,NUS campus map / published campus map PDF,False
+kr_206,UTown Auditorium 3,,Lecture Theatre,Kent Ridge,,,,NUS campus map / published campus map PDF,False

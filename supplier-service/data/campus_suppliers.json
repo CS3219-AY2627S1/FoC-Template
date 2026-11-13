@@ -1,0 +1,3786 @@
+{
+  "fetchedAt": "2026-11-01T10:21:49.921Z",
+  "acceptedCount": 68,
+  "rejectedCount": 2,
+  "suppliers": [
+    {
+      "name": "Bismillah Biryani",
+      "type": "food",
+      "buildingName": "Stephen Riady Centre (SRC)",
+      "locationDescription": "UTown Stephen Riady Centre (SRC)",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": null,
+          "closesAt": null,
+          "isClosed": true
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "11:30:00",
+          "closesAt": "19:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "11:30:00",
+          "closesAt": "19:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "11:30:00",
+          "closesAt": "19:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "11:30:00",
+          "closesAt": "19:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "11:30:00",
+          "closesAt": "19:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "11:30:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Fine Food",
+      "type": "food",
+      "buildingName": "Town Plaza",
+      "locationDescription": "Town Plaza, University Town",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "08:00:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "08:00:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "08:00:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "08:00:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "08:00:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "08:00:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "08:00:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Flavours @ UTown",
+      "type": "food",
+      "buildingName": "Stephen Riady Centre",
+      "locationDescription": "UTown Stephen Riady Centre, University Town",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "07:30:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "07:30:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "07:30:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "07:30:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "07:30:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "07:30:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "07:30:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Hwang's Korean Restaurant",
+      "type": "food",
+      "buildingName": "Town Plaza",
+      "locationDescription": "Town Plaza, University Town",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": null,
+          "closesAt": null,
+          "isClosed": true
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "10:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "10:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "10:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "10:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "10:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "10:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Jollibee",
+      "type": "food",
+      "buildingName": "Town Plaza",
+      "locationDescription": "Town Plaza, University Town",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Mr Bean / Do Qoo",
+      "type": "food/coffee",
+      "buildingName": "Town Plaza",
+      "locationDescription": "Town Plaza, University Town",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "08:30:00",
+          "closesAt": "19:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "07:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "07:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "07:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "07:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "07:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "08:30:00",
+          "closesAt": "19:30:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Makan Malah!",
+      "type": "food",
+      "buildingName": "Town Plaza",
+      "locationDescription": "Town Plaza, University Town",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "11:00:00",
+          "closesAt": "22:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "11:00:00",
+          "closesAt": "22:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "11:00:00",
+          "closesAt": "22:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "11:00:00",
+          "closesAt": "22:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "11:00:00",
+          "closesAt": "22:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "11:00:00",
+          "closesAt": "22:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "11:00:00",
+          "closesAt": "22:30:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Starbucks",
+      "type": "food/coffee",
+      "buildingName": "Education Resource Centre (ERC)",
+      "locationDescription": "Education Resource Centre (ERC), University Town",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Subway",
+      "type": "food",
+      "buildingName": "Stephen Riady Centre",
+      "locationDescription": "Stephen Riady Centre, University Town",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "08:30:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "08:30:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "08:30:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "08:30:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "08:30:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "08:30:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "08:30:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Supersnacks",
+      "type": "food",
+      "buildingName": "Stephen Riady Centre",
+      "locationDescription": "Stephen Riady Centre, University Town",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "18:00:00",
+          "closesAt": "02:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "11:00:00",
+          "closesAt": "02:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "11:00:00",
+          "closesAt": "02:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "11:00:00",
+          "closesAt": "02:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "11:00:00",
+          "closesAt": "02:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "11:00:00",
+          "closesAt": "02:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "18:00:00",
+          "closesAt": "02:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "The Royals Bistro",
+      "type": "food",
+      "buildingName": "Town Plaza",
+      "locationDescription": "Town Plaza, University Town",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": null,
+          "closesAt": null,
+          "isClosed": true
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "11:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "11:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "11:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "11:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "11:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "11:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Sapore",
+      "type": "food",
+      "buildingName": "Stephen Riady Centre (SRC)",
+      "locationDescription": "UTown Stephen Riady Centre (SRC), University Town",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "11:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "11:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "11:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "11:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "11:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "11:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "11:30:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Tomoro Coffee",
+      "type": "food/coffee",
+      "buildingName": "NUS College",
+      "locationDescription": "NUS College, University Town",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": null,
+          "closesAt": null,
+          "isClosed": true
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "08:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "08:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "08:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "08:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "08:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "08:00:00",
+          "closesAt": "13:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Triplets",
+      "type": "food/coffee",
+      "buildingName": "Stephen Riady Centre (SRC)",
+      "locationDescription": "UTown Stephen Riady Centre (SRC), University Town",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": null,
+          "closesAt": null,
+          "isClosed": true
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": null,
+          "closesAt": null,
+          "isClosed": true
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Udon Don Bar",
+      "type": "food",
+      "buildingName": "Town Plaza",
+      "locationDescription": "Town Plaza, University Town",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "11:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "11:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "11:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "11:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "11:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "11:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "11:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Waa Cow / Bueno Bueno",
+      "type": "food",
+      "buildingName": "Stephen Riady Centre (SRC)",
+      "locationDescription": "Stephen Riady Centre (SRC), University Town",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "12:00:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "11:30:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "11:30:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "11:30:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "11:30:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "11:30:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "12:00:00",
+          "closesAt": "20:30:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Cheers Unmanned Convenience Store",
+      "type": "shopping",
+      "buildingName": "Yusof Ishak House",
+      "locationDescription": "Yusof Ishak House, level 1",
+      "floor": 1,
+      "latitude": "1.298400",
+      "longitude": "103.774600",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/retail-outlets-in-kent-ridge-bukit-timah-and-university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "FairPricexpress",
+      "type": "shopping",
+      "buildingName": "Kent Vale",
+      "locationDescription": "Kent Vale",
+      "floor": 0,
+      "latitude": "1.303000",
+      "longitude": "103.769200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "07:00:00",
+          "closesAt": "23:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "07:00:00",
+          "closesAt": "23:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "07:00:00",
+          "closesAt": "23:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "07:00:00",
+          "closesAt": "23:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "07:00:00",
+          "closesAt": "23:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "07:00:00",
+          "closesAt": "23:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "07:00:00",
+          "closesAt": "23:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/retail-outlets-in-kent-ridge-bukit-timah-and-university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Goh Bros E-Print Pte Ltd",
+      "type": "printing",
+      "buildingName": "Yusof Ishak House",
+      "locationDescription": "Take the long staircase up YIH",
+      "floor": 5,
+      "latitude": "1.2984905",
+      "longitude": "103.7720544",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/retail-outlets-in-kent-ridge-bukit-timah-and-university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z",
+      "sourceType": "existing scraped record supplemented by user-provided list",
+      "supplementalSourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template"
+    },
+    {
+      "name": "NUS CO-OP",
+      "type": "shopping",
+      "buildingName": "Central Library",
+      "locationDescription": "Inside the library on the right side",
+      "floor": 1,
+      "latitude": "1.2967866",
+      "longitude": "103.7732677",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "16:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "16:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "16:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "16:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "16:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "16:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "16:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/retail-outlets-in-kent-ridge-bukit-timah-and-university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z",
+      "sourceType": "existing scraped record supplemented by user-provided list",
+      "supplementalSourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template"
+    },
+    {
+      "name": "Octobox",
+      "type": "shopping",
+      "buildingName": "Stephen Riady Centre (SRC)",
+      "locationDescription": "UTown Stephen Riady Centre (SRC)",
+      "floor": 0,
+      "latitude": "1.305600",
+      "longitude": "103.773000",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/retail-outlets-in-kent-ridge-bukit-timah-and-university-town/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "BingXue Tea and Ice Cream",
+      "type": "food/coffee",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#B2-36, 1B Science Park Drive",
+      "floor": -2,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "BreadTalk",
+      "type": "food/coffee",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#B2-37/38, 1B Science Park Drive",
+      "floor": -2,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Bub Coffee",
+      "type": "food/coffee",
+      "buildingName": "Geneo (5 Science Park Drive)",
+      "locationDescription": "#03-09, 5 Science Park Drive",
+      "floor": 3,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Din Tai Fung",
+      "type": "food",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#B1-34, 1B Science Park Drive",
+      "floor": -1,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Fruit Box",
+      "type": "food",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#B2-40, 1B Science Park Drive",
+      "floor": -2,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Fun Toast",
+      "type": "food/coffee",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#01-33, 1B Science Park Drive",
+      "floor": 1,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Good Cheer Kent Ridge",
+      "type": "food",
+      "buildingName": "Geneo (1 Science Park Drive)",
+      "locationDescription": "#B1-02, 1 Science Park Drive",
+      "floor": -1,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Grains & Co.",
+      "type": "food",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#B2-41, 1B Science Park Drive",
+      "floor": -2,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Great Nanyang Heritage Café",
+      "type": "food/coffee",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#B1-32, 1B Science Park Drive",
+      "floor": -1,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Ha-Jun",
+      "type": "food",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#B2-32, 1B Science Park Drive",
+      "floor": -2,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Hawkerlab",
+      "type": "food",
+      "buildingName": "Geneo (7 Science Park Drive)",
+      "locationDescription": "#01-25, 7 Science Park Drive",
+      "floor": 1,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Idaten Udon",
+      "type": "food",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#B1-31, 1B Science Park Drive",
+      "floor": -1,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "luckin coffee",
+      "type": "food/coffee",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#01-32, 1B Science Park Drive",
+      "floor": 1,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Makan Street",
+      "type": "food",
+      "buildingName": "Geneo (1 Science Park Drive)",
+      "locationDescription": "#B1-01, 1 Science Park Drive",
+      "floor": -1,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "MINISO",
+      "type": "shopping",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#B2-34, 1B Science Park Drive",
+      "floor": -2,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Olive & Peach",
+      "type": "food",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#01-31, 1B Science Park Drive",
+      "floor": 1,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Pasta Express",
+      "type": "food",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#B2-39, 1B Science Park Drive",
+      "floor": -2,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "PUTIEN",
+      "type": "food",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#B1-33, 1B Science Park Drive",
+      "floor": -1,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "PYROAST",
+      "type": "food/coffee",
+      "buildingName": "Geneo (7 Science Park Drive)",
+      "locationDescription": "#01-27, 7 Science Park Drive",
+      "floor": 1,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Swensen's Unlimited",
+      "type": "food",
+      "buildingName": "Geneo (1 Science Park Drive)",
+      "locationDescription": "#01-06/07, 1 Science Park Drive",
+      "floor": 1,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Toast Box",
+      "type": "food/coffee",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#B2-42/43, 1B Science Park Drive",
+      "floor": -2,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Wee Nam Kee",
+      "type": "food",
+      "buildingName": "Geneo (1 Science Park Drive)",
+      "locationDescription": "#01-05, 1 Science Park Drive",
+      "floor": 1,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Xi Men Jie",
+      "type": "food",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#01-35, 1B Science Park Drive",
+      "floor": 1,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Yang Guo Fu Mala Tang",
+      "type": "food",
+      "buildingName": "Geneo (1B Science Park Drive)",
+      "locationDescription": "#B2-33, 1B Science Park Drive",
+      "floor": -2,
+      "latitude": "1.296400",
+      "longitude": "103.780200",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "17:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://www.capitaland.com/sg/en/lease/engagement/Geneo-stores.html",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Aircon Food Court",
+      "type": "food",
+      "buildingName": "PGP Residence",
+      "locationDescription": "PGPR Food & Beverage area",
+      "floor": 0,
+      "latitude": "1.291200",
+      "longitude": "103.780300",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "07:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "07:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "07:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "07:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "07:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "07:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "07:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://pgpr.nus.edu.sg/facilities-amenities/food-groceries-and-daily-necessities/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "A Hot Hideout",
+      "type": "food",
+      "buildingName": "Prince George's Park",
+      "locationDescription": "Near PGP entrance",
+      "floor": 2,
+      "latitude": "1.2908445",
+      "longitude": "103.7770891",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "11:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "11:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "11:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "11:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "11:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "11:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "11:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://pgpr.nus.edu.sg/facilities-amenities/food-groceries-and-daily-necessities/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z",
+      "sourceType": "existing scraped record supplemented by user-provided list",
+      "supplementalSourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template"
+    },
+    {
+      "name": "Octobox @ PGP",
+      "type": "shopping",
+      "buildingName": "Prince George's Park",
+      "locationDescription": "Near PGP entrance",
+      "floor": 2,
+      "latitude": "1.2904347",
+      "longitude": "103.7787588",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://pgpr.nus.edu.sg/facilities-amenities/food-groceries-and-daily-necessities/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z",
+      "sourceType": "existing scraped record supplemented by user-provided list",
+      "supplementalSourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template"
+    },
+    {
+      "name": "Cheers @ Engineering Block E3",
+      "type": "shopping",
+      "buildingName": "Engineering Block E3",
+      "locationDescription": "Engineering Block E3",
+      "floor": 0,
+      "latitude": "1.300200",
+      "longitude": "103.771500",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://pgpr.nus.edu.sg/facilities-amenities/food-groceries-and-daily-necessities/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "FairPrice Xpress @ Kent Vale",
+      "type": "shopping",
+      "buildingName": "Kent Vale",
+      "locationDescription": "Kent Vale",
+      "floor": 0,
+      "latitude": "1.291200",
+      "longitude": "103.780300",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "07:00:00",
+          "closesAt": "23:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "07:00:00",
+          "closesAt": "23:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "07:00:00",
+          "closesAt": "23:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "07:00:00",
+          "closesAt": "23:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "07:00:00",
+          "closesAt": "23:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "07:00:00",
+          "closesAt": "23:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "07:00:00",
+          "closesAt": "23:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://pgpr.nus.edu.sg/facilities-amenities/food-groceries-and-daily-necessities/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "FairPrice Xpress @ Stephen Riady Centre",
+      "type": "shopping",
+      "buildingName": "Stephen Riady Centre",
+      "locationDescription": "Stephen Riady Centre",
+      "floor": 0,
+      "latitude": "1.291200",
+      "longitude": "103.780300",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://pgpr.nus.edu.sg/facilities-amenities/food-groceries-and-daily-necessities/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Octobox @ Stephen Riady Centre",
+      "type": "shopping",
+      "buildingName": "Stephen Riady Centre",
+      "locationDescription": "Stephen Riady Centre",
+      "floor": 0,
+      "latitude": "1.291200",
+      "longitude": "103.780300",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:59",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://pgpr.nus.edu.sg/facilities-amenities/food-groceries-and-daily-necessities/",
+      "fetchedAt": "2026-11-01T10:21:49.921Z"
+    },
+    {
+      "name": "Anna's x Soup Union",
+      "type": "food",
+      "buildingName": "Central Library",
+      "locationDescription": "Next to NUS Co-op",
+      "floor": 1,
+      "latitude": "1.296444",
+      "longitude": "103.773032",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    },
+    {
+      "name": "Printer @ COM2",
+      "type": "printing",
+      "buildingName": "COM2",
+      "locationDescription": "Next to LT19",
+      "floor": 1,
+      "latitude": "1.2938347",
+      "longitude": "103.7744572",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    },
+    {
+      "name": "Cool Spot",
+      "type": "food",
+      "buildingName": "COM2",
+      "locationDescription": "Opposite LT16",
+      "floor": 1,
+      "latitude": "1.2940156",
+      "longitude": "103.7738478",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:00:00",
+          "closesAt": "21:30:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    },
+    {
+      "name": "InstaChef",
+      "type": "food",
+      "buildingName": "The Terrace",
+      "locationDescription": "Next to foyer",
+      "floor": 1,
+      "latitude": "1.2938898",
+      "longitude": "103.7736305",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    },
+    {
+      "name": "Cafe+ Robot Cafe",
+      "type": "food/coffee",
+      "buildingName": "Central Library",
+      "locationDescription": "Opposite the Central Library entrance",
+      "floor": 1,
+      "latitude": "1.296444",
+      "longitude": "103.773032",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    },
+    {
+      "name": "Arise and Shine",
+      "type": "food",
+      "buildingName": "Engineering Block E4",
+      "locationDescription": "Near LT6",
+      "floor": 4,
+      "latitude": "1.2991517",
+      "longitude": "103.769064",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "08:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "08:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "08:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "08:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "08:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "08:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "08:00:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    },
+    {
+      "name": "Bakehaus / Aurea",
+      "type": "food",
+      "buildingName": "The Ridge",
+      "locationDescription": "Near COM2",
+      "floor": 1,
+      "latitude": "1.2946778",
+      "longitude": "103.7707872",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "08:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "08:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "08:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "08:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "08:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "08:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "08:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    },
+    {
+      "name": "Central Square @ YIH",
+      "type": "food",
+      "buildingName": "Yusof Ishak House",
+      "locationDescription": "Closest to opposite UHC bus stop",
+      "floor": 1,
+      "latitude": "1.2984401",
+      "longitude": "103.7726256",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "08:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "08:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "08:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "08:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "08:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "08:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "08:00:00",
+          "closesAt": "20:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    },
+    {
+      "name": "Pasta Express (Frontier)",
+      "type": "food",
+      "buildingName": "Frontier",
+      "locationDescription": "Aircon section",
+      "floor": 1,
+      "latitude": "1.2947819",
+      "longitude": "103.7704435",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "09:30:00",
+          "closesAt": "19:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "09:30:00",
+          "closesAt": "19:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "09:30:00",
+          "closesAt": "19:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "09:30:00",
+          "closesAt": "19:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "09:30:00",
+          "closesAt": "19:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "09:30:00",
+          "closesAt": "19:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "09:30:00",
+          "closesAt": "19:30:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    },
+    {
+      "name": "TOMORO COFFEE (Hon Sui Sen Memorial Library)",
+      "type": "food/coffee",
+      "buildingName": "Hon Sui Sen Memorial Library",
+      "locationDescription": "Inside HSSML",
+      "floor": 2,
+      "latitude": "1.2931259",
+      "longitude": "103.7719943",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "08:15:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "08:15:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "08:15:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "08:15:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "08:15:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "08:15:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "08:15:00",
+          "closesAt": "18:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    },
+    {
+      "name": "Smooy",
+      "type": "food",
+      "buildingName": "COM3",
+      "locationDescription": "The Terrace @ COM3",
+      "floor": 1,
+      "latitude": "1.2948308",
+      "longitude": "103.7716305",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "11:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "11:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "11:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "11:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "11:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "11:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "11:00:00",
+          "closesAt": "21:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    },
+    {
+      "name": "Cheers Unmanned Convenience Store (Engineering E3)",
+      "type": "shopping",
+      "buildingName": "Engineering Block E3",
+      "locationDescription": "Take right from Arise and Shine; supplied coordinates were outside campus, so using the Engineering building centroid",
+      "floor": 4,
+      "latitude": "1.300200",
+      "longitude": "103.771500",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "00:00:00",
+          "closesAt": "23:59:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    },
+    {
+      "name": "Nami",
+      "type": "food",
+      "buildingName": "Innovation 4.0",
+      "locationDescription": "Opposite TCOMS",
+      "floor": 1,
+      "latitude": "1.2942982",
+      "longitude": "103.7708813",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "08:00:00",
+          "closesAt": "17:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "08:00:00",
+          "closesAt": "17:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "08:00:00",
+          "closesAt": "17:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "08:00:00",
+          "closesAt": "17:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "08:00:00",
+          "closesAt": "17:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "08:00:00",
+          "closesAt": "17:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "08:00:00",
+          "closesAt": "17:30:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    },
+    {
+      "name": "Supersnacks (Prince George's Park)",
+      "type": "food",
+      "buildingName": "Prince George's Park",
+      "locationDescription": "Prince George's Park Residences, Block 10",
+      "floor": 1,
+      "latitude": "1.2913847",
+      "longitude": "103.7776367",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "11:00:00",
+          "closesAt": "02:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "11:00:00",
+          "closesAt": "02:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "11:00:00",
+          "closesAt": "02:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "11:00:00",
+          "closesAt": "02:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "11:00:00",
+          "closesAt": "02:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "11:00:00",
+          "closesAt": "02:00:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "11:00:00",
+          "closesAt": "02:00:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    },
+    {
+      "name": "Good Day Cafe",
+      "type": "food/coffee",
+      "buildingName": "Medicine+Science Library",
+      "locationDescription": "Inside Medicine+Science Library",
+      "floor": 1,
+      "latitude": "1.2967989",
+      "longitude": "103.7794336",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "07:30:00",
+          "closesAt": "18:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "07:30:00",
+          "closesAt": "18:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "07:30:00",
+          "closesAt": "18:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "07:30:00",
+          "closesAt": "18:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "07:30:00",
+          "closesAt": "18:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "07:30:00",
+          "closesAt": "18:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "07:30:00",
+          "closesAt": "18:30:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    },
+    {
+      "name": "The Coffee Roaster",
+      "type": "food/coffee",
+      "buildingName": "AS8",
+      "locationDescription": "Behind Central Library bus stop",
+      "floor": 1,
+      "latitude": "1.296252229",
+      "longitude": "103.7720926",
+      "openingHours": [
+        {
+          "dayOfWeek": 0,
+          "opensAt": "08:00:00",
+          "closesAt": "17:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 1,
+          "opensAt": "08:00:00",
+          "closesAt": "17:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 2,
+          "opensAt": "08:00:00",
+          "closesAt": "17:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 3,
+          "opensAt": "08:00:00",
+          "closesAt": "17:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 4,
+          "opensAt": "08:00:00",
+          "closesAt": "17:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 5,
+          "opensAt": "08:00:00",
+          "closesAt": "17:30:00",
+          "isClosed": false
+        },
+        {
+          "dayOfWeek": 6,
+          "opensAt": "08:00:00",
+          "closesAt": "17:30:00",
+          "isClosed": false
+        }
+      ],
+      "sourceUrl": "https://github.com/CS3219-AY2627S1/FoC-Template",
+      "fetchedAt": "2026-11-01T10:42:22.927Z",
+      "sourceType": "user-provided list; not independently verified online"
+    }
+  ],
+  "rejected": [
+    {
+      "source": "https://uci.nus.edu.sg/campus-life/campus-services/retail-dining/kent-ridge/",
+      "reason": "page text too short (0 chars)"
+    },
+    {
+      "source": "overpass",
+      "reason": "The operation was aborted due to timeout"
+    }
+  ],
+  "supplementalDataNotes": [
+    "Supplemental campus entries came from the user-provided list; they were not independently verified from web pages in this run. No JPEG files were opened or included.",
+    "The supplied hours did not specify days, so each provided time range is provisionally repeated for all seven days; verify day-specific schedules before relying on them.",
+    "The supplied Engineering E3 longitude (103.7526298) is outside the NUS Kent Ridge campus area; the existing Engineering building centroid was used instead."
+  ]
+}

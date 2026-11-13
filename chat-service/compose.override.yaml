@@ -1,0 +1,14 @@
+# Dev-only: loaded automatically when running chat-service standalone from
+# this folder (the root compose does not load it).
+services:
+  chat-db:
+    ports:
+      - '5436:5432' # 5432-5435 are taken by the other services' databases
+
+  chat-service:
+    ports:
+      - '3005:3005'
+    environment:
+      ORDER_SERVICE_URL: ${ORDER_SERVICE_URL:-http://host.docker.internal:3003}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'

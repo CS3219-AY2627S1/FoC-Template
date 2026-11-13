@@ -1,0 +1,15 @@
+# Dev-only: publish ports to localhost when running supplier-service standalone.
+# In the full stack, ports remain unpublished and services communicate via
+# the internal Docker network.
+services:
+  supplier-db:
+    ports:
+      - '54332:5432'
+
+  supplier-service:
+    ports:
+      - '3002:3002'
+      - '50052:50052'
+    environment:
+      # Standalone: the broker runs separately and publishes 5672 on the host.
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@host.docker.internal:5672}

@@ -1,0 +1,47 @@
+# AI Assistance Disclosure: Claude Code (Claude Opus 5.5), 2026-11-12.
+# Scope: Redis for chat-service's Socket.IO adapter, copied from user-redis.yaml.
+# Details: ai/usage-log.md, entry 008.
+# Only passes chat events between chat pods (pub/sub), so nothing is stored:
+# no password and no disk. If it restarts, open chats reconnect.
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat-redis
+  namespace: foc
+  labels: { app.kubernetes.io/name: chat-redis, app.kubernetes.io/part-of: foc }
+spec:
+  selector: { app.kubernetes.io/name: chat-redis }
+  ports:
+    - { name: redis, port: 6379, targetPort: redis }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-redis
+  namespace: foc
+  labels: { app.kubernetes.io/name: chat-redis, app.kubernetes.io/part-of: foc }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: chat-redis }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: chat-redis, app.kubernetes.io/part-of: foc }
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          ports:
+            - { name: redis, containerPort: 6379 }
+          readinessProbe:
+            exec: { command: ['redis-cli', 'ping'] }
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            exec: { command: ['redis-cli', 'ping'] }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 128Mi }

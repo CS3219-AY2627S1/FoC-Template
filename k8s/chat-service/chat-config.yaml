@@ -1,0 +1,18 @@
+# AI Assistance Disclosure: Claude Code (Claude Opus 5.5), 2026-11-12.
+# Scope: chat-service ConfigMap, copied from supplier-config.yaml with chat's settings.
+# Details: ai/usage-log.md, entry 007.
+# AI Assistance Disclosure: Claude Code (Claude Opus 5.5), 2026-11-12. Scope: added REDIS_URL. Human review: pending (Karthika). Details: ai/usage-log.md, entry 008.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chat-config
+  namespace: foc
+  labels: { app.kubernetes.io/name: chat-service, app.kubernetes.io/part-of: foc }
+data: # ports here need to match containerPort and probes in *-service.yaml file
+  PORT: "3005"
+  PGDATABASE: chat_service
+  ORDER_SERVICE_URL: http://order-service.foc.svc.cluster.local:3003
+  USER_SERVICE_PUBLIC_KEY_PATH: /app/keys/public.pem
+  # Socket.IO Redis adapter (chat-redis.yaml); lets chat pods share chat rooms.
+  # Shares chat rooms between chat pods (see k8s/README.md, "Chat autoscaling").
+  REDIS_URL: redis://chat-redis:6379

@@ -1,0 +1,83 @@
+# AI Assistance Disclosure: Claude Opus (Cursor), 2026-11-05.
+# Prompt: improve index.ts to ensure supplier/order pub-sub works for the supplier cache.
+# Scope: optional RABBITMQ_URL for supplier event publishing.
+# Author review: Done added in RabbitMQ to local compose for testing @sunpterodactyl.
+#
+# Run from inside supplier-service/:  docker compose up --build
+#
+# Ports are not published here because this file is included by the root Compose,
+# where services communicate over the internal Docker network.
+# compose.override.yaml publishes ports only for standalone development.
+#
+# Schema + fixture seed (03) + campus JSON import (04) run once when the
+# volume is empty. `docker compose down -v` resets the data.
+
+services:
+  supplier-db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - supplier_service_pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - ./data/campus_suppliers.json:/seed/campus_suppliers.json:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [internal]
+
+  supplier-service:
+    # Context is the repo root so Docker can COPY shared/.
+    build:
+      context: ..
+      dockerfile: supplier-service/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+    # /health pings the DB
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3002/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    environment:
+      DATABASE_URL: 'postgresql://postgres:${POSTGRES_PASSWORD}@supplier-db:5432/${POSTGRES_DB}'
+      PORT: '3002'
+      GRPC_PORT: '50052'
+      # Other services by service name (the code defaults to localhost).
+      USER_GRPC_ADDR: user-service:50051
+      ORDER_GRPC_ADDR: order-service:50053
+      CREDIT_GRPC_ADDR: credit-service:50054
+      # Broker by service name on the internal network (full stack).
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      USER_SERVICE_PUBLIC_KEY_PATH: /app/keys/public.pem
+    volumes:
+      # Fails at start if user-service's public key is missing
+      # (run `npm run keys:generate` in user-service first).
+      - type: bind
+        source: ../user-service/keys/public.pem
+        target: /app/keys/public.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [internal]
+
+# Private network for service-to-service traffic. Every service's compose file
+# declares the same `internal`, the root compose merges them into one network.
+networks:
+  internal:
+
+volumes:
+  supplier_service_pgdata:

@@ -1,0 +1,21 @@
+apiVersion: autoscaling/v2   
+kind: HorizontalPodAutoscaler  
+metadata:
+  name: credit-service
+  namespace: foc
+  labels: { app.kubernetes.io/name: credit-service, app.kubernetes.io/part-of: foc }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: credit-service
+  minReplicas: 2 # to fit with our 99% availability and zero-downtime deployment NFRs
+  maxReplicas: 6 # to meet N1.1, but should settle real number with load test
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 } # should also be adjusted after load testing 
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 120   # don't drop pods the moment a spike ends

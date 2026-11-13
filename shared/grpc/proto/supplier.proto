@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package supplier;
+
+service SupplierService {
+  rpc GetSupplier(GetSupplierRequest) returns (Supplier);
+}
+
+message GetSupplierRequest {
+  // Drizzle/Supabase uses a positive bigint identity, not a UUID.
+  // The JS loader represents uint64 values as decimal strings.
+  uint64 supplier_id = 1;
+}
+
+message Supplier {
+  uint64 supplier_id = 1;
+  string name = 2;
+  string type = 3;
+  string building_name = 4;
+  int32 floor = 5;
+  string location_description = 6;
+  double latitude = 7;
+  double longitude = 8;
+  optional string starting_time = 9;
+  optional string closing_time = 10;
+  optional string image_url = 11;
+  // Existing repository methods exclude soft-deleted suppliers.
+}

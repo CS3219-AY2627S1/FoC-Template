@@ -1,0 +1,56 @@
+# AI Assistance Disclosure: Claude Code (Claude Opus 5.5), 2026-11-12.
+# Scope: added CHAT_SERVICE_URL so nginx can forward /backend/chat to chat-service.
+# Details: ai/usage-log.md, entry 007.
+# UI: nginx serves the built app and forwards /backend/* to each service.
+# The only part of the app exposed outside the cluster (LoadBalancer).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui
+  namespace: foc
+  labels: { app.kubernetes.io/name: ui, app.kubernetes.io/part-of: foc }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: ui }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: ui, app.kubernetes.io/part-of: foc }
+    spec:
+      containers:
+        - name: ui
+          image: ghcr.io/ay2627s1-cs3219-p22/foc/ui:latest
+          imagePullPolicy: Always   # latest moves on every build, so always check GHCR
+          ports:
+            - { name: http, containerPort: 80 }
+          env:
+            # nginx looks up service names itself and needs the cluster DNS IP
+            - { name: DNS_RESOLVER, value: "10.100.0.10" }
+            # full names, because nginx does not add the namespace search domains
+            - { name: USER_SERVICE_URL, value: "http://user-service.foc.svc.cluster.local:3001" }
+            - { name: SUPPLIER_SERVICE_URL, value: "http://supplier-service.foc.svc.cluster.local:3002" }
+            - { name: ORDER_SERVICE_URL, value: "http://order-service.foc.svc.cluster.local:3003" }
+            - { name: CREDIT_SERVICE_URL, value: "http://credit-service.foc.svc.cluster.local:3004" }
+            - { name: CHAT_SERVICE_URL, value: "http://chat-service.foc.svc.cluster.local:3005" }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 128Mi }
+---  # public entry point: AWS creates a load balancer, its hostname is the app's link
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+  namespace: foc
+  labels: { app.kubernetes.io/name: ui, app.kubernetes.io/part-of: foc }
+spec:
+  type: LoadBalancer
+  selector: { app.kubernetes.io/name: ui }
+  ports:
+    - { name: http, port: 80, targetPort: http }

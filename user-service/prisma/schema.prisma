@@ -1,0 +1,121 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (Claude Opus), dates: 2026-09-25 – 2026-10-19
+// Scope: AI generated the author-specified User model and Roles enum, then
+// the RefreshToken model and User relation, the previousTokenHash column for
+// in-place rotation, and the SystemBootstrap and AdminRoleChange models.
+// Author review: Author specified the models, fields and the previous-hash
+// approach, reviewed and approved. See user-service/ai/usage-log.md, entries
+// 001, 010, 017, 018, 023.
+//
+// AI Assistance Disclosure:
+// Tool: OpenAI Codex, 2026-11-02 (Asia/Singapore).
+// Scope: AI added the author-specified ArchivedUser retention model containing
+// only email, the old user id, deletion time, and purge time, with an index on
+// purgeAfter. Author reviewed the changes line by line, manually tested and
+// confirmed the behaviour, approved the implementation. See
+// user-service/ai/usage-log.md, entry 023.
+
+// Prisma schema for the User Service.
+// Schema changes go through `prisma migrate dev`, never `db push`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// RBAC: an account can hold multiple roles at once, so roles are an enum array
+// (Roles[]), never a single field.
+enum Roles {
+  USER
+  ADMINISTRATOR
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  firstName    String
+  lastName     String
+  email        String   @unique
+  passwordHash String // bcrypt hash
+  roles        Roles[]  @default([USER])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+}
+
+// Kept for up to 4 years after deletion, so a returning user can't reset their
+// credits. Holds only the email and old id; no other personal data.
+model ArchivedUser {
+  email      String   @id
+  userId     String
+  deletedAt  DateTime @default(now())
+  purgeAfter DateTime
+
+  @@index([purgeAfter])
+}
+
+// Transactional outbox: each user event row is written in the same transaction
+// as the change it reports (sign-up, deletion, restore). A background
+// dispatcher is the only process that talks to RabbitMQ, so a broker outage
+// cannot fail those requests.
+model UserOutbox {
+  eventId     String    @id @map("event_id") @db.Uuid
+  queue       String
+  body        String
+  createdAt   DateTime  @default(now()) @map("created_at")
+  publishedAt DateTime? @map("published_at")
+  attempts    Int       @default(0)
+  lastError   String?   @map("last_error")
+  // Set for rows whose body must not outlive delivery (user.restored links old and new ids).
+  deleteOnPublish Boolean @default(false) @map("delete_on_publish")
+
+  @@map("user_outbox")
+}
+
+// One row per login session, for its whole life: rotation swaps the token on
+// this same row, so every change to a session serializes on one row lock.
+// The raw token only ever lives in the client's httpOnly cookie; we store its
+// SHA-256 hash, so a DB leak exposes no sessions.
+model RefreshToken {
+  id                String    @id @default(uuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash         String    @unique
+  previousTokenHash String?   @unique // the token just rotated away; lets logout still find the session
+  expiresAt         DateTime
+  revokedAt         DateTime? // set on logout; non-null = session ended
+  createdAt         DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// Singleton row (id is always 1): exists once the first admin was created.
+// Bootstrap refuses to run again once it exists — even if admins are later
+// revoked — and the fixed id rejects a second concurrent insert.
+model SystemBootstrap {
+  id            Int      @id @default(1)
+  initializedAt DateTime @default(now())
+  adminUserId   String
+}
+
+enum AdminRoleAction {
+  GRANT
+  REVOKE
+}
+
+// Append-only audit of Administrator role changes. Plain ids, no FK to User:
+// the history must outlive the accounts it mentions.
+model AdminRoleChange {
+  id        String          @id @default(uuid())
+  actorId   String? // null = system bootstrap
+  targetId  String
+  action    AdminRoleAction
+  createdAt DateTime        @default(now())
+
+  @@index([targetId])
+}

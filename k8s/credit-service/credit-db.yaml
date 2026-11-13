@@ -1,0 +1,67 @@
+# holds two kubernetes objects, a service that gives the database a stable address and a stateful set that runs it and keeps data
+# in compose credit-service and credit-db are separate entries that reach each other by name, but Kubernetes needs service defined for each one
+# this service sends traffic to postgres pod, port 5432, used by credit app and migrate initContainer
+apiVersion: v1   # specifies API version, typically use v1 for services
+kind: Service    # defines resource type
+metadata:        # identifying information
+  name: credit-db
+  namespace: foc      # standardised for all the services
+  labels: { app.kubernetes.io/name: credit-db, app.kubernetes.io/part-of: foc }
+spec:
+  clusterIP: None
+  selector: { app.kubernetes.io/name: credit-db }       # match criteria to link service with pods
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: apps/v1        # typically used for deployments and statefulsets
+kind: StatefulSet         # like deployment but each pod keeps a fixed name and its own storage
+metadata:
+  name: credit-db
+  namespace: foc
+  labels: { app.kubernetes.io/name: credit-db, app.kubernetes.io/part-of: foc }
+spec:
+  serviceName: credit-db  # links to the service above, runs one pod and identifies which pods it merges
+  replicas: 1
+  selector:      # finds the pods, my pods have this label
+    matchLabels: { app.kubernetes.io/name: credit-db }
+  template:      # blueprint for creating the pods, new pods have this label
+    metadata:
+      labels: { app.kubernetes.io/name: credit-db, app.kubernetes.io/part-of: foc }
+    spec:
+      # nodeSelector: { role: credit }   # enable on EC2; leave off for local k3d
+      containers:
+        - name: postgres
+          image: postgres:17
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:     # variables required, only holds reference to secret
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: credit-secrets, key: PGUSER } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: credit-secrets, key: PGPASSWORD } }
+            - name: POSTGRES_DB
+              valueFrom: { configMapKeyRef: { name: credit-config, key: PGDATABASE } }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:   # runs pg_isgready every 5s, pod gets no traffic until it passes
+            exec: { command: ['sh', '-c', 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'] }
+            periodSeconds: 5
+          livenessProbe:   # runs same check every 10s after a 30s delay, restarts the container if it keeps failing
+            exec: { command: ['sh', '-c', 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'] }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:     # reserves the memory needed
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:      # postgres stores its files here
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]   # only one node can mount the disk at a time, data survives restarts and deleting StatefulSet
+        resources:
+          requests: { storage: 2Gi }

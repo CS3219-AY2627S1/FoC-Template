@@ -1,0 +1,15 @@
+# Lists the user app manifests for `kubectl apply -k`.
+# Grok 4.7, 2026-11-09: lists the user app manifests for `kubectl apply -k`.
+# Review pending. See ai/usage-log.md, entry 003.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - user-db.yaml
+  - user-redis.yaml
+  - user-config.yaml
+  - user-service.yaml
+images:
+  - name: ghcr.io/ay2627s1-cs3219-p22/foc/user-service
+    newTag: latest
+  - name: ghcr.io/ay2627s1-cs3219-p22/foc/user-service-migrate
+    newTag: latest

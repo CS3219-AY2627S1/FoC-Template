@@ -1,0 +1,16 @@
+# used to manage non sensitive configuration data so they aren't hardcoded in image
+# after applying a change, run kubectl rollout restart deployment/supplier-service -n foc
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: supplier-config
+  namespace: foc
+  labels: { app.kubernetes.io/name: supplier-service, app.kubernetes.io/part-of: foc }
+data: # ports here need to match containerPort and probes in *-service.yaml file
+  PGDATABASE: supplier_service
+  PORT: "3002"
+  USER_SERVICE_PUBLIC_KEY_PATH: /app/keys/public.pem
+  USER_GRPC_ADDR: user-service:50051
+  ORDER_GRPC_ADDR: dns:///order-service:50053
+  CREDIT_GRPC_ADDR: dns:///credit-service:50054
+

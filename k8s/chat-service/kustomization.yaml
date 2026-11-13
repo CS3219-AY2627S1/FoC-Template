@@ -1,0 +1,15 @@
+# AI Assistance Disclosure: Claude Code (Claude Opus 5.5), 2026-11-12.
+# Scope: lists the chat manifests for `kubectl apply -k`, copied from supplier's kustomization.yaml without the configMapGenerator. added chat-redis and the (disabled) chat-hpa.
+# Details: ai/usage-log.md, entry 007, 008.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - chat-db.yaml
+  - chat-config.yaml
+  - chat-service.yaml
+  - chat-redis.yaml
+  - chat-hpa.yaml
+images:
+  - name: ghcr.io/ay2627s1-cs3219-p22/foc/chat-service
+    newTag: latest

@@ -1,0 +1,14 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (Claude Opus), date: 2026-09-25
+# Scope: AI generated this ignore file.
+# Author review: Author reviewed and approved. See
+# user-service/ai/usage-log.md, entry 001.
+
+node_modules
+dist
+.env
+.env.*
+!.env.example
+.git
+*.log
+keys

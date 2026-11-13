@@ -1,0 +1,46 @@
+# AI Assistance Disclosure: Claude Opus (Cursor), 2026-11-11.
+# Scope: Redis for user-service OTP codes and pending signups.
+# Codes expire in minutes; no password and no disk. A restart drops in-flight OTPs.
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-redis
+  namespace: foc
+  labels: { app.kubernetes.io/name: user-redis, app.kubernetes.io/part-of: foc }
+spec:
+  selector: { app.kubernetes.io/name: user-redis }
+  ports:
+    - { name: redis, port: 6379, targetPort: redis }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-redis
+  namespace: foc
+  labels: { app.kubernetes.io/name: user-redis, app.kubernetes.io/part-of: foc }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: user-redis }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: user-redis, app.kubernetes.io/part-of: foc }
+    spec:
+      # nodeSelector: { role: user }   # enable on EC2; leave off for local k3d
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          ports:
+            - { name: redis, containerPort: 6379 }
+          readinessProbe:
+            exec: { command: ['redis-cli', 'ping'] }
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            exec: { command: ['redis-cli', 'ping'] }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 128Mi }

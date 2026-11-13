@@ -1,0 +1,46 @@
+# AI Assistance Disclosure: Claude Opus (Cursor), 2026-11-09.
+# Scope: Redis for the Order supplier lookup cache; matches compose redis:7.
+# Cache only: no password, no persistent volume. A restart is a cold cache.
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-redis
+  namespace: foc
+  labels: { app.kubernetes.io/name: order-redis, app.kubernetes.io/part-of: foc }
+spec:
+  selector: { app.kubernetes.io/name: order-redis }
+  ports:
+    - { name: redis, port: 6379, targetPort: redis }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-redis
+  namespace: foc
+  labels: { app.kubernetes.io/name: order-redis, app.kubernetes.io/part-of: foc }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: order-redis }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: order-redis, app.kubernetes.io/part-of: foc }
+    spec:
+      # nodeSelector: { role: order }   # enable on EC2; leave off for local k3d
+      containers:
+        - name: redis
+          image: redis:7
+          ports:
+            - { name: redis, containerPort: 6379 }
+          readinessProbe:
+            exec: { command: ['redis-cli', 'ping'] }
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            exec: { command: ['redis-cli', 'ping'] }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 128Mi }

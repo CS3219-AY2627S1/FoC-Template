@@ -1,0 +1,52 @@
+{
+  "name": "user-service",
+  "version": "0.1.0",
+  "description": "User Service for Friend on Campus (FoC) — accounts, auth, profiles, RBAC.",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "keys:generate": "mkdir -p keys && openssl genpkey -algorithm RSA -out keys/private.pem -pkeyopt rsa_keygen_bits:2048 && openssl rsa -in keys/private.pem -pubout -out keys/public.pem",
+    "prebuild": "npm run build --prefix ../shared/messaging && npm run build --prefix ../shared/grpc",
+    "keys:otp": "mkdir -p keys && openssl rand -base64 32 > keys/otp.key",
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "format": "prettier --write .",
+    "admin:create": "node dist/scripts/createAdmin.js",
+    "admin:create:dev": "tsx src/scripts/createAdmin.ts",
+    "events:publish": "tsx src/events/userCreated.ts",
+    "pretest": "npm run build --prefix ../shared/messaging",
+    "test": "tsx --test test/**/*.test.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1166.0",
+    "@foc/grpc": "0.1.0",
+    "@foc/messaging": "file:../shared/messaging",
+    "@grpc/grpc-js": "^1.14.5",
+    "@grpc/proto-loader": "^0.8.1",
+    "@prisma/client": "^6.19.3",
+    "@types/nodemailer": "^8.0.2",
+    "@types/redis": "^4.0.10",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^18.0.3",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^10.1.2",
+    "redis": "^6.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.10.0",
+    "prettier": "^3.6.0",
+    "prisma": "^6.19.3",
+    "tsx": "^4.20.0",
+    "typescript": "^6.0.0"
+  }
+}

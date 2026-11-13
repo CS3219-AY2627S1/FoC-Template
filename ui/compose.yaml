@@ -1,0 +1,37 @@
+# AI-assisted (Claude), reviewed and tested by Maliha
+# Runs the UI container (nginx serving the built app and proxying /backend/*).
+# Standalone, from inside ui/:  docker compose up -d --build
+# and open http://localhost:8080
+#
+# The UI is the only service the browser needs, so its port is published here
+# (also in the full stack); the backends stay on the internal network.
+# compose.override.yaml points the proxy at backends running on your machine
+# when you run this folder on its own.
+
+services:
+  ui:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${UI_PORT:-8080}:80'
+    environment:
+      # Backends by service name on the internal network (full stack).
+      USER_SERVICE_URL: http://user-service:3001
+      SUPPLIER_SERVICE_URL: http://supplier-service:3002
+      ORDER_SERVICE_URL: http://order-service:3003
+      CREDIT_SERVICE_URL: http://credit-service:3004
+      CHAT_SERVICE_URL: http://chat-service:3005
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1/health']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    # public: where outside traffic comes in (the published port).
+    # internal: where the backends are. nginx is the only container on both.
+    networks: [public, internal]
+
+networks:
+  public:
+  # Private network for service-to-service traffic. Every service's compose file
+  # declares the same `internal`, the root compose merges them into one network.
+  internal:

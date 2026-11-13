@@ -1,0 +1,29 @@
+# AI Assistance Disclosure: Claude Code (Claude Opus 5.5), 2026-11-12.
+# Scope: chat-service autoscaling, copied from credit-hpa.yaml.
+# Details: ai/usage-log.md, entry 008.
+# Works because chat-service shares rooms through the Socket.IO Redis adapter
+# and the UI connects with WebSocket only. Without those, a second pod would
+# split users between pods and their messages would not reach each other.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: chat-service
+  namespace: foc
+  labels: { app.kubernetes.io/name: chat-service, app.kubernetes.io/part-of: foc }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: chat-service
+  minReplicas: 2 # a restart or deploy never drops every chat at once
+  maxReplicas: 6 # same ceiling as order and credit; settle with a load test
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }
+  behavior:
+    scaleDown:
+      # removing a pod disconnects its chats (they reconnect to another pod),
+      # so wait longer than order/credit before scaling down
+      stabilizationWindowSeconds: 300

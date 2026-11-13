@@ -1,0 +1,83 @@
+# the service in this file sends traffic to credit app pods, port 50054, 3004, used by other services calling credit
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credit-service
+  namespace: foc
+  labels: { app.kubernetes.io/name: credit-service, app.kubernetes.io/part-of: foc }
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: credit-service }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: credit-service, app.kubernetes.io/part-of: foc }
+    spec:
+      # nodeSelector: { role: credit }   # enable on EC2; leave off for local k3d
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000                  # the image's "node" user
+      terminationGracePeriodSeconds: 30
+      initContainers:   # applies any new database migrations, only relevant for Credit
+        - name: migrate
+          image: ghcr.io/ay2627s1-cs3219-p22/foc/credit-service:latest
+          imagePullPolicy: Always   # latest moves on every build, so always check GHCR
+          command: ['node', 'migrations/run-migrations.cjs']
+          envFrom:
+            - configMapRef: { name: credit-config }
+            - secretRef: { name: credit-secrets }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 128Mi }
+      containers:
+        - name: credit-service
+          image: ghcr.io/ay2627s1-cs3219-p22/foc/credit-service:latest
+          imagePullPolicy: Always   # latest moves on every build, so always check GHCR
+          ports:
+            - { name: grpc, containerPort: 50054 }
+            - { name: http, containerPort: 3004 }
+          envFrom:  # loads settings and secrets from the other yaml files
+            - configMapRef: { name: credit-config }
+            - secretRef: { name: credit-secrets }
+          volumeMounts:
+            - name: user-public-key
+              mountPath: /run/credit/user-service-public.pem
+              subPath: public.pem
+              readOnly: true
+            - name: logs
+              mountPath: /repo/credit-service/logs
+          readinessProbe:  # calls /health every 10s and stops sending traffic to the pod if it keeps failing, for eg if database is down
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe: # checks that grpc port accepts connections and restarts container if it keeps failing
+            tcpSocket: { port: grpc }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          lifecycle:
+            preStop:  # waits 5s before shutdown so traffic can move away, allows 30s in total
+              sleep: { seconds: 5 }       # let traffic drain before SIGTERM
+          resources:
+            requests: { cpu: 250m, memory: 128Mi }
+            limits: { memory: 256Mi }
+          securityContext:  # bcs of this container logs need their own mount
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+      volumes:
+        - name: user-public-key
+          configMap: { name: user-public-key }
+        - name: logs
+          emptyDir: {}
+---  # how other pods reach the app
+apiVersion: v1
+kind: Service
+metadata:
+  name: credit-service
+  namespace: foc
+  labels: { app.kubernetes.io/name: credit-service, app.kubernetes.io/part-of: foc }
+spec:
+  clusterIP: None # headless: DNS returns every pod IP so gRPC clients can balance across pods
+  selector: { app.kubernetes.io/name: credit-service }
+  ports:
+    - { name: grpc, port: 50054, targetPort: grpc, appProtocol: grpc }
+    - { name: http, port: 3004, targetPort: http }

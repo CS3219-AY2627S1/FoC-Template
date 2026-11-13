@@ -1,0 +1,171 @@
+# AI Assistance Disclosure: Grok 4.7, 2026-11-09.
+# Scope: deploy job that rolls the published image out to EKS on main.
+# Details: ai/usage-log.md, entry 003. Human review pending.
+
+name: Credit Service CI/CD
+
+on:
+  push:
+    branches: [main] #make sure this only runs when we push into main 
+    paths: #since this lives in my repo root i will define paths CLEARLY
+      - 'credit-service/**'
+      - 'shared/grpc/**' 
+      - 'shared/messaging/**' 
+      - '.github/workflows/credit-service.yaml' 
+      - '.npmrc'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'user-service/proto/**'
+      - 'order-service/grpc/package.json'
+      - 'supplier-service/package.json'
+      - 'user-service/package.json'
+      - 'eslint.config.mjs'
+      - 'k8s/credit-service/**'
+
+
+  pull_request:
+    branches: [main]
+    paths:
+        - 'credit-service/**'
+        - 'shared/grpc/**' 
+        - 'shared/messaging/**' 
+        - '.github/workflows/credit-service.yaml'  
+        - '.npmrc'
+        - 'package.json'
+        - 'package-lock.json'
+        - 'user-service/proto/**'
+        - 'eslint.config.mjs'
+        - 'k8s/credit-service/**'
+
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  # Nested under the repo name so GITHUB_TOKEN can publish (GHCR lowercases this).
+  IMAGE_NAME: ${{ github.repository }}/credit-service
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+        services:
+            postgres:
+                image: postgres:17
+                env:
+                    POSTGRES_USER: credit_service
+                    POSTGRES_PASSWORD: credit_service
+                    POSTGRES_DB: credit_service
+                ports: ['5432:5432']
+                options: >-
+                    --health-cmd "pg_isready -U credit_service -d credit_service"
+                    --health-interval 5s --health-timeout 5s --health-retries 10
+        env:
+            PGHOST: 127.0.0.1
+            PGPORT: '5432'
+            PGUSER: credit_service
+            PGPASSWORD: credit_service
+            PGDATABASE: credit_service
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                node-version: 22
+                cache: npm
+            - run: npm ci
+            - run: npm run build -w @foc/grpc -w @foc/messaging
+            - run: npm test -w credit-service
+
+    lint:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                node-version: 22
+                cache: npm
+            - run: npm ci
+            - run: npx eslint credit-service
+
+    build-and-push-image:
+        needs: test
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            packages: write
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Log in to GHCR
+              if: github.event_name != 'pull_request'
+              uses: docker/login-action@v3
+              with:
+                registry: ${{ env.REGISTRY }}
+                username: ${{ github.actor }}
+                password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Extract Docker metadata
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+                tags: |
+                    type=raw,value=latest
+                    type=sha,format=long
+
+            - name: Build and push image
+              uses: docker/build-push-action@v6
+              with:
+                context: .
+                file: credit-service/Dockerfile
+                target: runtime
+                push: ${{ github.event_name != 'pull_request' }}
+                tags: ${{ steps.meta.outputs.tags }}
+                labels: ${{ steps.meta.outputs.labels }}
+                cache-from: type=gha
+                cache-to: type=gha,mode=max
+
+    # CD only. Pull requests still run test, lint, and the image build above.
+    deploy:
+        concurrency:
+          group: credit-service-deploy-main
+          cancel-in-progress: true
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+        needs: [test, build-and-push-image]
+        runs-on: ubuntu-latest
+        permissions:
+          contents: read
+          id-token: write
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                role-to-assume: arn:aws:iam::200340799641:role/foc-github-deploy
+                aws-region: ap-southeast-1
+
+            - name: Install kubectl
+              uses: azure/setup-kubectl@v4
+
+            - name: Deploy to EKS
+              run: |
+                set -euo pipefail
+                if ! aws eks describe-cluster --name foc >/tmp/cluster.out 2>/tmp/cluster.err; then
+                  echo "::warning title=EKS unavailable::Cluster foc is down; skipping deploy of sha-${GITHUB_SHA}"
+                  echo "--- aws error ---"
+                  cat /tmp/cluster.err
+                  echo "skipped=true" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+                aws eks update-kubeconfig --name foc --region ap-southeast-1
+                sed -i "s/newTag: latest/newTag: sha-${GITHUB_SHA}/" k8s/credit-service/kustomization.yaml
+                kubectl apply -k k8s/credit-service
+                kubectl -n foc rollout status deployment/credit-service --timeout=5m

@@ -1,0 +1,63 @@
+# AI-assisted (Claude), reviewed and tested by Maliha
+# Run from inside chat-service/:  docker compose up --build
+# Values come from chat-service/.env (cp .env.example .env first).
+#
+# Ports are not published here because this file is included by the root
+# Compose, where services talk over the internal network.
+# compose.override.yaml publishes them for standalone development.
+
+services:
+  chat-db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - chat_service_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [internal]
+
+  chat-service:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      chat-db:
+        condition: service_healthy
+    # tables are created on startup (schema.sql), so no separate migrate job
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3005/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    environment:
+      DATABASE_URL: 'postgresql://postgres:${POSTGRES_PASSWORD}@chat-db:5432/${POSTGRES_DB}'
+      PORT: '3005'
+      ORDER_SERVICE_URL: http://order-service:3003
+      USER_SERVICE_PUBLIC_KEY_PATH: /app/keys/public.pem
+    volumes:
+      # run `npm run keys:generate` in user-service first
+      - type: bind
+        source: ../user-service/keys/public.pem
+        target: /app/keys/public.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [internal]
+
+networks:
+  internal:
+
+volumes:
+  chat_service_pgdata:

@@ -1,0 +1,19 @@
+# used to manage non sensitive configuration data so they aren't hardcoded in image
+# after applying a change, run kubectl rollout restart deployment/order-service -n foc
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-config
+  namespace: foc
+  labels: { app.kubernetes.io/name: order-service, app.kubernetes.io/part-of: foc }
+data: # ports here need to match containerPort and probes in *-service.yaml file
+  PGDATABASE: order_service
+  PORT: "3003"
+  USER_SERVICE_PUBLIC_KEY_PATH: /run/keys/user-public.pem
+  USER_GRPC_ADDR: user-service:50051
+  SUPPLIER_GRPC_ADDR: supplier-service:50052
+  CREDIT_GRPC_ADDR: dns:///credit-service:50054
+  # Supplier lookup cache. Unset would disable it; order-service then uses Supplier gRPC only.
+  REDIS_URL: redis://order-redis:6379
+  SUPPLIER_CACHE_TTL_SECONDS: "600"
+

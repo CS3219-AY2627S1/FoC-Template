@@ -1,0 +1,69 @@
+# AI Assistance Disclosure: Claude Code (Claude Opus 5.5), 2026-11-12.
+# Scope: chat-service Postgres, copied from supplier-db.yaml without the init and seed mounts, with a 1Gi volume.
+# Details: ai/usage-log.md, entry 007.
+
+apiVersion: v1   # specifies API version, typically use v1 for services
+kind: Service    # defines resource type
+metadata:        # identifying information
+  name: chat-db
+  namespace: foc      # standardised for all the services
+  labels: { app.kubernetes.io/name: chat-db, app.kubernetes.io/part-of: foc }
+spec:
+  clusterIP: None
+  selector: { app.kubernetes.io/name: chat-db }       # match criteria to link service with pods
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: apps/v1        # typically used for deployments and statefulsets
+kind: StatefulSet         # like deployment but each pod keeps a fixed name and its own storage
+metadata:
+  name: chat-db
+  namespace: foc
+  labels: { app.kubernetes.io/name: chat-db, app.kubernetes.io/part-of: foc }
+spec:
+  serviceName: chat-db  # links to the service above, runs one pod and identifies which pods it merges
+  replicas: 1
+  selector:      # finds the pods, my pods have this label
+    matchLabels: { app.kubernetes.io/name: chat-db }
+  template:      # blueprint for creating the pods, new pods have this label
+    metadata:
+      labels: { app.kubernetes.io/name: chat-db, app.kubernetes.io/part-of: foc }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:     # variables required, only holds reference to secret
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: chat-secrets, key: PGUSER } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: chat-secrets, key: PGPASSWORD } }
+            - name: POSTGRES_DB
+              valueFrom: { configMapKeyRef: { name: chat-config, key: PGDATABASE } }
+            - name: PGUSER
+              valueFrom: { secretKeyRef: { name: chat-secrets, key: PGUSER } }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:   # runs pg_isready every 5s, pod gets no traffic until it passes
+            exec: { command: ['sh', '-c', 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'] }
+            periodSeconds: 5
+          livenessProbe:   # runs same check every 10s after a 30s delay, restarts the container if it keeps failing
+            exec: { command: ['sh', '-c', 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'] }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:     # reserves the memory needed
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:      # postgres stores its files here
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]   # only one node can mount the disk at a time, data survives restarts and deleting StatefulSet
+        resources:
+          requests: { storage: 1Gi }

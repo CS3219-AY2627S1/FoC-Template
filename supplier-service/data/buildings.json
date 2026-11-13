@@ -1,0 +1,21 @@
+[
+  { "name": "COM1", "aliases": ["com1", "school of computing"], "lat": "1.295000", "lng": "103.773800" },
+  { "name": "COM2", "aliases": ["com2"], "lat": "1.294200", "lng": "103.774000" },
+  { "name": "COM3", "aliases": ["com3"], "lat": "1.294167", "lng": "103.773611" },
+  { "name": "AS5", "aliases": ["as5"], "lat": "1.295400", "lng": "103.772000" },
+  { "name": "AS8", "aliases": ["as8"], "lat": "1.295833", "lng": "103.772222" },
+  { "name": "The Deck", "aliases": ["the deck", "deck"], "lat": "1.294600", "lng": "103.772400" },
+  { "name": "Frontier", "aliases": ["frontier", "faculty of science", "science"], "lat": "1.296400", "lng": "103.780200" },
+  { "name": "YIH", "aliases": ["yih", "yusof ishak", "yusof ishak house"], "lat": "1.298400", "lng": "103.774600" },
+  { "name": "LT27", "aliases": ["lt27", "lt 27"], "lat": "1.296944", "lng": "103.780556" },
+  { "name": "S16", "aliases": ["s16", "science block s16"], "lat": "1.296700", "lng": "103.780000" },
+  { "name": "MD11", "aliases": ["md11", "medicine"], "lat": "1.296000", "lng": "103.781500" },
+  { "name": "University Hall", "aliases": ["university hall", "uhall"], "lat": "1.297800", "lng": "103.775800" },
+  { "name": "Engineering", "aliases": ["engineering", "cde", "e3", "e4", "e2"], "lat": "1.300200", "lng": "103.771500" },
+  { "name": "PGP", "aliases": ["pgp", "prince george", "prince george's park"], "lat": "1.291200", "lng": "103.780300" },
+  { "name": "UTown", "aliases": ["utown", "university town", "town plaza", "create"], "lat": "1.305600", "lng": "103.773000" },
+  { "name": "Stephen Riady Centre", "aliases": ["stephen riady", "src"], "lat": "1.304400", "lng": "103.772600" },
+  { "name": "Kent Vale", "aliases": ["kent vale"], "lat": "1.303000", "lng": "103.769200" },
+  { "name": "Kent Ridge", "aliases": ["kent ridge"], "lat": "1.296600", "lng": "103.776400" },
+  { "name": "Innovation 4.0", "aliases": ["innovation4.0", "innovation 4.0"], "lat": "1.304800", "lng": "103.772000" }
+]

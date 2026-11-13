@@ -1,0 +1,28 @@
+{
+  "name": "foc-services",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "shared/grpc",
+    "order-service/grpc",
+    "credit-service",
+    "shared/messaging",
+    "user-service",
+    "supplier-service"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @foc/grpc --workspace @foc/messaging && npm run build --workspace @foc/order-grpc --workspace @foc/credit-grpc",
+    "test": "npm run test --workspace @foc/grpc",
+    "grpc:generate": "npm run generate --workspace @foc/grpc"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "typescript": "^6.0.0",
+    "typescript-eslint": "^8.72.1"
+  }
+}

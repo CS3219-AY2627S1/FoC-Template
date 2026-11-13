@@ -1,0 +1,15 @@
+# Grok 4.7, 2026-11-09: lists the order app manifests for `kubectl apply -k`.
+# Review pending. See ai/usage-log.md, entry 003.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - order-db.yaml
+  - order-redis.yaml
+  - order-service.yaml
+  - order-config.yaml
+  - order-hpa.yaml
+images:
+  - name: ghcr.io/ay2627s1-cs3219-p22/foc/order-service
+    newTag: latest
+  - name: ghcr.io/ay2627s1-cs3219-p22/foc/order-service-migrate
+    newTag: latest

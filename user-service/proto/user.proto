@@ -1,0 +1,26 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (Claude Opus), date: 2026-09-25
+// Scope: AI generated the gRPC contract for the author-specified endpoint.
+// Author review: Author specified the endpoint and its fields, reviewed and
+// approved. See user-service/ai/usage-log.md, entry 001.
+
+syntax = "proto3";
+
+package user;
+
+// Internal-only RPC surface for other FoC services.
+service UserService {
+  // Fetch a user's public profile by ID.
+  rpc GetPublicProfile(GetPublicProfileRequest) returns (PublicProfile);
+}
+
+message GetPublicProfileRequest {
+  string user_id = 1;
+}
+
+message PublicProfile {
+  string user_id = 1;
+  string username = 2;
+  string first_name = 3;
+  string last_name = 4;
+}

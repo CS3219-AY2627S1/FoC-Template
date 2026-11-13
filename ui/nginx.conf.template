@@ -1,0 +1,79 @@
+# ChatGPT (Codex), 2026-11-03: Proxy Order routes including destination locations; review pending; see ../order-service/usage-log.md.
+# AI-assisted (Claude), reviewed and tested by Maliha
+# Serves the built UI and forwards /backend/* to each service, same as the
+# Vite dev proxy. Only this container is exposed to the browser.
+
+# Socket.IO (chat) upgrades its connection to a WebSocket, which needs these
+# headers passed through. Plain requests keep Connection: close as before.
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  ''      close;
+}
+
+server {
+  listen 80;
+  root /usr/share/nginx/html;
+
+  # Service addresses are looked up per request (not at startup), so the UI
+  # still starts if a service is down and recovers once it comes back
+  resolver ${DNS_RESOLVER} valid=10s ipv6=off;
+
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_connect_timeout 5s;
+
+  location = /health {
+    default_type application/json;
+    return 200 '{"status":"ok"}';
+  }
+
+  location /backend/users {
+    set $users ${USER_SERVICE_URL};
+    rewrite ^/backend(/.*)$ $1 break;
+    proxy_pass $users;
+    # refresh cookie is set on Path=/users, so the browser would never send it back otherwise
+    proxy_cookie_path /users /backend/users;
+  }
+
+  # covers /backend/suppliers and /backend/supplier/:id
+  location /backend/supplier {
+    set $suppliers ${SUPPLIER_SERVICE_URL};
+    rewrite ^/backend(/.*)$ $1 break;
+    proxy_pass $suppliers;
+  }
+
+  location /backend/orders {
+    set $orders ${ORDER_SERVICE_URL};
+    rewrite ^/backend(/.*)$ $1 break;
+    proxy_pass $orders;
+  }
+
+  location /backend/credits {
+    set $credits ${CREDIT_SERVICE_URL};
+    rewrite ^/backend(/.*)$ $1 break;
+    proxy_pass $credits;
+  }
+
+  # REST for admin flags plus the Socket.IO connection at /backend/chat/socket.io
+  location /backend/chat {
+    set $chat ${CHAT_SERVICE_URL};
+    rewrite ^/backend(/.*)$ $1 break;
+    proxy_pass $chat;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    # a chat can sit idle for a while, keep the socket open
+    proxy_read_timeout 1h;
+  }
+
+  # build output has hashed names, so it can be cached for good
+  location /assets/ {
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+  }
+
+  location / {
+    try_files $uri /index.html;
+    add_header Cache-Control "no-cache";
+  }
+}

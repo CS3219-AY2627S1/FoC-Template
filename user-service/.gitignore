@@ -1,0 +1,25 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (Claude Opus), date: 2026-09-25
+# Scope: AI generated this ignore file.
+# Author review: Author decided to ignore .env but not .env.example, reviewed
+# and approved. See user-service/ai/usage-log.md, entry 001.
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Prisma generated client (regenerated via `prisma generate`)
+src/generated/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# JWT signing keys (RS256) — never commit; regenerate locally
+keys/
+
+# Logs
+*.log

@@ -1,0 +1,55 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: foc
+  region: ap-southeast-1
+  version: "1.34"
+
+iam:
+  withOIDC: true  # pods get AWS roles via OIDC (NUS SCP blocks Pod Identity)
+  # eksctl creates these IAM roles + Kubernetes service accounts with the cluster.
+  # A role is tied to this cluster's OIDC ID, so it must be recreated with it.
+  serviceAccounts:
+    - metadata: { name: user-service, namespace: foc }
+      # OTP emails through the SES API (sandbox blocks IAM users, so no SMTP password).
+      # Can only send, and only as the verified sender.
+      attachPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: ["ses:SendEmail", "ses:SendRawEmail"]
+            Resource: "*"
+            Condition:
+              StringEquals:
+                ses:FromAddress: campusdash.otp@gmail.com
+
+accessConfig:
+  accessEntries:
+    - principalARN: arn:aws:iam::200340799641:role/foc-github-deploy  # GitHub Actions CD
+      accessPolicies:
+        - policyARN: arn:aws:eks::aws:cluster-access-policy/AmazonEKSEditPolicy
+          accessScope: { type: namespace, namespaces: [foc] }
+
+vpc:
+  nat:
+    gateway: Disable # for cost-saving
+
+managedNodeGroups:
+  - name: workers
+    instanceType: t3.medium # 2 vCPU, 4 GiB
+    desiredCapacity: 3
+    minSize: 3
+    maxSize: 3 # fixed node count, no node scaling
+    volumeSize: 20 # 20 GiB root disk per worker node
+
+addons:
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+  - name: metrics-server
+  - name: aws-ebs-csi-driver
+    wellKnownPolicies:
+      ebsCSIController: true
+    configurationValues: '{"defaultStorageClass":{"enabled":true}}'
+
+

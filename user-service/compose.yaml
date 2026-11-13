@@ -1,0 +1,137 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (Claude Opus), date: 2026-09-25
+# Scope: AI generated the original compose file (Postgres with healthcheck,
+# service applying migrations before start).
+# Author review: Author specified the containers and startup order, had it
+# explained and approved. See user-service/ai/usage-log.md, entry 001.
+
+# Run from inside user-service/:  docker compose up
+#
+# Common patterns:
+#   docker compose up -d user-db    # just the DB; run the app on host via `npm run dev`
+#   docker compose up               # DB + service together
+#
+# Ports are not published here because this file is included by the root Compose,
+# where services communicate over the internal Docker network.
+# compose.override.yaml publishes ports only for standalone development.
+
+services:
+  user-db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    volumes:
+      - user_service_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+
+  user-migrate:
+    build:
+      context: ..
+      dockerfile: user-service/Dockerfile
+      target: migrate
+    depends_on:
+      user-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: 'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@user-db:5432/${POSTGRES_DB}?schema=public'
+    networks: [internal]
+
+  user-service:
+    build:
+      context: ..
+      dockerfile: user-service/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      user-migrate:
+        condition: service_completed_successfully
+      redis-cache:
+        condition: service_healthy
+    # /health pings the DB
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3001/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    environment:
+      DATABASE_URL: 'postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@user-db:5432/${POSTGRES_DB}?schema=public'
+      PORT: '3001'
+      GRPC_PORT: '50051'
+      ORDER_GRPC_ADDR: order-service:50053
+      # Keys are mounted at runtime (see volumes), never baked into the image.
+      JWT_PRIVATE_KEY_PATH: /app/keys/private.pem
+      JWT_PUBLIC_KEY_PATH: /app/keys/public.pem
+      # Broker by service name on the internal network (full stack).
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      REDIS_URL: redis://redis-cache:6379
+      OTP_HMAC_KEY_PATH: /app/keys/otp.key
+      REDIS_OTP_LUA: /app/scripts/atomic.lua
+      # Mail: Mailpit by default (another container, so not localhost:1025).
+      # EMAIL_TRANSPORT=ses in .env sends through Amazon SES instead
+      # (standalone only: compose.override.yaml mounts your AWS login).
+      EMAIL_TRANSPORT: ${EMAIL_TRANSPORT:-smtp}
+      AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: '${SMTP_FROM:-CampusDash <no-reply@campusdash.local>}'
+    volumes:
+      # Run `npm run keys:generate` first, else service exits at boot.
+      - ./keys:/app/keys:ro
+    networks: [internal]
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit
+    restart: always
+    ports:
+      - "127.0.0.1:8025:8025" # WEB GUI
+      - "127.0.0.1:1025:1025" # SMTP
+    volumes:
+      - ./mailpit-data:/data  # Separate database
+    env_file:
+      - testing.env
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 15s
+      start_period: 10s
+      timeout: 30s      # optional (default is 30s)
+      retries: 3        # optional (default is 3)
+    networks: [internal]
+
+  redis-cache:
+    image: redis:7.4-alpine
+    container_name: local_redis_cache
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks: [internal]
+
+# Private network for service-to-service traffic. Every service's compose file
+# declares the same `internal`, the root compose merges them into one network.
+networks:
+  internal:
+
+volumes:
+  user_service_pgdata:
