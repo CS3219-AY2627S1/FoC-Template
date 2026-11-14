@@ -1,0 +1,296 @@
+import assert from "node:assert/strict";
+import { before, test } from "node:test";
+import { Session } from "../src/models/Session.js";
+import { User } from "../src/models/User.js";
+import { hashPassword, verifyPassword } from "../src/security/password.js";
+import { hashSessionToken } from "../src/security/session-token.js";
+import { authorizationStore } from "../src/security/authorization-state.js";
+import {
+  authenticateUser,
+  EmailNotVerifiedError,
+  createUserSession,
+  registerUser,
+  revokeUserSession,
+  rotateUserSession,
+} from "../src/services/auth.service.js";
+
+const input = {
+  email: "e1234567@u.nus.edu",
+  username: "alice",
+  password: "A test password!",
+};
+let storedUser: InstanceType<typeof User>;
+
+before(async () => {
+  storedUser = new User({
+    email: input.email,
+    username: input.username,
+    passwordHash: await hashPassword(input.password),
+  });
+});
+
+test("registration sends only a hash to persistence and returns safe account fields", async (t) => {
+  process.env.CREDIT_SERVICE_URL = "http://credit-service:3004";
+  process.env.CREDIT_INTERNAL_API_KEY = "test-credit-key";
+  t.after(() => {
+    delete process.env.CREDIT_SERVICE_URL;
+    delete process.env.CREDIT_INTERNAL_API_KEY;
+  });
+  t.mock.method(authorizationStore, "initialize", async () => {});
+  t.mock.method(User, "updateOne", async () => ({ matchedCount: 1 }));
+  let createdId: string | undefined;
+  const creditCall = t.mock.method(globalThis, "fetch", async (url: URL | string | Request, options?: RequestInit) => {
+    assert.equal(url.toString(), `http://credit-service:3004/credit/accounts/${createdId}`);
+    assert.equal(options?.method, "PUT");
+    assert.equal(options?.headers && (options.headers as Record<string, string>).Authorization, "Bearer test-credit-key");
+    assert.deepEqual(JSON.parse(options?.body as string), { isActive: true });
+    return new Response(null, { status: 204 });
+  });
+  let persisted: Record<string, unknown> | undefined;
+  t.mock.method(User, "create", async (document: Record<string, unknown>) => {
+    persisted = document;
+    // Simulate model validation/defaults, not actual database persistence.
+    const user = new User(document);
+    await user.validate();
+    createdId = user._id.toString();
+    return user;
+  });
+
+  // Simulate a caller attempting to inject a privileged account type.
+  const result = await registerUser({ ...input, accountType: "ADMIN" } as typeof input);
+  assert.ok(persisted);
+  assert.deepEqual(Object.keys(persisted).sort(), ["creditSetupNextRetryAt", "creditSetupPending", "email", "emailVerified", "passwordHash", "username"]);
+  assert.equal(persisted.emailVerified, false);
+  assert.equal(persisted.creditSetupPending, true);
+  assert.equal(typeof persisted.passwordHash, "string");
+  assert.notEqual(persisted.passwordHash, input.password);
+  assert.equal(await verifyPassword(input.password, persisted.passwordHash as string), true);
+  assert.deepEqual(Object.keys(result).sort(), ["accountType", "creditSetupPending", "email", "id", "username"]);
+  assert.equal(result.creditSetupPending, false);
+  assert.equal(result.accountType, "USER");
+  assert.equal(result.email, input.email);
+  assert.equal(result.username, input.username);
+  assert.match(result.id, /^[a-f0-9]{24}$/);
+  assert.equal(result.id, createdId);
+  assert.equal(creditCall.mock.callCount(), 1);
+});
+
+test("login retrieves the password hash and accepts valid credentials", async (t) => {
+  t.mock.method(authorizationStore, "read", async () => ({ version: 0, role: "USER", active: true, blocked: false }));
+  t.mock.method(User, "findOne", (filter: unknown) => {
+    assert.deepEqual(filter, { username: input.username });
+    return {
+      select: async (projection: string) => {
+        assert.equal(projection, "+passwordHash");
+        return storedUser;
+      },
+    };
+  });
+  assert.equal(await authenticateUser(input.username, input.password), storedUser);
+});
+
+test("credit setup pending does not prevent login", async (t) => {
+  t.mock.method(authorizationStore, "read", async () => ({ version: 0, role: "USER", active: true, blocked: false }));
+  const pendingUser = new User({ ...storedUser.toObject(), creditSetupPending: true });
+  t.mock.method(User, "findOne", () => ({ select: async () => pendingUser }));
+  assert.equal(await authenticateUser(input.username, input.password), pendingUser);
+});
+
+test("unverified credentials cannot create a login session", async (t) => {
+  const unverified = new User({ ...storedUser.toObject(), emailVerified: false });
+  t.mock.method(User, "findOne", () => ({ select: async () => unverified }));
+  t.mock.method(authorizationStore, "read", async () => { throw new Error("must not consult authorization state"); });
+  await assert.rejects(authenticateUser(input.username, input.password), EmailNotVerifiedError);
+  assert.equal(await authenticateUser(input.username, "wrong-password"), null);
+});
+
+test("a lost database confirmation keeps registration pending for worker reconciliation", async (t) => {
+  const oldUrl = process.env.CREDIT_SERVICE_URL;
+  const oldKey = process.env.CREDIT_INTERNAL_API_KEY;
+  process.env.CREDIT_SERVICE_URL = "http://credit-service:3004";
+  process.env.CREDIT_INTERNAL_API_KEY = "test-credit-key";
+  t.after(() => {
+    if (oldUrl === undefined) delete process.env.CREDIT_SERVICE_URL;
+    else process.env.CREDIT_SERVICE_URL = oldUrl;
+    if (oldKey === undefined) delete process.env.CREDIT_INTERNAL_API_KEY;
+    else process.env.CREDIT_INTERNAL_API_KEY = oldKey;
+  });
+  t.mock.method(authorizationStore, "initialize", async () => {});
+  t.mock.method(User, "create", async (document: Record<string, unknown>) => new User(document));
+  t.mock.method(User, "updateOne", async () => { throw new Error("database write lost"); });
+  t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 204 }));
+  const result = await registerUser(input);
+  assert.equal(result.creditSetupPending, true);
+});
+
+test("unknown account and wrong password both produce authentication failure", async (t) => {
+  let found: typeof storedUser | null = null;
+  t.mock.method(User, "findOne", () => ({ select: async () => found }));
+  assert.equal(await authenticateUser(input.username, input.password), null);
+  found = storedUser;
+  assert.equal(await authenticateUser(input.username, "wrong-password"), null);
+});
+
+test("registration propagates duplicate-key and database failures", async (t) => {
+  let failure: Error = Object.assign(new Error("duplicate key"), { code: 11000 });
+  t.mock.method(User, "create", async () => { throw failure; });
+  await assert.rejects(registerUser(input), (error) => error === failure);
+  failure = new Error("database unavailable");
+  await assert.rejects(registerUser(input), (error) => error === failure);
+});
+
+test("database failure during login is not reported as invalid credentials", async (t) => {
+  const failure = new Error("database unavailable");
+  t.mock.method(User, "findOne", () => ({
+    select: async () => { throw failure; },
+  }));
+  await assert.rejects(authenticateUser(input.username, input.password), (error) => error === failure);
+});
+
+test("session creation stores a hashed token and expiry metadata", async (t) => {
+  let persisted: Record<string, unknown> | undefined;
+  t.mock.method(Session, "create", async (document: Record<string, unknown>) => {
+    persisted = document;
+    return undefined as never;
+  });
+
+  const beforeCreation = Date.now();
+  const token = await createUserSession("507f1f77bcf86cd799439011", 0, "node-test", "127.0.0.1");
+  const afterCreation = Date.now();
+
+  assert.match(token, /^[a-f0-9]{64}$/);
+  assert.ok(persisted);
+  assert.equal(persisted.userId, "507f1f77bcf86cd799439011");
+  assert.equal(persisted.authzVersion, 0);
+  assert.equal(persisted.tokenHash, hashSessionToken(token));
+  assert.equal(persisted.userAgent, "node-test");
+  assert.equal(persisted.ipAddress, "127.0.0.1");
+  assert.ok(persisted.expiresAt instanceof Date);
+
+  const expiry = (persisted.expiresAt as Date).getTime();
+  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+  assert.ok(expiry >= beforeCreation + sevenDays);
+  assert.ok(expiry <= afterCreation + sevenDays);
+});
+
+test("session revocation updates only active, unexpired matching sessions", async (t) => {
+  let filter: Record<string, unknown> | undefined;
+  let update: Record<string, unknown> | undefined;
+  t.mock.method(Session, "updateOne", async (query: Record<string, unknown>, changes: Record<string, unknown>) => {
+    filter = query;
+    update = changes;
+    return undefined as never;
+  });
+
+  const rawToken = "session-token-for-test";
+  await revokeUserSession(rawToken);
+
+  assert.ok(filter);
+  assert.equal(filter.tokenHash, hashSessionToken(rawToken));
+  assert.deepEqual(filter.revokedAt, { $exists: false });
+  assert.ok(filter.expiresAt instanceof Object);
+  assert.ok((filter.expiresAt as { $gt: Date }).$gt instanceof Date);
+  assert.ok(update);
+  assert.ok((update.$set as { revokedAt: Date }).revokedAt instanceof Date);
+});
+
+test("refresh rotation atomically replaces the stored hash and remembers the old hash", async (t) => {
+  t.mock.method(authorizationStore, "read", async () => ({ version: 0, role: "USER", active: true, blocked: false }));
+  const sessionId = "session-id";
+  const activeSession = {
+    _id: sessionId,
+    userId: storedUser._id,
+    expiresAt: new Date(Date.now() + 60_000),
+  };
+  t.mock.method(Session, "findOne", async (query: Record<string, unknown>) => {
+    assert.equal(query.tokenHash, hashSessionToken("old-refresh-token"));
+    assert.deepEqual(query.revokedAt, { $exists: false });
+    assert.ok((query.expiresAt as { $gt: Date }).$gt instanceof Date);
+    return activeSession;
+  });
+  t.mock.method(User, "findById", async (id: unknown) => {
+    assert.equal(id, storedUser._id);
+    return storedUser;
+  });
+  let replacement: Record<string, unknown> | undefined;
+  t.mock.method(Session, "findOneAndUpdate", async (
+    query: Record<string, unknown>, update: Record<string, unknown>,
+  ) => {
+    assert.equal(query._id, sessionId);
+    assert.equal(query.tokenHash, hashSessionToken("old-refresh-token"));
+    replacement = update;
+    return activeSession;
+  });
+
+  const result = await rotateUserSession("old-refresh-token");
+  assert.ok(result);
+  assert.match(result.sessionToken, /^[a-f0-9]{64}$/);
+  assert.notEqual(result.sessionToken, "old-refresh-token");
+  assert.deepEqual(replacement, {
+    $set: { tokenHash: hashSessionToken(result.sessionToken) },
+    $addToSet: { previousTokenHashes: hashSessionToken("old-refresh-token") },
+  });
+  assert.deepEqual(result.user, {
+    id: storedUser._id.toString(), email: storedUser.email,
+    username: storedUser.username, accountType: storedUser.accountType,
+  });
+  assert.equal(result.expiresAt, activeSession.expiresAt);
+});
+
+test("reusing a rotated refresh token revokes its active session", async (t) => {
+  const activeSession = { _id: "session-id" };
+  let findCalls = 0;
+  t.mock.method(Session, "findOne", async (query: Record<string, unknown>) => {
+    findCalls += 1;
+    if (findCalls === 1) {
+      assert.equal(query.tokenHash, hashSessionToken("old-refresh-token"));
+      return null;
+    }
+    assert.deepEqual(query, {
+      previousTokenHashes: hashSessionToken("old-refresh-token"),
+      revokedAt: { $exists: false },
+    });
+    return activeSession;
+  });
+  let revoked: Record<string, unknown> | undefined;
+  t.mock.method(Session, "updateOne", async (query: Record<string, unknown>, update: Record<string, unknown>) => {
+    revoked = { query, update };
+    return undefined as never;
+  });
+
+  assert.equal(await rotateUserSession("old-refresh-token"), null);
+  assert.deepEqual(revoked?.query, { _id: "session-id", revokedAt: { $exists: false } });
+  assert.ok((revoked?.update as { $set: { revokedAt: Date } }).$set.revokedAt instanceof Date);
+});
+
+test("refresh cannot create a new access token for an inactive user", async (t) => {
+  const session = { _id: "session-id", userId: storedUser._id };
+  t.mock.method(Session, "findOne", async () => session);
+  t.mock.method(User, "findById", async () => ({ ...storedUser.toObject(), isActive: false }));
+  let revokeUpdate: Record<string, unknown> | undefined;
+  t.mock.method(Session, "updateOne", async (
+    query: Record<string, unknown>, update: Record<string, unknown>,
+  ) => {
+    revokeUpdate = { query, update };
+    return undefined as never;
+  });
+
+  assert.equal(await rotateUserSession("inactive-user-session-token"), null);
+  assert.deepEqual(revokeUpdate?.query, { _id: "session-id", revokedAt: { $exists: false } });
+  assert.ok((revokeUpdate?.update as { $set: { revokedAt: Date } }).$set.revokedAt instanceof Date);
+});
+
+test("refresh from an older account version is revoked after a role or password change", async (t) => {
+  t.mock.method(Session, "findOne", async () => ({
+    _id: "old-device-session", userId: storedUser._id, authzVersion: 0,
+  }));
+  t.mock.method(User, "findById", async () => new User({ ...storedUser.toObject(), authzVersion: 1 }));
+  const revoke = t.mock.method(Session, "updateOne", async () => ({}));
+  const rotate = t.mock.method(Session, "findOneAndUpdate", async () => {
+    throw new Error("stale refresh must not rotate");
+  });
+
+  assert.equal(await rotateUserSession("old-device-refresh-token"), null);
+  assert.equal(revoke.mock.callCount(), 1);
+  assert.equal(rotate.mock.callCount(), 0);
+});

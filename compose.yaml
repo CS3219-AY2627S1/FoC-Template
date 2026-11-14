@@ -1,0 +1,311 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "always"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - errandboard-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  mongodb:
+    image: mongo:latest
+    entrypoint: ["sh", "/mongodb/start.sh"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: errandboard
+      MONGO_USER_SERVICE_PASSWORD: ${MONGO_USER_SERVICE_PASSWORD}
+      MONGO_SUPPLIER_SERVICE_PASSWORD: ${MONGO_SUPPLIER_SERVICE_PASSWORD}
+      MONGO_ORDER_SERVICE_PASSWORD: ${MONGO_ORDER_SERVICE_PASSWORD}
+      MONGO_CREDIT_SERVICE_PASSWORD: ${MONGO_CREDIT_SERVICE_PASSWORD}
+      MONGO_NOTIFICATION_SERVICE_PASSWORD: ${MONGO_NOTIFICATION_SERVICE_PASSWORD:?Set a Notification service MongoDB password}
+      MONGO_REPLICA_SET_KEY: ${MONGO_REPLICA_SET_KEY:?Set a high-entropy replica-set key}
+    volumes:
+      - mongodb_data:/data/db
+      - ./config/db.js:/docker-entrypoint-initdb.d/init.js:ro
+      - ./config/migrations:/migrations:ro
+      - ./config/mongodb:/mongodb:ro
+    ports:
+      - "27017:27017"
+    networks:
+      - errandboard-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongodb-rs-init:
+    image: mongo:latest
+    entrypoint: ["mongosh", "mongodb://mongodb:27017/admin?directConnection=true", "--quiet", "--file", "/mongodb/init-replica-set.js"]
+    environment:
+      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_REPLICA_SET_HOST: ${MONGO_REPLICA_SET_HOST:-mongodb:27017}
+    volumes:
+      - ./config/mongodb/init-replica-set.js:/mongodb/init-replica-set.js:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - errandboard-network
+      
+  rabbitmq:
+    image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # management UI: http://localhost:15672
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - errandboard-network
+
+  user-service:
+    build:
+      context: .
+      dockerfile: services/user-service/Dockerfile
+    environment:
+      PORT: 3001
+      MONGO_HOST: mongodb
+      MONGO_DB_NAME: errandboard
+      MONGO_USER_SERVICE_PASSWORD: ${MONGO_USER_SERVICE_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      CREDIT_SERVICE_URL: http://credit-service:3004
+      CREDIT_INTERNAL_API_KEY: ${CREDIT_INTERNAL_API_KEY}
+      REDIS_URL: redis://redis:6379
+      FRONTEND_ORIGIN: http://localhost:5173
+      AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+      EMAIL_VERIFICATION_PROVIDER: ${EMAIL_VERIFICATION_PROVIDER:-ses}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID:-}
+      COGNITO_APP_CLIENT_ID: ${COGNITO_APP_CLIENT_ID:-}
+      COGNITO_APP_CLIENT_SECRET: ${COGNITO_APP_CLIENT_SECRET:-}
+      COGNITO_CONFIRMATION_QUEUE_URL: ${COGNITO_CONFIRMATION_QUEUE_URL:-}
+      COGNITO_CONFIRMATION_WORKER_ENABLED: ${COGNITO_CONFIRMATION_WORKER_ENABLED:-false}
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      mongodb-rs-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      user-seed:
+        condition: service_completed_successfully
+      credit-service:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    networks:
+      - errandboard-network
+
+  user-seed:
+    build:
+      context: .
+      dockerfile: services/user-service/Dockerfile
+    image: errandboard/user-service
+    command: ["npm", "run", "seed"]
+    environment:
+      MONGO_HOST: mongodb
+      MONGO_DB_NAME: errandboard
+      MONGO_USER_SERVICE_PASSWORD: ${MONGO_USER_SERVICE_PASSWORD}
+      CREDIT_SERVICE_URL: http://credit-service:3004
+      CREDIT_INTERNAL_API_KEY: ${CREDIT_INTERNAL_API_KEY}
+      REDIS_URL: redis://redis:6379
+      SEED_CSV_PATH: /seed/user-seed-data.csv
+    volumes:
+      - ./data/csv:/seed:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      mongodb-rs-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      credit-service:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - errandboard-network
+
+  supplier-seed:
+    build:
+      context: .
+      dockerfile: services/supplier-service/Dockerfile
+    image: errandboard/supplier-service
+    command: ["npm", "run", "seed"]
+    environment:
+      MONGO_HOST: mongodb
+      MONGO_DB_NAME: errandboard
+      MONGO_SUPPLIER_SERVICE_PASSWORD: ${MONGO_SUPPLIER_SERVICE_PASSWORD}
+      SEED_CSV_PATH: /seed/supplier-seed-data.csv
+    volumes:
+      - ./data/csv:/seed:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      mongodb-rs-init:
+        condition: service_completed_successfully
+    restart: "no"
+    networks:
+      - errandboard-network
+
+  supplier-service:
+    build:
+      context: .
+      dockerfile: services/supplier-service/Dockerfile
+    image: errandboard/supplier-service
+    environment:
+      PORT: 3002
+      MONGO_HOST: mongodb
+      MONGO_DB_NAME: errandboard
+      MONGO_SUPPLIER_SERVICE_PASSWORD: ${MONGO_SUPPLIER_SERVICE_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      REDIS_URL: redis://redis:6379
+      FRONTEND_ORIGIN: http://localhost:5173
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      mongodb-rs-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      supplier-seed:
+        condition: service_completed_successfully
+    ports:
+      - "3002:3002"
+    networks:
+      - errandboard-network
+
+  order-service:
+    build: ./services/order-service
+    environment:
+      PORT: 3003
+      MONGO_HOST: mongodb
+      MONGO_DB_NAME: errandboard
+      MONGO_ORDER_SERVICE_PASSWORD: ${MONGO_ORDER_SERVICE_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      REDIS_URL: redis://redis:6379
+      FRONTEND_ORIGIN: http://localhost:5173
+      SUPPLIER_SERVICE_URL: http://supplier-service:3002
+      CREDIT_SERVICE_URL: http://credit-service:3004
+      ORDER_CREDIT_API_KEY: ${ORDER_CREDIT_API_KEY:?Set an Order-to-Credit API key}
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      mongodb-rs-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      supplier-service:
+        condition: service_started
+    ports:
+      - "3003:3003"
+    networks:
+      - errandboard-network
+
+
+  credit-service:
+    build: ./services/credit-service
+    environment:
+      PORT: 3004
+      MONGO_HOST: mongodb
+      MONGO_DB_NAME: errandboard
+      MONGO_CREDIT_SERVICE_PASSWORD: ${MONGO_CREDIT_SERVICE_PASSWORD}
+      CREDIT_INTERNAL_API_KEY: ${CREDIT_INTERNAL_API_KEY}
+      ORDER_CREDIT_API_KEY: ${ORDER_CREDIT_API_KEY:?Set an Order-to-Credit API key}
+      JWT_SECRET: ${JWT_SECRET}
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
+    ports:
+      - "127.0.0.1:3004:3004"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      mongodb-rs-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3004/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - errandboard-network
+
+  notification-service:
+    build: ./services/notification-service
+    environment:
+      PORT: 3005
+      MONGO_HOST: mongodb
+      MONGO_DB_NAME: errandboard
+      MONGO_NOTIFICATION_SERVICE_PASSWORD: ${MONGO_NOTIFICATION_SERVICE_PASSWORD:?Set a Notification service MongoDB password}
+      JWT_SECRET: ${JWT_SECRET}
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
+      FRONTEND_ORIGIN: http://localhost:5173
+      # generate once with `npm run vapid:generate`; changing them later invalidates every subscription
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:?Run npm run vapid:generate in notification-service}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:?Run npm run vapid:generate in notification-service}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:?Set VAPID_SUBJECT, e.g. mailto:you@example.com}
+      # the frontend has no /errands/:id page; active errands live here (the {id} placeholder is optional)
+      APP_ERRAND_PATH: /errands/active
+      NOTIFY_DIRECT_ACTIONS: "false"
+    ports:
+      - "127.0.0.1:3005:3005"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      mongodb-rs-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - errandboard-network
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      user-service:
+        condition: service_started
+      supplier-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+      credit-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+    networks:
+      - errandboard-network
+
+
+volumes:
+  mongodb_data:
+  redis_data:
+  rabbitmq_data:
+
+networks:
+  errandboard-network:
+    driver: bridge

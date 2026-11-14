@@ -1,48 +1,167 @@
 # CS3219 — Software Design and Architecture (AY2627 Sem 1)
 
-## Friend on Campus (FoC)
+## ErrandBoard (FoC)
 
-**Friend on Campus (FoC)** is a peer-to-peer campus errand platform where
-students can request items to be collected from stores or facilities on
-campus, and other students can fulfil (and deliver) those requests. The
-platform runs on a closed credit economy — credits cannot be bought,
-withdrawn, or exchanged for money, and only circulate within the platform.
+**ErrandBoard (FoC)** is a peer-to-peer campus errand platform where students can request items to be collected from stores or facilities on campus, and other students can fulfil (and deliver) those requests. The platform runs on a closed credit economy — credits cannot be bought, withdrawn, or exchanged for money, and only circulate within the platform.
+
+| | |
+|---|---|
+| **Group** | 04 |
+| **Deployment link** | https://da843292oau9i.cloudfront.net |
+| **Demo mode** | AWS/local containers |
 
 ---
 
 ## Team Members
 
-| Name | Role |
-| ----- | ----- |
-| Your Name | Your ownership |
-| Your Name | Your ownership |
-| Your Name | Your ownership |
-| Your Name | Your ownership |
-| Your Name | Your ownership |
+| Name | Role / ownership | N2H feature |
+| ----- | ----- | ----- |
+| Glen | user service + credit service | Cloud deployment + admin dashboard |
+| Jinxia | supplier service + order service | admin dashboard + centralized logging |
+| Boqian | supplier service + order service | Real-time status push notifications |
+| Joshua | user service + credit service | CI/CD + Cloud deployment |
+
+---
+
+## Architecture Overview
+
+```text
+ Browser (React + Vite, service worker)
+        │  HTTPS (nginx / ALB, /api/<service>/*)
+        ▼
+ ┌────────────┬───────────────┬─────────────┬──────────────┬────────────────────┐
+ │ user       │ supplier      │ order       │ credit       │ notification       │
+ │ service    │ service       │ service     │ service      │ service            │
+ └─────┬──────┴──────┬────────┴──────┬──────┴───────┬──────┴─────────┬──────────┘
+       │             │               │  RabbitMQ topic exchange `errand.events`  │
+       └─────────────┴──── MongoDB (replica set) ── Redis (authz, BullMQ) ───────┘
+```
+
+- **Synchronous:** the frontend calls each service over REST. Order-service calls credit-service (reserve / inspect / release) over HTTP.
+- **Asynchronous:** order-service publishes errand events to RabbitMQ (`errand.events`). Credit-service consumes `errand.completed|cancelled|expired` to transfer or refund credits. Notification-service consumes `errand.status.changed` to alert users (SSE + Web Push).
+- **Reliability:** transactional outbox in order-service, idempotent consumers keyed by `eventId`, retry queues and dead-letter queues.
+- **Order creation** is a saga-style flow with a persisted log (`OrderCreation`) and compensating release of reserved credits; **settlement** is event-driven.
+
+## Tech Stack
+
+| Group | Technologies |
+|---|---|
+| Frontend | React, Vite, TypeScript, nginx, service worker / PWA manifest |
+| Backend | Node.js, Express, TypeScript, Mongoose, JWT (cookies), BullMQ |
+| Data | MongoDB (replica set, per-service users, transactions), Redis |
+| Messaging / real time | RabbitMQ, Server-Sent Events, Web Push (VAPID) |
+| Infra | Docker, Docker Compose, AWS ECS Fargate, ECR, ALB, Service Connect, Secrets Manager, CloudWatch, AWS Cognito |
+| CI/CD | GitHub Actions, GitHub OIDC roles |
 
 ---
 
 ## Repository Structure
 
-This repository follows a **one-service-per-folder** structure: each
-microservice (`user-service/`, `supplier-service/`, `order-service/`,
-`credit-service/`) lives in its own top-level folder.
+One folder per microservice:
 
 ```text
 .
-├── user-service/
-├── supplier-service/
-├── order-service/
-├── credit-service/
-├── <n2h-service>/
+├── /services/user-service/
+├── /services/supplier-service/
+├── /services/order-service/
+├── /services/credit-service/
+├── /services/notification-service/     # N2H: real-time status notifications
+├── frontend/
+├── config/                   # MongoDB init + migrations
+├── infra/                    # ECS task definitions, IAM policies
+├── scripts/                  # deploy / up / down / reset-seed scripts
+├── ai/usage-log.md
+├── compose.yaml
 └── README.md
 ```
 
-- Any **nice-to-have (N2H)** feature that warrants its own service should
-  be added as an **additional folder** at the same level, following the
-  same per-service structure.
-- Files for agentic coding tools (e.g. agent configs, prompts, skills)
-  may be added as needed, but must still **respect the
-  one-service-per-folder skeleton** for core implementation.
+## Service Documentation
+
+Each service documents its own routes, configuration, data model and tests. Start here:
+
+| Component | Documentation |
+|---|---|
+| User service | [`user-service/README.md`](./services/user-service/README.md) |
+| Supplier service | [`supplier-service/README.md`](./services/supplier-service/README.md) |
+| Order service | [`order-service/README.md`](./services/order-service/README.md) |
+| Credit service | [`credit-service/README.md`](./services/credit-service/README.md) |
+| Notification service (N2H) | [`notification-service/README.md`](./services/notification-service/README.md) |
+| Frontend | [`frontend/README.md`](./frontend/README.md) |
 
 ---
+
+## Running Locally
+
+```bash
+cp .env.example .env        # fill in secrets, including VAPID keys for notifications
+docker compose up --build
+# frontend: http://localhost:5173 (or the port in compose.yaml)
+```
+
+Generate VAPID keys once: `npx web-push generate-vapid-keys` (public key to the frontend/service, private key stays server-side).
+
+## Deployment (AWS)
+
+ECS Fargate cluster `ErrandBoard` (region `ap-southeast-1`), images in ECR, ECS Service Connect for service discovery, secrets in AWS Secrets Manager, email confirmation using AWS Cognito. GitHub Actions builds, tests and deploys; the `website` workflow brings the stack up or down. See `infra/` and `scripts/`.
+
+## Key Design Decisions
+
+- **Database:** MongoDB per service data with a replica set for transactions (errand creation). Redis for authorization state and BullMQ jobs.
+- **Messaging:** RabbitMQ topic exchange so services subscribe independently (credit, notification).
+- **Order state machine:** OPEN → ACCEPTED → PICKED_UP → PENDING_COMPLETION → COMPLETED, plus CANCELLED, EXPIRED and DISPUTED; every transition is a guarded atomic update.
+- **N2H, notifications:** inbox in MongoDB is the source of truth; SSE for live delivery, Web Push for closed browsers.
+
+## Testing and CI
+
+Unit/integration tests per service (`npm test` in each folder), TypeScript checks, and a GitHub Actions workflow that runs them on every push/PR.
+
+---
+## AI Use Summary
+
+**Tools:** 
+
+- Claude (Anthropic), used through the Claude app / Claude Code. Model version: Sonnet 5.5. Period of use: 2026-09-01 to 2026-11-11.
+- Codex (OpenAI), used through ChatGPT app / Codex plugin on VSCode. Models used: GPT-6 Luna (for querying and planning), GPT-6 Sol (for coding/bug fixing)
+
+
+**AI Usage for:** Boqian
+| Area | Mode | What it did | What the author did |
+|---|---|---|---|
+| Frontend  | generate | Generation UI, service worker, SSE stream client, push subscription helpers, service worker, Home page inbox merge, tests | Review and refactor accordingly |
+| Supplier-service | generate / refactor / reference | Generate unit-tests for certain edge cases in supplier-service. Provide refactoring advice for certain implementations in suppler.service. Provide suggestions on integrating authenticate into existing routes. Provided reference for schema entries based on author-design and requirements. | Initial supplier-service design was hand-written with reference to other services. Basic route / service structure was hand-written with refactoring suggestions provided by AI. | 
+| Order-service | generate / refactor / reference | Generated template implementation for event implementation. Generated tests for order-service. Provide references / suggestions for correct implementation of user-chosen design. Generated schema reference document based on user chosen requirements. Assistance in refactoring and debugging order-service code base | Initial file structure files were hand-written with reference to other services. Most order routes / services were written with reference to other services with AI assistance and suggestions. Internal logic and state transitions were all author designed.|
+| Notification Service | reference/refactor/generate | Generated test code and implementation of Web push + SSE. Service worker in browser was generated. Frontend section for notification service was generated. Initial service setup was reviewed and refactored.| All generated code was reviewed and refactored accordingly. Initial file setup including authentication, routes and folder structure was hand written with reference to other services. |
+| CI/CD and AWS deployment (.github/, scripts/, infra/) | generate / debug | Debug errors faced when attempted to modify files for CI/CD + AWS deployment for order + notification services. | Created the AWS resources and applied changes manually. |
+| Debugging | debug | Explained errors (VAPID subject, Service Connect timeout, security group, SSE:ERR_HTTP2_PROTOCOL_ERROR, typescript errors) | Applied and verified the fixes |
+
+**AI Usage for:** Joshua
+| Area | Mode | What it did | What the author did |
+|---|---|---|---|
+| Initialising project structure | generate / explain | Generate the initial structure before added work in D2. Explain what each folder is supposed to contain, how they are supposed to interact, explain REST API, explain usage of certain initial libraries | Describe the requirements, query and understand the initial structure, and modify the final architecture based on concepts learned in the course after Microservices topic was taught. |
+| User-service | generate / reference | Used to generate ideas for displaying password strength to the user. Used to reference the API URL when linking other components of the project | All decisions about how to sanitise inputs, where to check values as data travels through the system, mode of communication between the services as well as the schema design was done by the Author |
+| Credit Service | generate / reference | Generated the code after all decisions were made. Used to visually represents components and interactions to aid diagram drawing in D3 | Decisions on async/sync communication between services, function calling, logging, database transaction, schema design, saga compensation actions etc. was all decided upon by the Author before implementing |
+| CI/CD and AWS deployment (.github/, scripts/, infra/) | generate / debug | Debug errors faced when attempted to modify files for CI/CD + AWS deployment (Had issues with authenticating to push images into ECR). Used to generate ideas and check feasibility of deployment decisions such as using EC2 to host database + EBS volumes, or use of AWS Cognito to get registration emails | Created the AWS resources and applied changes manually apart from Cloudfront due to lack of time. Make final decisions based on ideas on how to deploy with the limitations we have (e.g., not allowed to get a domain using Route 53 created issues with using self-signed certs => Use Cloudfront as entry point so that we have a CA-signed cert) |
+| Debugging | debug | Spotting and explaining errors as well as suggesting fixes across different services | Applied and verified the fixes |
+
+
+**AI Usage for:** Glendon Goh
+
+| Area | Mode | What it did | What the author did |
+|---|---|---|---|
+| Requirements and project planning | explain / reference / generate | Reviewed the proposal and milestone requirements, suggested wording for User Service requirements and edge cases, and helped prepare presentation content. | Chose the requirements, priorities, service scope, and presentation content; revised the wording after course and professor feedback. |
+| FR tracking and GitHub workflow | generate / refactor / debug | Helped create and revise `FR-TRACKER.md`, the issue template, and a workflow that updates requirement status when issues close or reopen. | Defined the requirement IDs and desired tracking behavior, checked the rendered tracker, tested the workflow, and requested corrections. |
+| User Service authentication and sessions | generate / explain / debug | Assisted with session tokens, MongoDB session storage and expiry, logout, account seeding, inactive-account checks, and related tests. Explained the implementation and helped diagnose login and database errors. | Set the required account and session behavior, inspected the implementation, tested it locally, and requested fixes where behavior differed from the requirements. |
+| Admin and supplier interfaces | generate / refactor / debug | Built and revised the Admin Dashboard, Account Administration and Supplier Management pages, including route integration, account activation, responsive layouts, and UI fixes. | Specified the roles, actions, and layout; checked the running pages; and directed repeated functional and visual corrections. |
+| Credit events and frontend integration | generate / explain / debug | Assisted with the Credit Service event consumer and frontend balance updates, and explained RabbitMQ event handling. | Chose when balances should refresh, tested the behavior, and requested changes for reservation and refund events. |
+| Frontend containerisation and AWS deployment | generate / reference / debug | Helped containerise the frontend and provided deployment guidance for ECR, ECS, EC2, EBS, service configuration, and troubleshooting. | Selected deployment options under the project’s budget and constraints, configured resources, ran commands, and checked deployment results. |
+| Email verification | generate / reference / debug | Generated and tested an SES based confirmation flow, then assisted with a Cognito verification pilot, queue processing, rollback preparation, and removal of the unused SES path. | Chose the verification approach and pilot constraints, supplied test requirements, checked email delivery, and directed the rollout and rollback decisions. |
+
+
+**AI Usage for:** Jinxia
+| Area | Mode | What it did | What the author did |
+|---|---|---|---|
+| Frontend | generate | Order and Supplier UI, admin dashboard dispute and statistic cards | Review and refactor accordingly |
+| Supplier-service | generate / reference | Generated unit tests. Explained supplier-service code for integrating the authorization functions needed. Generated the supplier seed script. | Described the requirements for route authorization and supplier seeding, referenced the authorization design, and wrote the authorization functions. |
+| Order-service | generate / reference / refactor | Generated unit tests. Debugged the CRUD functions. | Provided the requirements for CRUD and error handling, and wrote the CRUD functions. |
+| Admin dashboard | generate / reference / refactor | Generated code after guidelines were provided. | Provided the key design decisions and debugging. |
+| Centralized logging | generate / reference | Generated ideas and code for the repetitive replacement of console logs. | Wrote the logging of admin and domain actions. |

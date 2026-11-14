@@ -1,0 +1,59 @@
+import { BrowserRouter, Route, Routes } from "react-router-dom";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import CheckEmail from "./pages/CheckEmail";
+import Homepage from "./pages/Homepage";
+import Settings from "./pages/Settings";
+import Notifications from "./pages/Notifications";
+import SupplierListing from "./pages/SupplierListing";
+import SupplierDetail from "./pages/SupplierDetail";
+import AdminDashboard from "./pages/AdminDashboard";
+import AccountAdministration from "./pages/AccountAdministration";
+import SupplierManagement from "./pages/SupplierManagement";
+import DisputeManagement from "./pages/DisputeManagement";
+import CreditStatistics from "./pages/CreditStatistics";
+import AppLayout from "./components/AppLayout";
+import { AuthProvider } from "./auth/AuthContext";
+import { HomeRedirect, RedirectIfAuthenticated, RequireAdmin, RequireAuth, RequireSuperadmin } from "./auth/RouteGuards";
+import CreateErrand from "./pages/CreateErrand";
+import ErrandListing from "./pages/ErrandListing";
+import ActiveErrands from "./pages/ActiveErrands";
+
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route element={<RedirectIfAuthenticated />}>
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/check-email" element={<CheckEmail />} />
+          </Route>
+          <Route element={<RequireAuth />}>
+            <Route element={<AppLayout />}>
+              <Route path="/home" element={<Homepage />} />
+              <Route path="/notifications" element={<Notifications />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/suppliers" element={<SupplierListing />} />
+              <Route path="/supplier/:id" element={<SupplierDetail />} />
+              <Route path="/supplier/:id/errand" element={<CreateErrand />} />
+              <Route path="/errands" element={<ErrandListing />} />
+              <Route path="/errands/active" element={<ActiveErrands />} />
+              <Route element={<RequireAdmin />}>
+                <Route path="/admin" element={<AdminDashboard />} />
+                <Route path="/admin/suppliers" element={<SupplierManagement />} />
+                <Route path="/admin/disputes" element={<DisputeManagement />} />
+                <Route path="/admin/credits" element={<CreditStatistics />} />
+                <Route element={<RequireSuperadmin />}>
+                  <Route path="/admin/accounts" element={<AccountAdministration />} />
+                </Route>
+              </Route>
+            </Route>
+          </Route>
+          <Route path="*" element={<HomeRedirect />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
