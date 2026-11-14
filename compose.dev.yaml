@@ -1,0 +1,157 @@
+# Scope (2026-11-08, Codex, model: GPT-6): Connected the team-requested frontend chat entry points and existing HTTP contracts.
+# Author review: Reviewed and verified by Koh Wee Jean, 2026-11-10.
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-09-23
+# Scope: Project scaffolding / infrastructure only.
+# Author review: george-yeo
+# Scope (2026-10-12): Added the development order maintenance worker and its
+#        Redis-backed Compose dependencies.
+# Author review: tng wen xi
+#
+# Dev override: hot reload via Compose Watch (Docker Compose >= 2.22).
+#   docker compose -f compose.yaml -f compose.dev.yaml up --build --watch
+#
+# Compose Watch copies changed files into the container rather than bind-mounting,
+# so file-change events fire reliably on Windows/WSL2 without polling.
+#
+# Scope (2026-10-19): Added the credit-service proxy target for the frontend's
+# environment-configured Vite proxy. No requirements, architecture, schema, or
+# API decisions were made by the AI tool.
+# Author review: tng wen xi
+# Tool: Claude Code (model: claude-opus-5), date: 2026-11-04
+# Scope (2026-11-04): frontend ports use !override now that the base compose publishes
+#        the nginx prod image on the same host port. No other change to this file.
+#        No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review: Reviewed and verified by Koh Wee Jean, 2026-11-10.
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-10-22
+# Scope (2026-10-22): order-worker serves the read-only bull-board queue dashboard
+#        (QUEUE_DASHBOARD_PORT), published on the host's loopback only:
+#        http://localhost:3010/admin/queues. No requirements, architecture, schema,
+#        or API decisions were made by the AI tool.
+# Author review: Reviewed and verified by Koh Wee Jean, 2026-11-10.
+
+# AI Assistance Disclosure:
+# Tool: Codex (model: GPT-6), date: 2026-11-07
+# Scope: Docker scaffold following existing order/supplier service conventions.
+# No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review: tng wen xi
+services:
+  # AI-generated (human review pending).
+  chat-service:
+    build:
+      target: dev
+    restart: "no"
+    environment:
+      NODE_ENV: development
+    develop:
+      watch:
+        - action: sync
+          path: ./chat-service/src
+          target: /app/src
+          ignore:
+            - generated/
+        - action: sync+restart
+          path: ./chat-service/prisma
+          target: /app/prisma
+        - action: sync+restart
+          path: ./chat-service/prisma.config.ts
+          target: /app/prisma.config.ts
+        - action: rebuild
+          path: ./chat-service/package.json
+        - action: rebuild
+          path: ./chat-service/package-lock.json
+        - action: rebuild
+          path: ./chat-service/tsconfig.json
+        - action: rebuild
+          path: ./chat-service/tsconfig.build.json
+
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    restart: "no"
+    environment:
+      NODE_ENV: development
+      VITE_SUPPLIER_SERVICE_URL: http://supplier-service:3002
+      VITE_USER_SERVICE_URL: http://user-service:3001
+      VITE_CREDIT_SERVICE_URL: http://credit-service:3003
+      VITE_ORDER_SERVICE_URL: http://order-service:3000
+      VITE_CHAT_SERVICE_URL: http://chat-service:3000
+    # !override, not a plain list: Compose concatenates `ports` across files, so without
+    # it the base's 5173:80 and this 5173:5173 would both be published and collide on
+    # the host port. Replacing the list leaves dev publishing only the Vite server.
+    ports: !override
+      - "${FRONTEND_PORT:-5173}:5173"
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend/src
+          target: /app/src
+        - action: sync
+          path: ./frontend/public
+          target: /app/public
+        - action: sync+restart
+          path: ./frontend/index.html
+          target: /app/index.html
+        - action: sync+restart
+          path: ./frontend/vite.config.js
+          target: /app/vite.config.js
+        - action: rebuild
+          path: ./frontend/package.json
+        - action: rebuild
+          path: ./frontend/package-lock.json
+
+  order-service:
+    build:
+      target: dev
+    restart: "no"
+    environment:
+      NODE_ENV: development
+    develop:
+      watch:
+        - action: sync
+          path: ./order-service/src
+          target: /app/src
+          ignore:
+            - generated/
+        - action: sync
+          path: ./order-service/test
+          target: /app/test
+        # Schema/migration changes: restart -> container re-runs generate + migrate deploy
+        - action: sync+restart
+          path: ./order-service/prisma
+          target: /app/prisma
+        - action: rebuild
+          path: ./order-service/package.json
+        - action: rebuild
+          path: ./order-service/package-lock.json
+
+  order-worker:
+    build:
+      target: dev
+    restart: "no"
+    command:
+      [
+        "sh",
+        "-c",
+        "npx prisma generate && npx prisma migrate deploy && exec npm run worker:dev",
+      ]
+    environment:
+      NODE_ENV: development
+      QUEUE_DASHBOARD_PORT: 3010
+    ports:
+      - "127.0.0.1:3010:3010" # bull-board, this machine only
+    develop:
+      watch:
+        - action: sync
+          path: ./order-service/src
+          target: /app/src
+          ignore:
+            - generated/
+        - action: sync+restart
+          path: ./order-service/prisma
+          target: /app/prisma
+        - action: rebuild
+          path: ./order-service/package.json
+        - action: rebuild
+          path: ./order-service/package-lock.json

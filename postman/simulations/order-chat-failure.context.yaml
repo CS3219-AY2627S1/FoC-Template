@@ -1,0 +1,30 @@
+# AI Assistance Disclosure:
+# Tool: Codex (model: GPT-6), date: 2026-11-08
+# Scope: Recorded local failure-simulation evidence.
+# No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review: tng wen xi
+# Scope (2026-11-08, Codex, model: GPT-6): Recorded participant 503 and 409 simulation evidence.
+# Author review: tng wen xi
+purpose:
+  stands_in_for: Chat Service returning HTTP 503 during conversation creation.
+  unblocks: Local verification of compiled order worker creation and participant failure paths.
+assumptions:
+  - id: chat-503
+    status: supported
+    claim: A chat creation HTTP 503 produces a retryable worker error without accessing order state.
+    reason: The compiled processor threw the expected error; a guard rejected any order database access.
+    verification: "2026-11-08: fingerprint local-1; ran the compiled client and processor against the local simulation at localhost:4617 on attempt five; assertion passed and the simulation logged POST /chat/conversations with status 503. No live database, Redis retry scheduling or live Chat Service was exercised."
+    source: order-service/src/clients/chat.client.ts; order-service/src/worker/credit-jobs.ts; chat-service/README.md
+    updated_at: "2026-11-08"
+  - id: participant-503-409
+    status: supported
+    claim: Participant HTTP 503 is retryable and HTTP 409 is final under the existing worker policy.
+    reason: Compiled client and processor made both real HTTP calls; isFinalFailure returned false for 503 and true for 409. Guards rejected any order or credit access.
+    verification: "2026-11-08: simulation on localhost:4618 logged exactly two POST order participant requests, returning 503 then 409; assertions passed with synthetic IDs/key. No live database or Redis/BullMQ retry scheduling was exercised."
+    source: order-service/src/clients/chat.client.ts; order-service/src/worker/credit-jobs.ts; chat-service/README.md
+    updated_at: "2026-11-08"
+fingerprints:
+  - id: local-1
+    date: "2026-11-08"
+    commit: "e5cc8bbb0d0ff71dd97d6eceb10688d46fa55a60 (working tree modified)"
+    cli: "1.73.0"

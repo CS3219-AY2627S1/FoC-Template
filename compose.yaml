@@ -1,0 +1,561 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: claude-sonnet-5), date: 2026-11-09
+# Scope: Added SUPPLIER_ORDER_SERVICE_API_KEY to supplier-service's environment, per
+#        instructions.md Stage 28 c1. No requirements, architecture, schema, or API decisions
+#        were made by the AI tool.
+# Author review: Reviewed and verified by Koh Wee Jean, 2026-11-10.
+# Scope (2026-11-10, Codex, model: GPT-6): Passed existing scheduled-worker keys and service URLs into order-worker.
+# Author review: tng wen xi
+# Scope (2026-11-10, Claude Code, model: claude-opus-5-5): Added SUPPLIER_ORDER_SERVICE_API_KEY to
+#        supplier-worker's environment, mirroring the supplier-service line (both load
+#        supplier-service/src/config.ts). No requirements, architecture, schema, or API decisions
+#        were made by the AI tool.
+# Author review: George Yeo
+# AI Assistance Disclosure:
+# Tool: Codex (model: GPT-6), date: 2026-11-08
+# Scope: Configured the team-specified order worker Chat Service connection.
+# No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review: tng wen xi
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-09-23
+# Scope: Project scaffolding / infrastructure only (order-service + its DB).
+#        No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review: george-yeo
+# Scope (2026-09-30, Claude Code, model: claude-sonnet-5-5): added the supplier-worker service and the
+#        PHOTO_STORE_* env lines / extra_hosts on supplier-service per Phase 4 plan Task 14. No
+#        requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review: george-yeo
+# Scope (2026-10-12): Added Redis and the separate order maintenance worker
+#        for automatic request completion and acceptance-deadline expiry.
+# Author review: george-yeo
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-10-20
+# Scope (2026-10-20): Issue #4 - CREDIT_SERVICE_URL on order-worker. No requirements,
+#        architecture, schema, or API decisions were made by the AI tool.
+# Author review: george-yeo
+# Scope (2026-10-20): Issue #6 - REDIS_HOST/PORT and USER_SERVICE_URL on order-service.
+#        No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review: george-yeo
+# Tool: Claude Code (model: claude-opus-5), date: 2026-10-22
+# Scope (2026-10-22): Credit transfer consumer - REDIS_HOST/REDIS_PORT on credit-service
+#        and a credit-worker service consuming queue:credit:transfer from order-redis.
+#        No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review: Reviewed and verified by Koh Wee Jean, 2026-11-10.
+# Tool: Claude Code (model: claude-opus-5), date: 2026-11-04
+# Scope (2026-11-04): frontend service on its new prod target, so `docker compose up`
+#        serves the built app through nginx. compose.dev.yaml already overrides it to
+#        the Vite dev server, the same base-prod / override-dev split order-service uses.
+#        No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review: Reviewed and verified by Koh Wee Jean, 2026-11-10.
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-10-22
+# Scope (2026-10-22): order-redis persistence (George, 2026-10-22: RDB + AOF) - append-only
+#        file with everysec fsync alongside the default RDB snapshots, on the named volume
+#        order-redis-data, so queued credit jobs survive container recreation.
+#        No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review: Reviewed and verified by Koh Wee Jean, 2026-11-10.
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-10-23
+# Scope (2026-10-23): SUPPLIER_SERVICE_URL on order-service for the supplier / delivery-
+#        location existence check on create and edit.
+#        No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review: Reviewed and verified by Koh Wee Jean, 2026-11-10.
+#
+# Production-like:  docker compose up --build
+# Dev (hot reload): docker compose -f compose.yaml -f compose.dev.yaml up --build --watch
+# Scope (2026-11-11, Claude Code, model: claude-sonnet-5-5): order-service gets ORDER_SUPPLIER_SERVICE_API_KEY; supplier-worker gets ORDER_SERVICE_URL and the key; MOCK_DOWNSTREAM_FAILURE removed (team contract in chat).
+#        No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review:
+
+# AI Assistance Disclosure:
+# Tool: Codex (model: GPT-6), date: 2026-11-07
+# Scope: Docker scaffold following existing order/supplier service conventions.
+# No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review: tng wen xi
+# Scope (2026-11-08, Codex, model: GPT-6): Published chat-db for local Prisma Studio access.
+# Author review: tng wen xi
+# Scope (2026-11-08, Codex, model: GPT-6): Wired the chat Socket.IO adapter to Compose Redis.
+# Author review: tng wen xi
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-11-09
+# Scope (2026-11-09): CREDIT_SERVICE_URL on order-service - POST /orders now reserves
+#        credits in the request (George, 2026-11-09).
+#        No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review: Reviewed and verified by Koh Wee Jean, 2026-11-10.
+name: foc
+
+services:
+  # AI-generated (human review pending).
+  # ---- chat-service ---------------------------------------------------------
+  chat-db:
+    image: mysql:8
+    restart: unless-stopped
+    command: ["--default-time-zone=+00:00"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${CHAT_DB_PASSWORD:?set CHAT_DB_PASSWORD in .env}
+      MYSQL_DATABASE: chat_service
+    # AI-generated
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - chat-db-data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  chat-service:
+    build:
+      context: ./chat-service
+      target: production
+    init: true
+    restart: unless-stopped
+    environment:
+      REDIS_HOST: order-redis
+      REDIS_PORT: 6379
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: mysql://root:${CHAT_DB_PASSWORD}@chat-db:3306/chat_service
+      CHAT_SERVICE_API_KEY: ${CHAT_SERVICE_API_KEY:?set CHAT_SERVICE_API_KEY in .env}
+      TRANSLATION_LLM_KEY: ${TRANSLATION_LLM_KEY:?set TRANSLATION_LLM_KEY in .env}
+      TRANSLATION_LLM_MODEL: ${TRANSLATION_LLM_MODEL:-gemini-3.1-flash-lite}
+    ports:
+      - "${CHAT_SERVICE_PORT:-3005}:3000"
+    depends_on:
+      chat-db:
+        condition: service_healthy
+      order-redis:
+        condition: service_healthy
+
+  # ---- order-service ----------------------------------------------------------
+  order-db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${ORDER_DB_USER:?set ORDER_DB_USER in .env}
+      POSTGRES_PASSWORD: ${ORDER_DB_PASSWORD:?set ORDER_DB_PASSWORD in .env}
+      POSTGRES_DB: ${ORDER_DB_NAME:?set ORDER_DB_NAME in .env}
+    ports:
+      - "${ORDER_DB_PORT:-5433}:5432"
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  order-service:
+    build:
+      context: ./order-service
+      target: production
+    init: true
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${ORDER_DB_USER}:${ORDER_DB_PASSWORD}@order-db:5432/${ORDER_DB_NAME}
+      # Issue #6: Socket.IO Redis adapter + worker events.
+      REDIS_HOST: order-redis
+      REDIS_PORT: 6379
+      USER_SERVICE_URL: http://user-service:3001
+      # Create / edit check supplier and delivery-location ids here (503 if it is down).
+      SUPPLIER_SERVICE_URL: http://supplier-service:3002
+      # POST /orders reserves credits here before answering (503 if it is down).
+      CREDIT_SERVICE_URL: http://credit-service:3003
+      # supplier-worker's shut-down call (POST /suppliers/:id/cancel-orders) is checked against this.
+      ORDER_SUPPLIER_SERVICE_API_KEY: ${ORDER_SUPPLIER_SERVICE_API_KEY:?set ORDER_SUPPLIER_SERVICE_API_KEY in .env}
+    ports:
+      - "${ORDER_SERVICE_PORT:-3002}:3000"
+    depends_on:
+      order-db:
+        condition: service_healthy
+      order-redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  order-worker:
+    build:
+      context: ./order-service
+      target: production
+    init: true
+    restart: unless-stopped
+    command:
+      ["sh", "-c", "npx prisma migrate deploy && exec node dist/worker.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${ORDER_DB_USER}:${ORDER_DB_PASSWORD}@order-db:5432/${ORDER_DB_NAME}
+      REDIS_HOST: order-redis
+      REDIS_PORT: 6379
+      # The worker calls credit-service for releases (reserve is synchronous in the API).
+      # No depends_on: failed releases are retried by BullMQ.
+      CREDIT_SERVICE_URL: http://credit-service:3003
+      # AI-generated
+      SUPPLIER_SERVICE_URL: http://supplier-service:3002
+      SUPPLIER_ORDER_SERVICE_API_KEY: ${SUPPLIER_ORDER_SERVICE_API_KEY:?set SUPPLIER_ORDER_SERVICE_API_KEY in .env}
+      USER_ORDER_SERVICE_URL: http://user-service:3001
+      USER_ORDER_SERVICE_API_KEY: ${USER_ORDER_SERVICE_API_KEY:?set USER_ORDER_SERVICE_API_KEY in .env}
+      CHAT_SERVICE_URL: http://chat-service:3000
+      CHAT_SERVICE_API_KEY: ${CHAT_SERVICE_API_KEY:?set CHAT_SERVICE_API_KEY in .env}
+    depends_on:
+      order-db:
+        condition: service_healthy
+      order-redis:
+        condition: service_healthy
+
+  order-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # The relay deletes an outbox row once its job is enqueued, so Redis then holds the
+    # only copy of each credit job. AOF (fsync every second) bounds a crash to ~1 s of
+    # writes; Redis's default RDB snapshots are kept, and AOF rewrites use an RDB preamble.
+    command:
+      ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - order-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---- user-service -------------------------------------------------------
+  # AI Assistance Disclosure:
+  # Tool: Claude Code (claude-sonnet-5), date: 2026-09-24
+  #   24/09/2026: Stage 3b - user-db + user-service compose services
+  #     Author review: No changes needed.
+  #   26/09/2026: Stage 7 - publish user-db on host port 5434 for the test suite (REVERSE BEFORE DEPLOY)
+  #     Author review: Reviewed and verified by Koh Wee Jean, 2026-11-10.
+  user-db:
+    image: postgres:16-alpine
+    container_name: foc-user-db
+    restart: unless-stopped
+    # Must match DB_USER / DB_PASSWORD / DB_NAME in user-service/.env — Compose
+    # variable interpolation can't read values out of a service's own env_file,
+    # so these are set directly rather than via ${DB_USER}-style substitution.
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: user_service
+    # TEMPORARY (Stage 7): lets host-run Vitest reach the DB. Remove before deploying; see instructions.md.
+    ports:
+      - "5434:5432"
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+      - ./user-service/src/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d user_service"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  user-service:
+    build:
+      context: ./user-service
+      target: dev
+    container_name: foc-user-service
+    restart: unless-stopped
+    env_file: ./user-service/.env
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./user-service/src:/app/src
+      - ./user-service/keys:/app/keys
+    depends_on:
+      user-db:
+        condition: service_healthy
+
+  # ---- credit-service ---------------------------------------------------------
+  # AI Assistance Disclosure:
+  # Tool: Claude Code (model: claude-opus-5), date: 2026-09-26
+  #   2026-09-26: Recess iteration - credit-db + credit-service compose services.
+  #     No requirements, architecture, schema, or API decisions were made by the AI tool.
+  #     Author review: Reviewed and verified by Koh Wee Jean, 2026-11-10.
+  credit-db:
+    image: postgres:16-alpine
+    container_name: foc-credit-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${CREDIT_DB_USER:?set CREDIT_DB_USER in .env}
+      POSTGRES_PASSWORD: ${CREDIT_DB_PASSWORD:?set CREDIT_DB_PASSWORD in .env}
+      POSTGRES_DB: ${CREDIT_DB_NAME:?set CREDIT_DB_NAME in .env}
+      # Read by 02-grant-app-role.sh. This role owns nothing and is never a superuser;
+      # it is what the service connects as, so NFR8.2.3's REVOKE actually binds.
+      CREDIT_APP_USER: ${CREDIT_APP_USER:?set CREDIT_APP_USER in .env}
+      CREDIT_APP_PASSWORD: ${CREDIT_APP_PASSWORD:?set CREDIT_APP_PASSWORD in .env}
+    ports:
+      - "${CREDIT_DB_PORT:-5435}:5432"
+    volumes:
+      - credit-db-data:/var/lib/postgresql/data
+      # The postgres image runs these on first start of an empty volume, in filename
+      # order, the same way user-db loads its schema. Schema changes need the volume
+      # recreated. grants.sql sits outside initdb.d deliberately: it must run after the
+      # role exists, not in filename order.
+      - ./credit-service/src/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./credit-service/src/db/grant-app-role.sh:/docker-entrypoint-initdb.d/02-grant-app-role.sh
+      - ./credit-service/src/db/grants.sql:/opt/credit-service/grants.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  credit-service:
+    build:
+      context: ./credit-service
+      target: dev
+    container_name: foc-credit-service
+    init: true
+    restart: unless-stopped
+    # credit-service/src/config.ts validates these at startup and exits if any is missing.
+    environment:
+      NODE_ENV: development
+      PORT: 3003
+      DB_HOST: credit-db
+      DB_PORT: 5432
+      DB_NAME: ${CREDIT_DB_NAME}
+      # The least-privilege role, not the owner (NFR8.2.3).
+      DB_USER: ${CREDIT_APP_USER}
+      DB_PASSWORD: ${CREDIT_APP_PASSWORD}
+      # Origin the JWKS key set is fetched from, for local token verification. Same value
+      # supplier-service already uses. No depends_on: the fetch is lazy and the key set is
+      # refetched on an unknown kid, so a cold start recovers on its own.
+      USER_SERVICE_URL: http://user-service:3001
+      # src/config.ts validates these for the API process too, so a broker typo fails at
+      # startup rather than at the first job. The API itself opens no Redis connection.
+      REDIS_HOST: order-redis
+      REDIS_PORT: 6379
+    ports:
+      - "${CREDIT_SERVICE_PORT:-3003}:3003"
+    volumes:
+      - ./credit-service/src:/app/src
+    depends_on:
+      credit-db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3003/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  # Consumes order-service's credit_transfer jobs. A separate container from the API,
+  # mirroring supplier-worker: same build context and image, a different command, and a
+  # second entry point into the same src/ tree, so the worker and the HTTP route call
+  # one transferCredits.
+  credit-worker:
+    build:
+      context: ./credit-service
+      target: dev
+    container_name: foc-credit-worker
+    init: true
+    restart: unless-stopped
+    command: ["npm", "run", "worker:dev"]
+    # Let an in-flight transfer finish on `docker stop` (Docker's default is SIGKILL
+    # after 10 s). A transfer is one short transaction, so this is headroom, not a wait.
+    stop_grace_period: 30s
+    environment:
+      NODE_ENV: development
+      # The worker serves no HTTP, but src/config.ts validates one schema for both
+      # entry points, so PORT and USER_SERVICE_URL must be present.
+      PORT: 3003
+      DB_HOST: credit-db
+      DB_PORT: 5432
+      DB_NAME: ${CREDIT_DB_NAME}
+      # The same least-privilege role the API uses (NFR8.2.3). It can INSERT a
+      # dead_letter_jobs row and UPDATE its status, and still cannot touch
+      # transaction_log beyond SELECT and INSERT.
+      DB_USER: ${CREDIT_APP_USER}
+      DB_PASSWORD: ${CREDIT_APP_PASSWORD}
+      USER_SERVICE_URL: http://user-service:3001
+      # order-service's broker. Deliberately no depends_on for it: the worker is built
+      # to start without Redis and pick it up when it returns (maxRetriesPerRequest null
+      # plus an unbounded retryStrategy in src/worker/main.ts), and a depends_on would
+      # hide that rather than prove it.
+      REDIS_HOST: order-redis
+      REDIS_PORT: 6379
+    volumes:
+      - ./credit-service/src:/app/src
+    depends_on:
+      credit-db:
+        condition: service_healthy
+
+  # ---- frontend -----------------------------------------------------------
+  # Built bundle served by nginx, which also proxies /api/v1, /auth, /users, /credits,
+  # /orders and /socket.io to the backends — the same table frontend/vite.config.js
+  # proxies in development. One origin, so no VITE_* URL is baked into the bundle.
+  #
+  # compose.dev.yaml overrides this to `target: dev` and the Vite dev server with
+  # Compose Watch, exactly as it does for order-service. Base runs prod so a plain
+  # `docker compose up` gives a complete, working system.
+  frontend:
+    build:
+      context: ./frontend
+      target: prod
+    container_name: foc-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    # Ordering only, not readiness: nginx resolves upstreams per request through
+    # Docker's DNS (see frontend/nginx/default.conf), so it starts and serves static
+    # assets even while a backend is still coming up.
+    depends_on:
+      - user-service
+      - credit-service
+      - order-service
+      - supplier-service
+    healthcheck:
+      # 127.0.0.1, not localhost: that resolves to ::1 inside the container.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # ---- supplier-service ---------------------------------------------------
+  # AI Assistance Disclosure:
+  # Tool: Claude Code (model: claude-sonnet-5), date: 2026-09-29
+  # Scope: Added supplier-db, supplier-redis, and supplier-service compose services, mirroring the
+  #        credit-service block, using the already-decided MySQL/Redis stack
+  #        (supplier-service/AGENTS.md) and the env vars already recorded in
+  #        supplier-service/.env.example. No requirements, architecture, schema, or API decisions
+  #        were made by the AI tool. Host ports were picked as the next free values after the
+  #        existing order/user/credit services (service 3004, DB 5436) since MySQL's default 3306 and
+  #        order-service's already-claimed 3002 were both taken.
+  #     Author review: Congchen
+  supplier-db:
+    image: mysql:8
+    container_name: foc-supplier-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${SUPPLIER_DB_PASSWORD:?set SUPPLIER_DB_PASSWORD in .env}
+      MYSQL_DATABASE: supplier_service
+    ports:
+      - "${SUPPLIER_DB_PORT:-5436}:3306"
+    volumes:
+      - supplier-db-data:/var/lib/mysql
+      - ./supplier-service/src/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  supplier-redis:
+    image: redis:7-alpine
+    container_name: foc-supplier-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  supplier-service:
+    build:
+      context: ./supplier-service
+      target: dev
+    container_name: foc-supplier-service
+    restart: unless-stopped
+    # supplier-service/src/config.ts validates these at startup and exits if any is missing.
+    # No healthcheck: the service has no /health route yet (SupplierServiceArchitecture.md §7.5:
+    # health-check endpoints are explicitly deferred).
+    environment:
+      NODE_ENV: development
+      PER_IP_RATE_LIMIT: 20000
+      PORT: 3002
+      DB_HOST: supplier-db
+      DB_PORT: 3306
+      DB_NAME: supplier_service
+      DB_USER: root
+      DB_PASSWORD: ${SUPPLIER_DB_PASSWORD}
+      REDIS_HOST: supplier-redis
+      REDIS_PORT: 6379
+      USER_SERVICE_URL: http://user-service:3001
+      SUPPLIER_ORDER_SERVICE_API_KEY: ${SUPPLIER_ORDER_SERVICE_API_KEY:?set SUPPLIER_ORDER_SERVICE_API_KEY in .env}
+      PHOTO_STORE_ENDPOINT: ${PHOTO_STORE_ENDPOINT:-http://host.docker.internal:9000}
+      PHOTO_STORE_BUCKET: ${PHOTO_STORE_BUCKET:-supplier-photos}
+      PHOTO_STORE_ACCESS_KEY: ${PHOTO_STORE_ACCESS_KEY:-photostoredev}
+      PHOTO_STORE_SECRET_KEY: ${PHOTO_STORE_SECRET_KEY:-photostoredev-secret}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${SUPPLIER_SERVICE_PORT:-3004}:3002"
+    volumes:
+      - ./supplier-service/src:/app/src
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+      supplier-redis:
+        condition: service_healthy
+
+  # Background worker for the supplier queues and the outbox relay (SupplierServiceArchitecture.md
+  # §8.1, §8.2). Same image as supplier-service, different command. PORT and USER_SERVICE_URL are set
+  # only because supplier-service/src/config.ts validates them at startup; the worker opens no port.
+  supplier-worker:
+    build:
+      context: ./supplier-service
+      target: dev
+    container_name: foc-supplier-worker
+    init: true
+    restart: unless-stopped
+    command: ["npm", "run", "worker:dev"]
+    # Let an in-flight job finish on `docker stop` (Docker's default is SIGKILL after 10 s).
+    stop_grace_period: 30s
+    environment:
+      NODE_ENV: development
+      PORT: 3002
+      DB_HOST: supplier-db
+      DB_PORT: 3306
+      DB_NAME: supplier_service
+      DB_USER: root
+      DB_PASSWORD: ${SUPPLIER_DB_PASSWORD}
+      REDIS_HOST: supplier-redis
+      REDIS_PORT: 6379
+      USER_SERVICE_URL: http://user-service:3001
+      SUPPLIER_ORDER_SERVICE_API_KEY: ${SUPPLIER_ORDER_SERVICE_API_KEY:?set SUPPLIER_ORDER_SERVICE_API_KEY in .env}
+      PHOTO_STORE_ENDPOINT: ${PHOTO_STORE_ENDPOINT:-http://host.docker.internal:9000}
+      PHOTO_STORE_BUCKET: ${PHOTO_STORE_BUCKET:-supplier-photos}
+      PHOTO_STORE_ACCESS_KEY: ${PHOTO_STORE_ACCESS_KEY:-photostoredev}
+      PHOTO_STORE_SECRET_KEY: ${PHOTO_STORE_SECRET_KEY:-photostoredev-secret}
+      ORDER_SERVICE_URL: http://order-service:3000
+      ORDER_SUPPLIER_SERVICE_API_KEY: ${ORDER_SUPPLIER_SERVICE_API_KEY:?set ORDER_SUPPLIER_SERVICE_API_KEY in .env}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./supplier-service/src:/app/src
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+      supplier-redis:
+        condition: service_healthy
+
+volumes:
+  order-db-data:
+  order-redis-data:
+  user-db-data:
+  credit-db-data:
+  supplier-db-data:
+  chat-db-data:

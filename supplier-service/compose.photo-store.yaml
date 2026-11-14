@@ -1,0 +1,54 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: claude-sonnet-5), date: 2026-09-29
+# Scope: Local-development-only MinIO instance that simulates the cloud object storage behind the
+#        photo-storage interface (SupplierServiceArchitecture.md §8.2, §9 item 21). Kept out of the
+#        root compose.yaml on the team's instruction because it is not used in deployment. The
+#        service and container names, host ports (9000 API, 9001 console), bucket name
+#        `supplier-photos` and the dev-only default credentials are implementation values chosen by
+#        the AI tool. No requirements, architecture, schema, or API decisions were made by the AI
+#        tool.
+# Author review: Congchen
+# Scope (2026-09-29 update): Enabled anonymous read on the dev bucket so returned locations are fetchable
+#        locally (Phase 2 plan, Task 2). No requirements, architecture, schema, or API decisions were
+#        made by the AI tool. Also switched the image references to quay.io (minio/minio and minio/mc
+#        can no longer be pulled from Docker Hub).
+# Author review: Congchen
+#
+# Run from supplier-service/:  docker compose -f compose.photo-store.yaml up -d
+services:
+  photo-store:
+    image: quay.io/minio/minio
+    container_name: foc-supplier-photo-store
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${PHOTO_STORE_ACCESS_KEY:-photostoredev}
+      MINIO_ROOT_PASSWORD: ${PHOTO_STORE_SECRET_KEY:-photostoredev-secret}
+    ports:
+      - "${PHOTO_STORE_API_PORT:-9000}:9000"
+      - "${PHOTO_STORE_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - photo-store-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot job that creates the bucket once the store is healthy.
+  photo-store-init:
+    image: quay.io/minio/mc
+    depends_on:
+      photo-store:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://photo-store:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+      mc mb --ignore-existing local/supplier-photos &&
+      mc anonymous set download local/supplier-photos
+      "
+    environment:
+      MINIO_ROOT_USER: ${PHOTO_STORE_ACCESS_KEY:-photostoredev}
+      MINIO_ROOT_PASSWORD: ${PHOTO_STORE_SECRET_KEY:-photostoredev-secret}
+
+volumes:
+  photo-store-data:

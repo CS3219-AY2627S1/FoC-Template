@@ -1,0 +1,38 @@
+{
+  "name": "chat-service",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:generate": "prisma generate",
+    "db:deploy": "prisma migrate deploy"
+  },
+  "dependencies": {
+    "@google/genai": "^3.0.0",
+    "@prisma/adapter-mariadb": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "bullmq": "^6.7.2",
+    "dotenv": "^18.0.3",
+    "express": "^5.2.1",
+    "ioredis": "^5.11.1",
+    "prisma": "^7.10.0",
+    "socket.io": "^4.8.4",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.0.0",
+    "@types/supertest": "^7.0.0",
+    "socket.io-client": "^4.8.4",
+    "supertest": "^7.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
+  }
+}

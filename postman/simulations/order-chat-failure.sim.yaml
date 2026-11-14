@@ -1,0 +1,11 @@
+# AI Assistance Disclosure:
+# Tool: Codex (model: GPT-6), date: 2026-11-08
+# Scope: Added a local simulation of the supplied chat HTTP failure path.
+# No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review: tng wen xi
+simulation: order-chat-failure
+routing: header
+mocks:
+  - name: chat-unavailable
+    routeKey: chat
+    path: postman/mocks/chat-unavailable/default.js

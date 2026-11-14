@@ -1,0 +1,16 @@
+# AI Assistance Disclosure:
+# Tool: Codex (model: GPT-6), date: 2026-11-07
+# Scope: Docker scaffold following existing order/supplier service conventions.
+# No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review: tng wen xi
+node_modules
+dist
+coverage
+src/generated
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.md
+Dockerfile
+.dockerignore

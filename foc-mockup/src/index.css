@@ -1,0 +1,139 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: Claude Code (model: claude-opus-5), date: 2026-09-08
+ * Scope: Generated UI mockup component index.css from team-authored blueprint.md.
+ *        Visual/layout implementation only. No requirements, architecture, or
+ *        schema decisions were made by the AI tool.
+ * Author review: Reviewed and verified by Koh Wee Jean, 2026-11-10.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #000000;
+  --ink-70: #4a4a4a;
+  --ink-40: #8a8a8a;
+  --line: #e4e4e4;
+  --surface: #ffffff;
+  --surface-alt: #f7f7f7;
+  --orange: #ef7c00;
+  --blue: #003d7c;
+  --alert: #b3261e;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-surface text-ink font-sans text-base antialiased;
+    margin: 0;
+    overflow-x: hidden;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    margin: 0;
+  }
+
+  /* Focus ring: 2px blue, 2px offset, visible on every interactive element. */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::placeholder {
+    color: var(--ink-40);
+    opacity: 1;
+  }
+}
+
+@layer components {
+  .font-display {
+    font-family: 'Bricolage Grotesque', Georgia, serif;
+    letter-spacing: -0.03em;
+  }
+
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .page-gutter {
+    @apply px-4 md:px-6 lg:px-10;
+  }
+
+  .page-width {
+    @apply mx-auto w-full max-w-page;
+  }
+
+  .card {
+    @apply rounded-card border border-line bg-surface;
+  }
+
+  .hide-scrollbar {
+    scrollbar-width: none;
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* The one orchestrated moment: landing hero fade-up on load. */
+@keyframes foc-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.foc-rise {
+  animation: foc-rise 250ms ease-out both;
+}
+
+@keyframes foc-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.foc-fade {
+  animation: foc-fade 150ms ease-out both;
+}
+
+@keyframes foc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.foc-pulse {
+  animation: foc-pulse 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foc-rise,
+  .foc-fade,
+  .foc-pulse {
+    animation: none !important;
+  }
+  * {
+    transition-duration: 1ms !important;
+  }
+}

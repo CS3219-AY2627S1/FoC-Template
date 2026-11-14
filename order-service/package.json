@@ -1,0 +1,63 @@
+{
+  "name": "order-service",
+  "version": "0.0.1",
+  "description": "FoC order microservice (Express + TypeScript + Prisma + PostgreSQL)",
+  "author": "",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "postinstall": "node scripts/prisma-generate.mjs",
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch --clear-screen=false src/server.ts",
+    "worker:dev": "tsx watch --clear-screen=false src/worker.ts",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" --ignore-path .gitignore",
+    "lint": "oxlint --type-aware src/ test/",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:cov": "vitest run --coverage",
+    "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:reset": "prisma migrate reset",
+    "db:studio": "prisma studio",
+    "db:seed": "prisma db seed"
+  },
+  "dependencies": {
+    "@bull-board/api": "9.10.4",
+    "@bull-board/express": "9.10.4",
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "bullmq": "^6.3.13",
+    "dotenv": "^18.0.3",
+    "express": "^5.2.1",
+    "ioredis": "^5.11.1",
+    "pg": "^8.23.0",
+    "prisma": "^7.10.0",
+    "rrule": "^2.8.1",
+    "socket.io": "^4.8.4",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
+    "@types/supertest": "^7.0.0",
+    "@vitest/coverage-v8": "^4.1.2",
+    "oxlint": "^1.58.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "prettier": "^3.9.9",
+    "socket.io-client": "^4.8.4",
+    "supertest": "^7.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

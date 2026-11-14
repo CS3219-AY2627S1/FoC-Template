@@ -1,0 +1,913 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: claude-sonnet-5-5), date: 2026-09-30
+# Scope: Recorded the Supplier Service endpoints in OpenAPI form. Every path, parameter, body, response
+#        and status code below restates what SupplierServiceArchitecture.md §6-§8, the service README and
+#        the implemented routes/validation already define; nothing new was decided. Where the architecture
+#        document and the code differ, the spec follows the code and notes it.
+# Author review: Congchen
+# Scope (2026-10-20, GitHub Copilot SDK in VS Code, model: GPT-5.6 Luna): documented local RS256
+# verification against the User Service JWKS endpoint. No requirements, architecture, schema, or API
+# decisions were made by the AI tool.
+# Author review: tng wen xi
+#
+# This file describes the Supplier Service only. Other services get their own file when their endpoints
+# are recorded.
+#
+# Scope (2026-11-05, Claude Code, model: claude-sonnet-5-5): Documented the ids filter and unavailable array, and recorded workstream W8, per the 2026-11-05 supplier-bookmarking spec.
+# No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review:
+
+# Scope (2026-11-11, Codex, model: GPT-6): Updated endpoint documentation to match existing routes and validation.
+# No requirements, architecture, schema, or API decisions were made by the AI tool.
+# Author review:
+
+openapi: 3.0.3
+info:
+  title: FoC Supplier Service API
+  version: 1.0.0
+  description: |
+    Supplier directory for FoC: user-facing reads, administrator management, and reference data.
+
+    The architecture is recorded in `SupplierServiceArchitecture.md`. API routes require a User Service
+    bearer token, except where a Supplier-Order-Service-Key is also accepted. The service fetches the
+    User Service JWKS from `/auth/.well-known/jwks.json` and verifies RS256 signatures locally.
+    API routes are rate-limited per client IP per minute using PER_IP_RATE_LIMIT (default 30).
+    The unauthenticated health endpoint is outside the limiter.
+
+    `isOpen` is computed, not stored, in Singapore time (UTC+8).
+servers:
+  - url: /api/v1
+    description: Same origin as the SPA (a single API gateway fronts all FoC services; no CORS).
+security:
+  - bearerAuth: []
+tags:
+  - name: Suppliers
+    description: User-facing reads (roles user, admin, super admin).
+  - name: Reference
+    description: Location and category options for filters and forms (roles user, admin, super admin).
+  - name: Admin suppliers
+    description: Supplier management (roles admin, super admin).
+  - name: Admin reference
+    description: Faculty, location and category management (roles admin, super admin).
+
+paths:
+  /health:
+    servers:
+      - url: /
+    get:
+      operationId: healthCheck
+      summary: Check whether the service process is running
+      security: []
+      responses:
+        "200":
+          description: Service process is running; dependencies are not checked.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [ok] }
+
+  /suppliers:
+    get:
+      tags: [Suppliers]
+      operationId: listSuppliers
+      summary: List visible suppliers
+      description: |
+        Excludes suppliers where `is_deleted` is true or `is_active` is false. Always 50 per page; a page
+        beyond the last returns `200` with an empty `data` array. Sorted by supplier name.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/LocationId"
+        - $ref: "#/components/parameters/CategoryId"
+        - $ref: "#/components/parameters/IsOpen"
+        - $ref: "#/components/parameters/SortOrder"
+        - $ref: "#/components/parameters/Ids"
+      responses:
+        "200":
+          description: One page of suppliers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierPage"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /suppliers/{id}:
+    get:
+      tags: [Suppliers]
+      operationId: getSupplier
+      security:
+        - bearerAuth: []
+        - supplierOrderServiceKey: []
+      summary: Get one visible supplier
+      parameters:
+        - $ref: "#/components/parameters/SupplierId"
+      responses:
+        "200":
+          description: The supplier with description and opening hours.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierDetail"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /suppliers/reference/location:
+    get:
+      tags: [Reference]
+      operationId: listLocationOptions
+      security:
+        - bearerAuth: []
+        - supplierOrderServiceKey: []
+      summary: List locations with their faculty
+      responses:
+        "200":
+          description: All locations.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [locations]
+                properties:
+                  locations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LocationOption"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /suppliers/reference/categories:
+    get:
+      tags: [Reference]
+      operationId: listCategoryOptions
+      summary: List categories
+      responses:
+        "200":
+          description: All categories.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [categories]
+                properties:
+                  categories:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Category"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /admin/suppliers:
+    get:
+      tags: [Admin suppliers]
+      operationId: listAdminSuppliers
+      summary: List all suppliers, including inactive and soft-deleted
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/LocationId"
+        - $ref: "#/components/parameters/CategoryId"
+        - $ref: "#/components/parameters/IsOpen"
+        - $ref: "#/components/parameters/SortOrder"
+      responses:
+        "200":
+          description: One page of suppliers with status flags.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSupplierPage"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    post:
+      tags: [Admin suppliers]
+      operationId: createSupplier
+      summary: Create a supplier
+      description: |
+        `multipart/form-data` with up to 10 JPEG/PNG `photos` (5 MB each). `Idempotency-Key` is mandatory.
+
+        If `name`, `type` and `location_id` match a soft-deleted supplier, the delete is reversed instead
+        (`200`): the submitted details and photos are applied through the edit cycle and `is_deleted = false`,
+        `is_active = true` are restored in one transaction. Submitted photos replace the existing ones; none
+        submitted leaves them; `version` is bumped once.
+
+        A Store needs `openingHours`. A Facility's hours are set by the server (day 8,
+        00:00-23:59). A 24/7 Store sets `is24h=true`; `openingHours` must contain the single day-8 entry `{"day": 8, "open": "00:00", "close": "23:59"}`.
+        An entry with `open` equal to `close` is rejected.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Client-generated UUID. A retry while the first request is running is `409`; after it completes the cached response is replayed.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/CreateSupplierForm"
+            encoding:
+              photos:
+                contentType: image/jpeg, image/png
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSupplierDetail"
+        "200":
+          description: A matching soft-deleted supplier was reactivated and updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSupplierDetail"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /admin/suppliers/{id}:
+    parameters:
+      - $ref: "#/components/parameters/SupplierId"
+    get:
+      tags: [Admin suppliers]
+      operationId: getAdminSupplier
+      summary: Get one supplier, regardless of active or deleted state
+      responses:
+        "200":
+          description: The supplier with audit fields and `version`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSupplierDetail"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    put:
+      tags: [Admin suppliers]
+      operationId: updateSupplier
+      summary: Update a supplier
+      description: |
+        `multipart/form-data`. `version` must be the value last read; a stale value is `409`. Only the fields
+        sent are changed; `category_id` replaces the whole set. Sending only `version` (and no photo change)
+        is `422`. Files sent without `isPhotoDirty=true` are `422`.
+
+        Photos: when `isPhotoDirty` is true, `photo_ids` is the full ordered list. Numbers are existing photo
+        ids to keep; strings are placeholders for newly uploaded files, and `placeholder_ids` lists them in the
+        same order as the uploaded `photos` files. Photos left out are removed and their cleanup is queued.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UpdateSupplierForm"
+            encoding:
+              photos:
+                contentType: image/jpeg, image/png
+      responses:
+        "200":
+          description: The updated supplier.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSupplierDetail"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/ServerError" }
+    delete:
+      tags: [Admin suppliers]
+      operationId: deleteSupplier
+      summary: Soft-delete a supplier
+      description: |
+        Sets `is_deleted = true` (`is_active` unchanged) and bumps `updated_on` and `version`. A downstream
+        task (cancel uncollected requests, notify their posters) is written to the `outbox` table in the same
+        transaction and processed by the background worker; the response does not wait for it. A repeat is `404`.
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, isDeleted]
+                properties:
+                  id: { type: integer }
+                  isDeleted: { type: boolean, enum: [true] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /admin/reference/faculties:
+    post:
+      tags: [Admin reference]
+      operationId: createFaculty
+      summary: Create a faculty
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [faculty]
+              properties:
+                faculty: { type: string, minLength: 1, maxLength: 255 }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Faculty" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /admin/reference/faculties/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ReferenceId"
+    put:
+      tags: [Admin reference]
+      operationId: updateFaculty
+      summary: Rename a faculty
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [faculty]
+              properties:
+                faculty: { type: string, minLength: 1, maxLength: 255 }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Faculty" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    delete:
+      tags: [Admin reference]
+      operationId: deleteFaculty
+      summary: Delete an unreferenced faculty (hard delete)
+      responses:
+        "200": { $ref: "#/components/responses/ReferenceDeleted" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /admin/reference/locations:
+    post:
+      tags: [Admin reference]
+      operationId: createLocation
+      summary: Create a location
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LocationWrite" }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocationRecord" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /admin/reference/locations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ReferenceId"
+    put:
+      tags: [Admin reference]
+      operationId: updateLocation
+      summary: Update a location (any of location, faculty_id, level)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                location: { type: string, minLength: 1, maxLength: 255 }
+                faculty_id: { type: integer, minimum: 1 }
+                level: { type: integer }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocationRecord" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    delete:
+      tags: [Admin reference]
+      operationId: deleteLocation
+      summary: Delete an unreferenced location (hard delete)
+      responses:
+        "200": { $ref: "#/components/responses/ReferenceDeleted" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /admin/reference/categories:
+    post:
+      tags: [Admin reference]
+      operationId: createCategory
+      summary: Create a category
+      description: The request and response use `category_type` (the stored column name); the read endpoint names the same value `category`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category_type]
+              properties:
+                category_type: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CategoryRecord" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /admin/reference/categories/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ReferenceId"
+    put:
+      tags: [Admin reference]
+      operationId: updateCategory
+      summary: Rename a category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category_type]
+              properties:
+                category_type: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CategoryRecord" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    delete:
+      tags: [Admin reference]
+      operationId: deleteCategory
+      summary: Delete an unreferenced category (hard delete)
+      responses:
+        "200": { $ref: "#/components/responses/ReferenceDeleted" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+components:
+  securitySchemes:
+    supplierOrderServiceKey:
+      type: apiKey
+      in: header
+      name: Supplier-Order-Service-Key
+      description: Order Service key accepted on supplier detail and location reference reads. A valid bearer token takes precedence; an invalid key without a valid token returns 401 INVALID_SERVICE_KEY.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: User Service access token (RS256, 15 minutes). Roles are `user`, `admin` and `super admin`.
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      name: limit
+      in: query
+      description: Fixed at 50. Any other value is rejected with `422`.
+      schema: { type: integer, enum: [50] }
+    Search:
+      name: search
+      in: query
+      description: Case-insensitive match against supplier name, location or category (not the description).
+      schema: { type: string }
+    LocationId:
+      name: location_id
+      in: query
+      description: An id from `GET /suppliers/reference/location`.
+      schema: { type: integer, minimum: 1 }
+    CategoryId:
+      name: category_id
+      in: query
+      description: An id from `GET /suppliers/reference/categories`.
+      schema: { type: integer, minimum: 1 }
+    IsOpen:
+      name: isOpen
+      in: query
+      description: "`true` returns only suppliers open now, `false` only closed; omitted means no filter."
+      schema: { type: string, enum: ["true", "false"] }
+    SortOrder:
+      name: sortOrder
+      in: query
+      description: Alphabetical by supplier name.
+      schema: { type: string, enum: [A-Z, Z-A], default: A-Z }
+    Ids:
+      name: ids
+      in: query
+      description: |
+        Comma-separated supplier ids, at most 20, e.g. `3,7,12`; duplicates and empty items are
+        ignored. Restricts `data` to those suppliers (the other filters still apply) and adds an
+        `unavailable` array to the response. An item that is not a positive whole number is reported
+        as `invalid` and does not block the others. An empty value returns an empty page. More than
+        20 values, or the parameter sent twice, returns `422`.
+      schema: { type: string, example: "3,7,12" }
+    SupplierId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+    ReferenceId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+
+  responses:
+    BadRequest:
+      description: Malformed request (for example a missing or invalid `Idempotency-Key`, invalid JSON in a form field, or a malformed multipart body).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Bearer token missing or invalid.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: The caller's role may not perform this operation.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Unknown id (for suppliers, also already soft-deleted on the user and PUT/DELETE endpoints).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: A request with the same `Idempotency-Key` is still running, or the submitted `version` is stale.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unprocessable:
+      description: A value failed validation (including a duplicate name/type/location, and a reference delete blocked by a foreign key).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: The configured per-IP request limit per minute was exceeded (PER_IP_RATE_LIMIT; default 30).
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Seconds until the window resets.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ServerError:
+      description: Storage, database or queue failure.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ReferenceDeleted:
+      description: Deleted.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deleted, id]
+            properties:
+              deleted: { type: boolean, enum: [true] }
+              id: { type: integer }
+
+  schemas:
+    Error:
+      type: object
+      required: [status_code, error, message, timestamp]
+      properties:
+        status_code: { type: integer }
+        error: { type: string, example: Unprocessable Entity }
+        message: { type: string }
+        timestamp:
+          type: string
+          description: Singapore time (UTC+8).
+          example: "2026-09-30T14:00:00+08:00"
+        details:
+          type: array
+          items:
+            type: object
+            required: [field, location, message]
+            properties:
+              field: { type: string }
+              location: { type: string, enum: [query, path, body] }
+              message: { type: string }
+
+    Photo:
+      type: object
+      required: [photoId, photoLocation, displayOrder]
+      properties:
+        photoId: { type: integer }
+        photoLocation:
+          type: string
+          description: Storage-provider signed URL, valid for 24 hours.
+        displayOrder:
+          type: integer
+          description: Starts at 0; the first photo is the cover.
+
+    Category:
+      type: object
+      required: [category, category_id]
+      properties:
+        category: { type: string, example: Food }
+        category_id: { type: integer, example: 1 }
+
+    OpeningHour:
+      type: object
+      required: [day, open, close]
+      properties:
+        day:
+          type: integer
+          minimum: 1
+          maximum: 8
+          description: 1 = Monday .. 7 = Sunday; 8 = open 24 hours, 7 days a week (with 00:00-23:59).
+        open:
+          {
+            type: string,
+            example: "09:00",
+            pattern: '^([01]\d|2[0-3]):[0-5]\d$',
+          }
+        close:
+          {
+            type: string,
+            example: "18:00",
+            pattern: '^([01]\d|2[0-3]):[0-5]\d$',
+          }
+
+    SupplierSummary:
+      type: object
+      required:
+        [
+          id,
+          name,
+          type,
+          location_id,
+          location,
+          faculty_id,
+          faculty,
+          level,
+          categories,
+          photos,
+          isOpen,
+        ]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        type: { type: string, enum: [Store, Facility] }
+        location_id: { type: integer }
+        location: { type: string }
+        faculty_id: { type: integer }
+        faculty: { type: string }
+        level: { type: integer }
+        categories:
+          type: array
+          items: { $ref: "#/components/schemas/Category" }
+        photos:
+          type: array
+          items: { $ref: "#/components/schemas/Photo" }
+        isOpen: { type: boolean }
+
+    SupplierDetail:
+      allOf:
+        - $ref: "#/components/schemas/SupplierSummary"
+        - type: object
+          required: [desc, openingHours]
+          properties:
+            desc: { type: string, nullable: true }
+            openingHours:
+              type: array
+              items: { $ref: "#/components/schemas/OpeningHour" }
+
+    AdminSupplierSummary:
+      allOf:
+        - $ref: "#/components/schemas/SupplierSummary"
+        - type: object
+          required: [isActive, isDeleted]
+          properties:
+            isActive: { type: boolean }
+            isDeleted: { type: boolean }
+
+    AdminSupplierDetail:
+      allOf:
+        - $ref: "#/components/schemas/SupplierDetail"
+        - type: object
+          required:
+            [isActive, isDeleted, createdOn, createdBy, updatedOn, version]
+          properties:
+            isActive: { type: boolean }
+            isDeleted: { type: boolean }
+            createdOn: { type: string, example: "2026-09-01T09:00:00+08:00" }
+            createdBy: { type: string }
+            updatedOn: { type: string, example: "2026-09-02T10:30:00+08:00" }
+            version:
+              type: integer
+              description: Echo this on every PUT; a stale value is rejected with 409.
+
+    PageMetadata:
+      type: object
+      required: [totalRecords, currPage, limit, totalPages]
+      properties:
+        totalRecords: { type: integer }
+        currPage: { type: integer }
+        limit: { type: integer, enum: [50] }
+        totalPages: { type: integer }
+
+    SupplierPage:
+      type: object
+      required: [metadata, data]
+      properties:
+        metadata: { $ref: "#/components/schemas/PageMetadata" }
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/SupplierSummary" }
+        unavailable:
+          type: array
+          description: |
+            Present only when `ids` was sent. Every requested id that is hidden (inactive), deleted
+            (soft-deleted, or no such supplier) or malformed. Well-formed ids come first, in the order
+            sent, then malformed ones. It ignores the other filters.
+          items:
+            type: object
+            required: [id, status]
+            properties:
+              id:
+                description: The supplier id, or the value as sent when `status` is `invalid`.
+                oneOf: [{ type: integer }, { type: string }]
+              status: { type: string, enum: [hidden, deleted, invalid] }
+
+    AdminSupplierPage:
+      type: object
+      required: [metadata, data]
+      properties:
+        metadata: { $ref: "#/components/schemas/PageMetadata" }
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/AdminSupplierSummary" }
+
+    LocationOption:
+      type: object
+      required: [location_id, location, faculty_id, faculty]
+      properties:
+        location_id: { type: integer }
+        location: { type: string }
+        faculty_id: { type: integer }
+        faculty: { type: string }
+
+    Faculty:
+      type: object
+      required: [faculty_id, faculty]
+      properties:
+        faculty_id: { type: integer }
+        faculty: { type: string }
+
+    LocationWrite:
+      type: object
+      required: [location, faculty_id, level]
+      properties:
+        location: { type: string, minLength: 1, maxLength: 255 }
+        faculty_id: { type: integer, minimum: 1 }
+        level: { type: integer }
+
+    LocationRecord:
+      type: object
+      required: [location_id, location, faculty_id, level]
+      properties:
+        location_id: { type: integer }
+        location: { type: string }
+        faculty_id: { type: integer }
+        level: { type: integer }
+
+    CategoryRecord:
+      type: object
+      required: [category_id, category_type]
+      properties:
+        category_id: { type: integer }
+        category_type: { type: string }
+
+    CreateSupplierForm:
+      type: object
+      required: [name, type, location_id]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        type: { type: string, enum: [Store, Facility] }
+        location_id: { type: integer, minimum: 1 }
+        category_id:
+          type: string
+          description: JSON array of category ids, for example `[2, 3]`.
+          example: "[2, 3]"
+        desc: { type: string }
+        openingHours:
+          type: string
+          description: "JSON array of `{day, open, close}` with day 1-7. Required for a Store; when `is24h` is `true`, send the single day-8 entry."
+          example: '[{"day":1,"open":"09:00","close":"18:00"}]'
+        is24h:
+          type: string
+          enum: ["true", "false"]
+          description: A Store open 24/7; then `openingHours` is the single day-8 entry.
+        photos:
+          type: array
+          maxItems: 10
+          items: { type: string, format: binary }
+          description: JPEG or PNG, at most 5 MB each. Their order is the display order, starting at 0.
+
+    UpdateSupplierForm:
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: integer
+          description: The `version` last read.
+        name: { type: string, minLength: 1, maxLength: 255 }
+        type: { type: string, enum: [Store, Facility] }
+        desc:
+          { type: string, description: An empty string clears the description. }
+        location_id: { type: integer, minimum: 1 }
+        category_id:
+          type: string
+          description: JSON array of category ids; replaces the whole set.
+          example: "[2, 3]"
+        openingHours:
+          type: string
+          example: '[{"day":1,"open":"09:00","close":"18:00"}]'
+        is24h: { type: string, enum: ["true", "false"] }
+        isActive: { type: string, enum: ["true", "false"] }
+        isPhotoDirty: { type: string, enum: ["true", "false"] }
+        photo_ids:
+          type: string
+          description: JSON array, required when `isPhotoDirty` is `true`. Numbers are existing photo ids, strings are placeholders.
+          example: '[201, "placeholder-1"]'
+        placeholder_ids:
+          type: string
+          description: JSON array of unique strings; the i-th matches the i-th uploaded `photos` file.
+          example: '["placeholder-1"]'
+        photos:
+          type: array
+          maxItems: 10
+          items: { type: string, format: binary }

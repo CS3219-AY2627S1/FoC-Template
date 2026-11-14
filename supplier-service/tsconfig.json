@@ -1,0 +1,9 @@
+// AI Assistance Disclosure:
+// Tool: Codex (model: gpt-5.6-luna), date: 2026-09-28
+// Scope: Phase 0 Task 1 project scaffold configuration; no requirements, architecture, schema, or API decisions made.
+// Author review: Congchen
+// Scope (2026-09-30, Claude Code, model: claude-sonnet-5): include the new test/ folder and drop `rootDir`
+//        (the build now uses tsconfig.build.json). No requirements, architecture, schema, or API
+//        decisions were made by the AI tool.
+// Author review:
+{"compilerOptions":{"target":"es2022","module":"NodeNext","moduleResolution":"NodeNext","esModuleInterop":true,"skipLibCheck":true,"forceConsistentCasingInFileNames":true,"outDir":"./dist","sourceMap":true,"allowJs":true,"resolveJsonModule":true,"moduleDetection":"force","isolatedModules":true,"verbatimModuleSyntax":true,"strict":true,"noUncheckedIndexedAccess":true,"noImplicitOverride":true},"include":["src/**/*","test/**/*"]}

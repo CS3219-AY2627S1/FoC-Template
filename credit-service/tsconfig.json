@@ -1,0 +1,31 @@
+{
+  // AI Assistance Disclosure:
+  // Tool: Claude Code (model: claude-opus-5), date: 2026-09-26
+  //  2026-09-26: Recess iteration - copied from the team's user-service/tsconfig.json
+  //    so both services compile under the same settings.
+  //    No requirements, architecture, schema, or API decisions were made by the AI tool.
+  //    Author review: Wee Jean
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "sourceMap": true,
+
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "moduleDetection": "force",
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true
+  },
+  "include": ["src/**/*"]
+}

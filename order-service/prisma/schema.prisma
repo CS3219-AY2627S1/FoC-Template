@@ -1,0 +1,161 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: claude-sonnet-5), date: 2026-11-09
+// Scope: Stage 28 f (instructions.md) - made OrderSeries.nextFireAt nullable (it was
+//        created NOT NULL in Stage 28a's migration, which disagreed with instructions.md's
+//        "nextFireAt (nullable)" and "finished series: deleted ... when nextFireAt is null"
+//        rules; the team chose a follow-up migration over a sentinel value, 2026-11-09).
+//        No requirements, architecture, schema, or API decisions were made by the AI tool.
+// Author review:
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: claude-sonnet-5), date: 2026-11-09
+// Scope: Stage 28a (Scheduled Errands), per instructions.md's design-decisions tables -
+//        added OrderSeries model (SeriesStatus, RetryType enums; retry-state columns null
+//        when nothing is retrying) and nullable seriesId (FK, ON DELETE SET NULL) /
+//        failureReason columns on requests. durationMinutes left nullable with no default:
+//        the default-vs-required decision is still open, pending George's completeBy change.
+//        No requirements, architecture, schema, or API decisions were made by the AI tool.
+// Author review:
+// AI Assistance Disclosure:
+// Scope (2026-11-08, Codex, model: GPT-6): Implemented precise delivery details per the team spec. No requirements, architecture, schema, or API decisions were made by the AI tool.
+// Author review:
+// Tool: Claude Code (model: claude-opus-5-5), date: 2026-10-20
+// Scope: Issue #4 schema changes per George's decisions: `pending` status, dropped
+//        `reservationId`, Outbox and DeadLetterJob models (mirroring supplier-service).
+//        No requirements, architecture, schema, or API decisions were made by the AI tool.
+// Author review: george-yeo
+// Scope (2026-10-20): Issue #11 per George's decisions - deliveryLocation (text)
+//        replaced by deliveryLocationId (INTEGER like supplierId, supplier-service location id); indexes
+//        on credits, completeBy and deliveryLocationId.
+//        No requirements, architecture, schema, or API decisions were made by the AI tool.
+// Author review: george-yeo
+
+// Order service Prisma schema.
+// Datasource URL is supplied by prisma.config.ts (Prisma 7 no longer reads it here).
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum RequestStatus {
+  pending
+  open
+  accepted
+  picked_up
+  delivered
+  completed
+  cancelled
+  expired
+  failed
+}
+
+enum SeriesStatus {
+  active
+  inactive
+}
+
+// Which fire-time check was retrying when the series stopped making progress.
+enum RetryType {
+  user_service_unreachable
+  supplier_service_unreachable
+  supplier_closed
+}
+
+model OrderRequest {
+  id                 String        @id @default(uuid(7)) @db.Uuid
+  requesterId        String        @db.Uuid
+  supplierId         Int
+  description        String
+  deliveryLocationId Int // supplier-service location_id
+  deliveryDetails String @default("Nil") @db.VarChar(250)
+  credits            Int
+  completeBy         DateTime?     @db.Timestamptz(3) // null = no deadline
+  additionalDetails  String?
+  courierId          String?       @db.Uuid
+  status             RequestStatus @default(open)
+  seriesId           String?       @db.Uuid // null once the series is edited/deleted or for non-series orders
+  failureReason      String?       // set only for series-fire-time failures/skips; credit-reservation failures leave this null
+  createdAt          DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime      @updatedAt @db.Timestamptz(3)
+  acceptedAt         DateTime?     @db.Timestamptz(3)
+  deliveredAt        DateTime?     @db.Timestamptz(3)
+  creditReleasedAt   DateTime?     @db.Timestamptz(3)
+  version            Int           @default(0)
+
+  series OrderSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([requesterId])
+  @@index([courierId])
+  @@index([credits])
+  @@index([completeBy])
+  @@index([deliveryLocationId])
+  @@index([seriesId])
+  @@map("requests")
+}
+
+// A recurring errand rule; occurrences are posted into `requests` (seriesId set) by the
+// worker's scheduler. completeBy is replaced here by durationMinutes (minutes from the
+// scheduled fire time), per the design decisions table.
+model OrderSeries {
+  id                 String       @id @default(uuid(7)) @db.Uuid
+  requesterId        String       @db.Uuid
+  supplierId         Int
+  description        String
+  deliveryLocationId Int // supplier-service location_id
+  deliveryDetails    String       @default("Nil") @db.VarChar(250)
+  credits            Int
+  durationMinutes    Int? // null until the omitted-default-vs-required decision is made
+  additionalDetails  String?
+  rrule              String // RFC 5545 RRULE text; end condition (UNTIL/COUNT/never) lives inside it
+  startAt            DateTime     @db.Timestamptz(3) // DTSTART
+  nextFireAt         DateTime?    @db.Timestamptz(3) // null = no further occurrences (finished series)
+  status             SeriesStatus @default(active)
+
+  // Retry state: all null when nothing is retrying.
+  currentOccurrenceAt DateTime?  @db.Timestamptz(3) // the scheduled time being retried
+  retryType           RetryType?
+  attemptCount        Int?
+  nextRetryAt         DateTime?  @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  version   Int      @default(0)
+
+  orders OrderRequest[]
+
+  @@index([nextFireAt, status])
+  @@index([requesterId])
+  @@map("order_series")
+}
+
+// Background tasks committed in the same transaction as the order write; the
+// worker's relay adds each row to BullMQ and deletes it once added.
+model Outbox {
+  id       BigInt @id @default(autoincrement())
+  taskName String
+  payload  Json
+  version  Int // the order version written by the same transaction
+
+  @@map("outbox")
+}
+
+// BullMQ jobs that exhausted their retries (or could not be routed).
+model DeadLetterJob {
+  id         BigInt   @id @default(autoincrement())
+  jobId      String
+  taskName   String
+  payload    Json
+  errorTrace String
+  failedAt   DateTime @db.Timestamptz(3)
+  status     String   @default("UNRESOLVED")
+
+  @@index([status])
+  @@map("dead_letter_jobs")
+}

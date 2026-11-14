@@ -1,0 +1,188 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-11-06
+# Scope: ECS Fargate CD workflow, per docs/ecs-fargate-session-prompt.md Phase 3 and George's chat
+#        decision to deploy on every merge to main from the team repo. No requirements, architecture,
+#        schema, or API decisions were made by the AI tool.
+# Author review: George Yeo
+# Tool: Claude Code (model: claude-opus-5-5), date: 2026-11-10
+# Scope: Added chat-service to the build and deploy-web lists, like the other web services, per
+#        George's chat instruction. No requirements, architecture, schema, or API decisions were made
+#        by the AI tool.
+# Author review: George Yeo
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Build and deploy, or only build and push images
+        type: choice
+        options: [deploy, build-only]
+        default: deploy
+      services:
+        description: ECS services to deploy, comma-separated, or "all"
+        type: string
+        default: all
+      build_seed:
+        description: Also build the supplier seed image
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+# Runs one at a time. A run in progress is never cancelled partway through a deploy.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-southeast-1
+  ECS_CLUSTER: foc
+
+jobs:
+  build:
+    name: build (${{ matrix.service }})
+    # The IAM role only trusts the team repo's main, so anything else is skipped rather than refused.
+    if: github.repository == 'AY2627S1-CS3219-P18/FoC' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: user-service
+            target: prod
+            repository: foc/user-service
+          - service: credit-service
+            target: prod
+            repository: foc/credit-service
+          - service: supplier-service
+            target: prod
+            repository: foc/supplier-service
+          # `production`, not `prod`: the real stage name in order-service/Dockerfile.
+          - service: order-service
+            target: production
+            repository: foc/order-service
+          # `production`, the stage name in chat-service/Dockerfile.
+          - service: chat-service
+            target: production
+            repository: foc/chat-service
+          - service: frontend
+            target: prod
+            repository: foc/frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v4
+      - name: Build and push ${{ matrix.repository }}
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.service }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ matrix.repository }}:${{ github.sha }}
+          # One manifest per image, so the ECR "keep 3 newest" rule counts builds, not attestations.
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=deploy-${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=deploy-${{ matrix.service }}
+
+  # Manual only. The seed is a one-off task, so it isn't rebuilt on every merge.
+  build-seed:
+    name: build (supplier-seed)
+    if: >-
+      github.repository == 'AY2627S1-CS3219-P18/FoC' && github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' && inputs.build_seed
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v4
+      - name: Build and push foc/supplier-seed
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: supplier-service/Dockerfile.seed
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/foc/supplier-seed:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/foc/supplier-seed:latest
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=deploy-supplier-seed
+          cache-to: type=gha,mode=max,scope=deploy-supplier-seed
+
+  deploy-web:
+    name: deploy (${{ matrix.service }})
+    needs: build
+    if: github.event_name == 'push' || inputs.mode == 'deploy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { service: user-service, repository: foc/user-service }
+          - { service: credit-service, repository: foc/credit-service }
+          - { service: supplier-service, repository: foc/supplier-service }
+          - { service: order-service, repository: foc/order-service }
+          - { service: chat-service, repository: foc/chat-service }
+          - { service: frontend, repository: foc/frontend }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Deploy ${{ matrix.service }}
+        run: bash .github/scripts/ecs-deploy.sh "$SERVICE" "$REPOSITORY"
+        env:
+          SERVICE: ${{ matrix.service }}
+          REPOSITORY: ${{ matrix.repository }}
+          IMAGE_TAG: ${{ github.sha }}
+          SELECTED_SERVICES: ${{ inputs.services || 'all' }}
+
+  # After the web services, because order-service applies the Prisma migrations when it boots.
+  deploy-workers:
+    name: deploy (${{ matrix.service }})
+    needs: deploy-web
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { service: order-worker, repository: foc/order-service }
+          - { service: credit-worker, repository: foc/credit-service }
+          - { service: supplier-worker, repository: foc/supplier-service }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Deploy ${{ matrix.service }}
+        run: bash .github/scripts/ecs-deploy.sh "$SERVICE" "$REPOSITORY"
+        env:
+          SERVICE: ${{ matrix.service }}
+          REPOSITORY: ${{ matrix.repository }}
+          IMAGE_TAG: ${{ github.sha }}
+          SELECTED_SERVICES: ${{ inputs.services || 'all' }}

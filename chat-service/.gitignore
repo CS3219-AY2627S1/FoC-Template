@@ -1,0 +1,6 @@
+# AI Assistance Disclosure: Codex (model: GPT-6), 2026-11-07
+# Scope: Generated-file exclusions. Author review: tng wen xi
+node_modules/
+dist/
+src/generated/
+.env

@@ -1,0 +1,9 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (claude-sonnet-5), date: 2026-09-24
+# Scope: Generated initial implementation as part of Stage 1
+# Author review:
+
+keys/
+.env
+node_modules/
+dist/

@@ -1,0 +1,11 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: claude-sonnet-5-5), date: 2026-11-09
+// Scope: Prisma is used only to run the versioned SQL migrations in prisma/migrations
+//        (`npm run db:deploy`). The service queries with pg, so no models or client are generated.
+//        Do not run `prisma migrate dev` or `db push`: with no models they would try to drop tables.
+//        No requirements, architecture, schema, or API decisions were made by the AI tool.
+// Author review:
+
+datasource db {
+  provider = "postgresql"
+}

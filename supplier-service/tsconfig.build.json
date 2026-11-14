@@ -1,0 +1,11 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: claude-sonnet-5), date: 2026-09-30
+// Scope: Build-only TypeScript config so `npm run build` compiles src/ alone (tests now live in
+//        test/, which tsconfig.json also type-checks). No requirements, architecture, schema, or API
+//        decisions were made by the AI tool.
+// Author review:
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "rootDir": "./src" },
+  "include": ["src/**/*"]
+}
