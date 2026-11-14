@@ -1,3 +1,5 @@
+<!-- AI Assistance Disclosure: ChatGPT (GPT-6), 2026-09-28.
+Scope: Consolidated AI disclosure. Author review: Done. -->
 # CS3219 — Software Design and Architecture (AY2627 Sem 1)
 
 ## Friend on Campus (FoC)
@@ -26,7 +28,7 @@ withdrawn, or exchanged for money, and only circulate within the platform.
 
 This repository follows a **one-service-per-folder** structure: each
 microservice (`user-service/`, `supplier-service/`, `order-service/`,
-`credit-service/`) lives in its own top-level folder.
+`credit-service/`, `mail-service/`) lives in its own top-level folder.
 
 ```text
 .
@@ -34,6 +36,8 @@ microservice (`user-service/`, `supplier-service/`, `order-service/`,
 ├── supplier-service/
 ├── order-service/
 ├── credit-service/
+├── mail-service/
+├── chat-service/
 ├── <n2h-service>/
 └── README.md
 ```
@@ -41,8 +45,343 @@ microservice (`user-service/`, `supplier-service/`, `order-service/`,
 - Any **nice-to-have (N2H)** feature that warrants its own service should
   be added as an **additional folder** at the same level, following the
   same per-service structure.
+- `chat-service/` owns one Pub/Sub-backed chatroom per order and restricts
+  message access to the requester and assigned courier. See its
+  [service README](chat-service/README.md) for details.
 - Files for agentic coding tools (e.g. agent configs, prompts, skills)
   may be added as needed, but must still **respect the
   one-service-per-folder skeleton** for core implementation.
 
+## Configure the root environment
+
+Before starting the services, copy [`.env.example`](.env.example) to `.env` in
+the repository root and replace `JWT_SECRET` with a long, randomly generated
+secret. `BOOTSTRAP_SECRET` is optional.
+
 ---
+
+## Run the full application locally
+
+Start Docker Desktop and configure the root `.env` as described above. From the
+repository root, run:
+
+```sh
+docker compose up -d --build
+docker compose ps
+```
+
+Compose starts all services and their dependencies, including Credit migrations
+and Pub/Sub provisioning. Open the frontend at http://127.0.0.1:3001.
+No separate startup script is needed.
+
+To stop the stack while keeping database data:
+
+```sh
+docker compose down
+```
+
+See the [Credit README](credit-service/README.md#view-credit-data) for Drizzle
+Studio and database inspection commands.
+
+## Run the frontend
+
+```sh
+docker compose up -d --build frontend-service
+```
+
+Open **http://127.0.0.1:3001**. The independent Nuxt app lives in
+[`frontend-service/`](frontend-service/README.md), with frontend code grouped by
+supplier, user, order, and credit service. It starts independently of the
+supplier service; run `docker compose up -d supplier-service` for supplier data,
+which Nuxt fetches over the Compose network. The supplier API remains on host port 3000.
+
+## Develop with hot reloading
+
+```sh
+docker compose -f compose.yaml -f compose.dev.yaml up --watch
+```
+
+[`compose.dev.yaml`](compose.dev.yaml) runs the supplier and user services and workers,
+plus mail-service, with `tsx watch`, and the frontend with `nuxt dev`.
+Compose also starts a local Pub/Sub emulator and PostgreSQL projection worker.
+User-service mutations are acknowledged when Pub/Sub accepts them; PostgreSQL
+updates asynchronously, so immediate reads or logins can briefly lag. Compose
+syncs source edits into the containers, which restart (backends) or hot-swap
+modules (frontend) on change.
+Editing a `package.json` rebuilds that service's image. Outside Docker, run
+`npm run dev` in any of these service folders.
+
+## Observability (local)
+
+<!-- AI Assistance Disclosure: Claude Code (Opus 5.5), 2026-11-04.
+Scope: Local observability stack instructions. Author review: Pending.
+Claude Code (Opus 5.5), 2026-11-04: the services' own OpenTelemetry data. Author review: Pending.
+Claude Code (Opus 5.5), 2026-11-05: Pub/Sub messages in logs and traces. Author review: Pending.
+Claude Code (Opus 5.5), 2026-11-10: Mimir in place of Prometheus; the stack on Cloud Run.
+Author review: Pending.
+Claude Code (Opus 5.5), 2026-11-10: the agent and mandate services. Author review: Pending. -->
+
+[`compose.observability.yaml`](compose.observability.yaml) adds an OpenTelemetry
+Collector, Grafana Mimir (for metrics), Loki, Tempo and Grafana, built from
+[`observability/Dockerfile`](observability/Dockerfile) with the configuration in
+[`observability/`](observability/), and turns on OpenTelemetry in every app service.
+After changing a file in `observability/`, rebuild with `up -d --build`.
+Add it after `compose.yaml` in any Compose command (after `compose.dev.yaml` too, for
+hot reloading):
+
+```sh
+docker compose -f compose.yaml -f compose.observability.yaml up -d --build
+```
+
+To run only the stack, for services started on the host, name its services:
+`docker compose -f compose.yaml -f compose.observability.yaml up -d otel-collector mimir loki tempo grafana`.
+
+| What | Where |
+| --- | --- |
+| Grafana (log in as `admin` / `admin`) | http://127.0.0.1:3030 |
+| Mimir (Prometheus API under `/prometheus`) | http://127.0.0.1:9009 |
+| OTLP from containers | `http://otel-collector:4318` (HTTP), `otel-collector:4317` (gRPC) |
+| OTLP from the host | `http://127.0.0.1:4318`, `127.0.0.1:4317` |
+
+The collector sends traces to Tempo, metrics to Mimir and logs to Loki, and
+reports CPU, memory and network use for every container, labelled `compose_service`.
+Grafana links traces, logs and metrics to one another by trace ID.
+
+Each service, frontend-service included, sends traces (HTTP, Express, PostgreSQL), HTTP and
+Node.js runtime metrics, and its pino logs, through
+[`shared/src/telemetry.mts`](shared/src/telemetry.mts). A request's trace follows it from
+frontend-service into the backends it calls, and on through Pub/Sub into every service its
+events and commands reach. Every Pub/Sub message is logged when published and when processed
+(with or without this file), with the same `messageId` on both sides; see
+[`shared/README.md`](shared/README.md#pubsub-messages). In Grafana, open **Explore → Tempo → Search**
+or **Service Graph**, or **Explore → Loki** with `{service_name="order-service"}`. Without
+`compose.observability.yaml` telemetry is off, and on Cloud Run unless the observability stack
+is deployed ([below](#observability-on-cloud-run)). See
+[`shared/README.md`](shared/README.md#telemetry) for what is recorded and the settings.
+
+The agent-chat, agent-orchestrator and mandate services are instrumented the same way, and
+start only with Compose's `agent-skeleton` profile:
+`docker compose -f compose.yaml -f compose.observability.yaml --profile agent-skeleton up -d --build`.
+A chat message's trace runs from frontend-service through agent-chat-service, Pub/Sub and
+agent-orchestrator-service into the services its tools call; a mandate approval's runs from
+mandate-service through agent-chat-service into the turn it resumes.
+
+## Logging
+
+<!-- AI Assistance Disclosure: Claude Code (Opus 5.5), 2026-11-04.
+Scope: Shared logger instructions. Author review: Pending. -->
+
+The backend services log through one shared [pino](https://getpino.io) logger in
+[`shared/src/logger.ts`](shared/src/logger.ts): JSON lines on stdout, with auth headers,
+passwords and tokens redacted. Docker builds pass `shared/src` in as a build context. To
+run or test a service outside Docker, copy it in first (again after each change to
+`shared/src`):
+
+```sh
+node shared/sync.mjs
+```
+
+See [`shared/README.md`](shared/README.md) for usage and the `LOG_LEVEL`, `LOG_PRETTY`
+and `OTEL_SERVICE_NAME` settings.
+The `mail-service` sends verification codes for pending accounts, a welcome email after
+signup verification, an email-updated notice after a verified email change, and one-time
+password-reset links, through Mailjet.
+
+## Mailjet
+
+Set `MAILJET_API_KEY`, `MAILJET_SECRET_KEY`,
+and `MAILJET_FROM` in `.env`; the sender address must be verified with Mailjet. Accounts
+must be verified before users can sign in or access authenticated app functionality. If
+these settings are omitted, codes remain available in the admin user list, but emails
+are skipped.
+
+## Deploy to Google Cloud (Cloud Run)
+
+<!-- AI Assistance Disclosure: Claude Code (Opus 5.5), 2026-09-30.
+Scope: Manual Cloud Build and Cloud Run deployment instructions. Author review: Done. -->
+
+Images are built by [`cloudbuild.yaml`](cloudbuild.yaml) and deployed by
+[`deploy.sh`](deploy.sh). Run from the repository root with the target project selected
+(`gcloud config set project <id>`):
+
+```sh
+gcloud builds submit --config cloudbuild.yaml --region asia-southeast1  # build and push images
+./deploy.sh setup   # one-time: Cloud SQL, Pub/Sub, databases, secrets, IAM, networking
+./deploy.sh         # run migrations, deploy services and authenticated Pub/Sub worker
+./deploy.sh seed    # load supplier seed data (safe to repeat)
+```
+
+Agent/Mandate database credentials and private Redis are provisioned automatically.
+Run `./deploy.sh soclass` before deploying the agent services to configure the model credentials.
+See [agent deployment](agent-service/docs/agent-deployment.md#prepare-production) for provisioning details and network overrides.
+
+<!-- Claude Code (Opus 5.5), 2026-11-11: order ranking deployment. Author review: Pending. -->
+`./deploy.sh` also deploys order-ranking-service (the frontend's suggested orders), which embeds
+order text with OpenAI `text-embedding-3-small` (1536 numbers). It needs its own OpenAI API key,
+separate from the agent's SoCLaaS settings. Once, before the deploy, run `./deploy.sh openai` in an
+interactive terminal and type the key when prompted; it is hidden while typing and stored as the
+`openai-api-key` secret. Without it, `./deploy.sh` stops before changing anything.
+
+Each deploy then creates the `rankings` database (with pgvector) if needed, runs its migrations,
+makes one embedding request with these settings (stopping with the reason if the key or vector
+length is wrong), and deploys the service, its `order-events` and `supplier-events`
+subscriptions and an every-minute embedding retry job. The service learns orders and suppliers
+from events published after its first deploy; see
+[its README](order-ranking-service/README.md#cloud-deployment).
+
+### Observability on Cloud Run
+
+<!-- AI Assistance Disclosure: Claude Code (Opus 5.5), 2026-11-10.
+Scope: Deploying the observability stack to Cloud Run. Author review: Pending.
+Claude Code (Opus 5.5), 2026-11-11: the readiness check. Author review: Pending. -->
+
+`OBSERVABILITY=on ./deploy.sh` also deploys the observability stack, and turns on every
+service's telemetry. It is one Cloud Run service, `observability`, whose containers are the same
+images as in Docker Compose (built by `cloudbuild.yaml`), sharing the instance's `localhost`:
+
+- **nginx** (the entry point) sends OTLP (`/v1/traces`, `/v1/metrics`, `/v1/logs`) to the
+  collector when it carries the `x-otlp-token` the services send (from the `otlp-exporter-headers`
+  secret), and everything else to Grafana.
+- **Grafana** is public, behind its login: user `admin`, password in Secret Manager:
+  `gcloud secrets versions access latest --secret grafana-admin-password`. `deploy.sh` prints the
+  URL.
+- **Mimir, Loki and Tempo** keep their data in the GCS buckets `<project>-observability-mimir`,
+  `-loki` and `-tempo`, which outlive the service.
+
+It runs as exactly one instance with CPU always allocated (6 vCPU, 6 GiB in all): about
+US$0.50 an hour, or US$12 a day, while deployed. With `OBSERVABILITY=off`, the default,
+`./deploy.sh` turns the services' telemetry off and deletes the service; `./deploy.sh
+observability-down` deletes it straight away. The GitHub workflow takes the setting from the
+`OBSERVABILITY` repository variable.
+
+The stack is deployed before any app service, and `deploy.sh` then checks it: OTLP with the
+token must be accepted, OTLP without it refused, and Grafana must answer. If not, the deploy
+stops there, with the app services still on their current revisions, rather than pointing them
+at a stack that would drop their telemetry.
+
+To build and deploy only the observability stack, run the
+[Deploy Observability Stack workflow](.github/workflows/deploy-observability.yml) manually from
+the Actions tab. It builds only the stack images with
+[`cloudbuild-observability.yaml`](cloudbuild-observability.yaml) and deploys them using
+`OBSERVABILITY=on`; application services are not changed.
+From a configured local gcloud environment, the equivalent is:
+
+```sh
+gcloud builds submit --config cloudbuild-observability.yaml --region asia-southeast1
+OBSERVABILITY=on ./deploy.sh observability
+```
+
+The services only send telemetry while they have CPU: those that Cloud Run throttles between
+requests send theirs during their next request, so it can show up late. Data the stores held
+in memory when the service is deleted or redeployed may be lost.
+
+### Automatic deployment (GitHub Actions)
+
+<!-- AI Assistance Disclosure: Claude Code (Opus 5.5), 2026-10-18.
+Scope: GitHub Actions deployment instructions. Author review: Pending.
+Claude Code (Opus 5.5), 2026-11-11: the checks job. Author review: Pending. -->
+
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) builds the images and runs
+`./deploy.sh` on every push to `main` (it can also be run manually from the Actions tab, with an
+option to seed). It signs in through Workload Identity Federation, so no service account key is
+stored in GitHub. A `checks` job runs first, in about 3 minutes: `deploy.sh`'s syntax, the
+agent and mandate builds, and the tests that need no database, including the shared Pub/Sub
+messaging test (`npm run test:messaging`). The image build only starts once it passes, and is
+stopped after 30 minutes (`timeout` in `cloudbuild.yaml`). One-time setup, after `./deploy.sh setup`:
+
+```sh
+./deploy.sh github  # deployer service account, identity pool restricted to this repo's main branch
+```
+
+Then add the three printed values (`GCP_PROJECT_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER`,
+`GCP_SERVICE_ACCOUNT`) as repository variables under Settings > Secrets and variables > Actions.
+Add `OBSERVABILITY` = `on` there too to deploy the [observability stack](#observability-on-cloud-run)
+with every deployment; set it to `off` (or delete it) and run the workflow again to remove it.
+
+To redeploy images that have already been built, run
+[`.github/workflows/deploy-existing.yml`](.github/workflows/deploy-existing.yml) manually from the
+Actions tab and enter the image tag (defaults to `latest`). This workflow only runs `./deploy.sh`;
+it does not build or seed images.
+
+To deploy only Agent Chat, Orchestrator, and Mandate from existing images, run
+[`.github/workflows/deploy-agent-services.yml`](.github/workflows/deploy-agent-services.yml)
+manually and enter the image tag. This path does not provision Redis, databases, Pub/Sub resources,
+or IAM bindings; those must already be configured.
+
+The user service publishes state-change events to the `user-events` topic. The
+authenticated `user-event-worker` Cloud Run service consumes its push
+subscription and updates the PostgreSQL read model. Events contain password
+hashes only; GCP IAM restricts publishing and push invocation.
+
+The `mail-service` also consumes `user-events` through an authenticated Pub/Sub push
+subscription and sends verification and welcome emails. After `./deploy.sh setup`, run
+`./deploy.sh mailjet` from an interactive terminal to securely enter your Mailjet
+credentials and verified sender address. The API key and secret key are hidden while
+typing, and the values are saved as Secret Manager versions (updated when the secrets
+already exist). Then run `./deploy.sh` to deploy/redeploy the mail service:
+
+```sh
+./deploy.sh mailjet
+./deploy.sh
+```
+
+The sender address must be verified with Mailjet. The command requires an authenticated
+`gcloud` session with permission to create Secret Manager secrets and versions; it does not
+put credential values in shell history. If the secrets are not configured, deployment
+skips the mail service.
+
+To create the first administrator, add a `bootstrap-secret` in Secret Manager (at least 32
+bytes), re-run `./deploy.sh`, complete `/setup/admin`, then delete the secret and re-run.
+
+## AI Assistance Disclosure
+
+Tools: ChatGPT / Codex (GPT-6) and Claude Code (Opus 5.5). Modes: boilerplate generation, implementation, debugging,
+documentation, and verification. Supplier-service setup assistance is recorded
+in the [service README](supplier-service/README.md). The exact Drizzle setup
+prompt, subsequent TypeScript configuration fix, schema implementation and migration,
+CSV-derived seed implementation, local database connection fix, GET suppliers route,
+Nuxt frontend implementation, supplier authentication, administrator POST/PUT/DELETE
+routes, and type/building list routes (implemented to the student's stated design choices), key responses, affected files,
+and review status are in the
+[AI usage log](AI_USAGE_LOG.md).
+
+Drizzle assistance covers connection and tooling boilerplate and implementation
+of the student-defined database schema. Database schema and architecture decisions
+remain with the student. Prior setup was reviewed; the latest schema, migration, and seed
+changes await student review.
+Link this README from the submission slide deck when it is created.
+
+## Agent service
+
+The `/agent` and `/mandates` pages use persistent conversations, streamed model responses, and explicit mandate approval. Creation requires mandate coverage; cancellation requires order ownership and a cancellable state.
+The Agent domain is grouped under `agent-service/` with `chat/`, `orchestrator/`, shared `contracts/`, and shared `db/`.
+Mandate remains a separate top-level service.
+The backend follows [the current runtime behavior](agent-service/docs/agent-skeleton-implementation.md).
+See [implementation order and ownership](agent-service/docs/agent-skeleton-implementation.md) and [deployment plan](agent-service/docs/agent-deployment.md).
+
+Run `npm ci && npm run build` at the repository root to compile the three backend services.
+Frontend dependencies remain managed inside `frontend-service`.
+
+## Service connection checks
+
+Run `npm run test:connections` with Docker running after installing root, Order and Supplier dependencies.
+See [connection configuration and limits](agent-service/docs/agent-deployment.md#connection-layer).
+Internal Supplier and owner-scoped Order reads accept authenticated Agent/Mandate service credentials.
+Run the opt-in Agent stack with `docker compose --profile agent-skeleton up --build`. Set `SOCLAAS_API_KEY` and `SOCLAAS_MODEL` in `.env`.
+
+## AI assistance disclosure — 2026-11-09
+
+Codex (GPT-6) implemented the user-approved service connection plan, internal read routes,
+configuration and verification. Author review: Pending. See [exact prompts and key responses](AI_USAGE_LOG.md).
+Link this README from the submission slide deck.
+
+### Rebase assistance — 2026-11-10
+
+Local redeployment assistance: Codex (GPT-6.1) reconciled already-matching agent migration
+baselines, applied additive user schema updates, and excluded a legacy token table
+from schema management to preserve local data. Author review: Pending; see [AI_USAGE_LOG.md](AI_USAGE_LOG.md).
+
+Codex (GPT-6.1) executed the approved rebase plan: preserved the original commits,
+merged onto remote main, resolved configuration conflicts, moved agent/mandate host
+ports to 3008/3009, aligned stale test fixtures, and ran verification. Author review:
+Pending. Exact prompts and key responses are recorded in [AI_USAGE_LOG.md](AI_USAGE_LOG.md).

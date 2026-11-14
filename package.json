@@ -1,0 +1,23 @@
+{
+  "//": "AI Assistance Disclosure: Claude Code (Opus 5.5), 2026-11-11. Scope: test:messaging, the shared Pub/Sub messaging test the deploy workflow runs before Cloud Build. Author review: Pending.",
+  "name": "campus-agent-skeleton",
+  "private": true,
+  "workspaces": [
+    "agent-service",
+    "agent-service/chat",
+    "agent-service/orchestrator",
+    "mandate-service"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test:connections": "node agent-service/scripts/test-connections.mjs",
+    "test:boundaries": "node --test test/service-boundaries.test.mjs",
+    "test:contracts": "npm run build && node --test test/service-contracts.test.mjs",
+    "test:messaging": "npm run build --workspace @campus/agent-contracts && node --test test/shared-messaging.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,93 @@
+# AI Assistance Disclosure: Claude Code (Opus 5.5), 2026-11-04.
+# Scope: Local OpenTelemetry Collector pipeline: OTLP in; traces to Tempo, metrics to
+# Prometheus, logs to Loki; Docker container metrics. Author review: Pending.
+# Claude Code (Opus 5.5), 2026-11-10: metrics go to Mimir, which also gets the stack's own
+# metrics (scraped here, as Prometheus did); hosts from the environment, so the same file
+# runs on Cloud Run; Docker container metrics moved to otel-collector.local.yaml.
+# Author review: Pending.
+#
+# observability/Dockerfile sets the local defaults of ${env:...}; deploy.sh the Cloud Run
+# values (every host is localhost there).
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # The stack's own metrics, scraped every 15 s.
+  prometheus/stack:
+    config:
+      global:
+        scrape_interval: 15s
+      scrape_configs:
+        - job_name: otel-collector
+          static_configs:
+            - targets: ["localhost:8888"]
+        - job_name: mimir
+          static_configs:
+            - targets: ["${env:MIMIR_HOST}:9009"]
+        - job_name: loki
+          static_configs:
+            - targets: ["${env:LOKI_HOST}:3100"]
+        - job_name: tempo
+          static_configs:
+            - targets: ["${env:TEMPO_HOST}:3200"]
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+  batch: {}
+  resource/environment:
+    attributes:
+      - key: deployment.environment.name
+        value: ${env:DEPLOYMENT_ENVIRONMENT}
+        action: upsert
+
+exporters:
+  # Tempo's OTLP gRPC receiver, moved off 4317 (see tempo.yaml).
+  otlp_grpc/tempo:
+    endpoint: ${env:TEMPO_HOST}:4417
+    tls:
+      insecure: true
+  # Mimir's OTLP ingestion (/otlp/v1/metrics).
+  otlp_http/mimir:
+    endpoint: http://${env:MIMIR_HOST}:9009/otlp
+    tls:
+      insecure: true
+  # Loki 3 native OTLP ingestion (/otlp/v1/logs).
+  otlp_http/loki:
+    endpoint: http://${env:LOKI_HOST}:3100/otlp
+    tls:
+      insecure: true
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource/environment, batch]
+      exporters: [otlp_grpc/tempo]
+    metrics:
+      receivers: [otlp, prometheus/stack]
+      processors: [memory_limiter, resource/environment, batch]
+      exporters: [otlp_http/mimir]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource/environment, batch]
+      exporters: [otlp_http/loki]

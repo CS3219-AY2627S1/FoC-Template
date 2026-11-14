@@ -1,0 +1,1010 @@
+# AI Assistance Disclosure: ChatGPT (GPT-6), 2026-09-30.
+# Codex (GPT-6.1), 2026-11-10: merge services and volumes; move agent ports to 3008/3009. Author review: Pending.
+# Scope: User PostgreSQL wiring and optional bootstrap secret. Author review: Done.
+# Claude Code (Opus 5.5), 2026-11-04: backend images also get shared/src (the shared logger) as the `shared`
+# build context; see shared/README.md. Author review: Pending.
+# Claude Code (Opus 5.5), 2026-11-10: so do the chat, mail, order-ranking and sync services and
+# their migration jobs. Author review: Pending.
+x-shared-context: &shared-context
+  shared: ./shared/src
+
+# Scope: User PostgreSQL wiring, optional bootstrap secret, and Mailjet event-driven mail service.
+# Author review: Done.
+# ChatGPT (GPT-6), 2026-11-04: add mail-service and wait for its user-events subscription. Author review: Pending.
+services:
+  credit-db:
+    image: postgres:17
+    ports:
+      - "127.0.0.1:5438:5432"
+    environment:
+      POSTGRES_USER: credit
+      POSTGRES_PASSWORD: credit
+      POSTGRES_DB: credits
+    volumes:
+      - credit-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U credit -d credits"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  credit-db-migrate:
+    build:
+      context: ./credit-service
+      additional_contexts: *shared-context
+    command: ["npm", "run", "db:migrate"]
+    environment:
+      DATABASE_URL: postgres://credit:credit@credit-db:5432/credits
+    depends_on:
+      credit-db:
+        condition: service_healthy
+
+  credit-pubsub-provision:
+    build:
+      context: ./credit-service
+      additional_contexts: *shared-context
+    command: ["npm", "run", "pubsub:provision"]
+    environment: &credit-environment
+      PORT: "3000"
+      DATABASE_URL: postgres://credit:credit@credit-db:5432/credits
+      INITIAL_CREDITS: ${INITIAL_CREDITS:-1000}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      INTERNAL_SHARED_SECRET: ${CREDIT_INTERNAL_SECRET:-local-only-credit-internal-secret-0000}
+      PUBSUB_PROJECT_ID: foc-local
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PUSH_BASE_URL: http://credit-service:3000
+      USER_EVENTS_TOPIC: user-events
+      USER_EVENTS_SUBSCRIPTION: credit-service-user-events
+      CREDIT_EVENTS_TOPIC: credit-events
+      CREDIT_COMMANDS_TOPIC: credit-commands
+      CREDIT_COMMANDS_SUBSCRIPTION: credit-service-commands
+    depends_on:
+      pubsub-emulator:
+        condition: service_healthy
+
+  credit-service:
+    build:
+      context: ./credit-service
+      additional_contexts: *shared-context
+    restart: unless-stopped
+    environment: *credit-environment
+    ports:
+      - "3004:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      credit-db-migrate:
+        condition: service_completed_successfully
+      credit-pubsub-provision:
+        condition: service_completed_successfully
+
+  credit-publisher:
+    build:
+      context: ./credit-service
+      additional_contexts: *shared-context
+    command: ["npm", "run", "publisher"]
+    environment:
+      <<: *credit-environment
+      # Claude Code (Opus 5.5), 2026-11-04: the logger's service name. Author review: Pending.
+      OTEL_SERVICE_NAME: credit-publisher
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "dist/outbox-publisher/publisher-health.js"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      credit-db-migrate:
+        condition: service_completed_successfully
+      credit-pubsub-provision:
+        condition: service_completed_successfully
+
+  user-service:
+    build:
+      context: ./user-service
+      additional_contexts: *shared-context
+    environment:
+      PORT: "3333"
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL:-900}
+      BOOTSTRAP_SECRET: ${BOOTSTRAP_SECRET:-}
+      DATABASE_URL: postgres://user:user@user-db:5432/users
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: foc-local
+      PUBSUB_TOPIC: user-events
+      PUBSUB_SUBSCRIPTION: user-events-worker
+      PASSWORD_RESET_TOPIC: password-reset-requests
+    ports:
+      - "3333:3333"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3333/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      user-db-migrate:
+        condition: service_completed_successfully
+      user-event-worker:
+        condition: service_healthy
+      mail-service:
+        condition: service_healthy
+      # Claude Code (Opus 5.5), 2026-10-17: order-service creates its user-events
+      # subscription at startup; earlier events would never reach it. Author review: Pending.
+      order-service:
+        condition: service_healthy
+      # Claude Code (Opus 5.5), 2026-10-18: likewise for the supplier event worker.
+      # Author review: Pending.
+      supplier-event-worker:
+        condition: service_healthy
+
+  mail-service:
+    build:
+      context: ./mail-service
+      additional_contexts: *shared-context
+    restart: unless-stopped
+    environment:
+      PORT: "3335"
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: foc-local
+      PUBSUB_TOPIC: user-events
+      PUBSUB_SUBSCRIPTION: mail-service-user-events
+      PUBSUB_PUSH_ENDPOINT: http://mail-service:3335/pubsub/user-events
+      PASSWORD_RESET_TOPIC: password-reset-requests
+      PASSWORD_RESET_SUBSCRIPTION: password-reset-mail
+      PASSWORD_RESET_PUSH_ENDPOINT: http://mail-service:3335/pubsub/password-reset
+      FRONTEND_BASE_URL: http://localhost:3001
+      MAILJET_API_KEY: ${MAILJET_API_KEY:-}
+      MAILJET_SECRET_KEY: ${MAILJET_SECRET_KEY:-}
+      MAILJET_FROM: ${MAILJET_FROM:-}
+    ports:
+      - "3335:3335"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3335/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      pubsub-emulator:
+        condition: service_healthy
+
+  user-event-worker:
+    build:
+      context: ./user-service
+      additional_contexts: *shared-context
+    command: ["npm", "run", "worker"]
+    environment:
+      PORT: "3334"
+      # Claude Code (Opus 5.5), 2026-11-04: the logger's service name. Author review: Pending.
+      OTEL_SERVICE_NAME: user-event-worker
+      DATABASE_URL: "postgres://user:user@user-db:5432/users"
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: foc-local
+      PUBSUB_TOPIC: user-events
+      PUBSUB_SUBSCRIPTION: user-events-worker
+      PUBSUB_PUSH_ENDPOINT: http://user-event-worker:3334/pubsub/user-events
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3334/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      user-db-migrate:
+        condition: service_completed_successfully
+      pubsub-emulator:
+        condition: service_healthy
+
+  pubsub-emulator:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command:
+      - gcloud
+      - beta
+      - emulators
+      - pubsub
+      - start
+      - --project=foc-local
+      - --host-port=0.0.0.0:8085
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "curl -fsS http://127.0.0.1:8085/v1/projects/foc-local/topics >/dev/null || exit 1"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  frontend-service:
+    build:
+      context: ./frontend-service
+      # Claude Code (Opus 5.5), 2026-11-04: for shared/src/telemetry.mts. Author review: Pending.
+      additional_contexts: *shared-context
+    environment:
+      NITRO_HOST: 0.0.0.0
+      NITRO_PORT: "3000"
+      NUXT_USER_SERVICE_BASE_URL: http://user-service:3333
+      NUXT_SUPPLIER_SERVICE_BASE_URL: http://supplier-service:3000
+      NUXT_CREDIT_SERVICE_BASE_URL: http://credit-service:3000
+      # Claude Code (Opus 5.5), 2026-10-17. Author review: Pending.
+      NUXT_AGENT_SERVICE_BASE_URL: http://agent-chat-service:3000
+      NUXT_MANDATE_SERVICE_BASE_URL: http://mandate-service:3000
+      NUXT_ORDER_SERVICE_BASE_URL: http://order-service:3000
+      NUXT_CHAT_SERVICE_BASE_URL: http://chat-service:3000
+      # Claude Code (Opus 5.5), 2026-10-17. Author review: Pending.
+      NUXT_NOTIFICATION_SERVICE_BASE_URL: http://notification-service:3000
+      NUXT_PUBLIC_NOTIFICATION_SERVICE_URL: ws://127.0.0.1:3003
+      # Claude Code (Opus 5.5), 2026-10-17. Author review: Pending.
+      NUXT_SYNC_SERVICE_BASE_URL: http://sync-service:3000
+      NUXT_PUBLIC_SYNC_SERVICE_URL: ws://127.0.0.1:3005
+      # Claude Code (Opus 5.5), 2026-10-31. Author review: Pending.
+      NUXT_ORDER_RANKING_SERVICE_BASE_URL: http://order-ranking-service:3000
+    ports:
+      - "3001:3000"
+    depends_on:
+      user-service:
+        condition: service_healthy
+      # Claude Code (Opus 5.5), 2026-10-31: order-events published before its subscription
+      # exists would never reach order-ranking-service. Author review: Pending.
+      order-ranking-service:
+        condition: service_healthy
+      chat-service:
+        condition: service_healthy
+        
+  # AI Assistance Disclosure: ChatGPT (GPT-6), 2026-09-28.
+  # Scope: Service orchestration, Nuxt frontend, local database access, and automatic supplier migrations.
+  # Author review: Check for correctness.
+
+  supplier-db-migrate:
+    build:
+      context: ./supplier-service
+      additional_contexts: *shared-context
+      target: tooling
+    command: ["npm", "run", "db:migrate"]
+    environment:
+      DATABASE_URL: "postgres://supplier:supplier@supplier-db:5432/suppliers"
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+
+  user-db-migrate:
+    build:
+      context: ./user-service
+      additional_contexts: *shared-context
+    command: ["npm", "run", "db:migrate"]
+    environment:
+      DATABASE_URL: postgres://user:user@user-db:5432/users
+    depends_on:
+      user-db:
+        condition: service_healthy
+
+  supplier-service:
+    build:
+      context: ./supplier-service
+      additional_contexts: *shared-context
+    ports:
+      - "3000:3000"
+    environment:
+      SERVICE_AUTH_MODE: local
+      SERVICE_READ_SECRETS: ${SUPPLIER_SERVICE_READ_SECRETS:-${SUPPLIER_AGENT_READ_SECRET:-local-only-supplier-agent-read-secret-0000},${SUPPLIER_MANDATE_READ_SECRET:-local-only-supplier-mandate-read-secret-0000}}
+      DATABASE_URL: postgres://supplier:supplier@supplier-db:5432/suppliers
+      # Claude Code (Opus 5.5), 2026-10-18: tokens are verified locally and callers are
+      # looked up in the local user copy, in place of user-service GET /me. Author review: Pending.
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      # Claude Code (Opus 5.5), 2026-10-18: the API relays supplier-events from its outbox
+      # after each commit. Author review: Pending.
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: foc-local
+      SUPPLIER_EVENTS_TOPIC: supplier-events
+    depends_on:
+      supplier-db-migrate:
+        condition: service_completed_successfully
+      # order-service creates its supplier-events subscription at startup; events
+      # published earlier would never reach it.
+      order-service:
+        condition: service_healthy
+      # Claude Code (Opus 5.5), 2026-10-31: likewise for order-ranking-service. Author review: Pending.
+      order-ranking-service:
+        condition: service_healthy
+
+  # AI Assistance Disclosure: Claude Code (Opus 5.5), 2026-10-18.
+  # Scope: supplier-service Pub/Sub worker: copies user-events into the supplier database
+  # and sweeps the supplier-events outbox. Author review: Pending.
+  supplier-event-worker:
+    build:
+      context: ./supplier-service
+      additional_contexts: *shared-context
+    # Claude Code (Opus 5.5), 2026-11-04: OpenTelemetry loads first. Author review: Pending.
+    command: ["node", "--import", "./dist/shared/telemetry.mjs", "dist/worker.js"]
+    environment:
+      PORT: "3004"
+      # Claude Code (Opus 5.5), 2026-11-04: the logger's service name. Author review: Pending.
+      OTEL_SERVICE_NAME: supplier-event-worker
+      DATABASE_URL: postgres://supplier:supplier@supplier-db:5432/suppliers
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: foc-local
+      USER_EVENTS_TOPIC: user-events
+      PUBSUB_SUBSCRIPTION: supplier-service-user-events
+      PUBSUB_PUSH_ENDPOINT: http://supplier-event-worker:3004/pubsub/user-events
+      SUPPLIER_EVENTS_TOPIC: supplier-events
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3004/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      supplier-db-migrate:
+        condition: service_completed_successfully
+      pubsub-emulator:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      # Claude Code (Opus 5.5), 2026-10-31. Author review: Pending.
+      order-ranking-service:
+        condition: service_healthy
+
+  # Claude Code (Opus 5.5), 2026-10-18: publishes supplier-events the API's relay missed,
+  # every minute, as Cloud Scheduler does in GCP. Author review: Pending.
+  supplier-ticker:
+    image: curlimages/curl:8.11.1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          sleep 60
+          curl -fsS -X POST http://supplier-event-worker:3004/outbox/publish
+        done
+    depends_on:
+      supplier-event-worker:
+        condition: service_healthy
+
+  supplier-db-tools:
+    profiles: ["tools"]
+    build:
+      context: ./supplier-service
+      additional_contexts: *shared-context
+      target: tooling
+    environment:
+      DATABASE_URL: postgres://supplier:supplier@supplier-db:5432/suppliers
+    volumes:
+      - ./supplier-service/src:/app/src
+      # Claude Code (Opus 5.5), 2026-11-04: the shared logger, hidden by the src mount. Author review: Pending.
+      - ./shared/src:/app/src/shared:ro
+      - ./supplier-service/drizzle:/app/drizzle
+      - ./supplier-service/drizzle.config.ts:/app/drizzle.config.ts:ro
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+
+  supplier-db:
+    image: postgres:17
+    ports:
+      - "127.0.0.1:${SUPPLIER_DB_PORT:-5433}:5432"
+    environment:
+      POSTGRES_USER: supplier
+      POSTGRES_PASSWORD: supplier
+      POSTGRES_DB: suppliers
+    volumes:
+      - supplier-db-data:/var/lib/postgresql/data
+      - ./supplier-service/db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supplier -d suppliers"]
+      interval: 5s
+      retries: 5
+
+  user-db:
+    image: postgres:17
+    ports:
+      - "127.0.0.1:5434:5432"
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: user
+      POSTGRES_DB: users
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d users"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # AI Assistance Disclosure: Claude Code (Opus 5.5), 2026-10-17.
+  # Scope: Order service, its PostgreSQL database and migrations, and a local ticker
+  # standing in for Cloud Scheduler. Author review: Pending.
+  order-db:
+    image: postgres:17
+    ports:
+      - "127.0.0.1:5435:5432"
+    environment:
+      POSTGRES_USER: order
+      POSTGRES_PASSWORD: order
+      POSTGRES_DB: orders
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U order -d orders"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  order-db-migrate:
+    build:
+      context: ./order-service
+      additional_contexts: *shared-context
+      target: tooling
+    command: ["npm", "run", "db:migrate"]
+    environment:
+      DATABASE_URL: postgres://order:order@order-db:5432/orders
+    depends_on:
+      order-db:
+        condition: service_healthy
+
+  order-service:
+    build:
+      context: ./order-service
+      additional_contexts: *shared-context
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://order:order@order-db:5432/orders
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      # Local only: the emulator and the ticker cannot send Google OIDC tokens.
+      INTERNAL_SHARED_SECRET: ${ORDER_INTERNAL_SECRET:-local-only-order-internal-secret-0000}
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: foc-local
+      PUBSUB_PUSH_BASE_URL: http://order-service:3000
+    ports:
+      - "3002:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      order-db-migrate:
+        condition: service_completed_successfully
+      pubsub-emulator:
+        condition: service_healthy
+      chat-service:
+        condition: service_healthy
+
+  chat-db:
+    image: postgres:17
+    ports:
+      - "127.0.0.1:5440:5432"
+    environment:
+      POSTGRES_USER: chat
+      POSTGRES_PASSWORD: chat
+      POSTGRES_DB: chats
+    volumes:
+      - chat-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chat -d chats"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  chat-db-migrate:
+    build:
+      context: ./chat-service
+      additional_contexts: *shared-context
+      target: tooling
+    command: ["npm", "run", "db:migrate"]
+    environment:
+      DATABASE_URL: postgres://chat:chat@chat-db:5432/chats
+    depends_on:
+      chat-db:
+        condition: service_healthy
+
+  chat-service:
+    build:
+      context: ./chat-service
+      additional_contexts: *shared-context
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://chat:chat@chat-db:5432/chats
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: foc-local
+    ports:
+      - "3006:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      chat-db-migrate:
+        condition: service_completed_successfully
+      pubsub-emulator:
+        condition: service_healthy
+
+  # AI Assistance Disclosure: Claude Code (Opus 5.5), 2026-10-17.
+  # Scope: Notification service (WebSockets for order events). Author review: Pending.
+  # Claude Code (Opus 5.5), 2026-10-17: database and migrations for stored notifications. Author review: Pending.
+  notification-db:
+    image: postgres:17
+    ports:
+      - "127.0.0.1:5436:5432"
+    environment:
+      POSTGRES_USER: notification
+      POSTGRES_PASSWORD: notification
+      POSTGRES_DB: notifications
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notification -d notifications"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  notification-db-migrate:
+    build:
+      context: ./notification-service
+      additional_contexts: *shared-context
+      target: tooling
+    command: ["npm", "run", "db:migrate"]
+    environment:
+      DATABASE_URL: postgres://notification:notification@notification-db:5432/notifications
+    depends_on:
+      notification-db:
+        condition: service_healthy
+
+  notification-service:
+    build:
+      context: ./notification-service
+      additional_contexts: *shared-context
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://notification:notification@notification-db:5432/notifications
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      # Local only; in Cloud this is a Secret Manager secret shared by all instances.
+      NOTIFICATION_TICKET_SECRET: ${NOTIFICATION_TICKET_SECRET:-local-only-notification-ticket-secret-00}
+      ALLOWED_ORIGINS: http://127.0.0.1:3001,http://localhost:3001
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: foc-local
+    ports:
+      - "3003:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      notification-db-migrate:
+        condition: service_completed_successfully
+      pubsub-emulator:
+        condition: service_healthy
+
+  # AI Assistance Disclosure: Claude Code (Opus 5.5), 2026-10-17.
+  # Scope: Synchronization service for group orders, its database and migrations. Author review: Pending.
+  sync-db:
+    image: postgres:17
+    ports:
+      - "127.0.0.1:5437:5432"
+    environment:
+      POSTGRES_USER: sync
+      POSTGRES_PASSWORD: sync
+      POSTGRES_DB: sync
+    volumes:
+      - sync-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sync -d sync"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  sync-db-migrate:
+    build:
+      context: ./sync-service
+      additional_contexts: *shared-context
+      target: tooling
+    command: ["npm", "run", "db:migrate"]
+    environment:
+      DATABASE_URL: postgres://sync:sync@sync-db:5432/sync
+    depends_on:
+      sync-db:
+        condition: service_healthy
+
+  sync-service:
+    build:
+      context: ./sync-service
+      additional_contexts: *shared-context
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://sync:sync@sync-db:5432/sync
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      # Local only; in Cloud this is a Secret Manager secret shared by all instances.
+      SYNC_TICKET_SECRET: ${SYNC_TICKET_SECRET:-local-only-sync-ticket-secret-000000000}
+      ALLOWED_ORIGINS: http://127.0.0.1:3001,http://localhost:3001
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: foc-local
+    ports:
+      - "3005:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      sync-db-migrate:
+        condition: service_completed_successfully
+      pubsub-emulator:
+        condition: service_healthy
+
+  # Runs the expiry sweep and the outbox relay every minute, as Cloud Scheduler does in GCP.
+  order-ticker:
+    image: curlimages/curl:8.11.1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          sleep 60
+          curl -fsS -X POST -H "x-internal-secret: $$SECRET" http://order-service:3000/internal/orders/expire-overdue
+          curl -fsS -X POST -H "x-internal-secret: $$SECRET" http://order-service:3000/internal/outbox/publish
+        done
+    environment:
+      SECRET: ${ORDER_INTERNAL_SECRET:-local-only-order-internal-secret-0000}
+    depends_on:
+      order-service:
+        condition: service_healthy
+
+  # AI Assistance Disclosure: Claude Code (Opus 5.5), 2026-10-18.
+  # Scope: Saga orchestrator, its database and migrations, and a ticker standing in for
+  # Cloud Scheduler. Internal only, so no host port. Author review: Pending.
+  saga-db:
+    image: postgres:17
+    ports:
+      - "127.0.0.1:5439:5432"
+    environment:
+      POSTGRES_USER: saga
+      POSTGRES_PASSWORD: saga
+      POSTGRES_DB: sagas
+    volumes:
+      - saga-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saga -d sagas"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  saga-db-migrate:
+    build:
+      context: ./saga-orchestrator
+      additional_contexts: *shared-context
+      target: tooling
+    command: ["npm", "run", "db:migrate"]
+    environment:
+      DATABASE_URL: postgres://saga:saga@saga-db:5432/sagas
+    depends_on:
+      saga-db:
+        condition: service_healthy
+
+  saga-orchestrator:
+    build:
+      context: ./saga-orchestrator
+      additional_contexts: *shared-context
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://saga:saga@saga-db:5432/sagas
+      RESERVE_TIMEOUT_SECONDS: ${RESERVE_TIMEOUT_SECONDS:-60}
+      # Local only: the emulator and the ticker cannot send Google OIDC tokens.
+      INTERNAL_SHARED_SECRET: ${SAGA_INTERNAL_SECRET:-local-only-saga-internal-secret-000000}
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: foc-local
+      PUBSUB_PUSH_BASE_URL: http://saga-orchestrator:3000
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      saga-db-migrate:
+        condition: service_completed_successfully
+      # Its commands need someone subscribed on both sides.
+      order-service:
+        condition: service_healthy
+      credit-pubsub-provision:
+        condition: service_completed_successfully
+
+  # Aborts reservations credit has not answered and republishes leftover commands every minute.
+  saga-ticker:
+    image: curlimages/curl:8.11.1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          sleep 60
+          curl -fsS -X POST -H "x-internal-secret: $$SECRET" http://saga-orchestrator:3000/internal/sagas/abort-overdue
+          curl -fsS -X POST -H "x-internal-secret: $$SECRET" http://saga-orchestrator:3000/internal/outbox/publish
+        done
+    environment:
+      SECRET: ${SAGA_INTERNAL_SECRET:-local-only-saga-internal-secret-000000}
+    depends_on:
+      saga-orchestrator:
+        condition: service_healthy
+
+  # AI Assistance Disclosure: Claude Code (Opus 5.5), 2026-10-31.
+  # Scope: Order ranking service (pgvector database, migrations, and a ticker standing in
+  # for Cloud Scheduler to retry failed embeddings). Without OPENAI_API_KEY in .env it
+  # uses the keyless hashing embedder. Author review: Pending.
+  order-ranking-db:
+    image: pgvector/pgvector:pg17
+    ports:
+      - "127.0.0.1:5441:5432"
+    environment:
+      POSTGRES_USER: ranking
+      POSTGRES_PASSWORD: ranking
+      POSTGRES_DB: rankings
+    volumes:
+      - order-ranking-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ranking -d rankings"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  order-ranking-db-migrate:
+    build:
+      context: ./order-ranking-service
+      additional_contexts: *shared-context
+      target: tooling
+    command: ["npm", "run", "db:migrate"]
+    environment:
+      DATABASE_URL: postgres://ranking:ranking@order-ranking-db:5432/rankings
+    depends_on:
+      order-ranking-db:
+        condition: service_healthy
+
+  order-ranking-service:
+    build:
+      context: ./order-ranking-service
+      additional_contexts: *shared-context
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://ranking:ranking@order-ranking-db:5432/rankings
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      # Local only: the emulator and the ticker cannot send Google OIDC tokens.
+      INTERNAL_SHARED_SECRET: ${ORDER_RANKING_INTERNAL_SECRET:-local-only-ranking-internal-secret-000}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: foc-local
+      PUBSUB_PUSH_BASE_URL: http://order-ranking-service:3000
+    ports:
+      - "3007:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      order-ranking-db-migrate:
+        condition: service_completed_successfully
+      pubsub-emulator:
+        condition: service_healthy
+
+  order-ranking-ticker:
+    image: curlimages/curl:8.11.1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          sleep 60
+          curl -fsS -X POST -H "x-internal-secret: $$SECRET" http://order-ranking-service:3000/internal/embeddings/process
+        done
+    environment:
+      SECRET: ${ORDER_RANKING_INTERNAL_SECRET:-local-only-ranking-internal-secret-000}
+    depends_on:
+      order-ranking-service:
+        condition: service_healthy
+
+  # Optional Agent skeleton: docker compose --profile agent-skeleton up --build
+  conversation-db:
+    profiles: [agent-skeleton]
+    image: postgres:17-alpine
+    environment: { POSTGRES_USER: migration_owner, POSTGRES_PASSWORD: local-only, POSTGRES_DB: conversations }
+    volumes:
+      - conversation-v2-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U migration_owner -d conversations']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  mandate-db:
+    profiles: [agent-skeleton]
+    image: postgres:17-alpine
+    environment: { POSTGRES_USER: mandate_owner, POSTGRES_PASSWORD: local-only, POSTGRES_DB: mandates }
+    volumes:
+      - mandate-v2-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U mandate_owner -d mandates']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  conversation-db-migrate:
+    profiles: [agent-skeleton]
+    build: { context: ., dockerfile: agent-service/chat/Dockerfile, target: tooling }
+    command: [npm, run, 'db:migrate', --workspace, '@campus/agent-contracts']
+    environment:
+      DATABASE_URL: postgres://migration_owner:local-only@conversation-db:5432/conversations
+    depends_on:
+      conversation-db:
+        condition: service_healthy
+  mandate-db-migrate:
+    profiles: [agent-skeleton]
+    build: { context: ., dockerfile: mandate-service/Dockerfile, target: tooling }
+    command: [npm, run, 'db:migrate', --workspace, mandate-service]
+    environment:
+      DATABASE_URL: postgres://mandate_owner:local-only@mandate-db:5432/mandates
+    depends_on:
+      mandate-db:
+        condition: service_healthy
+  conversation-db-logins:
+    profiles: [agent-skeleton]
+    build: { context: ., dockerfile: agent-service/chat/Dockerfile, target: tooling }
+    command: [node, agent-service/scripts/runtime-logins.mjs]
+    environment:
+      DATABASE_URL: postgres://migration_owner:local-only@conversation-db:5432/conversations
+      RUNTIME_DOMAIN: conversation
+    depends_on:
+      conversation-db-migrate: { condition: service_completed_successfully }
+  mandate-db-logins:
+    profiles: [agent-skeleton]
+    build: { context: ., dockerfile: agent-service/chat/Dockerfile, target: tooling }
+    command: [node, agent-service/scripts/runtime-logins.mjs]
+    environment:
+      DATABASE_URL: postgres://mandate_owner:local-only@mandate-db:5432/mandates
+      RUNTIME_DOMAIN: mandate
+    depends_on:
+      mandate-db-migrate: { condition: service_completed_successfully }
+  agent-redis:
+    profiles: [agent-skeleton]
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, 'no', --maxmemory, 128mb, --maxmemory-policy, allkeys-lru]
+  agent-broker-init:
+    profiles: [agent-skeleton]
+    build: { context: ., dockerfile: agent-service/chat/Dockerfile, target: tooling }
+    command: [node, agent-service/scripts/provision.mjs]
+    environment:
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: foc-local
+    depends_on:
+      pubsub-emulator:
+        condition: service_healthy
+
+  agent-chat-service:
+    profiles: [agent-skeleton]
+    build: { context: ., dockerfile: agent-service/chat/Dockerfile }
+    ports: ['3008:3000']
+    environment:
+      PORT: '3000'
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      DATABASE_URL: postgres://chat_runtime:local-chat-only@conversation-db:5432/conversations
+      CONVERSATION_DB_ROLE: agent_chat
+      REDIS_URL: redis://agent-redis:6379
+      TURN_TOPIC: agent-turns
+      APPROVAL_SUBSCRIPTION: agent-chat-approvals
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: foc-local
+    depends_on:
+      agent-broker-init:
+        condition: service_completed_successfully
+      conversation-db-logins:
+        condition: service_completed_successfully
+
+  agent-orchestrator-service:
+    profiles: [agent-skeleton]
+    build: { context: ., dockerfile: agent-service/orchestrator/Dockerfile }
+    environment:
+      SERVICE_AUTH_MODE: local
+      ORDER_SERVICE_SECRET: ${ORDER_INTERNAL_SECRET:-local-only-order-internal-secret-0000}
+      SUPPLIER_SERVICE_SECRET: ${SUPPLIER_AGENT_READ_SECRET:-local-only-supplier-agent-read-secret-0000}
+      MANDATE_SERVICE_SECRET: ${MANDATE_AGENT_READ_SECRET:-local-only-mandate-agent-read-secret-0000}
+      CREDIT_SERVICE_SECRET: ${CREDIT_INTERNAL_SECRET:-local-only-credit-internal-secret-0000}
+      PORT: '3000'
+      DATABASE_URL: postgres://execution_runtime:local-execution-only@conversation-db:5432/conversations
+      SOCLAAS_BASE_URL: ${SOCLAAS_BASE_URL:-https://soclaas-api.comp.nus.edu.sg/v1}
+      SOCLAAS_API_KEY: ${SOCLAAS_API_KEY:-}
+      SOCLAAS_MODEL: ${SOCLAAS_MODEL:-default}
+      CONVERSATION_DB_ROLE: agent_execution
+      REDIS_URL: redis://agent-redis:6379
+      TURN_SUBSCRIPTION: agent-orchestrator-turns
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: foc-local
+      MANDATE_SERVICE_URL: http://mandate-service:3000
+      ORDER_SERVICE_URL: http://order-service:3000
+      SUPPLIER_SERVICE_URL: http://supplier-service:3000
+      CREDIT_SERVICE_URL: http://credit-service:3000
+    depends_on:
+      agent-broker-init:
+        condition: service_completed_successfully
+      conversation-db-logins:
+        condition: service_completed_successfully
+
+  mandate-service:
+    profiles: [agent-skeleton]
+    build: { context: ., dockerfile: mandate-service/Dockerfile }
+    ports: ['3009:3000']
+    environment:
+      DATABASE_URL: postgres://mandate_runtime_login:local-mandate-only@mandate-db:5432/mandates
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      SERVICE_AUTH_MODE: local
+      ORDER_SERVICE_URL: http://order-service:3000
+      SUPPLIER_SERVICE_URL: http://supplier-service:3000
+      MANDATE_SERVICE_URL: http://mandate-service:3000
+      ORDER_SERVICE_SECRET: ${ORDER_INTERNAL_SECRET:-local-only-order-internal-secret-0000}
+      SUPPLIER_SERVICE_SECRET: ${SUPPLIER_MANDATE_READ_SECRET:-local-only-supplier-mandate-read-secret-0000}
+      MANDATE_SERVICE_SECRET: ${MANDATE_AGENT_READ_SECRET:-local-only-mandate-agent-read-secret-0000}
+      PORT: '3000'
+      MANDATE_TOPIC: mandate-events
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      PUBSUB_PROJECT_ID: foc-local
+    depends_on:
+      agent-broker-init:
+        condition: service_completed_successfully
+      mandate-db-logins:
+        condition: service_completed_successfully
+
+volumes:
+  supplier-db-data:
+  user-db-data:
+  order-db-data:
+  notification-db-data:
+  sync-db-data:
+  credit-db-data:
+  saga-db-data:
+  order-ranking-db-data:
+  chat-db-data:
+  conversation-v2-data:
+  mandate-v2-data:

@@ -1,0 +1,216 @@
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09.
+// Scope: Service connection implementation and verification. Author review: Pending.
+import { db } from './db/index.js';
+import { users } from './db/schema.js';
+import { eq } from 'drizzle-orm';
+/**
+ * AI Assistance Disclosure: Claude Code (Opus 5.5), 2026-10-17.
+ * Scope: Express routes for the student-defined order endpoints (POST /orders,
+ * GET /orders, GET /orders/me, state actions) and internal routes for Pub/Sub
+ * push, the expiry sweep, and the outbox relay; error handling as in supplier-service.
+ * Author review: Pending.
+ * Claude Code (Opus 5.5), 2026-10-17: GET /orders/:orderId, its event history, and
+ * PATCH /orders/:orderId for editing. Author review: Pending.
+ * Claude Code (Opus 5.5), 2026-10-17: joining group orders and group.placed from the sync
+ * service. Author review: Pending.
+ */
+import express, { type ErrorRequestHandler, type Request, type Response } from "express";
+import { getUserId, requireInternal, requireUser } from "./auth.js";
+import { applySupplierEvent, applyUserEvent, InvalidMessageError, parseGroupPlaced, parseSagaCommand } from "./events/consumers.js";
+import { publishPendingEvents } from "./events/outbox.js";
+import { decodePushMessage } from "./events/pubsub.js";
+import { HttpError } from "./errors.js";
+import { parseListQuery, parseOrderEdit, parseOrderInput, UUID_PATTERN } from "./orders/input.js";
+import { getOrder, listOrderEvents, listOrders } from "./orders/queries.js";
+import { createOrder, editOrder, expireOverdueOrders, handleSagaCommand, joinOrder, placeGroupOrder, performUserAction, USER_ACTIONS, type UserAction } from "./orders/write.js";
+// Claude Code (Opus 5.5), 2026-11-04: logs through the shared pino logger. Author review: Pending.
+import { logger } from "./shared/logger.js";
+import { receivePush } from "./shared/messaging.js";
+
+export const app = express();
+app.use(express.json({ limit: "10kb" }));
+
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
+function getOrderIdParam(req: Request): string {
+  const id = req.params.orderId;
+  // A malformed id cannot match a row, and would otherwise fail the uuid cast.
+  if (typeof id !== "string" || !UUID_PATTERN.test(id)) throw new HttpError(404, "Order not found");
+  return id.toLowerCase();
+}
+
+async function sendOrder(res: Response, id: string, status = 200): Promise<void> {
+  const order = await getOrder(id);
+  if (!order) throw new HttpError(404, "Order not found");
+  res.status(status).json(order);
+}
+
+// FR10.1: new orders start PENDING until the credit saga opens or rejects them.
+app.post("/orders", requireUser, async (req, res) => {
+  const id = await createOrder(getUserId(res), parseOrderInput(req.body));
+  await sendOrder(res, id, 201);
+});
+
+// FR11.1: every signed-in user can browse every order; filters narrow the list.
+app.get("/orders", requireUser, async (req, res) => {
+  res.json(await listOrders(parseListQuery(req.query)));
+});
+
+// FR10.2: the caller's own requests. Registered before /orders/:orderId routes.
+app.get("/orders/me", requireUser, async (req, res) => {
+  res.json(await listOrders(parseListQuery(req.query), getUserId(res)));
+});
+
+app.get("/orders/:orderId", requireUser, async (req, res) => {
+  await sendOrder(res, getOrderIdParam(req));
+});
+
+// The order's history, oldest first, for the order details page.
+app.get("/orders/:orderId/events", requireUser, async (req, res) => {
+  const id = getOrderIdParam(req);
+  if (!await getOrder(id)) throw new HttpError(404, "Order not found");
+  res.json(await listOrderEvents(id));
+});
+
+// The requester can edit the title, description and delivery location while OPEN.
+app.patch("/orders/:orderId", requireUser, async (req, res) => {
+  const id = getOrderIdParam(req);
+  await editOrder(id, getUserId(res), parseOrderEdit(req.body));
+  await sendOrder(res, id);
+});
+
+// Members join a group order through its shareable link while it is SYNCHRONISING.
+app.post("/orders/:orderId/join", requireUser, async (req, res) => {
+  const id = getOrderIdParam(req);
+  await joinOrder(id, getUserId(res));
+  await sendOrder(res, id);
+});
+
+for (const action of Object.keys(USER_ACTIONS) as UserAction[]) {
+  app.post(`/orders/:orderId/${action}`, requireUser, async (req, res) => {
+    const id = getOrderIdParam(req);
+    await performUserAction(action, id, getUserId(res));
+    await sendOrder(res, id);
+  });
+}
+
+const internal = express.Router();
+internal.use(requireInternal);
+
+function requestBody(req: Request): Record<string, unknown> {
+  const value: unknown = req.body;
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new HttpError(400, "Request body must be an object");
+  return value as Record<string, unknown>;
+}
+function commandId(value: unknown): string {
+  if (typeof value !== "string" || !UUID_PATTERN.test(value))
+    throw new HttpError(400, "A valid command_id is required");
+  return value.toLowerCase();
+}
+async function requester(value: unknown): Promise<number> {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0)
+    throw new HttpError(400, "A valid user_id is required");
+  const [user] = await db.select({ deletedAt: users.deletedAt }).from(users).where(eq(users.id, value));
+  if (!user) throw new HttpError(503, "Requester is not available yet");
+  if (user.deletedAt) throw new HttpError(403, "Requester is unavailable");
+  return value;
+}
+internal.post('/orders/get', async (req, res) => {
+  const body: unknown = req.body;
+  if (typeof body !== 'object' || body === null || !('user_id' in body) ||
+      typeof body.user_id !== 'number' || !Number.isSafeInteger(body.user_id) || body.user_id <= 0 ||
+      !('order_id' in body) || typeof body.order_id !== 'string' ||
+      !UUID_PATTERN.test(body.order_id)) {
+    throw new HttpError(400, 'Valid user_id and order_id are required');
+  }
+  const [user] = await db.select({ deletedAt: users.deletedAt }).from(users).where(eq(users.id, body.user_id));
+  if (!user) throw new HttpError(503, 'Requester is not available yet');
+  if (user.deletedAt) throw new HttpError(403, 'Requester is unavailable');
+  const order = await getOrder(body.order_id);
+  if (!order || order.requester.id !== body.user_id) throw new HttpError(404, 'Order not found');
+  res.json(order);
+});
+internal.post("/orders/create", async (req, res) => {
+  const body = requestBody(req),
+    userId = await requester(body.user_id),
+    input = parseOrderInput(body);
+  if (input.isGroupOrder) throw new HttpError(400, "Agent group orders are unsupported");
+  const id = await createOrder(userId, input, commandId(body.command_id));
+  await sendOrder(res, id, 201);
+});
+internal.post("/orders/cancel", async (req, res) => {
+  const body = requestBody(req),
+    userId = await requester(body.user_id);
+  if (typeof body.order_id !== "string" || !UUID_PATTERN.test(body.order_id))
+    throw new HttpError(400, "A valid order_id is required");
+  const orderId = body.order_id.toLowerCase();
+  await performUserAction("cancel", orderId, userId, commandId(body.command_id));
+  await sendOrder(res, orderId);
+});
+
+// Pub/Sub push: 204 acknowledges; 5xx makes Pub/Sub redeliver. Malformed messages
+// are acknowledged (and logged) so they do not block their ordering key forever.
+function pushHandler(name: string, handle: (message: unknown) => Promise<void>) {
+  // Claude Code (Opus 5.5), 2026-11-05: in the message's trace, and logged with its outcome,
+  // through the shared helper. Author review: Pending.
+  return receivePush(async (req: Request, res: Response) => {
+    const message = decodePushMessage(req.body);
+    try {
+      if (message === undefined) throw new InvalidMessageError("Push request has no JSON message data");
+      await handle(message);
+    } catch (error) {
+      if (!(error instanceof InvalidMessageError)) throw error;
+      logger.error({ source: name, reason: error.message }, "Dropped invalid message");
+    }
+    res.status(204).end();
+  });
+}
+
+internal.post("/pubsub/user-events", pushHandler("user-events", applyUserEvent));
+internal.post("/pubsub/supplier-events", pushHandler("supplier-events", applySupplierEvent));
+internal.post("/pubsub/order-commands", pushHandler("order-commands", async (message) => {
+  const command = parseSagaCommand(message);
+  const result = await handleSagaCommand(command);
+  if (result !== "applied") {
+    logger.info({ commandType: command.type, commandId: command.commandId, orderId: command.orderId, result }, "Saga command not applied");
+  }
+}));
+
+internal.post("/pubsub/sync-events", pushHandler("sync-events", async (message) => {
+  const placed = parseGroupPlaced(message);
+  if (!placed) return;
+  const result = await placeGroupOrder(placed);
+  // Claude Code (Opus 5.5), 2026-11-10: through the shared logger. Author review: Pending.
+  if (result !== "applied") {
+    logger.info({ eventId: placed.eventId, orderId: placed.orderId, result }, `group.placed for ${placed.orderId} not applied: ${result}`);
+  }
+}));
+
+// Called every minute by Cloud Scheduler (locally by the order-ticker container).
+internal.post("/orders/expire-overdue", async (_req, res) => {
+  res.json({ expired: await expireOverdueOrders() });
+});
+
+internal.post("/outbox/publish", async (_req, res) => {
+  res.json({ published: await publishPendingEvents() });
+});
+
+app.use("/internal", internal);
+
+const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+  if (error instanceof HttpError) {
+    res.set(error.headers).status(error.statusCode).json({ error: error.message });
+    return;
+  }
+  if (error instanceof SyntaxError && "status" in error && error.status === 400) {
+    res.status(400).json({ error: "Request body contains invalid JSON" });
+    return;
+  }
+  logger.error({ err: error }, "Request failed");
+  res.status(500).json({ error: "Internal server error" });
+};
+
+app.use(errorHandler);

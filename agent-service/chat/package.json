@@ -1,0 +1,23 @@
+{
+  "//": "AI Assistance Disclosure: Claude Code (Opus 5.5), 2026-11-10. Scope: the start script loads the shared OpenTelemetry bootstrap first (off unless OTEL_EXPORTER_OTLP_ENDPOINT is set). Author review: Pending.",
+  "name": "agent-chat-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node --import ../dist/common/shared/telemetry.mjs dist/main.js"
+  },
+  "dependencies": {
+    "@campus/agent-contracts": "0.0.0",
+    "express": "^5.3.0",
+    "zod": "^4.6.7"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6"
+  }
+}

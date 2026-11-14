@@ -1,0 +1,442 @@
+<!-- AI Assistance Disclosure: ChatGPT (GPT-6), 2026-09-28.
+Scope: Drizzle setup and usage documentation. Prior content, seed, local database
+access, and route documentation reviewed.
+Claude Code (Opus 5.5), 2026-09-29: authentication, PUT, and DELETE documentation. Author review: Done.
+Claude Code (Opus 5.5), 2026-09-30: POST, GET /types, and GET /buildings documentation. Author review: Done.
+Claude Code (Opus 5.5), 2026-09-30: POST operatingHours documentation. Author review: Pending.
+Claude Code (Opus 5.5), 2026-10-01: operatingHours in GET and PUT documentation. Author review: Pending.
+Claude Code (Opus 5.5), 2026-09-30: In-place PUT and hard DELETE documentation. Author review: Pending.
+ChatGPT (GPT-6), 2026-09-30: Docker Compose migration startup documentation. Author review: Done.
+Claude Code (Opus 5.5), 2026-10-15: POST, PUT, and DELETE /types and /buildings documentation. Author review: Pending.
+Claude Code (Opus 5.5), 2026-10-18: Local token verification, local user copy, and event worker documentation. Author review: Pending.
+Claude Code (Opus 5.5), 2026-10-18: Supplier events and outbox documentation. Author review: Pending. -->
+
+# Supplier Service
+
+Run commands from `supplier-service/`:
+
+```sh
+npm install
+npm run dev
+```
+
+`npm run dev` compiles TypeScript and starts the Express server on port 3000.
+`GET /` returns a JSON status message. Restart the command after code changes.
+Set `DATABASE_URL` before starting the server (see the host database instructions
+below); `GET /suppliers` queries PostgreSQL.
+
+To compile and run the built server:
+
+```sh
+npm run build
+npm start
+```
+
+Run `npm run typecheck` to check both `src/` and `drizzle.config.ts` without
+generating output. `tsconfig.json` owns both in the editor, including Node globals
+such as `process`. `npm run build` uses `tsconfig.build.json` to compile only
+`src/`, preserving the `dist/index.js` entry point.
+
+## Authentication
+
+Every `/suppliers`, `/types`, and `/buildings` route requires an `Authorization: Bearer <token>` header carrying
+a user-service access token. supplier-service does not call user-service: it verifies
+the token's signature and expiry with `JWT_SECRET` (the same secret as user-service,
+at least 32 bytes), then reads the caller's role from its local `users` table, which
+the event worker keeps up to date (see below).
+
+| Situation | Response |
+| --- | --- |
+| Missing, malformed, expired, or wrongly signed token, or a deleted user | 401 `{ "error": "A valid bearer token is required" }` |
+| Non-admin calling `POST`, `PUT`, or `DELETE` | 403 `{ "error": "Administrator access is required" }` |
+| Valid token whose `user.created` event has not reached the local copy yet | 503 with `Retry-After: 2` |
+
+A role change or deletion takes effect once its event is applied; until then the
+previous role is used.
+
+## Event worker
+
+`src/worker.ts` (`npm run worker` after a build, or `npm run dev:worker`) is the
+service's Pub/Sub worker, a separate process from the API that serves `GET /health`
+and uses the same `DATABASE_URL`. It receives the `user-events` topic through a
+Pub/Sub push subscription at `POST /pubsub/user-events`, and sweeps the
+supplier-events outbox at `POST /outbox/publish` (see Supplier events below).
+
+| Event | Effect on `users` |
+| --- | --- |
+| `user.created`, `user.updated` | Upsert `id`, `displayName`, and `role`; clears `deletedAt` |
+| `user.deleted` | Sets `deletedAt` (the row is kept as a tombstone) |
+
+The password hash and other user fields are not stored. Each row keeps the
+event `version`; an event whose version is not newer than the stored one (a
+redelivery, or a creation that arrives after its deletion) is skipped. A deletion
+that arrives first is stored as a row with only the id, so the older creation
+cannot restore the user. Malformed messages are logged and acknowledged (204) so
+they do not block their ordering key; database failures return 500 so Pub/Sub
+redelivers.
+
+| Variable | Default |
+| --- | --- |
+| `PORT` | `3004` |
+| `PUBSUB_PROJECT_ID` | `GOOGLE_CLOUD_PROJECT`, then `foc-local` |
+| `USER_EVENTS_TOPIC` | `user-events` |
+| `PUBSUB_SUBSCRIPTION` | `supplier-service-user-events` |
+| `SUPPLIER_EVENTS_TOPIC` | `supplier-events` (also read by the API) |
+| `PUBSUB_EMULATOR_HOST` | unset; when set, the worker creates both topics and its push subscription at startup |
+| `PUBSUB_PUSH_ENDPOINT` | required with the emulator, e.g. `http://supplier-event-worker:3004/pubsub/user-events` |
+
+Only events published after the subscription exists are delivered. Users created
+before then are not in the local copy and receive 503 until they are updated
+(for example, by editing their profile).
+
+## Supplier events
+
+Every change to a supplier is published to the `supplier-events` topic, ordered by
+supplier id (the ordering key), with the attributes `type` and `supplierId` for
+subscription filters:
+
+| Change | Events |
+| --- | --- |
+| `POST /suppliers`, or a supplier inserted by the seed | `supplier.created` |
+| `PUT /suppliers/:id` | `supplier.updated` |
+| `DELETE /suppliers/:id` | `supplier.deleted` |
+| `PUT /types/:id`, `PUT /buildings/:id` (rename) | `supplier.updated` for each supplier using it |
+
+```ts
+type SupplierEvent = { eventId: string; version: number } & (
+  | { type: "supplier.created" | "supplier.updated"; supplier: SupplierSnapshot }
+  | { type: "supplier.deleted"; supplierId: string }
+);
+```
+
+`SupplierSnapshot` is the supplier after the change: `id`, `name`, `type` (name),
+`buildingName`, `floor`, `locationDescription`, `latitude` and `longitude` (strings,
+as stored), `isActive`, `imageUrl`, and `operatingHours` in the request format.
+`version` comes from `supplier_event_sequence` and increases with every event.
+
+Events use a transactional outbox: each change writes its rows to `supplier_events`
+in the same transaction, so a change is never committed without its events. After
+the commit the API publishes unpublished rows in version order and marks them
+published. Rows that fail (for example, while Pub/Sub is unavailable) stay in the
+outbox, and later events of the same supplier wait behind them; the worker's
+`POST /outbox/publish`, called every minute by Cloud Scheduler (locally by the
+`supplier-ticker` container), retries them. Delivery is at least once, so consumers
+should dedupe by `eventId` or by supplier and `version`.
+
+The API reads `PUBSUB_PROJECT_ID` and `SUPPLIER_EVENTS_TOPIC` as the worker does.
+Suppliers that existed before supplier events were added have no events; consumers
+learn about them on their next change.
+
+Errors are JSON objects with an `error` message.
+
+## GET /suppliers
+
+Returns HTTP 200 with a JSON array of supplier records in camelCase, plus a boolean
+`isOpen`. The response includes joined `type` and `buildingName` values and omits
+`supplierTypeId` and `buildingId`. Suppliers without a building remain in the
+results with `buildingName: null`. The supplier's own `id` is retained.
+No matches returns `[]`.
+
+| Query parameter | Behavior |
+| --- | --- |
+| `name` | Optional case-insensitive partial name match. `%`, `_`, and backslash are literal characters. |
+| `type` | Optional exact, case-sensitive type name, such as `Food` or `Food/Coffee`. |
+
+Both filters combine with AND. Surrounding whitespace is trimmed; blank values
+act as omitted filters. For example:
+
+```sh
+curl -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:3000/suppliers"
+curl -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:3000/suppliers?name=cafe&type=Food%2FCoffee"
+```
+
+Open suppliers come first, followed by closed suppliers. Each group is sorted
+by name and then UUID for stable ties. Students only receive active suppliers;
+administrators also receive inactive suppliers, with `isOpen: false`. Opening status uses Singapore time (`Asia/Singapore`), includes
+the opening instant, and excludes the closing instant. It checks multiple daily
+periods and overnight periods that started on the previous day. A supplier with
+no matching period is closed. Multiple matching periods return the supplier once.
+
+Each supplier also has an `operatingHours` array in the format accepted by POST
+and PUT (see POST below), sorted by day and opening time; it is `[]` when the
+supplier has no hours.
+
+## PUT /suppliers/:id (administrators)
+
+Updates the supplier row in place; its `id` is unchanged. Returns 200 with the
+updated supplier, in the same shape as a `GET /suppliers` item.
+
+The JSON body must contain all of these fields (except `isActive` and `operatingHours`):
+
+| Field | Rules |
+| --- | --- |
+| `name` | Required, at most 256 characters |
+| `type` | Required; an existing type name |
+| `buildingName` | `null` or an existing building name |
+| `floor`, `locationDescription` | `null` or at most 256 characters |
+| `latitude`, `longitude` | Number or numeric string, within ±90 and ±180 |
+| `imageUrl` | `null` or an `http`/`https` URL |
+| `isActive` | Optional boolean. Omitted keeps the current value. `false` hides the supplier from students |
+| `operatingHours` | Optional array, validated as for POST. Omitted keeps the current hours; otherwise it replaces all of them (`[]` removes them) |
+
+Strings are trimmed; blank optional strings are stored as `null`. Invalid bodies
+return 400 and change nothing, as the row and its hours are updated in one transaction. Unknown or malformed ids return 404. Inactive suppliers can be edited
+and reactivated.
+
+## DELETE /suppliers/:id (administrators)
+
+Permanently deletes the supplier and its operating hours in one transaction, and
+returns 204. Active and inactive suppliers can both be deleted. Unknown, malformed,
+or already deleted ids return 404. To hide a supplier from students without
+deleting it, set `isActive: false` with PUT.
+
+## POST /suppliers (administrators)
+
+Creates a supplier (active unless the body sets `isActive: false`) and returns 201 with it, in the same shape as a
+`GET /suppliers` item. The body and its validation are the same as for PUT (see the
+table above), except that `operatingHours` sets the new supplier's hours. The supplier and its hours
+are inserted in one transaction; any invalid period rejects the whole request with 400.
+
+```json
+"operatingHours": [
+  { "day": 1, "openingHrs": "09:00", "closingHrs": "17:00" },
+  { "day": 5, "openingHrs": "22:00", "closingHrs": "02:00" },
+  { "day": 6, "openingHrs": "00:00", "closingHrs": "24:00" }
+]
+```
+
+| Field | Rules |
+| --- | --- |
+| `day` | Integer from 0 (Sunday) to 6 (Saturday) |
+| `openingHrs` | `HH:MM`, from `00:00` to `23:59` |
+| `closingHrs` | `HH:MM`, from `00:00` to `24:00`; must differ from `openingHrs` |
+
+A closing time earlier than the opening time runs past midnight into the next day
+(Saturday wraps to Sunday). `00:00` to `24:00` is open all day. A day may have
+several periods, but no two periods (including overnight spill-over) may overlap;
+periods that only touch, such as `09:00`–`12:00` and `12:00`–`15:00`, are allowed.
+At most 50 periods are accepted. Days without a period are closed, so omitting
+`operatingHours` (or sending `[]`) creates a supplier that reports `isOpen: false`.
+
+## GET /types and GET /buildings
+
+Return 200 with every supplier type or building as `[{ "id", "name" }]`, sorted by
+name (in database collation order). Any logged-in user can call them. The frontend
+uses them for the add-supplier dropdowns.
+
+## POST, PUT, and DELETE /types and /buildings (administrators)
+
+Both tables share the same routes; `/types` is shown.
+
+| Route | Body | Success |
+| --- | --- | --- |
+| `POST /types` | `{ "name" }` | 201 with `{ "id", "name" }` |
+| `PUT /types/:id` | `{ "name" }` | 200 with `{ "id", "name" }` |
+| `DELETE /types/:id` | none | 204 |
+
+`name` is required, trimmed, and at most 256 characters; otherwise 400. A name
+already in use returns 409. Suppliers reference the row by id, so a rename applies
+to every supplier using it. Deleting a type or building still used by a supplier
+returns 409; reassign or delete those suppliers first. Unknown or malformed ids
+return 404.
+
+### Route tests
+
+From `supplier-service/`, using PowerShell and the local Compose database:
+
+```powershell
+$env:TEST_DATABASE_URL = 'postgres://supplier:supplier@127.0.0.1:5433/suppliers'
+npm test
+```
+
+The PostgreSQL role must have permission to create databases. Tests create a
+uniquely named disposable database, apply migrations, check HTTP responses and
+opening-time boundaries, then drop that test database. Application data is not
+used for test fixtures. The route tests sign their own tokens with a test
+`JWT_SECRET` and insert a student, an administrator, and a deleted user into the
+local `users` table. `test/user-events.test.mjs` posts push messages to the worker, and
+`test/supplier-events.test.mjs` checks the outbox with an in-memory publisher.
+
+## Docker
+
+From the repository root, build and start the service with its database:
+
+```sh
+docker compose up -d --build supplier-service
+```
+
+The service is available at `http://localhost:3000`. Running this command again
+rebuilds the image and replaces the existing service container. Compose first
+runs a one-shot Drizzle migration service after PostgreSQL is healthy, then starts
+the API only after migrations complete. This applies pending migrations to both
+new and existing database volumes.
+
+To run the service locally with npm instead, first free port 3000:
+
+```sh
+docker compose stop supplier-service
+```
+
+The Docker build compiles TypeScript in a build stage. The runtime image contains
+the compiled code and production dependencies and runs as the non-root `node` user.
+
+## Drizzle ORM
+
+The PostgreSQL client is exported as `db` from `src/db/index.ts`, with its
+connection pool exported as `pool`. It reads `DATABASE_URL` from the environment
+or from `supplier-service/.env` when commands run in this directory. Import it
+from service code with `import { db } from "./db/index.js"` (adjust the relative
+path as needed). Standalone scripts should call `await pool.end()` when done.
+
+`src/db/schema.ts` implements the student-defined schema in
+[`docs/database_schemas.md`](docs/database_schemas.md): `types`, `buildings`,
+`suppliers`, and `operating_hours`. The initial migration is
+`drizzle/0000_supplier_schema.sql`. UUID primary keys are generated automatically;
+all tables have `created_at` and `updated_at` timestamps with timezone, defaulting
+to the current time. Drizzle updates `updated_at` through `$onUpdate` when an
+update does not explicitly set that column. This callback runs in Drizzle;
+direct SQL updates must set `updated_at` themselves.
+
+Coordinate and weekday ranges are enforced by database checks. Operating hours
+use the composite key `(supplier_id, day, opening_hrs)`, allowing multiple periods
+per day and overnight periods. Overlap validation belongs in the service layer;
+an absent day means closed. PostgreSQL numeric coordinates are returned as strings
+by the default Drizzle mapping.
+
+### Use the existing Docker database
+
+Run these commands from the repository root:
+
+```sh
+docker compose --profile tools build supplier-db-tools
+docker compose --profile tools run --rm supplier-db-tools npm run db:check
+```
+
+The opt-in tooling container includes development dependencies and connects to
+`supplier-db` through the existing Compose network. Its default command is also
+`db:check`, a read-only `SELECT 1` through Drizzle. Source files and the `drizzle/`
+directory are mounted, so generated migrations persist in the repository.
+Rebuild the tooling image after dependency changes.
+
+After changing table definitions, generate SQL, review it, and apply it:
+
+```sh
+docker compose --profile tools run --rm supplier-db-tools npm run db:generate
+docker compose --profile tools run --rm supplier-db-tools npm run db:migrate
+```
+
+Commit the generated SQL and snapshot files in `drizzle/`. Migrations are an
+explicit command; starting the Express server does not apply them.
+
+### Run tools from the host
+
+The Compose database is published at `127.0.0.1:5433`. Set this in
+`supplier-service/.env` for host-side commands:
+
+```dotenv
+DATABASE_URL=postgres://supplier:supplier@127.0.0.1:5433/suppliers
+```
+
+In desktop pgAdmin, register a server with host `127.0.0.1`, port `5433`,
+maintenance database `suppliers`, username `supplier`, and password `supplier`.
+Port `5432` on this Windows host belongs to a separate PostgreSQL instance.
+Containers continue to use `supplier-db:5432` on the Compose network.
+
+From `supplier-service/`:
+
+```sh
+npm run db:check
+npm run db:generate
+npm run db:migrate
+npm run db:studio
+```
+
+`db:generate` works offline without `DATABASE_URL`; the other database commands
+need a reachable database. Drizzle Studio is intended for this host workflow.
+When starting the API directly with `npm run dev` or `npm start`, apply migrations
+separately with `npm run db:migrate`; only the Compose startup path runs them
+automatically.
+
+Reference: [Drizzle PostgreSQL setup](https://orm.drizzle.team/docs/get-started/postgresql-new).
+
+## Seed data
+
+`src/db/seed-data.ts` is a typed snapshot of
+[`data/csv/supplier-seed-data.csv`](../data/csv/supplier-seed-data.csv).
+`src/db/seed.ts` loads it through Drizzle. On an empty migrated database it inserts
+21 active suppliers, four types, 16 building names, and 147 operating-hour rows.
+As confirmed for this seed, each supplier's CSV hours apply Sunday through Saturday.
+
+From the repository root, after applying migrations:
+
+```sh
+docker compose --profile tools build supplier-db-tools
+docker compose --profile tools run --rm supplier-db-tools npm run db:seed -- --dry-run
+docker compose --profile tools run --rm supplier-db-tools npm run db:seed
+```
+
+With a host-accessible `DATABASE_URL`, run `npm run db:seed` from
+`supplier-service/`; add `-- --dry-run` to verify and roll back every write.
+Normal execution commits all records in one transaction, or rolls everything
+back on failure.
+
+The seed reuses types and buildings by exact name. Fixed supplier UUIDs make
+reruns skip existing seed suppliers and their hours, preserving subsequent edits.
+It does not delete records or overwrite existing data. Keep the UUIDs stable
+when editing the snapshot; changes to existing seed records are not applied by
+rerunning this insert-only seed.
+
+CSV conversion details:
+
+- The source uses Windows-1252; its apostrophes are preserved in UTF-8 seed data.
+- Whitespace around values is trimmed, and blank optional fields become `NULL`.
+- Coordinates keep their source precision in the snapshot; PostgreSQL rounds
+  them to the schema's six decimal places on insertion.
+- `HHMMhrs` becomes `HH:MM:00`. Overnight hours such as `11:00` to `02:00` and
+  the source's `00:00` to `23:59` periods are preserved.
+- `Com 2` and `Com2` are standardized to `COM2`, including the printer's name.
+  Straight/curly apostrophes in Prince George's Park remain distinct. Image URLs
+  and `Food/Coffee` remain as given.
+
+The seed snapshot is committed with the service; running it does not reread the
+CSV. No database schema changes or new runtime dependencies are required.
+
+# AI Disclosure
+
+AI Use Summary
+
+Tools: GPT6
+
+Prohibited phrases avoided: requirements elicitation; architecture/design decisions
+
+Used for: Boilerplate generation, Drizzle configuration, connection verification,
+and documentation. See the consolidated [usage log](../AI_USAGE_LOG.md).
+
+The CSV-derived seed implementation and its validation are also recorded there.
+
+Logs:
+
+- Source & mode: GPT6, Generation of boilerplate
+- Prompts: in supplier-service/ ive set up some parts of the project. write some boilerplate express code to listen on 3000, check my dockerfile and fill up the instructions for running in the README
+- Prompt (2026-09-28): take a look at agents.md first. next, set up drizzle orm
+- Key response: Added Drizzle setup boilerplate and an empty schema scaffold;
+  table design remains with the student. Human checked for correctness
+- Prompt (2026-09-28): refer to docs/database_schemas.md. edit the schema file, generate migrations, and migrate
+- Key response: Implemented the documented four-table schema with the user's
+  confirmed defaults and generated its initial migration. See the usage log for
+  migration and validation results. These changes await student review.
+
+
+## Internal service reads
+
+`POST /internal/suppliers/search` accepts `{query?, supplier_ids?, limit?}` with service credentials, without a user JWT. Any service explicitly allowed by configuration
+can use this read capability; Agent and Mandate are the currently configured callers.
+Configure dedicated read credentials and caller permissions as described in the
+[connection setup](../agent-service/docs/agent-deployment.md#internal-http-configuration).
+Public APIs retain their existing authentication. Internal order mutations remain unavailable.
+
+## AI assistance disclosure — 2026-11-09
+
+Codex (GPT-6) generated the approved connection/read-route implementation and tests.
+Author review: Pending. Exact prompts, key responses and scope are recorded in the
+[repository usage log](../AI_USAGE_LOG.md). Link this README from the submission slide deck.

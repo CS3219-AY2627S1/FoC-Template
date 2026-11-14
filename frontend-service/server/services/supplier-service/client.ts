@@ -1,0 +1,75 @@
+// AI Assistance Disclosure: ChatGPT (GPT-6), 2026-09-28; Claude Code (Opus 5.5), 2026-09-29.
+// Scope: Server-side client for the supplier service, forwarding the user's bearer token. Author review: Done.
+// Claude Code (Opus 5.5), 2026-09-30. Scope: Types, buildings, and create calls. Author review: Done.
+// Claude Code (Opus 5.5), 2026-10-15. Scope: Type and building create, rename, and delete calls. Author review: Pending.
+// Claude Code (Opus 5.5), 2026-10-18. Scope: Forward supplier-service's 503 while a new account has not
+// reached its local user copy. Author review: Pending.
+import type { H3Event } from "h3";
+import type { Supplier, SupplierCreate, SupplierFilters, SupplierReference, SupplierReferenceKind, SupplierUpdate } from "#shared/services/supplier-service/types";
+
+// 503: supplier-service authorizes callers from a local copy of users, which a new
+// account reaches shortly after registering.
+const FORWARDED_STATUSES = new Set([400, 401, 403, 404, 409, 503]);
+
+function options(baseURL: string, token: string) {
+  return {
+    baseURL,
+    headers: { authorization: `Bearer ${token}` },
+    timeout: 5000,
+    retry: 0 as const,
+  };
+}
+
+export function requireSupplierToken(event: H3Event): string {
+  const token = getCookie(event, "user_access_token");
+  if (!token) throw createError({ statusCode: 401, message: "A login is required." });
+  return token;
+}
+
+// Client errors from supplier-service keep their status and message; anything else is a 502.
+export function toSupplierServiceError(error: unknown) {
+  if (typeof error === "object" && error !== null && "statusCode" in error && typeof error.statusCode === "number" && FORWARDED_STATUSES.has(error.statusCode)) {
+    const data = "data" in error ? error.data : undefined;
+    const message = typeof data === "object" && data !== null && "error" in data && typeof data.error === "string"
+      ? data.error
+      : "The supplier request was rejected.";
+    return createError({ statusCode: error.statusCode, message });
+  }
+  return createError({ statusCode: 502, message: "Suppliers are temporarily unavailable. Please try again." });
+}
+
+export function fetchSuppliers(baseURL: string, token: string, query: SupplierFilters) {
+  return $fetch<Supplier[]>("/suppliers", { ...options(baseURL, token), query });
+}
+
+export function fetchSupplierTypes(baseURL: string, token: string) {
+  return $fetch<SupplierReference[]>("/types", options(baseURL, token));
+}
+
+export function fetchBuildings(baseURL: string, token: string) {
+  return $fetch<SupplierReference[]>("/buildings", options(baseURL, token));
+}
+
+export function createSupplier(baseURL: string, token: string, body: SupplierCreate) {
+  return $fetch<Supplier>("/suppliers", { ...options(baseURL, token), method: "POST", body });
+}
+
+export function updateSupplier(baseURL: string, token: string, id: string, body: SupplierUpdate) {
+  return $fetch<Supplier>(`/suppliers/${encodeURIComponent(id)}`, { ...options(baseURL, token), method: "PUT", body });
+}
+
+export function deleteSupplier(baseURL: string, token: string, id: string) {
+  return $fetch(`/suppliers/${encodeURIComponent(id)}`, { ...options(baseURL, token), method: "DELETE" });
+}
+
+export function createSupplierReference(baseURL: string, token: string, kind: SupplierReferenceKind, name: string) {
+  return $fetch<SupplierReference>(`/${kind}`, { ...options(baseURL, token), method: "POST", body: { name } });
+}
+
+export function renameSupplierReference(baseURL: string, token: string, kind: SupplierReferenceKind, id: string, name: string) {
+  return $fetch<SupplierReference>(`/${kind}/${encodeURIComponent(id)}`, { ...options(baseURL, token), method: "PUT", body: { name } });
+}
+
+export function deleteSupplierReference(baseURL: string, token: string, kind: SupplierReferenceKind, id: string) {
+  return $fetch(`/${kind}/${encodeURIComponent(id)}`, { ...options(baseURL, token), method: "DELETE" });
+}
