@@ -1,0 +1,197 @@
+"""Exercise deployment ordering and failures without Docker or AWS access."""
+
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+
+TAG = "a" * 40
+SERVICES = ["user-service", "supplier-service", "credit-service", "order-service", "pricing-service", "frontend", "gateway"]
+STUB = r'''#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+import sys
+
+tool = Path(sys.argv[0]).name
+args = sys.argv[1:]
+with open(os.environ["CALL_LOG"], "a") as log:
+    log.write(json.dumps([tool] + args) + "\n")
+if tool == "curl":
+    if os.environ.get("FAIL_READY") == "1" and ":8084/readyz" in args[-1]:
+        sys.exit(22)
+    print('{"status":"ready"}')
+    sys.exit(0)
+if args[0] == "inspect":
+    service = args[-1].removeprefix("container-")
+    tag = "old" if os.environ.get("WRONG_IMAGE") == service else os.environ["FOC_IMAGE_TAG"]
+    print(os.environ["ECR_REGISTRY"] + "/foc/" + service + ":" + tag)
+    sys.exit(0)
+action = args[5]
+if action == os.environ.get("FAIL_ACTION"):
+    sys.exit(1)
+if action == "port":
+    ports = {"user-service": 8080, "supplier-service": 8083, "credit-service": 8082,
+             "order-service": 8084, "gateway": 3000}
+    host = "0.0.0.0" if args[6] == "gateway" and os.environ.get("PUBLIC_BIND") == "1" else "127.0.0.1"
+    print(host + ":" + str(ports[args[6]]))
+elif action == "ps" and "--all" in args and os.environ.get("LEGACY_SCHEDULE") == "1":
+    print("schedule-order")
+elif action == "ps" and "-q" in args:
+    print("container-" + args[-1])
+'''
+
+
+class DeployTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / "scripts").mkdir()
+        shutil.copy(Path(__file__).with_name("deploy-ec2.sh"), self.root / "scripts/deploy-ec2.sh")
+        for name in [".env", "credit-service/.env", "order-service/.env"]:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("# disposable test configuration\n")
+        pricing_scripts = self.root / "order_pricing/scripts"
+        pricing_scripts.mkdir(parents=True)
+        shutil.copy(Path(__file__).parents[1] / "order_pricing/scripts/init-env.sh", pricing_scripts / "init-env.sh")
+        tools = self.root / "bin"
+        tools.mkdir()
+        for name in ["docker", "curl"]:
+            path = tools / name
+            path.write_text(STUB)
+            path.chmod(0o755)
+        self.log = self.root / "calls.jsonl"
+        self.env = {**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"],
+                    "CALL_LOG": str(self.log), "ECR_REGISTRY": "test.invalid"}
+
+    def run_deploy(self, tag=TAG, **extra):
+        return subprocess.run(["sh", str(self.root / "scripts/deploy-ec2.sh"), tag],
+                              env={**self.env, **extra}, text=True, capture_output=True, timeout=10)
+
+    def calls(self):
+        return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
+
+    def action(self, call):
+        return call[6] if call[0] == "docker" and call[1] == "compose" else None
+
+    def test_success_downloads_before_stop_and_waits_for_credit_before_order(self):
+        result = self.run_deploy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Deployment ready: " + TAG, result.stdout)
+        calls = self.calls()
+        pull = next(i for i, c in enumerate(calls) if self.action(c) == "pull")
+        stop = next(i for i, c in enumerate(calls) if self.action(c) == "stop")
+        preflight = next(i for i, c in enumerate(calls) if self.action(c) == "run")
+        gateway = next(i for i, c in enumerate(calls) if self.action(c) == "up" and c[-1] == "gateway")
+        credit = next(i for i, c in enumerate(calls) if c[0] == "curl" and ":8082/readyz" in c[-1])
+        self.assertLess(pull, preflight)
+        self.assertLess(preflight, stop)
+        self.assertEqual(calls[preflight][-4:], ["--rm", "--no-deps", "user-service", "check-config"])
+        self.assertLess(stop, credit)
+        self.assertLess(credit, gateway)
+        self.assertEqual(calls[pull][-len(SERVICES):], SERVICES)
+        self.assertIn("order-service",calls[stop])
+        self.assertIn("pricing-service",calls[stop])
+        self.assertTrue(any(self.action(c)=="exec" and "pricing-service" in c and "python" in c for c in calls))
+        self.assertTrue(any(self.action(c)=="port" and "order-service" in c for c in calls))
+        self.assertFalse(any(self.action(c) == "down" or "--volumes" in c for c in calls))
+        for call in calls:
+            if self.action(call) == "up":
+                self.assertIn("--no-build", call)
+                self.assertIn("never", call)
+        # One capture of the running tag before any stop, then one verification
+        # inspect per service after the release.
+        inspects = [c for c in calls if c[0] == "docker" and c[1] == "inspect"]
+        self.assertEqual(len(inspects), len(SERVICES) + 1)
+        self.assertEqual(inspects[0][-1], "container-gateway")
+        self.assertEqual([c[-1] for c in inspects[1:]], ["container-" + s for s in SERVICES])
+        self.assertNotIn("restoring", result.stderr)
+
+    def test_legacy_schedule_blocks_deployment_before_download_or_stop(self):
+        result = self.run_deploy(LEGACY_SCHEDULE="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("offline cutover", result.stderr)
+        self.assertFalse(any(self.action(c) in ["pull", "stop", "up"] for c in self.calls()))
+
+    def test_failed_download_does_not_stop_running_services(self):
+        result = self.run_deploy(FAIL_ACTION="pull")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(self.action(c) in ["stop", "up"] for c in self.calls()))
+
+    def test_failed_service_configuration_does_not_stop_running_services(self):
+        result = self.run_deploy(FAIL_ACTION="run")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(self.action(c) in ["stop", "up"] for c in self.calls()))
+
+    def test_wildcard_listener_is_checked_through_loopback(self):
+        result = self.run_deploy(PUBLIC_BIND="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        urls = [c[-1] for c in self.calls() if c[0] == "curl"]
+        self.assertIn("http://127.0.0.1:3000/", urls)
+        self.assertFalse(any("0.0.0.0" in url for url in urls))
+
+    def test_invalid_configuration_does_not_download_or_stop(self):
+        result = self.run_deploy(FAIL_ACTION="config")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(self.action(c) in ["pull", "stop", "up"] for c in self.calls()))
+
+    def test_invalid_tag_does_not_call_docker(self):
+        result = self.run_deploy("latest")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.calls(), [])
+
+    def test_missing_environment_does_not_call_docker(self):
+        (self.root / "credit-service/.env").unlink()
+        result = self.run_deploy()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.calls(), [])
+
+    def test_failed_order_readiness_is_not_success(self):
+        result = self.run_deploy(FAIL_READY="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("Deployment ready:", result.stdout)
+
+    def test_failed_gate_restores_the_previous_release(self):
+        result = self.run_deploy(FAIL_ACTION="exec")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("restoring", result.stderr)
+        full = [c for c in self.calls()
+                if self.action(c) == "up" and all(s in c for s in SERVICES)]
+        self.assertEqual(len(full), 1)
+        self.assertIn("Restored", result.stderr)
+
+    def test_pricing_readiness_failure_is_not_success(self):
+        result = self.run_deploy(FAIL_ACTION="exec")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("Deployment ready:", result.stdout)
+
+    def test_wrong_pricing_image_is_not_success(self):
+        result = self.run_deploy(WRONG_IMAGE="pricing-service")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("pricing-service is not running the requested image", result.stderr)
+
+    def test_pricing_credentials_are_initialized_once_without_logging_secrets(self):
+        first = self.run_deploy()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        configuration = (self.root / ".env").read_text()
+        second = self.run_deploy()
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual((self.root / ".env").read_text(), configuration)
+        for line in configuration.splitlines():
+            if line.startswith("PRICING_"):
+                self.assertNotIn(line.split("=",1)[1], first.stdout + second.stdout)
+
+    def test_wrong_running_image_is_not_success(self):
+        result = self.run_deploy(WRONG_IMAGE="order-service")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("order-service is not running the requested image", result.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()

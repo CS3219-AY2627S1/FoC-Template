@@ -1,0 +1,31 @@
+name: foc-schedule
+services:
+  schedule-test-db:
+    image: postgres:18-bookworm
+    profiles: [test]
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: schedule_order_test
+    tmpfs: [/var/lib/postgresql]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U test -d schedule_order_test]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  schedule-tests:
+    profiles: [test]
+    build:
+      context: .
+      target: development
+    environment:
+      SCHEDULE_TEST_DATABASE_URL: postgres://test:test@schedule-test-db:5432/schedule_order_test?sslmode=disable
+    depends_on:
+      schedule-test-db:
+        condition: service_healthy
+    command: [sh, scripts/check.sh]
+    volumes:
+      - schedule-go-cache:/root/.cache/go-build
+volumes:
+  schedule-go-cache:
+    name: foc-schedule-go-cache

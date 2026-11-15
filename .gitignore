@@ -2,6 +2,9 @@
 dist/
 build/
 out/
+node_modules/
+.next/
+*.tsbuildinfo
 
 # Environment / secrets
 .env
@@ -13,3 +16,12 @@ out/
 # OS
 .DS_Store
 Thumbs.db
+
+.agent/CONTINUITY.md
+.agent/tmp/
+playwright-report/
+test-results/
+.ec2-deploy.lock
+
+# Private database cutover backups
+.migration-backups/

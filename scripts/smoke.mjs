@@ -1,0 +1,186 @@
+import assert from "node:assert/strict";
+
+const base = process.env.SMOKE_BASE_URL;
+const origin = process.env.SMOKE_ORIGIN;
+const email = process.env.SMOKE_EMAIL;
+const password = process.env.SMOKE_PASSWORD;
+const mailpit = process.env.MAILPIT_URL;
+const supplierBase = process.env.SMOKE_SUPPLIER_URL || base;
+const creditBase = process.env.SMOKE_CREDIT_URL || base;
+assert(base && origin && email && password && mailpit, "Smoke configuration missing");
+const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function call(path, method = "GET", data, cookie, expected = 200) {
+  const headers = { Origin: origin };
+  if (data !== undefined) headers["Content-Type"] = "application/json";
+  if (cookie) headers.Cookie = cookie;
+  const service = path.startsWith("/api/v1/wallets") ? creditBase : path.startsWith("/api/v1/suppliers") || path.startsWith("/api/v1/locations") ? supplierBase : base;
+  const response = await fetch(service + path, {
+    method, headers, body: data === undefined ? undefined : JSON.stringify(data),
+    signal: AbortSignal.timeout(15000),
+  });
+  assert.equal(response.status, expected, `${method} ${path}: unexpected HTTP status`);
+  return response;
+}
+
+async function login() {
+  const response = await call("/api/v1/auth/login", "POST", { email, password });
+  const cookie = response.headers.getSetCookie()[0]?.split(";")[0];
+  assert(cookie?.startsWith("foc_session="), "Expected local session cookie");
+  return cookie;
+}
+
+if (process.argv[2] === "setup") {
+  let ready = false;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    try {
+      const response = await fetch(base + "/api/v1/users/me", { signal: AbortSignal.timeout(2000) });
+      if (response.status === 401) { ready = true; break; }
+    } catch { /* Containers may still be starting. */ }
+    await pause(1000);
+  }
+  assert(ready, "Gateway/User Service did not start");
+  const registration = await (await call("/api/v1/auth/register", "POST", {
+    email, password, displayName: email.split("@")[0],
+  }, undefined, 202)).json();
+  let code;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const inbox = await (await fetch(mailpit + "/api/v1/messages", { signal: AbortSignal.timeout(3000) })).json();
+    const message = inbox.messages?.find(message => message.To?.some(to => to.Address === email));
+    if (message) {
+      const detail = await (await fetch(mailpit + "/api/v1/message/" + message.ID)).json();
+      code = detail.Text?.match(/verification code is: (\d{8})/)?.[1];
+      if (code) break;
+    }
+    await pause(500);
+  }
+  assert(code, "Verification email not found in local Mailpit");
+  await call("/api/v1/auth/verify-email", "POST", { email, code, registrationToken: registration.registrationToken });
+  const cookie = await login();
+  let wallet;
+  const allocationDeadline = Date.now() + 65000;
+  do {
+    const response = await fetch(creditBase + "/api/v1/wallets/me", { headers: { Origin: origin, Cookie: cookie }, signal: AbortSignal.timeout(5000) });
+    const body = await response.json();
+    if (response.status === 200) { wallet = body; break; }
+    assert(response.status === 404 && body.error?.code === "wallet_not_found", "Unexpected wallet failure while awaiting allocation");
+    await pause(500);
+  } while (Date.now() < allocationDeadline);
+  assert(wallet, "Initial allocation did not finish within 65 seconds");
+  assert.equal(wallet.available, 100, "Verification must finish with 100 available credits");
+  assert.equal(wallet.reserved, 0);
+  const history = await (await call("/api/v1/wallets/me/transactions", "GET", undefined, cookie)).json();
+  assert.equal(history.transactions.length, 1, "Initial credits must be recorded once");
+  assert.equal(history.transactions[0].kind, "allocation");
+  const suppliers = await (await call("/api/v1/suppliers", "GET", undefined, cookie)).json();
+  assert(Array.isArray(suppliers.suppliers), "Expected supplier list");
+  await call("/api/v1/suppliers", "POST", { name: "Denied", category: "food", locationId: "com2" }, cookie, 403);
+  assert(suppliers.suppliers.length > 0, "Expected seeded suppliers");
+  const knownId = suppliers.suppliers[0].id;
+  await call("/api/v1/suppliers/" + knownId, "PATCH", { active: false }, cookie, 403);
+  await call("/api/v1/suppliers/" + knownId, "DELETE", undefined, cookie, 403);
+  await call("/api/v1/auth/logout", "POST", undefined, cookie, 204);
+  await call("/api/v1/suppliers", "GET", undefined, cookie, 401);
+  console.log("Verified registration, browsing, denied admin write and logout revocation.");
+} else if (process.argv[2] === "check") {
+  const cookie = await login();
+  const created = await (await call("/api/v1/suppliers", "POST", {
+    name: email.split("@")[0], category: "food", locationId: "com2", description: "Local integration check",
+  }, cookie, 201)).json();
+  await call("/api/v1/suppliers/" + created.supplier.id, "GET", undefined, cookie);
+  const path = "/api/v1/suppliers/" + created.supplier.id;
+  const editedName = email.split("@")[0] + " edited";
+  const edited = await (await call(path, "PATCH", { name: editedName, category: "services", locationId: "com3", openingHours: "Mon-Fri 09:00-17:00" }, cookie)).json();
+  assert.equal(edited.supplier.openingHours, "Mon-Fri 09:00-17:00");
+  assert.equal(edited.supplier.createdAt, created.supplier.createdAt);
+  await call("/api/v1/suppliers", "POST", { name: editedName.toUpperCase(), category: "services", locationId: "com3" }, cookie, 409);
+  const query = "/api/v1/suppliers?q=" + encodeURIComponent(editedName) + "&category=services&locationId=com3&sort=createdAt&direction=desc&pageSize=1";
+  const matches = await (await call(query, "GET", undefined, cookie)).json();
+  assert.equal(matches.total, 1); assert.equal(matches.totalPages, 1); assert.equal(matches.suppliers[0].id, created.supplier.id);
+  await call("/api/v1/suppliers/" + created.supplier.id, "PATCH", { active: false }, cookie);
+  const inactive = await (await call("/api/v1/suppliers/" + created.supplier.id, "GET", undefined, cookie)).json();
+  assert.equal(inactive.supplier.active, false);
+  assert.equal((await (await call(query, "GET", undefined, cookie)).json()).total, 0);
+  assert.equal((await (await call(query + "&status=inactive", "GET", undefined, cookie)).json()).total, 1);
+  await call(path, "PATCH", { active: true }, cookie);
+  await call(path, "DELETE", undefined, cookie, 204);
+  await call(path, "GET", undefined, cookie, 404);
+  await call(path, "PATCH", { active: true }, cookie, 404);
+  await call("/internal/v1/sessions/validate", "POST", { sessionToken: "invalid" }, undefined, 404);
+  const noOrigin = await fetch(supplierBase + "/api/v1/suppliers", { method: "POST", headers: { Cookie: cookie, "Content-Type": "application/json" }, body: "{}" });
+  assert.equal(noOrigin.status, 403, "Missing Origin must be rejected");
+  assert.equal((await fetch(supplierBase + path, { method: "DELETE", headers: { Cookie: cookie } })).status, 403);
+  if (process.env.SMOKE_API_ONLY !== "1") {
+    const frontend = await fetch(base + "/");
+    assert.equal(frontend.status, 200);
+    assert((await frontend.text()).includes("Friend on Campus"), "Frontend missing");
+    const orderUI = await fetch(base + "/orders");
+    assert.equal(orderUI.status, 200);
+    assert((await orderUI.text()).includes("/orders/app.js"), "Order UI missing");
+    for (const asset of ["app.js", "core.mjs", "pricing.mjs", "style.css"]) {
+      assert.equal((await fetch(base + "/orders/" + asset)).status, 200);
+    }
+    await call("/api/v1/orders/session", "GET", undefined, cookie);
+    const places = await (await call("/api/v1/orders/places", "GET", undefined, cookie)).json();
+    assert(places.places.length > 0, "Order could not resolve Supplier catalogue");
+    if (process.env.SMOKE_PRICING === "1") {
+      const pickup = places.places.find(place => place.type === "supplier" && place.locationId === "com2");
+      assert(pickup, "Expected an existing COM2 supplier");
+      const body = {
+        draft: {id: crypto.randomUUID(), revision: 1},
+        pickup: {type: "supplier", id: pickup.id},
+        delivery: {type: "location", id: "central-library"},
+        totalItemQuantity: 2,
+      };
+      const key = crypto.randomUUID();
+      const quote = async () => {
+        const response = await fetch(base + "/api/v1/orders/price-quotes", {
+          method: "POST", headers: {Origin: origin, Cookie: cookie, "Content-Type": "application/json", "Idempotency-Key": key},
+          body: JSON.stringify(body), signal: AbortSignal.timeout(5000),
+        });
+        assert.equal(response.status, 200, "Live price quote failed");
+        return response.json();
+      };
+      const first = await quote();
+      assert(Number.isSafeInteger(first.recommendedCredits) && first.recommendedCredits > 0);
+      assert.deepEqual(first.draft, body.draft);
+      assert.deepEqual(await quote(), first, "Quote retries must replay the original result");
+      await call("/internal/v1/pricing-catalogue", "GET", undefined, cookie, 404);
+      await call("/internal/v1/pricing-context", "GET", undefined, cookie, 404);
+      console.log("Verified live Supplier → Pricing → Order suggestions, durable replay and private source isolation.");
+    }
+
+    const orders = await (await call("/api/v1/orders?scope=mine", "GET", undefined, cookie)).json();
+    assert(Array.isArray(orders.orders), "Order list missing");
+    // Reach Order validation through the trusted origin with a body above the
+    // gateway's default 16 KiB limit, without creating a persistent fixture.
+    const invalidOrder = await (await call("/api/v1/orders", "POST", {
+      padding: "x".repeat(17000),
+    }, cookie, 400)).json();
+    assert.equal(invalidOrder.error.code, "invalid_idempotency_key");
+    // A snapshot must reach the client immediately, before the eight-second
+    // stream rotation; this detects accidental gateway response buffering.
+    const stream = await fetch(base + "/api/v1/orders/stream", {
+      headers: { Cookie: cookie }, signal: AbortSignal.timeout(5000),
+    });
+    assert.equal(stream.status, 200);
+    assert(stream.headers.get("content-type")?.includes("text/event-stream"));
+    const reader = stream.body.getReader();
+    let received = "";
+    while (!received.includes("event: snapshot")) {
+      const { value, done } = await reader.read();
+      assert(!done, "Order stream closed before snapshot");
+      received += new TextDecoder().decode(value);
+    }
+    await reader.cancel();
+  }
+  await call("/api/v1/auth/logout", "POST", undefined, cookie, 204);
+  await call("/api/v1/suppliers", "GET", undefined, cookie, 401);
+  if (process.env.SMOKE_API_ONLY !== "1") {
+    await call("/api/v1/orders?scope=mine", "GET", undefined, cookie, 401);
+    await call("/api/v1/orders/stream", "GET", undefined, cookie, 401);
+  }
+  console.log("Verified persisted CRUD, duplicate rejection, combined queries, inactive reads, deletion, private route isolation and CSRF.");
+} else {
+  throw new Error("Use setup or check");
+}

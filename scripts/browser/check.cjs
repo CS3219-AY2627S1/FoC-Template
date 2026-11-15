@@ -1,0 +1,348 @@
+// Uses real local services. The single injected 503 tests the error/retry UI only.
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const assert = require('node:assert/strict');
+const { randomBytes } = require('node:crypto');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const base = process.env.E2E_BASE_URL || 'http://localhost:3000';
+const mailpit = process.env.E2E_MAILPIT_URL || 'http://localhost:8025';
+const artifacts = process.env.E2E_ARTIFACT_DIR || '.agent/tmp/d2-browser';
+const adminEmail = process.env.SMOKE_EMAIL;
+const adminPassword = process.env.SMOKE_PASSWORD;
+assert(adminEmail && adminPassword, 'Run scripts/browser-check.sh to supply local fixtures');
+const stamp = Date.now();
+const studentEmail = process.env.E2E_STUDENT_EMAIL || `d2-student-${stamp}@u.nus.edu`;
+const studentPassword = randomBytes(24).toString('hex');
+const cases = [];
+const pass = name => { cases.push(name); console.log(`PASS: ${name}`); };
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function until(predicate, message) {
+  for (let i = 0; i < 100; i++) { if (await predicate()) return; await pause(100); }
+  throw new Error(message);
+}
+async function call(context, method, route, data, expected = 200) {
+  const response = await context.request.fetch(base + route, { method, headers: { Origin: base }, ...(data === undefined ? {} : { data }) });
+  assert.equal(response.status(), expected, `${method} ${route} status`);
+  return expected === 204 ? null : response.json();
+}
+async function login(page, email, password) {
+  await page.goto(base);
+  await page.getByRole('button', { name: 'Log in', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel(/^School email/).fill(email);
+  await dialog.getByLabel(/^Password/).fill(password);
+  await dialog.getByRole('button', { name: 'Log in', exact: true }).click();
+  await page.locator('[aria-label="Supplier results"] .supplier-card').first().waitFor();
+}
+async function search(page, text) {
+  await page.getByRole('searchbox').fill(text);
+  const response = page.waitForResponse(r => r.request().method() === 'GET' && new URL(r.url()).pathname === '/api/v1/suppliers' && new URL(r.url()).searchParams.get('q') === text);
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await response;
+  await page.getByText('Loading suppliers…', { exact: true }).waitFor({ state: 'hidden' });
+}
+async function screenshot(page, filename, width) {
+  await page.setViewportSize({ width, height: 900 });
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `No overflow at ${width}px`);
+  await page.screenshot({ path: path.join(artifacts, filename), fullPage: true });
+}
+
+(async () => {
+  await fs.mkdir(artifacts, { recursive: true });
+  const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
+  const student = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const admin = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const page = await student.newPage();
+  const manage = await admin.newPage();
+  page.setDefaultTimeout(12000); manage.setDefaultTimeout(12000);
+  const pageErrors = [];
+  const apiOrigins = new Set();
+  for (const tab of [page, manage]) {
+    tab.on('pageerror', error => pageErrors.push(error.message));
+    tab.on('request', req => { const url = new URL(req.url()); if (url.pathname.startsWith('/api/')) apiOrigins.add(url.origin); });
+  }
+  try {
+    await page.goto(base);
+    await page.getByRole('heading', { name: 'Explore the supplier directory' }).waitFor();
+    assert.equal(await page.locator('.supplier-card').count(), 0);
+    await call(student, 'GET', '/api/v1/suppliers', undefined, 401);
+    await page.getByRole('button', { name: 'Sign up', exact: true }).click();
+    let dialog = page.getByRole('dialog');
+    await dialog.getByLabel(/^School email/).fill(studentEmail);
+    await dialog.getByLabel(/^Display name/).fill(`D2 Student ${stamp}`);
+    await dialog.getByLabel(/^Password/).fill(studentPassword);
+    await dialog.getByRole('button', { name: 'Send verification code' }).click();
+    await dialog.getByRole('heading', { name: 'Verify your school email' }).waitFor();
+    let code;
+    await until(async () => {
+      const inbox = await (await fetch(mailpit + '/api/v1/messages')).json();
+      const message = inbox.messages.find(m => m.To.some(to => to.Address === studentEmail));
+      if (!message) return false;
+      const mail = await (await fetch(mailpit + '/api/v1/message/' + message.ID)).json();
+      code = mail.Text.match(/verification code is: (\d{8})/)?.[1];
+      return !!code;
+    }, 'Verification email missing');
+    const digits = dialog.getByRole('group', { name: 'Eight-digit verification code' }).getByRole('textbox');
+    for (let i = 0; i < code.length; i++) await digits.nth(i).fill(code[i]);
+    // Commit verification on the server, then lose its response in the browser.
+    // The UI must not claim the account is still unverified.
+    await page.route('**/api/v1/auth/verify-email', async route => {
+      const response = await route.fetch();
+      assert.equal(response.status(), 200);
+      await route.abort('failed');
+    });
+    await dialog.getByRole('button', { name: 'Verify', exact: true }).click();
+    await dialog.getByRole('alert').filter({ hasText: 'may already be verified' }).waitFor();
+    assert.equal(await dialog.getByText('Your account stays unverified until the correct code is accepted.').count(), 0);
+    await dialog.getByRole('button', { name: 'Try logging in' }).click();
+    await dialog.getByLabel(/^Password/).fill(studentPassword);
+    await dialog.getByRole('button', { name: 'Log in', exact: true }).click();
+    await page.locator('[aria-label="Supplier results"] .supplier-card').first().waitFor();
+    await page.unroute('**/api/v1/auth/verify-email');
+    await page.getByRole('link', { name: 'Wallet', exact: true }).click();
+    await page.locator('.wallet-available .wallet-balance-value').filter({ hasText: /^100 credits$/ }).waitFor();
+    await page.locator('.wallet-history').getByText('Initial credits', { exact: true }).waitFor();
+    assert.equal(new URL(page.url()).pathname, '/wallet', 'Wallet must open a standalone page');
+    assert.equal(await page.getByRole('dialog').count(), 0, 'Wallet must not use a modal');
+    await screenshot(page, 'wallet-desktop.png', 1440);
+    await screenshot(page, 'wallet-mobile.png', 390);
+    await screenshot(page, 'wallet-small-mobile.png', 320);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const historyRoute = '**/api/v1/wallets/me/transactions?*';
+    let failMore = true;
+    await page.route(historyRoute, async route => {
+      const query = new URL(route.request().url()).searchParams;
+      assert.equal(query.get('limit'), '10');
+      const before = query.get('before');
+      if (before) assert.equal(before, '11');
+      if (before && failMore) {
+        failMore = false;
+        await route.fulfill({ status: 503, json: { error: { code: 'not_ready', message: 'Unavailable' } } });
+        return;
+      }
+      const transactions = Array.from({ length: before ? 2 : 10 }, (_, index) => ({
+        id: (before ? 10 : 20) - index, kind: 'receive', amount: 5,
+        availableDelta: 5, reservedDelta: 0, availableAfter: 100, reservedAfter: 0,
+        createdAt: '2026-09-26T05:30:14.059Z',
+      }));
+      await route.fulfill({ json: { transactions, nextBefore: before ? null : 11 } });
+    });
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await until(async () => await page.locator('.wallet-transactions li').count() === 10, 'Wallet should show ten recent transactions');
+    await screenshot(page, 'wallet-history-desktop.png', 1440);
+    await screenshot(page, 'wallet-history-mobile.png', 390);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.getByRole('button', { name: 'Show more', exact: true }).click();
+    await page.getByRole('alert').filter({ hasText: 'Could not load transactions' }).waitFor();
+    assert.equal(await page.locator('.wallet-transactions li').count(), 10, 'Failed pagination preserves transactions');
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await until(async () => await page.locator('.wallet-transactions li').count() === 12, 'Retry should append older transactions');
+    assert.equal(await page.getByRole('button', { name: 'Show more', exact: true }).count(), 0);
+    await page.unroute(historyRoute);
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await page.locator('.wallet-history').getByText('Initial credits', { exact: true }).waitFor();
+    pass('Wallet reads live history; ten-entry pagination, failure preservation and cursor retry');
+    const walletRoute = '**/api/v1/wallets/me';
+    await page.route('**/api/v1/users/me', async route => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), creditSetup: 'pending' } });
+    });
+    await page.route(walletRoute, route => route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":{"code":"wallet_not_found","message":"Wallet not found"}}' }));
+    await page.evaluate(() => window.dispatchEvent(new Event('foc:wallet-changed')));
+    await page.getByText('Setting up your credits…', { exact: true }).waitFor();
+    assert.equal(await page.locator('.wallet-balances').count(), 0, 'Pending wallet must not show a zero balance');
+    await page.unroute(walletRoute);
+    await page.unroute('**/api/v1/users/me');
+    await page.evaluate(() => window.dispatchEvent(new Event('foc:wallet-changed')));
+    await page.locator('.wallet-available .wallet-balance-value').filter({ hasText: /^100 credits$/ }).waitFor();
+    await page.route(walletRoute, route => route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":{"code":"wallet_not_found","message":"Wallet not found"}}' }));
+    await page.evaluate(() => window.dispatchEvent(new Event('foc:wallet-changed')));
+    await page.getByRole('status').filter({ hasText: '100 credits (last known)' }).waitFor();
+    await page.unroute(walletRoute);
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await page.locator('.wallet-available .wallet-balance-value').filter({ hasText: /^100 credits$/ }).waitFor();
+    await page.route(walletRoute, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ userId: 'test', available: 75, reserved: 25 }) }));
+    await page.evaluate(() => window.dispatchEvent(new Event('foc:wallet-changed')));
+    await page.locator('.wallet-available .wallet-balance-value').filter({ hasText: /^75 credits$/ }).waitFor();
+    await page.locator('.wallet-balance-card').nth(1).getByText('25 credits', { exact: true }).waitFor();
+    await page.unroute(walletRoute);
+    await page.route(walletRoute, route => route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":{"code":"not_ready","message":"Temporarily unavailable"}}' }));
+    await page.evaluate(() => window.dispatchEvent(new Event('foc:wallet-changed')));
+    await page.getByRole('status').filter({ hasText: '75 credits (last known)' }).waitFor();
+    await page.unroute(walletRoute);
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await page.locator('.wallet-available .wallet-balance-value').filter({ hasText: /^100 credits$/ }).waitFor();
+    await page.getByRole('link', { name: 'Back to suppliers' }).click();
+    assert.equal((await page.goto(base + '/admin')).status(), 404, 'Ordinary user must not receive the admin page');
+    await page.goto(base);
+    await page.locator('.supplier-card').first().waitFor();
+    await page.reload();
+    await page.locator('.supplier-card').first().waitFor();
+    await page.getByRole('link', { name: 'Wallet', exact: true }).click();
+    await page.locator('.wallet-available .wallet-balance-value').filter({ hasText: /^100 credits$/ }).waitFor();
+    await page.getByRole('link', { name: 'Back to suppliers' }).click();
+    assert.equal(await page.getByRole('button', { name: 'Add supplier', exact: true }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: 'Edit supplier', exact: true }).count(), 0);
+    const initial = await call(student, 'GET', '/api/v1/suppliers?pageSize=100');
+    assert(initial.total >= 21);
+    const known = initial.suppliers[0].id;
+    await call(student, 'POST', '/api/v1/suppliers', { name: 'Denied' }, 403);
+    await call(student, 'GET', '/api/v1/admin/users?page=1&pageSize=20', undefined, 403);
+    await call(student, 'PATCH', `/api/v1/suppliers/${known}`, { active: false }, 403);
+    await call(student, 'DELETE', `/api/v1/suppliers/${known}`, undefined, 403);
+    pass('Lost verification response recovers via login; pending wallet/refresh/retry; anonymous gate and ordinary-user API/UI permissions');
+
+    await page.getByLabel('Per page', { exact: true }).selectOption('5');
+    await page.getByText('Page 1 of', { exact: false }).waitFor();
+    await until(async () => await page.locator('.supplier-card').count() === 5, 'Page size not applied');
+    const firstNames = await page.locator('.supplier-card-title').allTextContents();
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await page.getByText('Page 2 of', { exact: false }).waitFor();
+    assert((await page.locator('.supplier-card-title').allTextContents()).every(name => !firstNames.includes(name)));
+    await page.getByLabel('Category', { exact: true }).selectOption('food');
+    await page.getByLabel('Location', { exact: true }).selectOption('com2');
+    await until(async () => (await page.locator('.supplier-card-meta').allTextContents()).length > 0 && (await page.locator('.supplier-card-meta').allTextContents()).every(text => text === 'Food · COM2'), 'Combined server filters');
+    await page.getByLabel('Order', { exact: true }).selectOption('desc');
+    await page.locator('.supplier-card').first().waitFor();
+    await page.getByRole('button', { name: 'Clear filters', exact: true }).first().click();
+    await search(page, `no-match-${stamp}`);
+    await page.getByRole('heading', { name: 'No suppliers found' }).waitFor();
+    await page.getByRole('button', { name: 'Clear filters', exact: true }).first().click();
+    await page.locator('.supplier-card').first().waitFor();
+    const failRoute = '**/api/v1/suppliers?*';
+    await page.route(failRoute, route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'auth_unavailable', message: 'Authentication is temporarily unavailable. Please retry.' } }) }));
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await page.getByRole('alert').filter({ hasText: 'temporarily unavailable' }).waitFor();
+    assert.equal(await page.locator('.supplier-card').count(), 0);
+    await page.unroute(failRoute);
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await page.locator('.supplier-card').first().waitFor();
+    await screenshot(page, 'ordinary-desktop.png', 1440);
+    await screenshot(page, 'ordinary-mobile.png', 390);
+    await screenshot(page, 'ordinary-small-mobile.png', 320);
+    pass('Live pagination, filters, sorting, empty state, injected outage/retry and 1440/390/320px browsing');
+
+    await login(manage, adminEmail, adminPassword);
+    await manage.getByRole('link', { name: 'Admin page' }).click();
+    await manage.getByRole('heading', { name: 'Admin page' }).waitFor();
+    await manage.getByLabel('School email').fill(studentEmail);
+    await manage.getByRole('button', { name: 'Find user' }).click();
+    await manage.getByText(studentEmail, { exact: true }).waitFor();
+    await manage.getByLabel('Request preset').selectOption({ label: 'User accounts' });
+    await manage.getByRole('button', { name: 'Run GET' }).click();
+    await manage.getByText('HTTP 200').waitFor();
+    assert((await manage.locator('.admin-response pre').textContent()).includes('"users"'));
+    assert(!(await manage.locator('.admin-response pre').textContent()).includes('password_hash'));
+    await manage.getByLabel('Request preset').selectOption({ label: 'Suppliers' });
+    await manage.getByRole('button', { name: 'Run GET' }).click();
+    await manage.getByText('HTTP 200').waitFor();
+    await manage.getByRole('link', { name: 'Back to catalogue' }).click();
+    await manage.locator('.supplier-card').first().waitFor();
+    pass('Admin-only page, exact-email lookup and live supplier service check');
+    const name = `D2 Cafe ${stamp}`;
+    await manage.getByRole('button', { name: 'Add supplier', exact: true }).click();
+    dialog = manage.getByRole('dialog');
+    await dialog.getByLabel(/^Name/).fill(name);
+    await dialog.getByLabel(/^Location/).selectOption('com2');
+    await dialog.getByLabel(/^Description/).fill('Near the entrance\nLevel one');
+    await dialog.getByLabel(/^Opening hours/).fill('Mon-Fri 09:00-17:00');
+    assert.equal(await dialog.getByLabel('Status', { exact: true }).inputValue(), 'active');
+    await screenshot(manage, 'admin-create-mobile.png', 390);
+    await manage.keyboard.press('Tab');
+    assert(await manage.evaluate(() => !!document.activeElement?.closest('dialog')), 'Modal traps focus');
+    await dialog.getByRole('button', { name: 'Save supplier', exact: true }).click();
+    await dialog.getByRole('heading', { name: 'Supplier saved' }).waitFor();
+    const savedList = await call(admin, 'GET', '/api/v1/suppliers?q=' + encodeURIComponent(name));
+    assert.equal(savedList.total, 1);
+    const saved = savedList.suppliers[0];
+    assert(saved.id && saved.createdAt && saved.openingHours === 'Mon-Fri 09:00-17:00');
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    await manage.reload();
+    await manage.locator('.supplier-card').first().waitFor();
+    await search(manage, name);
+    await manage.getByRole('heading', { name, exact: true }).waitFor();
+    await manage.getByRole('button', { name: 'Add supplier', exact: true }).click();
+    dialog = manage.getByRole('dialog');
+    await dialog.getByLabel(/^Name/).fill(name.toLowerCase());
+    await dialog.getByLabel(/^Location/).selectOption('com2');
+    await dialog.getByRole('button', { name: 'Save supplier', exact: true }).click();
+    await dialog.getByRole('alert').filter({ hasText: 'already has that name' }).waitFor();
+    assert.equal(await dialog.getByLabel(/^Name/).inputValue(), name.toLowerCase());
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await manage.getByRole('button', { name: 'Edit supplier', exact: true }).click();
+    dialog = manage.getByRole('dialog');
+    await dialog.getByLabel(/^Name/).fill(name + ' Edited');
+    await dialog.getByLabel(/^Category/).selectOption('services');
+    await dialog.getByLabel(/^Location/).selectOption('com3');
+    await dialog.getByLabel(/^Opening hours/).fill('');
+    await dialog.getByRole('button', { name: 'Save supplier', exact: true }).click();
+    await dialog.getByRole('heading', { name: 'Supplier saved' }).waitFor();
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    await manage.getByRole('heading', { name: name + ' Edited', exact: true }).waitFor();
+    await manage.getByRole('button', { name: 'Deactivate', exact: true }).click();
+    await manage.getByText('This supplier is inactive and unavailable for new pickups.', { exact: true }).waitFor();
+    const inactive = (await call(admin, 'GET', `/api/v1/suppliers/${saved.id}`)).supplier;
+    assert.equal(inactive.active, false); assert.equal(inactive.locationId, 'com3'); assert.equal(inactive.openingHours, '');
+    await screenshot(manage, 'admin-inactive-mobile.png', 390);
+    await manage.getByRole('button', { name: 'Reactivate', exact: true }).click();
+    await manage.getByRole('button', { name: 'Deactivate', exact: true }).waitFor();
+    await screenshot(manage, 'admin-desktop.png', 1440);
+    await manage.getByRole('button', { name: 'Delete supplier', exact: true }).click();
+    dialog = manage.getByRole('dialog');
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await call(admin, 'GET', `/api/v1/suppliers/${saved.id}`);
+    await manage.getByRole('button', { name: 'Delete supplier', exact: true }).click();
+    await manage.getByRole('dialog').getByRole('button', { name: 'Delete supplier', exact: true }).click();
+    await manage.getByRole('heading', { name: 'No suppliers found' }).waitFor();
+    await call(admin, 'GET', `/api/v1/suppliers/${saved.id}`, undefined, 404);
+    await manage.reload(); await manage.locator('.supplier-card').first().waitFor();
+    await search(manage, name);
+    await manage.getByRole('heading', { name: 'No suppliers found' }).waitFor();
+    pass('Admin create/edit, duplicate rejection preserving draft, reload persistence, inactive/read/reactivate, confirmed deletion');
+
+    const actor = (await call(admin, 'GET', '/api/v1/users/me')).user;
+    await manage.getByRole('link', { name: 'Admin page' }).click();
+    await manage.getByRole('heading', { name: 'Admin page' }).waitFor();
+    await manage.getByLabel('School email').fill(studentEmail);
+    await manage.getByRole('button', { name: 'Find user' }).click();
+    await manage.getByRole('button', { name: 'Promote to admin' }).waitFor();
+    await manage.getByRole('button', { name: 'Promote to admin' }).click();
+    await manage.getByRole('dialog').getByLabel('Your current password').fill(adminPassword);
+    await manage.getByRole('dialog').getByRole('button', { name: 'Confirm role change' }).click();
+    await manage.getByText('is now an admin.', { exact: false }).waitFor();
+    await manage.getByRole('link', { name: 'Back to catalogue' }).click();
+    await manage.locator('.supplier-card').first().waitFor();
+    await call(student, 'GET', '/api/v1/suppliers', undefined, 401);
+    await call(student, 'POST', '/api/v1/auth/login', { email: studentEmail, password: studentPassword });
+    await page.reload();
+    await page.getByRole('link', { name: 'Admin page' }).click();
+    await page.getByLabel('School email').fill(actor.email);
+    await page.getByRole('button', { name: 'Find user' }).click();
+    await page.getByRole('button', { name: 'Remove admin access' }).click();
+    await page.getByRole('dialog').getByLabel('Your current password').fill(studentPassword);
+    await page.getByRole('dialog').getByRole('button', { name: 'Confirm role change' }).click();
+    await page.getByText('is now a user.', { exact: false }).waitFor();
+    await page.getByRole('button', { name: 'Load recent changes' }).click();
+    const newestEvent = page.locator('.admin-event-list li').first();
+    await newestEvent.getByText(actor.email, { exact: true }).waitFor();
+    assert((await newestEvent.textContent()).includes('from admin to user'), 'Audit history should show the demotion');
+    await page.getByRole('link', { name: 'Back to catalogue' }).click();
+    await page.locator('.supplier-card').first().waitFor();
+    await manage.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await manage.getByRole('heading', { name: 'Explore the supplier directory' }).waitFor();
+    assert.equal(await manage.getByRole('button', { name: 'Add supplier', exact: true }).count(), 0);
+    await page.reload();
+    await page.getByRole('button', { name: 'Add supplier', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Log out', exact: true }).click();
+    await page.getByRole('heading', { name: 'Explore the supplier directory' }).waitFor();
+    await call(student, 'GET', '/api/v1/suppliers', undefined, 401);
+    assert.equal(pageErrors.length, 0, 'Browser runtime errors');
+    assert.deepEqual([...apiOrigins], [new URL(base).origin], 'Same-origin browser API calls');
+    pass('Real role changes revoke sessions; UI clears on revoked access and logout; no runtime errors');
+    await fs.writeFile(path.join(artifacts, 'results.json'), JSON.stringify({ checkedAt: new Date().toISOString(), cases, viewports: [1440,390,320] }, null, 2));
+  } catch (error) {
+    await page.screenshot({ path: path.join(artifacts, 'failure-student.png'), fullPage: true }).catch(() => {});
+    await manage.screenshot({ path: path.join(artifacts, 'failure-admin.png'), fullPage: true }).catch(() => {});
+    throw error;
+  } finally { await browser.close(); }
+})().catch(error => { console.error(error.message); process.exitCode = 1; });

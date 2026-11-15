@@ -1,0 +1,420 @@
+package order
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"slices"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+func actor(r *http.Request) string { return r.Context().Value(identityKey{}).(Identity).UserID }
+
+func visible(o Order, user string) bool {
+	return o.Status == "open" || o.RequesterID == user || (o.CourierID != nil && *o.CourierID == user)
+}
+
+func (a *App) session(w http.ResponseWriter, r *http.Request) error {
+	var active int
+	if err := a.db.QueryRow(r.Context(), "SELECT count(*) FROM orders WHERE courier_id=$1 AND status IN ('accepted','picked up')", actor(r)).Scan(&active); err != nil {
+		return err
+	}
+	writeJSON(w, 200, struct {
+		Identity
+		CourierBusy   bool `json:"courierBusy"`
+		CourierActive int  `json:"courierActive"`
+		CourierLimit  int  `json:"courierLimit"`
+	}{r.Context().Value(identityKey{}).(Identity), active >= 3, active, 3})
+	return nil
+}
+
+func (a *App) listOrders(w http.ResponseWriter, r *http.Request) error {
+	scope := r.URL.Query().Get("scope")
+	// Only hard-coded SQL predicates may be selected by browser input.
+	predicate, subject := "requester_id=$1", actor(r)
+	switch scope {
+	case "", "mine":
+	case "open":
+		return a.openOrders(w, r)
+	case "courier":
+		predicate = "courier_id=$1"
+	case "disputes":
+		if !slices.Contains(r.Context().Value(identityKey{}).(Identity).Roles, "admin") {
+			return problem(403, "admin_required", "An administrator is required.")
+		}
+		predicate = "status='dispute' AND $1::uuid IS NOT NULL"
+	case "user":
+		if !slices.Contains(r.Context().Value(identityKey{}).(Identity).Roles, "admin") {
+			return problem(403, "admin_required", "An administrator is required.")
+		}
+		var id pgtype.UUID
+		if id.Scan(r.URL.Query().Get("userId")) != nil || !id.Valid {
+			return problem(400, "invalid_user", "Provide a valid userId.")
+		}
+		predicate, subject = "(requester_id=$1 OR courier_id=$1)", strings.ToLower(r.URL.Query().Get("userId"))
+	default:
+		return problem(400, "invalid_scope", "Choose mine, open or courier.")
+	}
+	filter := r.URL.Query().Get("filter")
+	if filter != "" && filter != "all" {
+		if scope != "" && scope != "mine" {
+			return problem(400, "invalid_filter", "Request filters apply only to My requests.")
+		}
+		switch filter {
+		case "current":
+			predicate += " AND status NOT IN ('completed','not completed','cancelled','expired')"
+		case "past":
+			predicate += " AND status IN ('completed','not completed','cancelled','expired')"
+		default:
+			return problem(400, "invalid_filter", "Choose all, current or past requests.")
+		}
+	}
+	page := 1
+	if raw := r.URL.Query().Get("page"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > 100000 {
+			return problem(400, "invalid_page", "Choose a valid page.")
+		}
+		page = n
+	}
+	rows, err := a.db.Query(r.Context(), "SELECT "+orderColumns+" FROM orders WHERE "+predicate+" ORDER BY created_at DESC,id LIMIT 21 OFFSET $2", subject, (page-1)*20)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	result := []Order{}
+	for rows.Next() {
+		value, err := scanOrder(rows)
+		if err != nil {
+			return err
+		}
+		result = append(result, value)
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	more := len(result) > 20
+	// Creation boundaries let the browser merge unpaginated scheduled history
+	// into the correct regular-history page, rather than pinning it to page one.
+	type boundary struct {
+		ID        string    `json:"id"`
+		CreatedAt time.Time `json:"createdAt"`
+	}
+	var pageStart, nextPageStart *boundary
+	if len(result) > 0 {
+		pageStart = &boundary{result[0].ID, result[0].CreatedAt}
+	}
+	if more {
+		nextPageStart = &boundary{result[20].ID, result[20].CreatedAt}
+		result = result[:20]
+	}
+	// Release the query connection before reconciliation, including with a
+	// one-connection pool. Refresh every displayed row, not only selected detail.
+	rows.Close()
+	cookie, _ := r.Cookie(a.cfg.SessionCookie)
+	resolved, missing, err := a.snapshotPlaces(r.Context(), result, cookie.Value)
+	if err != nil {
+		return err
+	}
+	for i, observed := range result {
+		result[i], err = a.refreshHistory(r.Context(), observed, cookie.Value, resolved, missing)
+		if err != nil {
+			return err
+		}
+	}
+	if scope == "disputes" {
+		result = slices.DeleteFunc(result, func(o Order) bool { return o.Status != "dispute" })
+	}
+	// Reconciliation can expire/cancel a selected current request.
+	if filter == "current" {
+		result = slices.DeleteFunc(result, func(o Order) bool {
+			return o.Status == "completed" || o.Status == "not completed" || o.Status == "cancelled" || o.Status == "expired"
+		})
+	}
+	if err := r.Context().Err(); err != nil {
+		return err
+	}
+	writeJSON(w, 200, map[string]any{"orders": result, "page": page, "hasMore": more, "pageStart": pageStart, "nextPageStart": nextPageStart})
+	return nil
+}
+
+func (a *App) refreshHistory(ctx context.Context, observed Order, session string, resolved map[PlaceRef]Place, missing map[PlaceRef]bool) (Order, error) {
+	tx, err := a.db.Begin(ctx)
+	if err != nil {
+		return Order{}, err
+	}
+	defer rollback(tx)
+	if allowed, err := a.guardAdmission(ctx, tx, observed.ID); err != nil {
+		return Order{}, err
+	} else if !allowed {
+		return Order{}, updatingOrder()
+	}
+	before, err := scanOrder(tx.QueryRow(ctx, "SELECT "+orderColumns+" FROM orders WHERE id=$1 FOR UPDATE", observed.ID))
+	if err != nil {
+		return Order{}, err
+	}
+	if before.Version != observed.Version {
+		return Order{}, updatingOrder()
+	}
+	after := before
+	for _, target := range []*Place{&after.Pickup, &after.Delivery} {
+		ref := PlaceRef{Type: target.Type, ID: target.ID}
+		fresh, known := resolved[ref]
+		if !known && !missing[ref] {
+			fresh, err = a.catalogue.Resolve(ctx, ref, session)
+			var api *apiError
+			if errors.As(err, &api) && api.code == "invalid_place" {
+				missing[ref] = true
+			} else if err != nil {
+				return Order{}, err
+			} else {
+				resolved[ref] = fresh
+			}
+		}
+		if missing[ref] {
+			// Preserve a pickup that won while this snapshot waited for the
+			// lock, just as explicit detail refresh does.
+			if supplierCancellable(before.Status) && !(observed.Status == "accepted" && before.Status == "picked up") {
+				after.Status = "cancelled"
+				after.CancellationReason = "A selected place was deactivated or deleted. Credit refund is pending."
+			}
+			continue
+		}
+		*target = fresh
+	}
+	after, err = checkScheduledHours(after)
+	if err != nil {
+		return Order{}, err
+	}
+	after, err = saveChange(ctx, tx, before, after)
+	if err != nil {
+		return Order{}, err
+	}
+	return after, tx.Commit(ctx)
+}
+
+func (a *App) findVisible(r *http.Request) (Order, error) {
+	value, err := scanOrder(a.db.QueryRow(r.Context(), "SELECT "+orderColumns+" FROM orders WHERE id=$1", r.PathValue("id")))
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !visible(value, actor(r)) && !(value.Status == "dispute" && slices.Contains(r.Context().Value(identityKey{}).(Identity).Roles, "admin"))) {
+		return Order{}, problem(404, "order_not_found", "This errand is not available.")
+	}
+	return value, err
+}
+
+func (a *App) getOrder(w http.ResponseWriter, r *http.Request) error {
+	value, err := a.findVisible(r)
+	if err != nil {
+		return err
+	}
+	writeOrder(w, 200, value)
+	return nil
+}
+
+type orderEvent struct {
+	ID            string    `json:"eventId"`
+	OrderID       string    `json:"orderId"`
+	Version       int64     `json:"orderVersion"`
+	Type          string    `json:"type"`
+	SchemaVersion int       `json:"schemaVersion"`
+	CreatedAt     time.Time `json:"createdAt"`
+}
+
+func recordEvent(ctx context.Context, tx pgx.Tx, o Order, kind string) error {
+	return recordDomainEvent(ctx, tx, nil, o, kind)
+}
+
+func (a *App) events(w http.ResponseWriter, r *http.Request) error {
+	// Authorize against current ownership, not a cursor or a historical event.
+	value, err := a.findVisible(r)
+	if err != nil {
+		return err
+	}
+	after := int64(0)
+	if raw := r.URL.Query().Get("afterVersion"); raw != "" {
+		after, err = strconv.ParseInt(raw, 10, 64)
+		if err != nil || after < 0 {
+			return problem(400, "invalid_version", "Version must be a non-negative integer.")
+		}
+	}
+	rows, err := a.db.Query(r.Context(), `SELECT event_id,order_id,order_version,event_type,schema_version,created_at
+        FROM order_events WHERE order_id=$1 AND order_version>$2 AND order_version<=$3 ORDER BY order_version LIMIT 100`, value.ID, after, value.Version)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	events := []orderEvent{}
+	for rows.Next() {
+		var event orderEvent
+		if err = rows.Scan(&event.ID, &event.OrderID, &event.Version, &event.Type, &event.SchemaVersion, &event.CreatedAt); err != nil {
+			return err
+		}
+		events = append(events, event)
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	writeJSON(w, 200, map[string]any{"events": events})
+	return nil
+}
+
+// Refresh every eligible row, not just the selected card. Resolve each place once
+// per snapshot using this request's session; no authentication is cached.
+func (a *App) openOrders(w http.ResponseWriter, r *http.Request) error {
+	ordering, from := r.URL.Query().Get("sort"), r.URL.Query().Get("from")
+	if ordering != "" && ordering != "expiry" && ordering != "credits" && ordering != "distance" {
+		return problem(400, "invalid_sort", "Choose expiry, credits or distance.")
+	}
+	if ordering == "distance" && from == "" {
+		return problem(400, "starting_location_required", "Choose a starting campus location to sort by distance.")
+	}
+	cookie, _ := r.Cookie(a.cfg.SessionCookie)
+	// A starting location adds distances under any sort; it never filters the list.
+	var start *Coordinate
+	var coordinates map[string]*Coordinate
+	if from != "" {
+		var err error
+		if coordinates, err = a.locator.Coordinates(r.Context(), cookie.Value); err != nil {
+			return err
+		}
+		if start = coordinates[from]; start == nil {
+			return problem(400, "invalid_location", "Choose a starting location from the campus list.")
+		}
+	}
+	rows, err := a.db.Query(r.Context(), "SELECT "+orderColumns+" FROM orders WHERE status='open' AND requester_id<>$1 AND expires_at>$2 ORDER BY id", actor(r), a.now())
+	if err != nil {
+		return err
+	}
+	var observed []Order
+	for rows.Next() {
+		o, scanErr := scanOrder(rows)
+		if scanErr != nil {
+			rows.Close()
+			return scanErr
+		}
+		observed = append(observed, o)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	resolved, missing, err := a.snapshotPlaces(r.Context(), observed, cookie.Value)
+	if err != nil {
+		return err
+	}
+	ids := make([]string, 0, len(observed))
+	for _, o := range observed {
+		ids = append(ids, o.ID)
+		if err = a.refreshListed(r.Context(), o, cookie.Value, resolved, missing); err != nil {
+			return err
+		}
+	}
+	// Re-read after refresh so assignments made during catalogue I/O disappear.
+	rows, err = a.db.Query(r.Context(), "SELECT "+orderColumns+" FROM orders WHERE status='open' AND requester_id<>$1 AND expires_at>$2 AND id=ANY($3::text[])", actor(r), a.now(), ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	result := []openOrder{}
+	for rows.Next() {
+		o, err := scanOrder(rows)
+		if err != nil {
+			return err
+		}
+		entry := openOrder{Order: o}
+		// Pickups whose location has no coordinates keep a nil distance.
+		if pickup := coordinates[pickupLocationID(o)]; start != nil && pickup != nil {
+			d := distanceMeters(*start, *pickup)
+			entry.PickupDistanceMeters = &d
+		}
+		result = append(result, entry)
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	sort.Slice(result, func(i, j int) bool {
+		x, y := result[i], result[j]
+		if ordering == "distance" {
+			dx, dy := x.PickupDistanceMeters, y.PickupDistanceMeters
+			if (dx == nil) != (dy == nil) {
+				return dx != nil
+			}
+			if dx != nil && *dx != *dy {
+				return *dx < *dy
+			}
+		}
+		if ordering == "credits" && x.OfferedCredits != y.OfferedCredits {
+			return x.OfferedCredits > y.OfferedCredits
+		}
+		if !x.ExpiresAt.Equal(y.ExpiresAt) {
+			return x.ExpiresAt.Before(y.ExpiresAt)
+		}
+		if !x.CreatedAt.Equal(y.CreatedAt) {
+			return x.CreatedAt.Before(y.CreatedAt)
+		}
+		return x.ID < y.ID
+	})
+	if err := r.Context().Err(); err != nil {
+		return err
+	}
+	writeJSON(w, 200, map[string]any{"orders": result, "hasMore": false})
+	return nil
+}
+
+func (a *App) refreshListed(ctx context.Context, observed Order, session string, resolved map[PlaceRef]Place, missing map[PlaceRef]bool) error {
+	id := observed.ID
+	tx, err := a.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer rollback(tx)
+	if allowed, err := a.guardAdmission(ctx, tx, id); err != nil {
+		return err
+	} else if !allowed {
+		return updatingOrder()
+	}
+	before, err := scanOrder(tx.QueryRow(ctx, "SELECT "+orderColumns+" FROM orders WHERE id=$1 FOR UPDATE", id))
+	if err != nil {
+		return err
+	}
+	if before.Status != "open" {
+		return nil
+	}
+	if before.Version != observed.Version {
+		return updatingOrder()
+	}
+	after := before
+	for _, target := range []*Place{&after.Pickup, &after.Delivery} {
+		ref := PlaceRef{Type: target.Type, ID: target.ID}
+		fresh, known := resolved[ref]
+		if !known && !missing[ref] {
+			fresh, err = a.catalogue.Resolve(ctx, ref, session)
+			var api *apiError
+			if errors.As(err, &api) && api.code == "invalid_place" {
+				missing[ref] = true
+			} else if err != nil {
+				return err
+			} else {
+				resolved[ref] = fresh
+			}
+		}
+		if missing[ref] {
+			after.Status = "cancelled"
+			after.CancellationReason = "A selected place was deactivated or deleted. Credit refund is pending."
+			break
+		}
+		*target = fresh
+	}
+	if after.Status == "open" && !after.ExpiresAt.After(a.now()) {
+		after.Status = "expired"
+	}
+	if _, err = saveChange(ctx, tx, before, after); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}

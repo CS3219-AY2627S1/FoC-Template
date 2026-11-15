@@ -1,0 +1,96 @@
+# Applied explicitly by scripts/deploy-ec2.sh; local development is unchanged.
+# Bounded json-file logs keep the root volume from filling up. Publishing the
+# compose service label makes every log line self-describing in CloudWatch.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+    labels: "com.docker.compose.service"
+
+# Every container in this file is long-lived and has its logs bounded. Defined
+# once so a service added here cannot inherit the unmanaged defaults by omission.
+x-service: &service
+  restart: unless-stopped
+  logging: *logging
+
+services:
+  user-db:
+    <<: *service
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U foc_user -d foc_user"]
+  supplier-db:
+    <<: *service
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U foc_supplier -d foc_supplier"]
+  credit-db:
+    <<: *service
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U foc_credit -d foc_credit"]
+  order-db:
+    <<: *service
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U foc_order -d foc_order"]
+  mailpit:
+    <<: *service
+
+  user-service:
+    <<: *service
+    build: !reset null
+    image: ${ECR_REGISTRY:?Set ECR_REGISTRY}/foc/user-service:${FOC_IMAGE_TAG:?Set FOC_IMAGE_TAG}
+  supplier-service:
+    <<: *service
+    build: !reset null
+    image: ${ECR_REGISTRY:?Set ECR_REGISTRY}/foc/supplier-service:${FOC_IMAGE_TAG:?Set FOC_IMAGE_TAG}
+  credit-service:
+    <<: *service
+    build: !reset null
+    image: ${ECR_REGISTRY:?Set ECR_REGISTRY}/foc/credit-service:${FOC_IMAGE_TAG:?Set FOC_IMAGE_TAG}
+  order-service:
+    <<: *service
+    build: !reset null
+    environment:
+      ORDER_PRICING_URL: http://pricing-service:8080
+      ORDER_PRICING_TOKEN: ${PRICING_QUOTE_TOKEN:?Run sh order_pricing/scripts/init-env.sh}
+      ORDER_PRICING_SOURCE_TOKEN: ${PRICING_ORDER_SOURCE_TOKEN:?Run sh order_pricing/scripts/init-env.sh}
+    image: ${ECR_REGISTRY:?Set ECR_REGISTRY}/foc/order-service:${FOC_IMAGE_TAG:?Set FOC_IMAGE_TAG}
+  frontend:
+    <<: *service
+    build: !reset null
+    image: ${ECR_REGISTRY:?Set ECR_REGISTRY}/foc/frontend:${FOC_IMAGE_TAG:?Set FOC_IMAGE_TAG}
+  smoke:
+    environment:
+      SMOKE_PRICING: "1"
+  pricing-db:
+    <<: *service
+    extends:
+      file: ./order_pricing/compose.runtime.yaml
+      service: pricing-db
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U foc_pricing -d foc_pricing"]
+  pricing-service:
+    <<: *service
+    build: !reset null
+    extends:
+      file: ./order_pricing/compose.runtime.yaml
+      service: pricing-service
+    image: ${ECR_REGISTRY:?Set ECR_REGISTRY}/foc/pricing-service:${FOC_IMAGE_TAG:?Set FOC_IMAGE_TAG}
+  gateway:
+    <<: *service
+    build: !reset null
+    depends_on:
+      pricing-service:
+        condition: service_healthy
+    image: ${ECR_REGISTRY:?Set ECR_REGISTRY}/foc/gateway:${FOC_IMAGE_TAG:?Set FOC_IMAGE_TAG}
+    ports: !override
+      - "${GATEWAY_BIND_ADDRESS:-127.0.0.1}:3000:8080"
+    volumes:
+      - type: bind
+        source: ${GATEWAY_INGRESS_CONFIG:-./gateway/local-ingress.conf}
+        target: /etc/nginx/foc/ingress.conf
+        read_only: true
+        bind:
+          create_host_path: false
+
+volumes:
+  pricing-data:
