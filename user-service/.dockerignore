@@ -1,0 +1,13 @@
+# AI Assistance Disclosure: Claude Code (Claude Opus 5.5), 2026-10-09. Scope: limited the
+# build context to what the build stage needs. Author review: Reviewed and approved by @t-leongchuan
+node_modules
+dist
+.env
+npm-debug.log
+# Not needed to build or run the image
+scripts
+docker
+Dockerfile
+.dockerignore
+README.md
+AGENTS.md

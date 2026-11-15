@@ -1,7 +1,10 @@
+# AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-09-25. Scope: ignored Supplier dependency and test/build artifacts. Author review: Reviewed and approved by @ron.
 # Build output
 dist/
 build/
 out/
+coverage/
+*.tsbuildinfo
 
 # Environment / secrets
 .env
@@ -10,6 +13,14 @@ out/
 *.pem
 *.key
 
+# Locally installed agent skills
+.agents/
+skills-lock.json
+
 # OS
 .DS_Store
 Thumbs.db
+
+
+# Node Modules
+node_modules/

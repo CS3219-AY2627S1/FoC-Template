@@ -1,0 +1,348 @@
+# Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09. Scope: Credit HTTP settings, port and gateway dependency for #58. Author review: Pending.
+# Additional AI assistance: Codex (GPT-6), 2026-10-18. Scope: User Service Kafka configuration. Author review: Reviewed and approved by @phuc.
+# AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-09-25. Scope: merged the User and Supplier Compose definitions while preserving their separate databases, startup order, and runtime configuration. Author review: Reviewed and approved by @ron.
+# Additional AI assistance: OpenAI Codex (GPT-6), 2026-09-25. Scope: configured Supplier-to-User session verification for issue #16. Author review: Reviewed and approved by @ron.
+# Additional AI assistance: OpenAI Codex (GPT-6), 2026-09-25. Scope: recorded the approved 1000 ms Supplier verification deployment timeout for issue #17. Author review of additional changes: Reviewed and approved by @ron.
+# Additional AI assistance: OpenAI Codex (GPT-6), 2026-09-25. Scope: made the User Service host port configurable so the isolated Supplier integration smoke test can avoid a developer stack. Author review of additional changes: Reviewed and approved by @ron.
+# Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-09-26. Scope: added the frontend gateway service (nginx serving the React app and proxying /api/v1 to the services, per the User Service author's routing decisions). Author review: Reviewed and approved by @t-leongchuan.
+# Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-09. Scope: User Service database roles, the one-off user-migrate step and the user-db secrets from .env, per the User Service author's migration decisions. Author review: Reviewed and approved by @t-leongchuan.
+# Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-09. Scope: pinned the user-db Postgres image to a full version tag, per the User Service author's decision. Author review: Reviewed and approved by @t-leongchuan.
+# Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-09. Scope: user-service restart policy and readiness healthcheck, per the User Service author's resilience decisions. Author review: Reviewed and approved by @t-leongchuan.
+# Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-10. Scope: AUDIT_HMAC_KEY for user-service (audit-log hash chain). Author review: Reviewed and approved by @t-leongchuan.
+# Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-16. Scope: order-db, order-migrate and order-service (stub adapters), mirroring the user-* services. Author review: Reviewed and approved by @mattis.
+# Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-18. Scope: order-service uses the real User and Supplier services (http mode, base URLs, ORDER_-prefixed timeouts, start order). Author review: Reviewed and approved by @mattis.
+# Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-16. Scope: credit-db and the one-off credit-migrate step, following the user-db pattern (credit-service/docs/implementation-proposal.md §4, §10). Author review: Reviewed and approved by @phuc
+# Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-18. Scope: order-service Kafka settings (CREDIT_MODE via ORDER_CREDIT_MODE, brokers, client id). Author review: Reviewed and approved by @phuc
+# Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-18. Scope: order-service session verification through user-service (AUTH_MODE via ORDER_AUTH_MODE). Author review: Reviewed and approved by @phuc
+# Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-11-09. Scope: order-service N2 extraction settings (LLM_MODE, LLM_API_KEY, LLM_MODEL, LLM_TIMEOUT_MS via ORDER_LLM_*). Author review: Reviewed and approved by @mattis.
+# Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-16. Scope: shared Kafka broker (KRaft, single node) and the one-off kafka-init step that creates the three topics (kafka/create-topics.sh), 1 partition each per the Credit Service author. Author review: Reviewed and approved by @phuc
+# Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-16. Scope: kafka-test, an on-demand smoke test of the broker and topics (kafka/test-topics.sh). Author review: Reviewed and approved by @phuc.
+# Additional AI assistance: Claude Code (Claude Opus 5.5), 2026-10-16. Scope: credit-service (Kafka consumer and outbox publisher) and the two Credit Service DLQ topics. Author review: Reviewed and approved by @phuc.
+services:
+  # Browser entry point: http://localhost:${FRONTEND_PORT:-8080}
+  frontend:
+    build: ./frontend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      - user-service
+      - supplier-service
+      - order-service
+      - credit-service
+
+  user-service:
+    image: foc-user-service:local
+    build: ./user-service
+    init: true
+    ports:
+      - "${USER_PORT:-3001}:3001"
+    environment:
+      PORT: 3001
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: user-service
+      # The app role: row access only, no schema changes
+      DATABASE_URL: postgres://user_app:${USER_DB_APP_PASSWORD:?Set USER_DB_APP_PASSWORD in .env}@user-db:5432/users
+      ALLOWED_EMAIL_DOMAIN: ${ALLOWED_EMAIL_DOMAIN:-u.nus.edu}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL:-1800}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      # Audit-log hash-chain key; only user-service receives it
+      AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY:?Set AUDIT_HMAC_KEY in .env (openssl rand -hex 32)}
+    depends_on:
+      user-migrate:
+        condition: service_completed_successfully
+    # Comes back after any exit unless stopped on purpose. With the startup retries (60 s)
+    # this means "retry forever" while the database stays unreachable: fine for local
+    # Compose; revisit before any cloud deployment (see user-service/README.md).
+    restart: unless-stopped
+    # /health is a readiness check (database reachable). Timings copied from Supplier.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 5
+
+  # Applies user-service/migrations/*.sql, then exits. user-service starts only if it succeeds.
+  user-migrate:
+    image: foc-user-service:local
+    pull_policy: never
+    command: ["node", "dist/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://user_migrator:${USER_DB_MIGRATION_PASSWORD:?Set USER_DB_MIGRATION_PASSWORD in .env}@user-db:5432/users
+    depends_on:
+      user-db:
+        condition: service_healthy
+    restart: "no"
+
+  user-db:
+    image: postgres:17.11-alpine3.24
+    environment:
+      # The superuser exists only to run the init script below; no service connects as it
+      POSTGRES_USER: user_bootstrap
+      POSTGRES_PASSWORD: ${USER_DB_ADMIN_PASSWORD:?Set USER_DB_ADMIN_PASSWORD in .env}
+      POSTGRES_DB: users
+      USER_DB_MIGRATION_PASSWORD: ${USER_DB_MIGRATION_PASSWORD:?Set USER_DB_MIGRATION_PASSWORD in .env}
+      USER_DB_APP_PASSWORD: ${USER_DB_APP_PASSWORD:?Set USER_DB_APP_PASSWORD in .env}
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+      - ./user-service/docker/postgres/init-roles.sh:/docker-entrypoint-initdb.d/010-user-roles.sh:ro
+    healthcheck:
+      # -h localhost checks over TCP, which the temporary server used during first-time
+      # initialisation does not open; so the check only passes once the real server is up
+      test: ["CMD-SHELL", "pg_isready -h localhost -U user_bootstrap -d users"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  order-service:
+    image: foc-order-service:local
+    build: ./order-service
+    init: true
+    ports:
+      - "${ORDER_PORT:-3002}:3002"
+    environment:
+      PORT: 3002
+      # The app role: row access only, no schema changes
+      DATABASE_URL: postgres://order_app:${ORDER_DB_APP_PASSWORD:?Set ORDER_DB_APP_PASSWORD in .env}@order-db:5432/orders
+      # Sessions and supplier lookups go to the real services, with the caller's token.
+      # stub (any "stub.<uuid>.<role>" token is believed) is still selectable with ORDER_AUTH_MODE=stub
+      AUTH_MODE: ${ORDER_AUTH_MODE:-http}
+      USER_SERVICE_BASE_URL: http://user-service:3001
+      USER_SERVICE_VERIFY_TIMEOUT_MS: ${ORDER_USER_SERVICE_VERIFY_TIMEOUT_MS:-1000}
+      SUPPLIER_MODE: http
+      SUPPLIER_SERVICE_BASE_URL: http://supplier-service:3000
+      SUPPLIER_SERVICE_LOOKUP_TIMEOUT_MS: ${ORDER_SUPPLIER_SERVICE_LOOKUP_TIMEOUT_MS:-2000}
+      # kafka: talk to credit-service over credit.commands / credit.results.
+      # stub: the in-memory Credit stand-in (STUB_CREDIT_* below), e.g. for scripts/demo.sh
+      CREDIT_MODE: ${ORDER_CREDIT_MODE:-kafka}
+      # Not a startup dependency: the service connects in the background and retries, so its
+      # HTTP API and database work while Kafka is down
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: order-service
+      CONFIRMATION_WINDOW_MINUTES: ${CONFIRMATION_WINDOW_MINUTES:-1440}
+      RESERVATION_TIMEOUT_SECONDS: ${RESERVATION_TIMEOUT_SECONDS:-30}
+      STUB_CREDIT_LIMIT: ${STUB_CREDIT_LIMIT:-100}
+      STUB_CREDIT_SILENT_AMOUNT: ${STUB_CREDIT_SILENT_AMOUNT:-999}
+      # N2: fill the create-errand form from a description. anthropic (Claude), stub (fixed reply) or off.
+      # With anthropic and no key the feature reports NOT_CONFIGURED; the key comes only from .env
+      LLM_MODE: ${ORDER_LLM_MODE:-anthropic}
+      LLM_API_KEY: ${ORDER_LLM_API_KEY:-}
+      LLM_MODEL: ${ORDER_LLM_MODEL:-claude-haiku-5-5}
+      LLM_TIMEOUT_MS: ${ORDER_LLM_TIMEOUT_MS:-50000}
+    depends_on:
+      order-migrate:
+        condition: service_completed_successfully
+      user-service:
+        condition: service_started
+      supplier-service:
+        condition: service_started
+    # Same policy as user-service: retry forever while the database is unreachable
+    restart: unless-stopped
+    # /health is a readiness check (database reachable)
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 5
+
+  # Applies order-service/migrations/*.sql, then exits. order-service starts only if it succeeds.
+  order-migrate:
+    image: foc-order-service:local
+    pull_policy: never
+    command: ["node", "dist/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://order_migrator:${ORDER_DB_MIGRATION_PASSWORD:?Set ORDER_DB_MIGRATION_PASSWORD in .env}@order-db:5432/orders
+    depends_on:
+      order-db:
+        condition: service_healthy
+    restart: "no"
+
+  order-db:
+    image: postgres:17.11-alpine3.24
+    environment:
+      # The superuser exists only to run the init script below; no service connects as it
+      POSTGRES_USER: order_bootstrap
+      POSTGRES_PASSWORD: ${ORDER_DB_ADMIN_PASSWORD:?Set ORDER_DB_ADMIN_PASSWORD in .env}
+      POSTGRES_DB: orders
+      ORDER_DB_MIGRATION_PASSWORD: ${ORDER_DB_MIGRATION_PASSWORD:?Set ORDER_DB_MIGRATION_PASSWORD in .env}
+      ORDER_DB_APP_PASSWORD: ${ORDER_DB_APP_PASSWORD:?Set ORDER_DB_APP_PASSWORD in .env}
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+      - ./order-service/docker/postgres/init-roles.sh:/docker-entrypoint-initdb.d/010-order-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -U order_bootstrap -d orders"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  supplier-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${SUPPLIER_DB_NAME:-supplier}
+      POSTGRES_USER: ${SUPPLIER_DB_ADMIN_USER:-supplier_bootstrap}
+      POSTGRES_PASSWORD: ${SUPPLIER_DB_ADMIN_PASSWORD:?Set SUPPLIER_DB_ADMIN_PASSWORD in .env}
+      SUPPLIER_DB_MIGRATION_USER: ${SUPPLIER_DB_MIGRATION_USER:-supplier_migrator}
+      SUPPLIER_DB_MIGRATION_PASSWORD: ${SUPPLIER_DB_MIGRATION_PASSWORD:?Set SUPPLIER_DB_MIGRATION_PASSWORD in .env}
+      SUPPLIER_DB_USER: ${SUPPLIER_DB_USER:-supplier_app}
+      SUPPLIER_DB_PASSWORD: ${SUPPLIER_DB_PASSWORD:?Set SUPPLIER_DB_PASSWORD in .env}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - supplier-db-data:/var/lib/postgresql/data
+      - ./supplier-service/docker/postgres/init-roles.sh:/docker-entrypoint-initdb.d/010-supplier-roles.sh:ro
+
+  supplier-migrate:
+    image: foc-supplier-service:local
+    build:
+      context: .
+      dockerfile: supplier-service/Dockerfile
+    command: ["node", "dist/database/migrate.js"]
+    environment:
+      DATABASE_URL: postgresql://${SUPPLIER_DB_MIGRATION_USER:-supplier_migrator}:${SUPPLIER_DB_MIGRATION_PASSWORD:?Set SUPPLIER_DB_MIGRATION_PASSWORD in .env}@supplier-db:5432/${SUPPLIER_DB_NAME:-supplier}
+      DATABASE_RUNTIME_ROLE: ${SUPPLIER_DB_USER:-supplier_app}
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+    restart: "no"
+
+  supplier-service:
+    image: foc-supplier-service:local
+    pull_policy: never
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://${SUPPLIER_DB_USER:-supplier_app}:${SUPPLIER_DB_PASSWORD:?Set SUPPLIER_DB_PASSWORD in .env}@supplier-db:5432/${SUPPLIER_DB_NAME:-supplier}
+      SUPPLIER_SEED_CSV_PATH: /data/csv/supplier-seed-data.csv
+      USER_SERVICE_BASE_URL: http://user-service:3001
+      USER_SERVICE_VERIFY_TIMEOUT_MS: ${USER_SERVICE_VERIFY_TIMEOUT_MS:-1000}
+    depends_on:
+      supplier-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${SUPPLIER_PORT:-3000}:3000"
+
+  # Credit Service database: same pattern as user-db (bootstrap superuser for the init
+  # script only, credit_migrator for migrations, credit_app for the running service)
+  credit-db:
+    image: postgres:17.11-alpine3.24
+    environment:
+      POSTGRES_USER: credit_bootstrap
+      POSTGRES_PASSWORD: ${CREDIT_DB_ADMIN_PASSWORD:?Set CREDIT_DB_ADMIN_PASSWORD in .env}
+      POSTGRES_DB: credits
+      CREDIT_DB_MIGRATION_PASSWORD: ${CREDIT_DB_MIGRATION_PASSWORD:?Set CREDIT_DB_MIGRATION_PASSWORD in .env}
+      CREDIT_DB_APP_PASSWORD: ${CREDIT_DB_APP_PASSWORD:?Set CREDIT_DB_APP_PASSWORD in .env}
+    volumes:
+      - credit-db-data:/var/lib/postgresql/data
+      - ./credit-service/docker/postgres/init-roles.sh:/docker-entrypoint-initdb.d/010-credit-roles.sh:ro
+    healthcheck:
+      # -h localhost: passes only once the real server is up, not the init-time one
+      test: ["CMD-SHELL", "pg_isready -h localhost -U credit_bootstrap -d credits"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Consumes user.account-status and credit.commands; publishes to credit.results
+  credit-service:
+    image: foc-credit-service:local
+    pull_policy: never
+    init: true
+    ports:
+      - "${CREDIT_PORT:-3003}:3003"
+    environment:
+      PORT: 3003
+      USER_SERVICE_BASE_URL: http://user-service:3001
+      USER_SERVICE_VERIFY_TIMEOUT_MS: ${CREDIT_USER_SERVICE_VERIFY_TIMEOUT_MS:-1000}
+      # The app role: row access only, no schema changes
+      DATABASE_URL: postgres://credit_app:${CREDIT_DB_APP_PASSWORD:?Set CREDIT_DB_APP_PASSWORD in .env}@credit-db:5432/credits
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: credit-service
+      INITIAL_CREDIT_GRANT: 100
+    depends_on:
+      credit-migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Applies credit-service/migrations/*.sql, then exits
+  credit-migrate:
+    image: foc-credit-service:local
+    build: ./credit-service
+    command: ["node", "dist/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://credit_migrator:${CREDIT_DB_MIGRATION_PASSWORD:?Set CREDIT_DB_MIGRATION_PASSWORD in .env}@credit-db:5432/credits
+    depends_on:
+      credit-db:
+        condition: service_healthy
+    restart: "no"
+
+  # Shared Kafka broker (KRaft mode, no ZooKeeper). Only reachable inside the Compose
+  # network at kafka:9092. Topics are created by kafka-init, never automatically.
+  kafka:
+    image: apache/kafka:3.9.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # Single broker: internal topics cannot have more than one replica
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      start_period: 20s
+      retries: 10
+
+  # Creates the topics (kafka/create-topics.sh), then exits
+  kafka-init:
+    image: apache/kafka:3.9.0
+    command: ["sh", "/scripts/create-topics.sh"]
+    environment:
+      BOOTSTRAP_SERVER: kafka:9092
+    volumes:
+      - ./kafka/create-topics.sh:/scripts/create-topics.sh:ro
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+
+  # On demand only (profile "test"): docker compose run --rm kafka-test
+  kafka-test:
+    image: apache/kafka:3.9.0
+    profiles: ["test"]
+    command: ["sh", "/scripts/test-topics.sh"]
+    environment:
+      BOOTSTRAP_SERVER: kafka:9092
+    volumes:
+      - ./kafka/test-topics.sh:/scripts/test-topics.sh:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+
+volumes:
+  user-db-data:
+  order-db-data:
+  supplier-db-data:
+  credit-db-data:
+  kafka-data:

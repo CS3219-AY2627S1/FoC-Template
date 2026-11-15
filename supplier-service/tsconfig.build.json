@@ -1,0 +1,9 @@
+// AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-09-25. Scope: Supplier backend build configuration. Author review: Reviewed and approved by @ron.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts"]
+}

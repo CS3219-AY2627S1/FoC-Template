@@ -1,0 +1,22 @@
+/*
+ * AI Assistance Disclosure:
+ * Tool: Claude Code (Claude Opus 5.5), date: 2026-09-26
+ * Scope: Tailwind entry point and colour theme matching the D1 mockup (navy + orange).
+ * Author review: Reviewed and approved by @t-leongchuan
+ */
+@import "tailwindcss";
+
+/* Custom colours usable as Tailwind classes, e.g. bg-navy-800, text-accent-500 */
+@theme {
+  --color-navy-50: #f5f7fb;
+  --color-navy-100: #e8ecf4;
+  --color-navy-700: #2c3a63;
+  --color-navy-800: #22305a;
+  --color-navy-900: #1a2446;
+  --color-accent-500: #ee7a2c;
+  --color-accent-600: #d9661a;
+}
+
+body {
+  @apply bg-navy-50 text-slate-800 antialiased;
+}

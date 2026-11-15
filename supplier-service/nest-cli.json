@@ -1,0 +1,9 @@
+{
+  "//": "AI Assistance Disclosure: see AI-DISCLOSURES.md#strict-json-files. OpenAI Codex (GPT-6), 2026-09-25; Supplier NestJS configuration. Author review approved by @ron; strict-JSON metadata exception still requires course-owner approval.",
+  "$schema": "https://json.schemastore.org/nest-cli",
+  "collection": "@nestjs/schematics",
+  "sourceRoot": "src",
+  "compilerOptions": {
+    "deleteOutDir": true
+  }
+}

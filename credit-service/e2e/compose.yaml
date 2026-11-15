@@ -1,0 +1,115 @@
+# Additional AI assistance: OpenAI Codex (GPT-6), 2026-11-09.
+# Scope: Required HTTP verifier configuration for #58. Author review: Reviewed and approved by @phuc.
+# AI Assistance Disclosure: Claude Code (Claude Opus 5.5), 2026-10-16. Scope: an isolated stack
+# for the Credit Service end-to-end test (author's choice: separate test stack). Mirrors the
+# kafka, credit-db, credit-migrate and credit-service definitions in the root compose.yaml.
+# Author review: Reviewed and approved by @phuc
+#
+# Run through e2e/run.sh, which uses its own project name (foc-credit-e2e) and deletes the
+# volumes afterwards. No ports are published, so it can run next to the dev stack.
+# The passwords below exist only inside this throwaway stack.
+
+services:
+  kafka:
+    image: apache/kafka:3.9.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      start_period: 15s
+      retries: 20
+
+  kafka-init:
+    image: apache/kafka:3.9.0
+    command: ["sh", "/scripts/create-topics.sh"]
+    environment:
+      BOOTSTRAP_SERVER: kafka:9092
+    volumes:
+      - ../../kafka/create-topics.sh:/scripts/create-topics.sh:ro
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+
+  credit-db:
+    image: postgres:17.11-alpine3.24
+    environment:
+      POSTGRES_USER: credit_bootstrap
+      POSTGRES_PASSWORD: e2eadmin
+      POSTGRES_DB: credits
+      CREDIT_DB_MIGRATION_PASSWORD: e2emigrator
+      CREDIT_DB_APP_PASSWORD: e2eapp
+    volumes:
+      - credit-db-data:/var/lib/postgresql/data
+      - ../docker/postgres/init-roles.sh:/docker-entrypoint-initdb.d/010-credit-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -U credit_bootstrap -d credits"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  credit-migrate:
+    image: foc-credit-service:e2e-runtime
+    build:
+      context: ..
+    command: ["node", "dist/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://credit_migrator:e2emigrator@credit-db:5432/credits
+    depends_on:
+      credit-db:
+        condition: service_healthy
+    restart: "no"
+
+  credit-service:
+    image: foc-credit-service:e2e-runtime
+    pull_policy: never
+    init: true
+    environment:
+      # Kafka-only fixture does not call HTTP; verification remains fail-closed.
+      USER_SERVICE_BASE_URL: http://user-service:3001
+      DATABASE_URL: postgres://credit_app:e2eapp@credit-db:5432/credits
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: credit-service
+      INITIAL_CREDIT_GRANT: 100
+    depends_on:
+      credit-migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+
+  # Plays User Service and Order Service: sends messages, reads replies and DLQs, checks the
+  # database. Started by run.sh with `docker compose run`.
+  e2e:
+    image: foc-credit-service:e2e-tests
+    build:
+      context: ..
+      target: e2e
+    profiles: ["test"]
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      # Read-only checks of balances and history
+      E2E_DATABASE_URL: postgres://credit_app:e2eapp@credit-db:5432/credits
+    depends_on:
+      credit-service:
+        condition: service_started
+
+volumes:
+  kafka-data:
+  credit-db-data:

@@ -1,0 +1,291 @@
+{
+  "id": "1d20e339-6ae5-4835-9087-cd583eaf03c2",
+  "prevId": "070a9e25-7271-415a-880c-17c41780cab9",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.supplier_categories": {
+      "name": "supplier_categories",
+      "schema": "",
+      "columns": {
+        "supplier_id": {
+          "name": "supplier_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "supplier_category",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "supplier_categories_category_idx": {
+          "name": "supplier_categories_category_idx",
+          "columns": [
+            {
+              "expression": "category",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "supplier_categories_supplier_id_suppliers_id_fk": {
+          "name": "supplier_categories_supplier_id_suppliers_id_fk",
+          "tableFrom": "supplier_categories",
+          "tableTo": "suppliers",
+          "columnsFrom": [
+            "supplier_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "supplier_categories_supplier_id_category_pk": {
+          "name": "supplier_categories_supplier_id_category_pk",
+          "columns": [
+            "supplier_id",
+            "category"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.suppliers": {
+      "name": "suppliers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(120)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "building_code": {
+          "name": "building_code",
+          "type": "varchar(120)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "floor": {
+          "name": "floor",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "location_description": {
+          "name": "location_description",
+          "type": "varchar(300)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "latitude": {
+          "name": "latitude",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "longitude": {
+          "name": "longitude",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hours_kind": {
+          "name": "hours_kind",
+          "type": "hours_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "opens_at": {
+          "name": "opens_at",
+          "type": "time",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "closes_at": {
+          "name": "closes_at",
+          "type": "time",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "image_path": {
+          "name": "image_path",
+          "type": "varchar(500)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "supplier_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ACTIVE'"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "suppliers_status_building_code_idx": {
+          "name": "suppliers_status_building_code_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "building_code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "suppliers_name_nonblank": {
+          "name": "suppliers_name_nonblank",
+          "value": "btrim(\"suppliers\".\"name\") <> ''"
+        },
+        "suppliers_building_code_nonblank": {
+          "name": "suppliers_building_code_nonblank",
+          "value": "btrim(\"suppliers\".\"building_code\") <> ''"
+        },
+        "suppliers_building_code_allowed": {
+          "name": "suppliers_building_code_allowed",
+          "value": "\"suppliers\".\"building_code\" in ('COM2', 'COM3', 'CENTRAL_LIBRARY', 'ENG_E3', 'ENG_E4', 'ENG_EA', 'FRONTIER', 'TERRACE', 'THE_RIDGE', 'YIH', 'PGP', 'HSSML', 'MED_SCI_LIBRARY', 'AS8', 'INNOVATION_4_0')"
+        },
+        "suppliers_location_description_nonblank": {
+          "name": "suppliers_location_description_nonblank",
+          "value": "btrim(\"suppliers\".\"location_description\") <> ''"
+        },
+        "suppliers_coordinates_paired": {
+          "name": "suppliers_coordinates_paired",
+          "value": "(\"suppliers\".\"latitude\" is null) = (\"suppliers\".\"longitude\" is null)"
+        },
+        "suppliers_latitude_range": {
+          "name": "suppliers_latitude_range",
+          "value": "\"suppliers\".\"latitude\" is null or \"suppliers\".\"latitude\" between -90 and 90"
+        },
+        "suppliers_longitude_range": {
+          "name": "suppliers_longitude_range",
+          "value": "\"suppliers\".\"longitude\" is null or \"suppliers\".\"longitude\" between -180 and 180"
+        },
+        "suppliers_hours_consistent": {
+          "name": "suppliers_hours_consistent",
+          "value": "(\n        \"suppliers\".\"hours_kind\" in ('UNKNOWN', 'ALL_DAY')\n        and \"suppliers\".\"opens_at\" is null\n        and \"suppliers\".\"closes_at\" is null\n      ) or (\n        \"suppliers\".\"hours_kind\" = 'INTERVAL'\n        and \"suppliers\".\"opens_at\" is not null\n        and \"suppliers\".\"closes_at\" is not null\n        and \"suppliers\".\"opens_at\" <> \"suppliers\".\"closes_at\"\n      )"
+        },
+        "suppliers_version_nonnegative": {
+          "name": "suppliers_version_nonnegative",
+          "value": "\"suppliers\".\"version\" >= 0"
+        },
+        "suppliers_archive_state_consistent": {
+          "name": "suppliers_archive_state_consistent",
+          "value": "(\n        \"suppliers\".\"status\" = 'ACTIVE' and \"suppliers\".\"archived_at\" is null\n      ) or (\n        \"suppliers\".\"status\" = 'ARCHIVED' and \"suppliers\".\"archived_at\" is not null\n      )"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.hours_kind": {
+      "name": "hours_kind",
+      "schema": "public",
+      "values": [
+        "UNKNOWN",
+        "ALL_DAY",
+        "INTERVAL"
+      ]
+    },
+    "public.supplier_category": {
+      "name": "supplier_category",
+      "schema": "public",
+      "values": [
+        "FOOD",
+        "COFFEE",
+        "PRINTING",
+        "SHOPPING",
+        "PICKUP_POINT"
+      ]
+    },
+    "public.supplier_status": {
+      "name": "supplier_status",
+      "schema": "public",
+      "values": [
+        "ACTIVE",
+        "ARCHIVED"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

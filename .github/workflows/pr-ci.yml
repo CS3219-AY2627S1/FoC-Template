@@ -1,0 +1,480 @@
+# AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-10-18.
+# Scope: Implemented the issue #42 pull-request CI foundation from the
+# project author's approved design decisions.
+# Author review: Pending project-author review.
+# Additional AI assistance: OpenAI Codex, 2026-11-09.
+# Scope: Added author-approved Order/Credit PostgreSQL-backed quality jobs
+# and included their results in CI / gate for issue #62.
+# Author review of this extension: Reviewed and approved by @ron on 2026-11-09.
+# Additional AI assistance: OpenAI Codex, 2026-11-09. Scope: author-approved
+# change-aware selection, required Kafka suites, real-service journey and evidence. Review: Reviewed and approved by @ron on 2026-11-09.
+
+name: PR CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CI: true
+
+jobs:
+  changes:
+    name: CI / plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+      frontend_quality: ${{ steps.plan.outputs.frontend_quality }}
+      supplier_quality: ${{ steps.plan.outputs.supplier_quality }}
+      user_build: ${{ steps.plan.outputs.user_build }}
+      order_quality: ${{ steps.plan.outputs.order_quality }}
+      credit_quality: ${{ steps.plan.outputs.credit_quality }}
+      supplier_integration: ${{ steps.plan.outputs.supplier_integration }}
+      supplier_ui_e2e: ${{ steps.plan.outputs.supplier_ui_e2e }}
+      order_messaging: ${{ steps.plan.outputs.order_messaging }}
+      credit_messaging: ${{ steps.plan.outputs.credit_messaging }}
+      user_messaging: ${{ steps.plan.outputs.user_messaging }}
+      order_credit_integration: ${{ steps.plan.outputs.order_credit_integration }}
+    steps:
+      - name: Check out repository and diff history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Verify selection, gate, and evidence safeguards
+        run: node --test scripts/ci/policy.test.mjs scripts/ci/evidence.test.mjs scripts/ci/run.test.mjs
+      - name: Select changed-service checks and dependent integrations
+        id: plan
+        run: node scripts/ci/run.mjs plan
+
+  frontend_quality:
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend_quality == 'true' }}
+    name: frontend / static-and-unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run unit and component tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  supplier_quality:
+    needs: changes
+    if: ${{ needs.changes.outputs.supplier_quality == 'true' }}
+    name: supplier / static-and-unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: supplier-service
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: supplier-service/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  user_build:
+    needs: changes
+    if: ${{ needs.changes.outputs.user_build == 'true' }}
+    name: user / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: user-service
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: user-service/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+  order_quality:
+    needs: changes
+    if: ${{ needs.changes.outputs.order_quality == 'true' }}
+    name: order / typecheck-build-and-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: order-service
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+    services:
+      postgres:
+        image: postgres:17.11-alpine3.24
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: order-service/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Run tests against PostgreSQL (Kafka integration excluded)
+        run: npm test
+
+  credit_quality:
+    needs: changes
+    if: ${{ needs.changes.outputs.credit_quality == 'true' }}
+    name: credit / typecheck-build-and-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: credit-service
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+    services:
+      postgres:
+        image: postgres:17.11-alpine3.24
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: credit-service/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Run tests against PostgreSQL
+        run: npm test
+
+  supplier_integration:
+    needs: changes
+    if: ${{ needs.changes.outputs.supplier_integration == 'true' }}
+    name: integration / supplier-stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: supplier-service
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: supplier-service/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run live Supplier integration suite
+        run: npm run test:integration
+
+  supplier_ui_e2e:
+    needs: changes
+    if: ${{ needs.changes.outputs.supplier_ui_e2e == 'true' }}
+    name: e2e / supplier-ui
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium and system dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Run live Supplier UI journey
+        run: npm run test:e2e
+
+      - name: Upload Playwright failure evidence
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: supplier-ui-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+  order_messaging:
+    name: messaging / order
+    needs: changes
+    if: ${{ needs.changes.outputs.order_messaging == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: order-service/package-lock.json
+      - run: npm ci --prefix order-service
+      - name: Run required Order Kafka suite
+        id: messaging
+        run: node scripts/ci/messaging.mjs order
+      - name: Retain messaging reports and sanitized diagnostics
+        if: ${{ always() && steps.messaging.outputs.artifacts != '' }}
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: order-messaging-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.messaging.outputs.artifacts }}
+          retention-days: 7
+          if-no-files-found: error
+
+  credit_messaging:
+    name: messaging / credit
+    needs: changes
+    if: ${{ needs.changes.outputs.credit_messaging == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Run required Credit broker/database suite
+        id: messaging
+        run: node scripts/ci/messaging.mjs credit
+      - name: Retain messaging reports and sanitized diagnostics
+        if: ${{ always() && steps.messaging.outputs.artifacts != '' }}
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: credit-messaging-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.messaging.outputs.artifacts }}
+          retention-days: 7
+          if-no-files-found: error
+
+  user_messaging:
+    name: messaging / user-credit
+    needs: changes
+    if: ${{ needs.changes.outputs.user_messaging == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            user-service/package-lock.json
+            credit-service/package-lock.json
+      - name: Install and build both real service processes
+        run: |
+          npm ci --prefix user-service
+          npm ci --prefix credit-service
+          npm run build --prefix user-service
+          npm run build --prefix credit-service
+      - name: Run required User-to-Kafka-to-Credit suite
+        id: messaging
+        run: node scripts/ci/messaging.mjs user
+      - name: Retain messaging reports and sanitized diagnostics
+        if: ${{ always() && steps.messaging.outputs.artifacts != '' }}
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: user-messaging-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.messaging.outputs.artifacts }}
+          retention-days: 7
+          if-no-files-found: error
+
+  order_credit_integration:
+    name: messaging / actual-services
+    needs: changes
+    if: ${{ needs.changes.outputs.order_credit_integration == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: order-service/package-lock.json
+      - run: npm ci --prefix order-service
+      - name: Run actual authenticated User/Supplier/Order/Kafka/Credit journeys
+        id: messaging
+        run: node scripts/ci/messaging.mjs journey
+      - name: Retain messaging reports and sanitized diagnostics
+        if: ${{ always() && steps.messaging.outputs.artifacts != '' }}
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: actual-services-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.messaging.outputs.artifacts }}
+          retention-days: 7
+          if-no-files-found: error
+
+  ci_gate:
+    name: CI / gate
+    if: ${{ always() }}
+    needs:
+      - changes
+      - frontend_quality
+      - supplier_quality
+      - user_build
+      - order_quality
+      - credit_quality
+      - supplier_integration
+      - supplier_ui_e2e
+      - order_messaging
+      - credit_messaging
+      - user_messaging
+      - order_credit_integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Require selected jobs to pass and validate deliberate skips
+        env:
+          PLAN_JSON: ${{ needs.changes.outputs.plan }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: node scripts/ci/run.mjs gate

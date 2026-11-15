@@ -1,0 +1,32 @@
+{
+  "//": "AI Assistance Disclosure: OpenAI Codex (GPT-6), 2026-11-09; Express HTTP dependencies for issue #58. Author review: Reviewed and approved by @phuc. See AI-DISCLOSURES.md.",
+  "name": "credit-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FoC Credit Service: credit balances, reservations and history",
+  "license": "ISC",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "start": "node dist/index.js",
+    "migrate": "node dist/migrate.js",
+    "test": "node --import tsx --test --test-concurrency=1 \"test/**/*.test.ts\"",
+    "test:e2e": "bash e2e/run.sh"
+  },
+  "dependencies": {
+    "@confluentinc/kafka-javascript": "^1.11.0",
+    "express": "^5.0.0",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^26.6.2",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "allowScripts": {
+    "@confluentinc/kafka-javascript@1.11.0": true
+  }
+}
